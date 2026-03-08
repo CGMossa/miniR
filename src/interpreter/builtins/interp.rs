@@ -14,14 +14,19 @@ use newr_macros::interpreter_builtin;
 fn match_fun(f: &RValue, env: &Environment) -> Result<RValue, RError> {
     match f {
         RValue::Function(_) => Ok(f.clone()),
-        RValue::Vector(Vector::Character(s)) => {
-            let name = s
-                .first()
-                .and_then(|x| x.as_ref())
-                .ok_or_else(|| RError::Argument("not a valid function name".to_string()))?;
-            env.get_function(name)
-                .ok_or_else(|| RError::Other(format!("could not find function '{}'", name)))
-        }
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(s) => {
+                let name = s
+                    .first()
+                    .and_then(|x| x.as_ref())
+                    .ok_or_else(|| RError::Argument("not a valid function name".to_string()))?;
+                env.get_function(name)
+                    .ok_or_else(|| RError::Other(format!("could not find function '{}'", name)))
+            }
+            _ => Err(RError::Argument(
+                "FUN is not a function and not a string naming a function".to_string(),
+            )),
+        },
         _ => Err(RError::Argument(
             "FUN is not a function and not a string naming a function".to_string(),
         )),
@@ -70,22 +75,22 @@ fn eval_apply(
     let f = match_fun(&positional[1], env)?;
 
     let items: Vec<RValue> = match x {
-        RValue::Vector(v) => match v {
+        RValue::Vector(v) => match &v.inner {
             Vector::Double(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Double(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Double(vec![*x].into())))
                 .collect(),
             Vector::Integer(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Integer(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
                 .collect(),
             Vector::Character(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Character(vec![x.clone()].into())))
+                .map(|x| RValue::vec(Vector::Character(vec![x.clone()].into())))
                 .collect(),
             Vector::Logical(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Logical(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Logical(vec![*x].into())))
                 .collect(),
         },
         RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
@@ -114,7 +119,7 @@ fn eval_apply(
                                         .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
                                 })
                                 .collect();
-                            return Ok(RValue::Vector(Vector::Double(vals.into())));
+                            return Ok(RValue::vec(Vector::Double(vals.into())));
                         }
                         "integer" => {
                             let vals: Vec<Option<i64>> = results
@@ -124,7 +129,7 @@ fn eval_apply(
                                         .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
                                 })
                                 .collect();
-                            return Ok(RValue::Vector(Vector::Integer(vals.into())));
+                            return Ok(RValue::vec(Vector::Integer(vals.into())));
                         }
                         "character" => {
                             let vals: Vec<Option<String>> = results
@@ -135,7 +140,7 @@ fn eval_apply(
                                     })
                                 })
                                 .collect();
-                            return Ok(RValue::Vector(Vector::Character(vals.into())));
+                            return Ok(RValue::vec(Vector::Character(vals.into())));
                         }
                         "logical" => {
                             let vals: Vec<Option<bool>> = results
@@ -145,7 +150,7 @@ fn eval_apply(
                                         .map(|v| v.to_logicals().into_iter().next().unwrap_or(None))
                                 })
                                 .collect();
-                            return Ok(RValue::Vector(Vector::Logical(vals.into())));
+                            return Ok(RValue::vec(Vector::Logical(vals.into())));
                         }
                         _ => {}
                     }
@@ -340,7 +345,8 @@ fn interp_switch(
         .first()
         .ok_or_else(|| RError::Argument("'EXPR' is missing".to_string()))?;
 
-    let is_character = matches!(expr, RValue::Vector(Vector::Character(_)));
+    let is_character =
+        matches!(expr, RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)));
 
     if is_character {
         let s = match expr {
@@ -446,7 +452,7 @@ fn interp_exists(
         })
         .unwrap_or_default();
     let found = env.get(&name).is_some();
-    Ok(RValue::Vector(Vector::Logical(vec![Some(found)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(found)].into())))
 }
 
 #[interpreter_builtin(name = "source", min_args = 1)]
@@ -482,7 +488,7 @@ fn interp_system_time(
     let start = std::time::Instant::now();
     let _result = positional.first().cloned().unwrap_or(RValue::Null);
     let elapsed = start.elapsed().as_secs_f64();
-    Ok(RValue::Vector(Vector::Double(
+    Ok(RValue::vec(Vector::Double(
         vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
     )))
 }
@@ -651,22 +657,22 @@ fn interp_op_not(
 /// Convert an RValue to a Vec of individual items (for apply/map/filter/reduce).
 fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
     match x {
-        RValue::Vector(v) => match v {
+        RValue::Vector(v) => match &v.inner {
             Vector::Double(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Double(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Double(vec![*x].into())))
                 .collect(),
             Vector::Integer(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Integer(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
                 .collect(),
             Vector::Character(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Character(vec![x.clone()].into())))
+                .map(|x| RValue::vec(Vector::Character(vec![x.clone()].into())))
                 .collect(),
             Vector::Logical(vals) => vals
                 .iter()
-                .map(|x| RValue::Vector(Vector::Logical(vec![*x].into())))
+                .map(|x| RValue::vec(Vector::Logical(vec![*x].into())))
                 .collect(),
         },
         RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),

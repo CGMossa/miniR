@@ -10,6 +10,7 @@ pub use logical::Logical;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::{Deref, DerefMut};
 
 use crate::interpreter::environment::Environment;
 use crate::parser::ast::{Expr, Param};
@@ -24,13 +25,74 @@ pub enum RValue {
     /// NULL
     Null,
     /// Atomic vector (with optional attributes)
-    Vector(Vector),
+    Vector(RVector),
     /// List (generic vector)
     List(RList),
     /// Function (closure)
     Function(RFunction),
     /// Environment reference
     Environment(Environment),
+}
+
+/// Atomic vector with optional attributes (names, class, dim, etc.)
+#[derive(Debug, Clone)]
+pub struct RVector {
+    pub inner: Vector,
+    pub attrs: Option<Box<Attributes>>,
+}
+
+impl Deref for RVector {
+    type Target = Vector;
+    fn deref(&self) -> &Vector {
+        &self.inner
+    }
+}
+
+impl DerefMut for RVector {
+    fn deref_mut(&mut self) -> &mut Vector {
+        &mut self.inner
+    }
+}
+
+impl From<Vector> for RVector {
+    fn from(v: Vector) -> Self {
+        RVector {
+            inner: v,
+            attrs: None,
+        }
+    }
+}
+
+impl RVector {
+    pub fn get_attr(&self, name: &str) -> Option<&RValue> {
+        self.attrs.as_ref().and_then(|a| a.get(name))
+    }
+
+    pub fn set_attr(&mut self, name: String, value: RValue) {
+        self.attrs
+            .get_or_insert_with(|| Box::new(HashMap::new()))
+            .insert(name, value);
+    }
+
+    pub fn class(&self) -> Option<Vec<String>> {
+        match self.get_attr("class") {
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Character(v) => Some(v.iter().filter_map(|s| s.clone()).collect()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn names(&self) -> Option<Vec<Option<String>>> {
+        match self.get_attr("names") {
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Character(v) => Some(v.0.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,9 +122,10 @@ impl RList {
     #[allow(dead_code)]
     pub fn class(&self) -> Option<Vec<String>> {
         match self.get_attr("class") {
-            Some(RValue::Vector(Vector::Character(v))) => {
-                Some(v.iter().filter_map(|s| s.clone()).collect())
-            }
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Character(v) => Some(v.iter().filter_map(|s| s.clone()).collect()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -242,13 +305,28 @@ pub fn format_r_double(f: f64) -> String {
 }
 
 impl RValue {
+    /// Convenience: wrap an atomic Vector into RValue::Vector with no attributes.
+    pub fn vec(v: Vector) -> Self {
+        RValue::Vector(RVector {
+            inner: v,
+            attrs: None,
+        })
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, RValue::Null)
     }
 
     pub fn as_vector(&self) -> Option<&Vector> {
         match self {
-            RValue::Vector(v) => Some(v),
+            RValue::Vector(rv) => Some(&rv.inner),
+            _ => None,
+        }
+    }
+
+    pub fn as_rvector(&self) -> Option<&RVector> {
+        match self {
+            RValue::Vector(rv) => Some(rv),
             _ => None,
         }
     }
@@ -256,7 +334,7 @@ impl RValue {
     #[allow(dead_code)]
     pub fn into_vector(self) -> Result<Vector, RError> {
         match self {
-            RValue::Vector(v) => Ok(v),
+            RValue::Vector(rv) => Ok(rv.inner),
             RValue::Null => Ok(Vector::Logical(Logical(vec![]))),
             _ => Err(RError::Type("cannot coerce to vector".to_string())),
         }
@@ -265,7 +343,7 @@ impl RValue {
     pub fn type_name(&self) -> &str {
         match self {
             RValue::Null => "NULL",
-            RValue::Vector(v) => v.type_name(),
+            RValue::Vector(rv) => rv.inner.type_name(),
             RValue::List(_) => "list",
             RValue::Function(_) => "function",
             RValue::Environment(_) => "environment",
@@ -275,7 +353,7 @@ impl RValue {
     pub fn length(&self) -> usize {
         match self {
             RValue::Null => 0,
-            RValue::Vector(v) => v.len(),
+            RValue::Vector(rv) => rv.inner.len(),
             RValue::List(l) => l.values.len(),
             RValue::Function(_) => 1,
             RValue::Environment(_) => 0,
@@ -287,7 +365,7 @@ impl fmt::Display for RValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RValue::Null => write!(f, "NULL"),
-            RValue::Vector(v) => write!(f, "{}", format_vector(v)),
+            RValue::Vector(rv) => write!(f, "{}", format_vector(&rv.inner)),
             RValue::List(list) => {
                 for (i, (name, val)) in list.values.iter().enumerate() {
                     match name {

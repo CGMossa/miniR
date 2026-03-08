@@ -42,7 +42,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
             Err(err) => {
                 if let Some(handler) = error_handler.clone() {
                     let err_msg = format!("{}", err);
-                    let err_val = RValue::Vector(Vector::Character(vec![Some(err_msg)].into()));
+                    let err_val = RValue::vec(Vector::Character(vec![Some(err_msg)].into()));
                     interp.call_function(&handler, &[err_val], &[], env)
                 } else {
                     Err(err)
@@ -72,7 +72,7 @@ fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
             Err(err) => {
                 let msg = format!("{}", err);
                 eprintln!("Error in try : {}", msg);
-                Ok(RValue::Vector(Vector::Character(vec![Some(msg)].into())))
+                Ok(RValue::vec(Vector::Character(vec![Some(msg)].into())))
             }
         },
         None => Ok(RValue::Null),
