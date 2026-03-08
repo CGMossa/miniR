@@ -22,7 +22,9 @@ Future crates to consider:
 - indicatif (progress bars for long-running operations)
 - itertools (extended iterator adaptors)
 - rayon (data parallelism for vectorized operations)
+- readonly 0.2 (struct fields readable outside module but only writable inside)
 - serde+derive (serialization/deserialization)
+- zmij 1.0 (fast f64-to-string conversion, Schubfach/yy algorithm)
 
 - gc-arena (garbage collection arena, for GC'd R values)
 - arrow (Apache Arrow, for columnar data / data frames)
