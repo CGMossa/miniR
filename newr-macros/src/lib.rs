@@ -165,13 +165,14 @@ impl syn::parse::Parse for BuiltinAttr {
     }
 }
 
-/// Attribute macro for interpreter-level builtins that need `&mut Interpreter` and `&Environment`.
+/// Attribute macro for interpreter-level builtins that need `&Environment` access.
 ///
 /// These are builtins whose implementations require calling back into the interpreter
 /// (e.g., to evaluate sub-expressions, look up environments, etc.).
+/// They access the interpreter via `crate::interpreter::with_interpreter()`.
 ///
 /// The function must have signature:
-/// `fn(&mut Interpreter, &[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>`
+/// `fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>`
 ///
 /// The R name is inferred from the function name (stripping `interp_` prefix),
 /// or can be overridden with `name = "..."`.
@@ -180,7 +181,7 @@ impl syn::parse::Parse for BuiltinAttr {
 ///
 /// ```ignore
 /// #[interpreter_builtin(name = "switch", min_args = 1)]
-/// fn interp_switch(interp: &mut Interpreter, args: &[RValue], named: &[(String, RValue)], env: &Environment) -> Result<RValue, RError> {
+/// fn interp_switch(args: &[RValue], named: &[(String, RValue)], env: &Environment) -> Result<RValue, RError> {
 ///     // ...
 /// }
 /// ```
@@ -228,15 +229,16 @@ pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream 
 ///
 /// These are builtins that need access to raw AST arguments (e.g., tryCatch, try)
 /// because they must control when/whether arguments are evaluated.
+/// They access the interpreter via `crate::interpreter::with_interpreter()`.
 ///
 /// The function must have signature:
-/// `fn(&mut Interpreter, &[Arg], &Environment) -> Result<RValue, RError>`
+/// `fn(&[Arg], &Environment) -> Result<RValue, RError>`
 ///
 /// # Usage
 ///
 /// ```ignore
 /// #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
-/// fn pre_eval_try_catch(interp: &mut Interpreter, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+/// fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
 ///     // ...
 /// }
 /// ```

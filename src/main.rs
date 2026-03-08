@@ -6,7 +6,7 @@ use std::fs;
 
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
-use interpreter::Interpreter;
+use interpreter::with_interpreter;
 use parser::{parse_program, ParseError};
 
 fn main() {
@@ -37,10 +37,8 @@ fn run_file(filename: &str) {
         }
     };
 
-    let mut interp = Interpreter::new();
-
     match parse_program(&source) {
-        Ok(ast) => match interp.eval(&ast) {
+        Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("{}", e);
@@ -65,8 +63,6 @@ Type 'q()' to quit.
     );
 
     let mut line_editor = Reedline::create();
-
-    let mut interp = Interpreter::new();
     let mut buffer = String::new();
 
     loop {
@@ -93,7 +89,7 @@ Type 'q()' to quit.
 
                 match parse_program(&buffer) {
                     Ok(ast) => {
-                        match interp.eval(&ast) {
+                        match with_interpreter(|interp| interp.eval(&ast)) {
                             Ok(val) => {
                                 if !val.is_null() && !is_assignment_or_invisible(&buffer) {
                                     println!("{}", val);
