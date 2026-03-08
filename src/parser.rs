@@ -99,7 +99,7 @@ fn convert_pest_error(e: pest::error::Error<Rule>, source: &str) -> ParseError {
     };
 
     // Try to generate a suggestion from what was expected
-    let suggestion = suggest_from_expected(&e, &found_token);
+    let suggestion = suggest_from_expected(&e, &found_token, &source_line, col);
 
     ParseError {
         message,
@@ -237,7 +237,12 @@ fn build_context(source_line: &str, col: usize) -> String {
 }
 
 /// Try to suggest a fix based on what was expected.
-fn suggest_from_expected(e: &pest::error::Error<Rule>, found: &str) -> Option<String> {
+fn suggest_from_expected(
+    e: &pest::error::Error<Rule>,
+    found: &str,
+    source_line: &str,
+    col: usize,
+) -> Option<String> {
     let expected_rules: Vec<Rule> = match &e.variant {
         pest::error::ErrorVariant::ParsingError { positives, .. } => positives.clone(),
         _ => vec![],
@@ -261,6 +266,16 @@ fn suggest_from_expected(e: &pest::error::Error<Rule>, found: &str) -> Option<St
         return Some("the expression is incomplete — add the missing part".to_string());
     }
 
+    // If a value (number, string, symbol) appears where an operator or comma was expected,
+    // this likely means a missing comma inside a function call or vector
+    if (found.starts_with("numeric constant")
+        || found.starts_with("string constant")
+        || found.starts_with("symbol"))
+        && is_inside_call_or_vector(source_line, col)
+    {
+        return Some("did you forget a comma between arguments?".to_string());
+    }
+
     // Describe what was expected using human-friendly names
     if !expected_rules.is_empty() {
         let unique: Vec<&str> = expected_rules
@@ -280,6 +295,15 @@ fn suggest_from_expected(e: &pest::error::Error<Rule>, found: &str) -> Option<St
     None
 }
 
+/// Heuristic: is the error position inside a function call or c() vector?
+fn is_inside_call_or_vector(source_line: &str, col: usize) -> bool {
+    // Check if there's an unmatched `(` before the error position
+    let before = &source_line[..col.min(source_line.len())];
+    let open_parens = before.chars().filter(|&c| c == '(').count();
+    let close_parens = before.chars().filter(|&c| c == ')').count();
+    open_parens > close_parens
+}
+
 /// Detect common R mistakes and return a tailored ParseError.
 fn detect_common_mistakes(
     source: &str,
@@ -288,6 +312,15 @@ fn detect_common_mistakes(
     col: usize,
 ) -> Option<ParseError> {
     let trimmed = source_line.trim();
+
+    // --- Unterminated string ---
+    // Check if there's an unclosed string in the source (before bracket checks,
+    // since unclosed strings make bracket counting wrong)
+    if let Some(err) = detect_unterminated_string(source) {
+        return Some(err);
+    }
+
+    // --- Missing parentheses around control flow conditions ---
 
     // `if x > 0` without parentheses
     if let Some(rest) = trimmed.strip_prefix("if ") {
@@ -298,10 +331,7 @@ fn detect_common_mistakes(
                 col: source_line.find("if ").unwrap_or(0) + 4,
                 source_line: source_line.to_string(),
                 filename: None,
-                suggestion: Some(
-                    "conditions in `if` must be wrapped in parentheses: `if (condition) ...`"
-                        .to_string(),
-                ),
+                suggestion: Some("R requires parentheses: `if (condition) ...`".to_string()),
             });
         }
     }
@@ -315,10 +345,7 @@ fn detect_common_mistakes(
                 col: source_line.find("while ").unwrap_or(0) + 7,
                 source_line: source_line.to_string(),
                 filename: None,
-                suggestion: Some(
-                    "conditions in `while` must be wrapped in parentheses: `while (condition) ...`"
-                        .to_string(),
-                ),
+                suggestion: Some("R requires parentheses: `while (condition) ...`".to_string()),
             });
         }
     }
@@ -332,45 +359,51 @@ fn detect_common_mistakes(
                 col: source_line.find("for ").unwrap_or(0) + 5,
                 source_line: source_line.to_string(),
                 filename: None,
+                suggestion: Some("R requires parentheses: `for (var in sequence) ...`".to_string()),
+            });
+        }
+    }
+
+    // --- `function` without parameter list ---
+    // `function { ... }` or `function x + 1`
+    if let Some(rest) = trimmed.strip_prefix("function") {
+        let rest = rest.trim_start();
+        if !rest.starts_with('(') && !rest.is_empty() {
+            return Some(ParseError {
+                message: "`function` requires a parameter list".to_string(),
+                line,
+                col: source_line.find("function").unwrap_or(0) + 1,
+                source_line: source_line.to_string(),
+                filename: None,
                 suggestion: Some(
-                    "`for` requires parentheses: `for (var in sequence) ...`".to_string(),
+                    "use `function(...) body` — even with no parameters, the parentheses are required: `function() ...`"
+                        .to_string(),
                 ),
             });
         }
     }
 
-    // Unmatched brackets — check across full source
+    // --- `for (i 1:10)` — missing `in` keyword ---
+    if let Some(for_content) = extract_for_parens(trimmed) {
+        // Check if the content after the variable name has `in`
+        let parts: Vec<&str> = for_content.splitn(2, char::is_whitespace).collect();
+        if parts.len() >= 2 {
+            let after_var = parts[1].trim_start();
+            if !after_var.starts_with("in") {
+                return Some(ParseError {
+                    message: "missing `in` keyword in `for` loop".to_string(),
+                    line,
+                    col: source_line.find("for").unwrap_or(0) + 1,
+                    source_line: source_line.to_string(),
+                    filename: None,
+                    suggestion: Some(format!("use `for ({} in {}) ...`", parts[0], after_var)),
+                });
+            }
+        }
+    }
+
+    // --- Unmatched brackets ---
     let (opens, closes) = count_brackets(source);
-    if opens.0 > closes.0 {
-        return Some(ParseError {
-            message: "unmatched opening `(`".to_string(),
-            line,
-            col,
-            source_line: source_line.to_string(),
-            filename: None,
-            suggestion: Some("add a closing `)`".to_string()),
-        });
-    }
-    if opens.1 > closes.1 {
-        return Some(ParseError {
-            message: "unmatched opening `{`".to_string(),
-            line,
-            col,
-            source_line: source_line.to_string(),
-            filename: None,
-            suggestion: Some("add a closing `}`".to_string()),
-        });
-    }
-    if opens.2 > closes.2 {
-        return Some(ParseError {
-            message: "unmatched opening `[`".to_string(),
-            line,
-            col,
-            source_line: source_line.to_string(),
-            filename: None,
-            suggestion: Some("add a closing `]`".to_string()),
-        });
-    }
 
     // More closes than opens
     if closes.0 > opens.0 {
@@ -404,7 +437,219 @@ fn detect_common_mistakes(
         });
     }
 
+    // More opens than closes — find where the unmatched bracket is
+    if opens.0 > closes.0 {
+        let (bl, bc) = find_unmatched_open(source, '(', ')');
+        let bline = source.lines().nth(bl - 1).unwrap_or("").to_string();
+        return Some(ParseError {
+            message: "unmatched `(` — expected a closing `)`".to_string(),
+            line: bl,
+            col: bc,
+            source_line: bline,
+            filename: None,
+            suggestion: Some("add a closing `)` to match this opening `(`".to_string()),
+        });
+    }
+    if opens.1 > closes.1 {
+        let (bl, bc) = find_unmatched_open(source, '{', '}');
+        let bline = source.lines().nth(bl - 1).unwrap_or("").to_string();
+        return Some(ParseError {
+            message: "unmatched `{` — expected a closing `}`".to_string(),
+            line: bl,
+            col: bc,
+            source_line: bline,
+            filename: None,
+            suggestion: Some("add a closing `}` to match this opening `{`".to_string()),
+        });
+    }
+    if opens.2 > closes.2 {
+        // Check for `[[` without `]]`
+        let has_double_bracket = source.contains("[[");
+        let (bl, bc) = find_unmatched_open(source, '[', ']');
+        let bline = source.lines().nth(bl - 1).unwrap_or("").to_string();
+        let msg = if has_double_bracket {
+            "unmatched `[[` — expected a closing `]]`"
+        } else {
+            "unmatched `[` — expected a closing `]`"
+        };
+        let suggestion = if has_double_bracket {
+            "use `]]` to close double-bracket indexing (not just `]`)"
+        } else {
+            "add a closing `]` to match this opening `[`"
+        };
+        return Some(ParseError {
+            message: msg.to_string(),
+            line: bl,
+            col: bc,
+            source_line: bline,
+            filename: None,
+            suggestion: Some(suggestion.to_string()),
+        });
+    }
+
     None
+}
+
+/// Detect unterminated strings in the source.
+fn detect_unterminated_string(source: &str) -> Option<ParseError> {
+    let mut in_string = false;
+    let mut string_char = ' ';
+    let mut string_start_line = 0;
+    let mut string_start_col = 0;
+    let mut prev = ' ';
+    let mut cur_line = 1usize;
+    let mut cur_col = 1usize;
+    let mut in_comment = false;
+
+    for ch in source.chars() {
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+                cur_line += 1;
+                cur_col = 1;
+            } else {
+                cur_col += 1;
+            }
+            prev = ch;
+            continue;
+        }
+        if in_string {
+            if ch == '\n' {
+                // Strings in R can span lines, but only raw strings
+                // Regular strings can't contain unescaped newlines
+                // This is an unterminated string
+                let source_line = source
+                    .lines()
+                    .nth(string_start_line - 1)
+                    .unwrap_or("")
+                    .to_string();
+                return Some(ParseError {
+                    message: "unterminated string".to_string(),
+                    line: string_start_line,
+                    col: string_start_col,
+                    source_line,
+                    filename: None,
+                    suggestion: Some(format!(
+                        "add a closing `{}` to complete the string",
+                        string_char
+                    )),
+                });
+            }
+            if ch == string_char && prev != '\\' {
+                in_string = false;
+            }
+            cur_col += 1;
+            prev = ch;
+            continue;
+        }
+        match ch {
+            '#' => in_comment = true,
+            '"' | '\'' => {
+                in_string = true;
+                string_char = ch;
+                string_start_line = cur_line;
+                string_start_col = cur_col;
+            }
+            '\n' => {
+                cur_line += 1;
+                cur_col = 0; // will be incremented below
+            }
+            _ => {}
+        }
+        cur_col += 1;
+        prev = ch;
+    }
+
+    // String still open at EOF
+    if in_string {
+        let source_line = source
+            .lines()
+            .nth(string_start_line - 1)
+            .unwrap_or("")
+            .to_string();
+        return Some(ParseError {
+            message: "unterminated string".to_string(),
+            line: string_start_line,
+            col: string_start_col,
+            source_line,
+            filename: None,
+            suggestion: Some(format!(
+                "add a closing `{}` to complete the string",
+                string_char
+            )),
+        });
+    }
+
+    None
+}
+
+/// Find the line and column of the first unmatched opening bracket.
+fn find_unmatched_open(source: &str, open: char, close: char) -> (usize, usize) {
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    let mut in_string = false;
+    let mut string_char = ' ';
+    let mut prev = ' ';
+    let mut in_comment = false;
+    let mut cur_line = 1usize;
+    let mut cur_col = 1usize;
+
+    for ch in source.chars() {
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+                cur_line += 1;
+                cur_col = 1;
+                prev = ch;
+                continue;
+            }
+            cur_col += 1;
+            prev = ch;
+            continue;
+        }
+        if in_string {
+            if ch == string_char && prev != '\\' {
+                in_string = false;
+            }
+            if ch == '\n' {
+                cur_line += 1;
+                cur_col = 0;
+            }
+            cur_col += 1;
+            prev = ch;
+            continue;
+        }
+        match ch {
+            '#' => in_comment = true,
+            '"' | '\'' => {
+                in_string = true;
+                string_char = ch;
+            }
+            c if c == open => stack.push((cur_line, cur_col)),
+            c if c == close => {
+                stack.pop();
+            }
+            '\n' => {
+                cur_line += 1;
+                cur_col = 0;
+            }
+            _ => {}
+        }
+        cur_col += 1;
+        prev = ch;
+    }
+
+    // The first remaining item in the stack is the unmatched open
+    stack.into_iter().next().unwrap_or((1, 1))
+}
+
+/// Extract the content inside `for (...)` parentheses, if present.
+fn extract_for_parens(trimmed: &str) -> Option<&str> {
+    let rest = trimmed.strip_prefix("for")?;
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('(')?;
+    // Find matching close paren (simple, not nested-aware for this heuristic)
+    let end = rest.find(')')?;
+    Some(&rest[..end])
 }
 
 /// Count opening and closing brackets in source, respecting strings and comments.
