@@ -6,7 +6,6 @@ use newr_macros::noop_builtin;
 // Core language
 noop_builtin!("on.exit");
 noop_builtin!("UseMethod", 1);
-noop_builtin!("NextMethod");
 
 // Data structures
 noop_builtin!("array");

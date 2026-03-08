@@ -45,8 +45,19 @@ fn extract_use_method(body: &Expr) -> Option<String> {
     }
 }
 
+/// Context for S3 method dispatch — tracks which class was dispatched and the
+/// remaining classes in the chain (for NextMethod).
+#[derive(Debug, Clone)]
+pub(crate) struct S3DispatchContext {
+    pub generic: String,
+    pub classes: Vec<String>,
+    pub class_index: usize, // index of the class that was dispatched
+    pub object: RValue,
+}
+
 pub struct Interpreter {
     pub global_env: Environment,
+    s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
 }
 
 impl Interpreter {
@@ -54,7 +65,10 @@ impl Interpreter {
         let base_env = Environment::new_global();
         builtins::register_builtins(&base_env);
         let global_env = Environment::new_child(&base_env);
-        Interpreter { global_env }
+        Interpreter {
+            global_env,
+            s3_dispatch_stack: RefCell::new(Vec::new()),
+        }
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RError> {
@@ -1308,29 +1322,53 @@ impl Interpreter {
                     vec!["list".to_string()]
                 }
             }
-            Some(RValue::Vector(rv)) => match &rv.inner {
-                Vector::Logical(_) => vec!["logical".to_string()],
-                Vector::Integer(_) => vec!["integer".to_string()],
-                Vector::Double(_) => vec!["numeric".to_string()],
-                Vector::Character(_) => vec!["character".to_string()],
-            },
+            Some(RValue::Vector(rv)) => {
+                if let Some(cls) = rv.class() {
+                    cls
+                } else {
+                    match &rv.inner {
+                        Vector::Logical(_) => vec!["logical".to_string()],
+                        Vector::Integer(_) => vec!["integer".to_string()],
+                        Vector::Double(_) => vec!["numeric".to_string()],
+                        Vector::Character(_) => vec!["character".to_string()],
+                    }
+                }
+            }
             Some(RValue::Function(_)) => vec!["function".to_string()],
             Some(RValue::Null) => vec!["NULL".to_string()],
             _ => vec![],
         };
 
         // Try generic.class for each class in the inheritance chain
-        for class in &classes {
+        for (i, class) in classes.iter().enumerate() {
             let method_name = format!("{}.{}", generic, class);
             if let Some(method) = env.get(&method_name) {
-                return self.call_function(&method, positional, named, env);
+                let ctx = S3DispatchContext {
+                    generic: generic.to_string(),
+                    classes: classes.clone(),
+                    class_index: i,
+                    object: positional.first().cloned().unwrap_or(RValue::Null),
+                };
+                self.s3_dispatch_stack.borrow_mut().push(ctx);
+                let result = self.call_function(&method, positional, named, env);
+                self.s3_dispatch_stack.borrow_mut().pop();
+                return result;
             }
         }
 
         // Try generic.default
         let default_name = format!("{}.default", generic);
         if let Some(method) = env.get(&default_name) {
-            return self.call_function(&method, positional, named, env);
+            let ctx = S3DispatchContext {
+                generic: generic.to_string(),
+                classes: classes.clone(),
+                class_index: classes.len(),
+                object: positional.first().cloned().unwrap_or(RValue::Null),
+            };
+            self.s3_dispatch_stack.borrow_mut().push(ctx);
+            let result = self.call_function(&method, positional, named, env);
+            self.s3_dispatch_stack.borrow_mut().pop();
+            return result;
         }
 
         Err(RError::Other(format!(
