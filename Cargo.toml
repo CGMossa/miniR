@@ -1,0 +1,20 @@
+[workspace]
+members = [".", "newr-macros"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[package]
+name = "r"
+version.workspace = true
+edition.workspace = true
+exclude = ["cran/", ".cargo/", "doc/", "docs/", "plans/", "scripts/", "share/", "tests/", "tools/"]
+
+[dependencies]
+linkme = "0.3"
+newr-macros = { path = "newr-macros" }
+pest = "2.8"
+pest_derive = "2.8"
+reedline = "0.46"
