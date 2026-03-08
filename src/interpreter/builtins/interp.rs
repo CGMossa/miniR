@@ -439,8 +439,15 @@ fn interp_source(
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::Argument("invalid 'file' argument".to_string()))?;
-    let source = std::fs::read_to_string(&path)
-        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", path, e)))?;
+    let source = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            let bytes = std::fs::read(&path)
+                .map_err(|e2| RError::Other(format!("cannot open file '{}': {}", path, e2)))?;
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+        Err(e) => return Err(RError::Other(format!("cannot open file '{}': {}", path, e))),
+    };
     let ast = crate::parser::parse_program(&source)
         .map_err(|e| RError::Other(format!("parse error in '{}': {}", path, e)))?;
     interp.eval(&ast)

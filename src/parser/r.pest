@@ -47,42 +47,52 @@ expr_seq = {
 // 14  -> ->>
 // 15  <- <<-
 // 16  =
+//
+// In R, a line ending with a binary operator continues onto the next line.
+// We handle this by placing GAP after each binary operator, so newlines
+// are consumed between the operator and its right-hand operand.
 
-expr = { assign_eq_expr }
+expr = { help_expr }
+
+// "?" help operator (lowest precedence, unary or binary, can chain: ??x)
+help_expr = {
+      "?" ~ help_expr
+    | assign_eq_expr ~ ("?" ~ help_expr)?
+}
 
 // "=" assignment (loosest, right-associative)
 assign_eq_expr = {
-    assign_left_expr ~ (eq_assign_op ~ assign_eq_expr)?
+    assign_left_expr ~ (eq_assign_op ~ GAP ~ assign_eq_expr)?
 }
 eq_assign_op = @{ "=" ~ !"=" }
 
 // "<-" "<<-" (right-associative)
 assign_left_expr = {
-    assign_right_expr ~ (left_assign_op ~ assign_left_expr)?
+    assign_right_expr ~ (left_assign_op ~ GAP ~ assign_left_expr)?
 }
 left_assign_op = { "<<-" | "<-" }
 
 // "->" "->>" (left-associative)
 assign_right_expr = {
-    formula_expr ~ (right_assign_op ~ formula_expr)*
+    formula_expr ~ (right_assign_op ~ GAP ~ formula_expr)*
 }
 right_assign_op = { "->>" | "->" }
 
 // "~" unary or binary formula
 formula_expr = {
-      "~" ~ formula_expr
-    | or_expr ~ ("~" ~ or_expr)?
+      "~" ~ GAP ~ formula_expr
+    | or_expr ~ ("~" ~ GAP ~ or_expr)?
 }
 
 // "|" "||"
 or_expr = {
-    and_expr ~ (or_op ~ and_expr)*
+    and_expr ~ (or_op ~ GAP ~ and_expr)*
 }
-or_op = { "||" | "|" }
+or_op = @{ "||" | "|" ~ !">" }
 
 // "&" "&&"
 and_expr = {
-    not_expr ~ (and_op ~ not_expr)*
+    not_expr ~ (and_op ~ GAP ~ not_expr)*
 }
 and_op = { "&&" | "&" }
 
@@ -94,25 +104,25 @@ not_expr = {
 
 // comparisons
 compare_expr = {
-    add_expr ~ (compare_op ~ add_expr)*
+    add_expr ~ (compare_op ~ GAP ~ add_expr)*
 }
 compare_op = { ">=" | "<=" | "==" | "!=" | ">" | !("<-" | "<<-") ~ "<" }
 
 // "+" "-" (binary)
 add_expr = {
-    mul_expr ~ (add_op ~ mul_expr)*
+    mul_expr ~ (add_op ~ GAP ~ mul_expr)*
 }
 add_op = { "+" | !("->" | "->>") ~ "-" }
 
 // "*" "/"
 mul_expr = {
-    special_pipe_expr ~ (mul_op ~ special_pipe_expr)*
+    special_pipe_expr ~ (mul_op ~ GAP ~ special_pipe_expr)*
 }
 mul_op = { "*" | "/" }
 
 // %...% and |>
 special_pipe_expr = {
-    colon_expr ~ ((special_op | pipe_op) ~ colon_expr)*
+    colon_expr ~ ((special_op | pipe_op) ~ GAP ~ colon_expr)*
 }
 pipe_op = { "|>" }
 
@@ -123,21 +133,27 @@ special_op = @{
 }
 special_op_char = _{ !("%" | NEWLINE) ~ ANY }
 
-// ":" (sequence/range)
+// ":" (sequence/range), left-associative, can chain: 1:2:3 = (1:2):3
 colon_expr = {
-    unary_expr ~ (":" ~ unary_expr)?
+    unary_expr ~ (":" ~ GAP ~ unary_expr)*
 }
 
-// unary + -
+// unary + - !
+// Note: "!" also exists at the not_expr level (lower precedence) for
+// expressions like !a == b → !(a == b). Adding it here too allows
+// a == !b → a == (!b), where !b appears inside a comparison operand.
 unary_expr = {
-      unary_op ~ unary_expr
+      "!" ~ unary_expr
+    | unary_op ~ unary_expr
     | power_expr
 }
 unary_op = { "+" | !("->" | "->>") ~ "-" }
 
 // "^" and "**", right-associative
+// The RHS is unary_expr so that 2^-3 means 2^(-3).
+// Right-associativity is preserved because unary_expr recurses into power_expr.
 power_expr = {
-    postfix_expr ~ (power_op ~ power_expr)?
+    postfix_expr ~ (power_op ~ GAP ~ unary_expr)?
 }
 power_op = { "^" | "**" }
 
@@ -153,8 +169,10 @@ namespace_expr = {
 }
 
 namespace_suffix = {
-    (":::" | "::") ~ ident
+    namespace_op ~ (ident | string)
 }
+
+namespace_op = @{ ":::" | "::" }
 
 postfix_suffix = {
       call_suffix
@@ -177,7 +195,7 @@ index2_suffix = {
 }
 
 dollar_suffix = {
-    "$" ~ (ident | string)
+    "$" ~ (ident | string | dots)
 }
 
 slot_suffix = {
@@ -198,7 +216,7 @@ arg = {
 }
 
 named_arg = {
-    arg_name ~ named_eq ~ expr?
+    arg_name ~ named_eq ~ GAP ~ expr?
 }
 named_eq = @{ "=" ~ !"=" }
 
@@ -214,10 +232,10 @@ sub_arg = {
 }
 
 named_sub_arg = {
-    arg_name ~ named_eq ~ expr?
+    arg_name ~ named_eq ~ GAP ~ expr?
 }
 
-arg_name = { dots | dotdot | ident }
+arg_name = { dots | dotdot | ident | string }
 
 // -------------------- primary expressions --------------------
 
@@ -225,6 +243,7 @@ primary_expr = {
       keyword_constant
     | complex_number
     | number
+    | raw_string
     | string
     | dots
     | dotdot
@@ -318,6 +337,31 @@ dstring_char = _{ escape_seq | !("\"" | "\\") ~ ANY }
 sstring_char = _{ escape_seq | !("'"  | "\\") ~ ANY }
 escape_seq   = _{ "\\" ~ ANY }
 
+// Raw strings: R 4.0+ r"(...)" R"(...)" r'(...)' R'(...)'
+// Also supports alternate delimiters: r"[...]" r"{...}" r"---(...)"
+raw_string = @{
+      ("r" | "R") ~ "\"" ~ raw_dq_body ~ "\""
+    | ("r" | "R") ~ "'"  ~ raw_sq_body ~ "'"
+}
+
+raw_dq_body = @{
+      "(" ~ raw_dq_paren_char* ~ ")"
+    | "[" ~ raw_dq_bracket_char* ~ "]"
+    | "{" ~ raw_dq_brace_char* ~ "}"
+}
+raw_sq_body = @{
+      "(" ~ raw_sq_paren_char* ~ ")"
+    | "[" ~ raw_sq_bracket_char* ~ "]"
+    | "{" ~ raw_sq_brace_char* ~ "}"
+}
+
+raw_dq_paren_char   = _{ !(")" ~ "\"") ~ ANY }
+raw_dq_bracket_char = _{ !("]" ~ "\"") ~ ANY }
+raw_dq_brace_char   = _{ !("}" ~ "\"") ~ ANY }
+raw_sq_paren_char   = _{ !(")" ~ "'") ~ ANY }
+raw_sq_bracket_char = _{ !("]" ~ "'") ~ ANY }
+raw_sq_brace_char   = _{ !("}" ~ "'") ~ ANY }
+
 // -------------------- control flow --------------------
 
 if_expr = {
@@ -371,7 +415,7 @@ param_list = {
 
 param = {
       dots
-    | ident ~ ("=" ~ expr?)?
+    | ident ~ ("=" ~ GAP ~ expr?)?
 }
 
 dots   = @{ "..." ~ !ident_rest }

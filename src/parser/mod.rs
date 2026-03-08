@@ -42,6 +42,7 @@ fn build_program(pair: Pair<Rule>) -> Expr {
 fn build_expr(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::expr => build_expr(pair.into_inner().next().unwrap()),
+        Rule::help_expr => build_help(pair),
         Rule::assign_eq_expr => build_assign_eq(pair),
         Rule::assign_left_expr => build_assign_left(pair),
         Rule::assign_right_expr => build_assign_right(pair),
@@ -85,6 +86,24 @@ fn build_expr(pair: Pair<Rule>) -> Expr {
         Rule::primary_expr => build_primary(pair),
         Rule::keyword_constant => build_primary(pair),
         _ => build_primary(pair),
+    }
+}
+
+// "?" help (unary or binary — just evaluates and returns the expression for now)
+fn build_help(pair: Pair<Rule>) -> Expr {
+    let mut inner = pair.into_inner();
+    let first = inner.next().unwrap();
+    if first.as_rule() == Rule::help_expr {
+        // Unary: "?" ~ assign_eq_expr — just evaluate the expr
+        build_expr(first)
+    } else {
+        // Binary: expr ~ "?" ~ expr — just evaluate the LHS
+        let lhs = build_expr(first);
+        // Ignore the RHS (help topic)
+        if inner.next().is_some() {
+            // just return lhs
+        }
+        lhs
     }
 }
 
@@ -231,18 +250,18 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
     lhs
 }
 
-// ":" range/sequence
+// ":" range/sequence (left-associative, chainable)
 fn build_colon(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let lhs = build_expr(inner.next().unwrap());
-    match inner.next() {
-        None => lhs,
-        Some(rhs_pair) => Expr::BinaryOp {
+    let mut lhs = build_expr(inner.next().unwrap());
+    for rhs_pair in inner {
+        lhs = Expr::BinaryOp {
             op: BinaryOp::Range,
             lhs: Box::new(lhs),
             rhs: Box::new(build_expr(rhs_pair)),
-        },
+        };
     }
+    lhs
 }
 
 fn build_unary(pair: Pair<Rule>) -> Expr {
@@ -261,6 +280,14 @@ fn build_unary(pair: Pair<Rule>) -> Expr {
                 operand: Box::new(operand),
             }
         }
+        // "!" at unary level (allows a == !b)
+        Rule::unary_expr => {
+            let operand = build_expr(first);
+            Expr::UnaryOp {
+                op: UnaryOp::Not,
+                operand: Box::new(operand),
+            }
+        }
         _ => build_expr(first),
     }
 }
@@ -272,7 +299,7 @@ fn build_power(pair: Pair<Rule>) -> Expr {
     match inner.next() {
         None => base,
         Some(next) => {
-            let exp_pair = if next.as_rule() == Rule::power_op {
+            let rhs_pair = if next.as_rule() == Rule::power_op {
                 inner.next().unwrap()
             } else {
                 next
@@ -280,7 +307,7 @@ fn build_power(pair: Pair<Rule>) -> Expr {
             Expr::BinaryOp {
                 op: BinaryOp::Pow,
                 lhs: Box::new(base),
-                rhs: Box::new(build_expr(exp_pair)),
+                rhs: Box::new(build_expr(rhs_pair)),
             }
         }
     }
@@ -339,7 +366,10 @@ fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
         }
         Rule::dollar_suffix => {
             let inner = pair.into_inner().next().unwrap();
-            let name = parse_ident_or_string(inner);
+            let name = match inner.as_rule() {
+                Rule::dots => "...".to_string(),
+                _ => parse_ident_or_string(inner),
+            };
             Expr::Dollar {
                 object: Box::new(object),
                 member: name,
@@ -364,8 +394,10 @@ fn build_namespace_expr(pair: Pair<Rule>) -> Expr {
     for suffix in inner {
         if suffix.as_rule() == Rule::namespace_suffix {
             let mut ns_inner = suffix.into_inner();
-            let op_str = ns_inner.next().unwrap().as_str();
-            let name = parse_ident_str(ns_inner.next().unwrap());
+            let op_pair = ns_inner.next().unwrap(); // namespace_op
+            let op_str = op_pair.as_str();
+            let name_pair = ns_inner.next().unwrap();
+            let name = parse_ident_or_string(name_pair);
             expr = if op_str == ":::" {
                 Expr::NsGetInt {
                     namespace: Box::new(expr),
@@ -413,6 +445,7 @@ fn build_primary(pair: Pair<Rule>) -> Expr {
         }
         Rule::complex_number => parse_complex(pair),
         Rule::number => parse_number(pair),
+        Rule::raw_string => parse_raw_string(pair),
         Rule::string => parse_string(pair),
         Rule::dots => Expr::Dots,
         Rule::dotdot => {
@@ -662,6 +695,7 @@ fn build_named_arg(pair: Pair<Rule>) -> Arg {
             match inner_name.as_rule() {
                 Rule::dots => "...".to_string(),
                 Rule::dotdot => inner_name.as_str().to_string(),
+                Rule::string => parse_string_value(inner_name),
                 _ => parse_ident_str(inner_name),
             }
         }
@@ -777,11 +811,29 @@ fn parse_hex_float_value(s: &str) -> f64 {
     }
 }
 
-fn parse_string(pair: Pair<Rule>) -> Expr {
+fn parse_raw_string(pair: Pair<Rule>) -> Expr {
+    let s = pair.as_str();
+    // r"(...)" or R'(...)' etc - find the body between delimiters
+    // Skip r/R and the quote char, then the opening delimiter
+    let quote_pos = s.find('"').or_else(|| s.find('\'')).unwrap();
+    let inner = &s[quote_pos + 1..s.len() - 1]; // between outer quotes
+                                                // inner is like "(...)" — strip the delimiter pair
+    let content = if inner.starts_with('(') || inner.starts_with('[') || inner.starts_with('{') {
+        &inner[1..inner.len() - 1]
+    } else {
+        inner
+    };
+    Expr::String(content.to_string())
+}
+
+fn parse_string_value(pair: Pair<Rule>) -> String {
     let s = pair.as_str();
     let inner = &s[1..s.len() - 1];
-    let unescaped = unescape_string(inner);
-    Expr::String(unescaped)
+    unescape_string(inner)
+}
+
+fn parse_string(pair: Pair<Rule>) -> Expr {
+    Expr::String(parse_string_value(pair))
 }
 
 fn unescape_string(s: &str) -> String {

@@ -585,6 +585,18 @@ impl Interpreter {
                 }
                 Err(RError::Other("invalid assignment target".to_string()))
             }
+            // In R, "name" <- value creates a binding named "name"
+            Expr::String(name) => {
+                match op {
+                    AssignOp::SuperAssign | AssignOp::RightSuperAssign => {
+                        env.set_super(name.clone(), val.clone());
+                    }
+                    _ => {
+                        env.set(name.clone(), val.clone());
+                    }
+                }
+                Ok(val)
+            }
             _ => Err(RError::Other("invalid assignment target".to_string())),
         }
     }
