@@ -1,14 +1,9 @@
 use std::collections::HashMap;
 
 use crate::interpreter::value::*;
-use linkme::distributed_slice;
 use newr_macros::builtin;
 
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static ALIAS_SUBSTRING: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("substring", builtin_substr, 2);
-
-#[builtin(min_args = 3)]
+#[builtin(min_args = 3, names = ["substring"])]
 fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
         .first()
