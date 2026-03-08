@@ -114,7 +114,6 @@ struct BuiltinAttr {
     min_args: u64,
 }
 
-
 impl syn::parse::Parse for BuiltinAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut name = None;
