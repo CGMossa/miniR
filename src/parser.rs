@@ -1,5 +1,8 @@
 pub mod ast;
 
+use std::fmt;
+
+use pest::error::InputLocation;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
@@ -10,11 +13,442 @@ use ast::*;
 #[grammar = "parser/r.pest"]
 pub struct RParser;
 
-pub fn parse_program(input: &str) -> Result<Expr, String> {
-    let pairs = RParser::parse(Rule::program, input).map_err(|e| format!("Parse error: {}", e))?;
+/// A structured parse error with human-friendly messages and source context.
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub message: String,
+    pub line: usize,
+    pub col: usize,
+    pub source_line: String,
+    pub filename: Option<String>,
+    pub suggestion: Option<String>,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Header: error message
+        if let Some(ref filename) = self.filename {
+            writeln!(
+                f,
+                "Error in parse: {}:{}:{}: {}",
+                filename, self.line, self.col, self.message
+            )?;
+        } else {
+            writeln!(f, "Error: {}", self.message)?;
+        }
+
+        // Source line with caret
+        let line_num = format!("{}", self.line);
+        let gutter_width = line_num.len();
+        writeln!(f, "{} |", " ".repeat(gutter_width))?;
+        writeln!(f, "{} | {}", line_num, self.source_line)?;
+        let caret_offset = self.col.saturating_sub(1);
+        write!(
+            f,
+            "{} | {}^",
+            " ".repeat(gutter_width),
+            " ".repeat(caret_offset)
+        )?;
+
+        // Suggestion
+        if let Some(ref suggestion) = self.suggestion {
+            write!(f, "\n{} |", " ".repeat(gutter_width))?;
+            write!(f, "\n{} = help: {}", " ".repeat(gutter_width), suggestion)?;
+        }
+
+        Ok(())
+    }
+}
+
+pub fn parse_program(input: &str) -> Result<Expr, ParseError> {
+    let pairs = RParser::parse(Rule::program, input).map_err(|e| convert_pest_error(e, input))?;
 
     let pair = pairs.into_iter().next().unwrap();
     Ok(build_program(pair))
+}
+
+/// Convert a pest error into a human-friendly ParseError.
+fn convert_pest_error(e: pest::error::Error<Rule>, source: &str) -> ParseError {
+    let (line, col) = match e.line_col {
+        pest::error::LineColLocation::Pos((l, c)) => (l, c),
+        pest::error::LineColLocation::Span((l, c), _) => (l, c),
+    };
+
+    let source_line = source.lines().nth(line - 1).unwrap_or("").to_string();
+
+    // Get byte offset for token classification
+    let byte_offset = match e.location {
+        InputLocation::Pos(p) => p,
+        InputLocation::Span((s, _)) => s,
+    };
+
+    // Try common-mistake detection first
+    if let Some(err) = detect_common_mistakes(source, &source_line, line, col) {
+        return err;
+    }
+
+    // Classify what was found at the error position
+    let found_token = classify_token(source, byte_offset);
+
+    // Build R-style "unexpected <token> in <context>" message
+    let context = build_context(&source_line, col);
+    let message = if context.is_empty() {
+        format!("unexpected {}", found_token)
+    } else {
+        format!("unexpected {} in \"{}\"", found_token, context)
+    };
+
+    // Try to generate a suggestion from what was expected
+    let suggestion = suggest_from_expected(&e, &found_token);
+
+    ParseError {
+        message,
+        line,
+        col,
+        source_line,
+        filename: None,
+        suggestion,
+    }
+}
+
+/// Map a pest grammar rule to a human-readable description.
+fn humanize_rule(rule: &Rule) -> &'static str {
+    match rule {
+        Rule::expr | Rule::unary_expr | Rule::primary_expr => "an expression",
+        Rule::ident | Rule::plain_ident | Rule::dotted_ident => "a variable name",
+        Rule::number | Rule::decimal_number | Rule::hex_number => "a number",
+        Rule::string => "a string",
+        Rule::block => "a block `{ ... }`",
+        Rule::paren_expr => "a parenthesized expression",
+        Rule::if_expr => "an if-expression",
+        Rule::for_expr => "a for-loop",
+        Rule::while_expr => "a while-loop",
+        Rule::function_def => "a function definition",
+        Rule::param_list => "function parameters",
+        Rule::arg_list => "function arguments",
+        Rule::eq_assign_op => "'='",
+        Rule::left_assign_op => "'<-'",
+        Rule::right_assign_op => "'->'",
+        Rule::or_op => "'|' or '||'",
+        Rule::and_op => "'&' or '&&'",
+        Rule::compare_op => "a comparison operator",
+        Rule::add_op => "'+' or '-'",
+        Rule::mul_op => "'*' or '/'",
+        Rule::special_op => "a special operator (%%,  %in%, etc.)",
+        Rule::pipe_op => "'|>'",
+        Rule::power_op => "'^'",
+        Rule::EOI => "end of input",
+        _ => "an expression",
+    }
+}
+
+/// Classify the token found at a byte offset in the source.
+fn classify_token(source: &str, offset: usize) -> String {
+    let remaining = &source[offset..];
+    if remaining.is_empty() {
+        return "end of input".to_string();
+    }
+
+    let ch = remaining.chars().next().unwrap();
+
+    // String literal
+    if ch == '"' || ch == '\'' {
+        return "string constant".to_string();
+    }
+
+    // Number
+    if ch.is_ascii_digit()
+        || (ch == '.' && remaining.len() > 1 && remaining.as_bytes()[1].is_ascii_digit())
+    {
+        let end = remaining
+            .find(|c: char| !c.is_ascii_digit() && c != '.' && c != 'e' && c != 'E' && c != 'L')
+            .unwrap_or(remaining.len());
+        let token = &remaining[..end];
+        return format!("numeric constant {}", token);
+    }
+
+    // Keyword or identifier
+    if ch.is_ascii_alphabetic() || ch == '.' || ch == '_' {
+        let end = remaining
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '_')
+            .unwrap_or(remaining.len());
+        let word = &remaining[..end];
+        return match word {
+            "if" | "else" | "for" | "in" | "while" | "repeat" | "function" | "return" | "break"
+            | "next" | "TRUE" | "FALSE" | "NULL" | "NA" | "Inf" | "NaN" => format!("'{}'", word),
+            _ => format!("symbol '{}'", word),
+        };
+    }
+
+    // Operator or punctuation
+    // Check multi-char operators first
+    if remaining.starts_with("<<-") {
+        return "'<<-'".to_string();
+    }
+    if remaining.starts_with("<-") {
+        return "'<-'".to_string();
+    }
+    if remaining.starts_with("->>") {
+        return "'->>'".to_string();
+    }
+    if remaining.starts_with("->") {
+        return "'->'".to_string();
+    }
+    if remaining.starts_with("|>") {
+        return "'|>'".to_string();
+    }
+    if remaining.starts_with("||") {
+        return "'||'".to_string();
+    }
+    if remaining.starts_with("&&") {
+        return "'&&'".to_string();
+    }
+    if remaining.starts_with("==") {
+        return "'=='".to_string();
+    }
+    if remaining.starts_with("!=") {
+        return "'!='".to_string();
+    }
+    if remaining.starts_with(">=") {
+        return "'>='".to_string();
+    }
+    if remaining.starts_with("<=") {
+        return "'<='".to_string();
+    }
+    if remaining.starts_with("%%") {
+        return "'%%'".to_string();
+    }
+    if remaining.starts_with("**") {
+        return "'**'".to_string();
+    }
+
+    format!("'{}'", ch)
+}
+
+/// Build context string showing input up to the error, truncated to ~40 chars.
+fn build_context(source_line: &str, col: usize) -> String {
+    let end = col.min(source_line.len());
+    let context = &source_line[..end];
+    if context.len() > 40 {
+        format!("...{}", &context[context.len() - 37..])
+    } else {
+        context.to_string()
+    }
+}
+
+/// Try to suggest a fix based on what was expected.
+fn suggest_from_expected(e: &pest::error::Error<Rule>, found: &str) -> Option<String> {
+    let expected_rules: Vec<Rule> = match &e.variant {
+        pest::error::ErrorVariant::ParsingError { positives, .. } => positives.clone(),
+        _ => vec![],
+    };
+
+    // If we found a closing bracket where an expression was expected
+    if (found.contains("')'") || found.contains("'}'") || found.contains("']'"))
+        && expected_rules
+            .iter()
+            .any(|r| matches!(r, Rule::expr | Rule::unary_expr | Rule::primary_expr))
+    {
+        return Some("remove the extra bracket, or add an expression before it".to_string());
+    }
+
+    // If end of input where expression expected
+    if found == "end of input"
+        && expected_rules
+            .iter()
+            .any(|r| matches!(r, Rule::expr | Rule::unary_expr | Rule::primary_expr))
+    {
+        return Some("the expression is incomplete — add the missing part".to_string());
+    }
+
+    // Describe what was expected using human-friendly names
+    if !expected_rules.is_empty() {
+        let unique: Vec<&str> = expected_rules
+            .iter()
+            .map(humanize_rule)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        if unique.len() == 1 {
+            return Some(format!("expected {}", unique[0]));
+        }
+        if unique.len() <= 3 {
+            return Some(format!("expected one of: {}", unique.join(", ")));
+        }
+    }
+
+    None
+}
+
+/// Detect common R mistakes and return a tailored ParseError.
+fn detect_common_mistakes(
+    source: &str,
+    source_line: &str,
+    line: usize,
+    col: usize,
+) -> Option<ParseError> {
+    let trimmed = source_line.trim();
+
+    // `if x > 0` without parentheses
+    if let Some(rest) = trimmed.strip_prefix("if ") {
+        if !rest.starts_with('(') {
+            return Some(ParseError {
+                message: "missing parentheses around `if` condition".to_string(),
+                line,
+                col: source_line.find("if ").unwrap_or(0) + 4,
+                source_line: source_line.to_string(),
+                filename: None,
+                suggestion: Some(
+                    "conditions in `if` must be wrapped in parentheses: `if (condition) ...`"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
+    // `while x > 0` without parentheses
+    if let Some(rest) = trimmed.strip_prefix("while ") {
+        if !rest.starts_with('(') {
+            return Some(ParseError {
+                message: "missing parentheses around `while` condition".to_string(),
+                line,
+                col: source_line.find("while ").unwrap_or(0) + 7,
+                source_line: source_line.to_string(),
+                filename: None,
+                suggestion: Some(
+                    "conditions in `while` must be wrapped in parentheses: `while (condition) ...`"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
+    // `for i in 1:10` without parentheses
+    if let Some(rest) = trimmed.strip_prefix("for ") {
+        if !rest.starts_with('(') {
+            return Some(ParseError {
+                message: "missing parentheses around `for` clause".to_string(),
+                line,
+                col: source_line.find("for ").unwrap_or(0) + 5,
+                source_line: source_line.to_string(),
+                filename: None,
+                suggestion: Some(
+                    "`for` requires parentheses: `for (var in sequence) ...`".to_string(),
+                ),
+            });
+        }
+    }
+
+    // Unmatched brackets — check across full source
+    let (opens, closes) = count_brackets(source);
+    if opens.0 > closes.0 {
+        return Some(ParseError {
+            message: "unmatched opening `(`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("add a closing `)`".to_string()),
+        });
+    }
+    if opens.1 > closes.1 {
+        return Some(ParseError {
+            message: "unmatched opening `{`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("add a closing `}`".to_string()),
+        });
+    }
+    if opens.2 > closes.2 {
+        return Some(ParseError {
+            message: "unmatched opening `[`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("add a closing `]`".to_string()),
+        });
+    }
+
+    // More closes than opens
+    if closes.0 > opens.0 {
+        return Some(ParseError {
+            message: "unexpected `)` without matching `(`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("remove the extra `)` or add a matching `(`".to_string()),
+        });
+    }
+    if closes.1 > opens.1 {
+        return Some(ParseError {
+            message: "unexpected `}` without matching `{`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("remove the extra `}` or add a matching `{`".to_string()),
+        });
+    }
+    if closes.2 > opens.2 {
+        return Some(ParseError {
+            message: "unexpected `]` without matching `[`".to_string(),
+            line,
+            col,
+            source_line: source_line.to_string(),
+            filename: None,
+            suggestion: Some("remove the extra `]` or add a matching `[`".to_string()),
+        });
+    }
+
+    None
+}
+
+/// Count opening and closing brackets in source, respecting strings and comments.
+/// Returns ((parens, braces, brackets), (parens, braces, brackets))
+fn count_brackets(source: &str) -> ((i32, i32, i32), (i32, i32, i32)) {
+    let mut opens = (0i32, 0i32, 0i32);
+    let mut closes = (0i32, 0i32, 0i32);
+    let mut in_string = false;
+    let mut string_char = ' ';
+    let mut prev = ' ';
+    let mut in_comment = false;
+
+    for ch in source.chars() {
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+            }
+            prev = ch;
+            continue;
+        }
+        if in_string {
+            if ch == string_char && prev != '\\' {
+                in_string = false;
+            }
+            prev = ch;
+            continue;
+        }
+        match ch {
+            '#' => in_comment = true,
+            '"' | '\'' => {
+                in_string = true;
+                string_char = ch;
+            }
+            '(' => opens.0 += 1,
+            ')' => closes.0 += 1,
+            '{' => opens.1 += 1,
+            '}' => closes.1 += 1,
+            '[' => opens.2 += 1,
+            ']' => closes.2 += 1,
+            _ => {}
+        }
+        prev = ch;
+    }
+    (opens, closes)
 }
 
 fn build_program(pair: Pair<Rule>) -> Expr {
