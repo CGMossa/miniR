@@ -113,11 +113,6 @@ const NOOP_STUBS: &[(&str, usize)] = &[
     ("nlevels", 1),
     ("Recall", 0),
     ("do.call", 2),
-    ("Reduce", 2),
-    ("Filter", 2),
-    ("Map", 2),
-    ("tryCatch", 1),
-    ("try", 1),
     ("withCallingHandlers", 1),
     ("conditionMessage", 1),
     ("conditionCall", 1),
@@ -125,11 +120,7 @@ const NOOP_STUBS: &[(&str, usize)] = &[
     ("simpleError", 1),
     ("simpleWarning", 1),
     ("simpleMessage", 1),
-    ("file.exists", 1),
-    ("readLines", 1),
-    ("writeLines", 1),
     ("scan", 0),
-    ("source", 1),
     ("loadNamespace", 1),
     ("requireNamespace", 1),
     ("installed.packages", 0),
@@ -308,7 +299,7 @@ pub fn register_builtins(env: &Environment) {
 // === Builtin implementations ===
 
 #[builtin]
-fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mut all_values: Vec<RValue> = Vec::new();
     for arg in args {
         all_values.push(arg.clone());
@@ -1171,6 +1162,84 @@ fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     )])))
 }
 
+#[builtin(name = "file.exists", min_args = 1)]
+fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let results: Vec<Option<bool>> = args
+        .iter()
+        .map(|arg| {
+            let path = arg
+                .as_vector()
+                .and_then(|v| v.as_character_scalar())
+                .unwrap_or_default();
+            Some(std::path::Path::new(&path).exists())
+        })
+        .collect();
+    Ok(RValue::Vector(Vector::Logical(results)))
+}
+
+#[builtin(name = "readLines", min_args = 1)]
+fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("invalid 'con' argument".to_string()))?;
+    let n = named
+        .iter()
+        .find(|(n, _)| n == "n")
+        .or_else(|| named.iter().find(|(n, _)| n == "n"))
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(-1);
+
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| RError::Other(format!("cannot open connection: {}", e)))?;
+    let lines: Vec<Option<String>> = if n < 0 {
+        content.lines().map(|l| Some(l.to_string())).collect()
+    } else {
+        content
+            .lines()
+            .take(n as usize)
+            .map(|l| Some(l.to_string()))
+            .collect()
+    };
+    Ok(RValue::Vector(Vector::Character(lines)))
+}
+
+#[builtin(name = "writeLines", min_args = 1)]
+fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let text = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
+        .unwrap_or_default();
+    let con = args
+        .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "con").map(|(_, v)| v))
+        .and_then(|v| v.as_vector()?.as_character_scalar());
+    let sep = named
+        .iter()
+        .find(|(n, _)| n == "sep")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "\n".to_string());
+
+    let output: String = text
+        .iter()
+        .map(|s| s.clone().unwrap_or_else(|| "NA".to_string()))
+        .collect::<Vec<_>>()
+        .join(&sep);
+
+    match con {
+        Some(path) => {
+            std::fs::write(&path, format!("{}{}", output, sep))
+                .map_err(|e| RError::Other(format!("cannot open connection: {}", e)))?;
+        }
+        None => {
+            // Write to stdout
+            println!("{}", output);
+        }
+    }
+    Ok(RValue::Null)
+}
+
 fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pkg = args
         .first()
@@ -1948,6 +2017,44 @@ fn builtin_exists_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 #[builtin(name = "system.time", min_args = 1)]
 fn builtin_system_time_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+#[builtin(name = "source", min_args = 1)]
+fn builtin_source_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "source() requires interpreter context".to_string(),
+    ))
+}
+
+#[builtin(name = "tryCatch", min_args = 1)]
+fn builtin_try_catch_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+#[builtin(name = "try", min_args = 1)]
+fn builtin_try_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+#[builtin(name = "Reduce", min_args = 2)]
+fn builtin_reduce_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "Reduce() requires interpreter context".to_string(),
+    ))
+}
+
+#[builtin(name = "Filter", min_args = 2)]
+fn builtin_filter_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "Filter() requires interpreter context".to_string(),
+    ))
+}
+
+#[builtin(name = "Map", min_args = 2)]
+fn builtin_map_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "Map() requires interpreter context".to_string(),
+    ))
 }
 
 #[builtin(name = "missing", min_args = 1)]
