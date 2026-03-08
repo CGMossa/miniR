@@ -1,0 +1,448 @@
+// ============================================================
+// R grammar for Pest - based on the CRAN R Language Definition
+// Correct operator precedence, identifiers, constants, and
+// special operators per the R Language Definition parser chapter.
+// ============================================================
+
+// -------------------- trivia --------------------
+
+WHITESPACE = _{ " " | "\t" | "\u{0C}" }
+NEWLINE    = _{ "\r\n" | "\n" | "\r" }
+COMMENT    = _{ "#" ~ (!NEWLINE ~ ANY)* }
+
+GAP    = _{ (WHITESPACE | COMMENT | NEWLINE)* }
+LINESEP = _{ (";" | NEWLINE)+ }
+
+// -------------------- program --------------------
+
+program = {
+    SOI
+    ~ GAP
+    ~ expr_seq?
+    ~ GAP
+    ~ EOI
+}
+
+expr_seq = {
+    expr ~ (LINESEP ~ GAP ~ expr)* ~ LINESEP?
+}
+
+// -------------------- expressions --------------------
+
+// Precedence from tightest to loosest (R Language Definition 10.4.2):
+//
+//  1  :: :::
+//  2  $ @
+//  3  ^
+//  4  unary + -
+//  5  :
+//  6  %...%  |>
+//  7  * /
+//  8  + -
+//  9  < > <= >= == !=
+// 10  !
+// 11  & &&
+// 12  | ||
+// 13  ~
+// 14  -> ->>
+// 15  <- <<-
+// 16  =
+
+expr = { assign_eq_expr }
+
+// "=" assignment (loosest, right-associative)
+assign_eq_expr = {
+    assign_left_expr ~ (eq_assign_op ~ assign_eq_expr)?
+}
+eq_assign_op = @{ "=" ~ !"=" }
+
+// "<-" "<<-" (right-associative)
+assign_left_expr = {
+    assign_right_expr ~ (left_assign_op ~ assign_left_expr)?
+}
+left_assign_op = { "<<-" | "<-" }
+
+// "->" "->>" (left-associative)
+assign_right_expr = {
+    formula_expr ~ (right_assign_op ~ formula_expr)*
+}
+right_assign_op = { "->>" | "->" }
+
+// "~" unary or binary formula
+formula_expr = {
+      "~" ~ formula_expr
+    | or_expr ~ ("~" ~ or_expr)?
+}
+
+// "|" "||"
+or_expr = {
+    and_expr ~ (or_op ~ and_expr)*
+}
+or_op = { "||" | "|" }
+
+// "&" "&&"
+and_expr = {
+    not_expr ~ (and_op ~ not_expr)*
+}
+and_op = { "&&" | "&" }
+
+// "!"
+not_expr = {
+      "!" ~ not_expr
+    | compare_expr
+}
+
+// comparisons
+compare_expr = {
+    add_expr ~ (compare_op ~ add_expr)*
+}
+compare_op = { ">=" | "<=" | "==" | "!=" | ">" | !("<-" | "<<-") ~ "<" }
+
+// "+" "-" (binary)
+add_expr = {
+    mul_expr ~ (add_op ~ mul_expr)*
+}
+add_op = { "+" | !("->" | "->>") ~ "-" }
+
+// "*" "/"
+mul_expr = {
+    special_pipe_expr ~ (mul_op ~ special_pipe_expr)*
+}
+mul_op = { "*" | "/" }
+
+// %...% and |>
+special_pipe_expr = {
+    colon_expr ~ ((special_op | pipe_op) ~ colon_expr)*
+}
+pipe_op = { "|>" }
+
+// R special operators: %%, %/%, %*%, %in%, %foo%, etc.
+special_op = @{
+      "%%"
+    | "%" ~ special_op_char+ ~ "%"
+}
+special_op_char = _{ !("%" | NEWLINE) ~ ANY }
+
+// ":" (sequence/range)
+colon_expr = {
+    unary_expr ~ (":" ~ unary_expr)?
+}
+
+// unary + -
+unary_expr = {
+      unary_op ~ unary_expr
+    | power_expr
+}
+unary_op = { "+" | !("->" | "->>") ~ "-" }
+
+// "^" and "**", right-associative
+power_expr = {
+    postfix_expr ~ (power_op ~ power_expr)?
+}
+power_op = { "^" | "**" }
+
+// -------------------- postfix chains --------------------
+
+// Chains like: pkg::name$a()[[1]]@slot
+postfix_expr = {
+    namespace_expr ~ postfix_suffix*
+}
+
+namespace_expr = {
+    primary_expr ~ namespace_suffix*
+}
+
+namespace_suffix = {
+    (":::" | "::") ~ ident
+}
+
+postfix_suffix = {
+      call_suffix
+    | index2_suffix
+    | index1_suffix
+    | dollar_suffix
+    | slot_suffix
+}
+
+call_suffix = {
+    "(" ~ GAP ~ arg_list? ~ GAP ~ ")"
+}
+
+index1_suffix = {
+    "[" ~ GAP ~ sub_list? ~ GAP ~ "]"
+}
+
+index2_suffix = {
+    "[[" ~ GAP ~ sub_list? ~ GAP ~ "]]"
+}
+
+dollar_suffix = {
+    "$" ~ (ident | string)
+}
+
+slot_suffix = {
+    "@" ~ ident
+}
+
+// -------------------- arguments --------------------
+
+// Function calls permit empty arguments: f(1,,3), f(,), f(x=)
+arg_list = {
+    arg_slot ~ (GAP ~ "," ~ GAP ~ arg_slot)* ~ (GAP ~ ",")?
+}
+arg_slot = { arg? }
+
+arg = {
+      named_arg
+    | expr
+}
+
+named_arg = {
+    arg_name ~ named_eq ~ expr?
+}
+named_eq = @{ "=" ~ !"=" }
+
+// For indexing: empty indices allowed: x[,1], x[1,]
+sub_list = {
+    sub_slot ~ (GAP ~ "," ~ GAP ~ sub_slot)* ~ (GAP ~ ",")?
+}
+sub_slot = { sub_arg? }
+
+sub_arg = {
+      named_sub_arg
+    | expr
+}
+
+named_sub_arg = {
+    arg_name ~ named_eq ~ expr?
+}
+
+arg_name = { dots | dotdot | ident }
+
+// -------------------- primary expressions --------------------
+
+primary_expr = {
+      keyword_constant
+    | complex_number
+    | number
+    | string
+    | dots
+    | dotdot
+    | if_expr
+    | for_expr
+    | while_expr
+    | repeat_expr
+    | function_def
+    | lambda_def
+    | block
+    | paren_expr
+    | break_expr
+    | next_expr
+    | return_expr
+    | ident
+}
+
+// -------------------- constants --------------------
+
+keyword_constant = {
+      null_lit
+    | na_lit
+    | inf_lit
+    | nan_lit
+    | bool_lit
+}
+
+null_lit = @{ "NULL" ~ !ident_rest }
+
+na_lit = @{
+    ( "NA_complex_"
+    | "NA_character_"
+    | "NA_real_"
+    | "NA_integer_"
+    | "NA"
+    ) ~ !ident_rest
+}
+
+inf_lit  = @{ "Inf" ~ !ident_rest }
+nan_lit  = @{ "NaN" ~ !ident_rest }
+bool_lit = @{ ("TRUE" | "FALSE") ~ !ident_rest }
+
+// Numeric constants: decimal, hex (incl C99 hex floats), integer L suffix
+number = @{
+      hex_number
+    | decimal_number
+}
+
+// Complex literals: 1i, 2.5i, .5i
+complex_number = @{
+    decimal_core ~ "i"
+}
+
+hex_number = @{
+    "0" ~ ("x" | "X") ~ hex_mantissa ~ hex_exp? ~ ("L")?
+}
+
+hex_mantissa = @{
+      ASCII_HEX_DIGIT+ ~ "." ~ ASCII_HEX_DIGIT*
+    | "." ~ ASCII_HEX_DIGIT+
+    | ASCII_HEX_DIGIT+
+}
+
+hex_exp = @{
+    ("p" | "P") ~ ("+" | "-")? ~ ASCII_DIGIT+
+}
+
+decimal_number = @{
+    decimal_core ~ ("L")?
+}
+
+decimal_core = @{
+      ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ dec_exp?
+    | "." ~ ASCII_DIGIT+ ~ dec_exp?
+    | ASCII_DIGIT+ ~ dec_exp
+    | ASCII_DIGIT+
+}
+
+dec_exp = @{
+    ("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+
+}
+
+// -------------------- strings --------------------
+
+string = @{
+      "\"" ~ dstring_char* ~ "\""
+    | "'"  ~ sstring_char* ~ "'"
+}
+
+dstring_char = _{ escape_seq | !("\"" | "\\") ~ ANY }
+sstring_char = _{ escape_seq | !("'"  | "\\") ~ ANY }
+escape_seq   = _{ "\\" ~ ANY }
+
+// -------------------- control flow --------------------
+
+if_expr = {
+    kw_if ~ "(" ~ GAP ~ expr ~ GAP ~ ")" ~ GAP ~ expr
+    ~ (GAP ~ kw_else ~ GAP ~ expr)?
+}
+
+for_expr = {
+    kw_for ~ "(" ~ GAP ~ ident ~ GAP ~ kw_in ~ GAP ~ expr ~ GAP ~ ")" ~ GAP ~ expr
+}
+
+while_expr = {
+    kw_while ~ "(" ~ GAP ~ expr ~ GAP ~ ")" ~ GAP ~ expr
+}
+
+repeat_expr = {
+    kw_repeat ~ expr
+}
+
+break_expr  = @{ "break" ~ !ident_rest }
+next_expr   = @{ "next" ~ !ident_rest }
+
+return_expr = {
+    kw_return ~ ("(" ~ GAP ~ expr? ~ GAP ~ ")")?
+}
+
+// Keyword tokens (atomic with word boundary)
+kw_if       = @{ "if"       ~ !ident_rest }
+kw_else     = @{ "else"     ~ !ident_rest }
+kw_for      = @{ "for"      ~ !ident_rest }
+kw_in       = @{ "in"       ~ !ident_rest }
+kw_while    = @{ "while"    ~ !ident_rest }
+kw_repeat   = @{ "repeat"   ~ !ident_rest }
+kw_function = @{ "function" ~ !ident_rest }
+kw_return   = @{ "return"   ~ !ident_rest }
+
+// -------------------- functions --------------------
+
+function_def = {
+    kw_function ~ "(" ~ GAP ~ param_list? ~ GAP ~ ")" ~ GAP ~ expr
+}
+
+// Modern R shorthand lambda: \(x) x + 1
+lambda_def = {
+    "\\" ~ "(" ~ GAP ~ param_list? ~ GAP ~ ")" ~ GAP ~ expr
+}
+
+param_list = {
+    param ~ (GAP ~ "," ~ GAP ~ param)* ~ (GAP ~ ",")?
+}
+
+param = {
+      dots
+    | ident ~ ("=" ~ expr?)?
+}
+
+dots   = @{ "..." ~ !ident_rest }
+dotdot = @{ ".." ~ ASCII_DIGIT+ }
+
+// -------------------- grouping --------------------
+
+block = {
+    "{" ~ GAP ~ expr_seq? ~ GAP ~ "}"
+}
+
+paren_expr = {
+    "(" ~ GAP ~ expr ~ GAP ~ ")"
+}
+
+// -------------------- identifiers --------------------
+
+// R identifiers cannot start with a digit or underscore,
+// and cannot start with '.' followed by a digit.
+// Reserved words are excluded via boundary check.
+
+ident = @{
+      backtick_ident
+    | dotted_ident
+    | plain_ident
+}
+
+plain_ident = @{
+    !reserved_word_boundary
+    ~ ASCII_ALPHA
+    ~ ident_rest*
+}
+
+dotted_ident = @{
+    !reserved_word_boundary
+    ~ "."
+    ~ !ASCII_DIGIT
+    ~ ident_rest*
+}
+
+ident_rest = _{ ASCII_ALPHANUMERIC | "." | "_" }
+
+backtick_ident = @{
+    "`" ~ (!"`" ~ ANY)+ ~ "`"
+}
+
+// Reserved word followed by word boundary (not an ident continuation char)
+reserved_word_boundary = @{
+    reserved_word ~ !ident_rest
+}
+
+reserved_word = @{
+      "NA_character_"
+    | "NA_complex_"
+    | "NA_integer_"
+    | "NA_real_"
+    | "function"
+    | "repeat"
+    | "while"
+    | "break"
+    | "FALSE"
+    | "TRUE"
+    | "else"
+    | "next"
+    | "NULL"
+    | "Inf"
+    | "NaN"
+    | "for"
+    | "NA"
+    | "if"
+    | "in"
+    | "..." ~ !ASCII_DIGIT
+    | ".." ~ ASCII_DIGIT+
+}
