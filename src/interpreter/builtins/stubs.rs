@@ -18,8 +18,6 @@ noop_builtin!("apply", 3);
 noop_builtin!("mapply", 2);
 noop_builtin!("tapply", 3);
 noop_builtin!("by", 3);
-noop_builtin!("Vectorize", 1);
-
 // Linear algebra
 noop_builtin!("diag", 1);
 noop_builtin!("crossprod", 1);
@@ -45,7 +43,6 @@ noop_builtin!("nlevels", 1);
 
 // Function tools
 noop_builtin!("Recall");
-noop_builtin!("do.call", 2);
 
 // Error handling
 noop_builtin!("withCallingHandlers", 1);
