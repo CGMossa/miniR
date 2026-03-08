@@ -456,6 +456,7 @@ dependencies = [
 name = "r"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "linkme",
  "newr-macros",
  "pest",

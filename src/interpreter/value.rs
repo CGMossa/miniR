@@ -1,3 +1,13 @@
+pub mod character;
+pub mod double;
+pub mod integer;
+pub mod logical;
+
+pub use character::Character;
+pub use double::Double;
+pub use integer::Integer;
+pub use logical::Logical;
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -74,10 +84,10 @@ pub enum RFunction {
 /// Atomic vector types in R
 #[derive(Debug, Clone)]
 pub enum Vector {
-    Logical(Vec<Option<bool>>),
-    Integer(Vec<Option<i64>>),
-    Double(Vec<Option<f64>>),
-    Character(Vec<Option<String>>),
+    Logical(Logical),
+    Integer(Integer),
+    Double(Double),
+    Character(Character),
 }
 
 impl Vector {
@@ -148,7 +158,7 @@ impl Vector {
     /// Convert entire vector to doubles
     pub fn to_doubles(&self) -> Vec<Option<f64>> {
         match self {
-            Vector::Double(v) => v.clone(),
+            Vector::Double(v) => v.0.clone(),
             Vector::Integer(v) => v.iter().map(|x| x.map(|i| i as f64)).collect(),
             Vector::Logical(v) => v
                 .iter()
@@ -164,7 +174,7 @@ impl Vector {
     /// Convert entire vector to integers
     pub fn to_integers(&self) -> Vec<Option<i64>> {
         match self {
-            Vector::Integer(v) => v.clone(),
+            Vector::Integer(v) => v.0.clone(),
             Vector::Double(v) => v.iter().map(|x| x.map(|f| f as i64)).collect(),
             Vector::Logical(v) => v.iter().map(|x| x.map(|b| if b { 1 } else { 0 })).collect(),
             Vector::Character(v) => v
@@ -177,7 +187,7 @@ impl Vector {
     /// Convert entire vector to characters
     pub fn to_characters(&self) -> Vec<Option<String>> {
         match self {
-            Vector::Character(v) => v.clone(),
+            Vector::Character(v) => v.0.clone(),
             Vector::Double(v) => v.iter().map(|x| x.map(format_r_double)).collect(),
             Vector::Integer(v) => v.iter().map(|x| x.map(|i| i.to_string())).collect(),
             Vector::Logical(v) => v
@@ -198,7 +208,7 @@ impl Vector {
     /// Convert to logicals
     pub fn to_logicals(&self) -> Vec<Option<bool>> {
         match self {
-            Vector::Logical(v) => v.clone(),
+            Vector::Logical(v) => v.0.clone(),
             Vector::Integer(v) => v.iter().map(|x| x.map(|i| i != 0)).collect(),
             Vector::Double(v) => v.iter().map(|x| x.map(|f| f != 0.0)).collect(),
             Vector::Character(_) => vec![None; self.len()],
@@ -225,8 +235,6 @@ pub fn format_r_double(f: f64) -> String {
             "-Inf".to_string()
         }
     } else if f == f.floor() && f.abs() < 1e15 {
-        // R prints whole numbers without trailing zeros but with at least one decimal
-        // Actually R just prints them as integers if they're whole
         format!("{}", f as i64)
     } else {
         format!("{}", f)
@@ -249,7 +257,7 @@ impl RValue {
     pub fn into_vector(self) -> Result<Vector, RError> {
         match self {
             RValue::Vector(v) => Ok(v),
-            RValue::Null => Ok(Vector::Logical(vec![])),
+            RValue::Null => Ok(Vector::Logical(Logical(vec![]))),
             _ => Err(RError::Type("cannot coerce to vector".to_string())),
         }
     }

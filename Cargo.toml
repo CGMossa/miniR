@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "newr-macros"]
+members = ["newr-macros"]
 resolver = "2"
 
 [workspace.package]
@@ -13,6 +13,7 @@ edition.workspace = true
 exclude = ["cran/", ".cargo/", "doc/", "docs/", "plans/", "scripts/", "share/", "tests/", "tools/"]
 
 [dependencies]
+derive_more = { version = "2.1", features = ["deref", "deref_mut", "from", "into", "constructor"] }
 linkme = "0.3"
 newr-macros = { path = "newr-macros" }
 pest = "2.8"

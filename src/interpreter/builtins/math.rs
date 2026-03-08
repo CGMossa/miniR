@@ -87,7 +87,7 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 .iter()
                 .map(|x| x.map(|f| (f * factor).round() / factor))
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("non-numeric argument".to_string())),
     }
@@ -104,13 +104,13 @@ fn builtin_sum(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
             for x in v.to_doubles() {
                 match x {
                     Some(f) => total += f,
-                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None]))),
+                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None].into()))),
                     None => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Double(vec![Some(total)])))
+    Ok(RValue::Vector(Vector::Double(vec![Some(total)].into())))
 }
 
 #[builtin(min_args = 0)]
@@ -124,13 +124,13 @@ fn builtin_prod(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             for x in v.to_doubles() {
                 match x {
                     Some(f) => total *= f,
-                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None]))),
+                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None].into()))),
                     None => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Double(vec![Some(total)])))
+    Ok(RValue::Vector(Vector::Double(vec![Some(total)].into())))
 }
 
 #[builtin(min_args = 0)]
@@ -149,15 +149,15 @@ fn builtin_max(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                             None => f,
                         })
                     }
-                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None]))),
+                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None].into()))),
                     None => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Double(vec![
-        result.or(Some(f64::NEG_INFINITY))
-    ])))
+    Ok(RValue::Vector(Vector::Double(
+        vec![result.or(Some(f64::NEG_INFINITY))].into(),
+    )))
 }
 
 #[builtin(min_args = 0)]
@@ -176,15 +176,15 @@ fn builtin_min(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                             None => f,
                         })
                     }
-                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None]))),
+                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None].into()))),
                     None => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Double(vec![
-        result.or(Some(f64::INFINITY))
-    ])))
+    Ok(RValue::Vector(Vector::Double(
+        vec![result.or(Some(f64::INFINITY))].into(),
+    )))
 }
 
 #[builtin(min_args = 1)]
@@ -203,18 +203,18 @@ fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                         sum += f;
                         count += 1;
                     }
-                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None]))),
+                    None if !na_rm => return Ok(RValue::Vector(Vector::Double(vec![None].into()))),
                     None => {}
                 }
             }
             if count == 0 {
-                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)])));
+                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into())));
             }
-            Ok(RValue::Vector(Vector::Double(vec![Some(
-                sum / count as f64,
-            )])))
+            Ok(RValue::Vector(Vector::Double(
+                vec![Some(sum / count as f64)].into(),
+            )))
         }
-        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)]))),
+        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into()))),
     }
 }
 
@@ -224,7 +224,7 @@ fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         Some(RValue::Vector(v)) => {
             let mut vals: Vec<f64> = v.to_doubles().into_iter().flatten().collect();
             if vals.is_empty() {
-                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)])));
+                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into())));
             }
             vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = vals.len() / 2;
@@ -233,9 +233,9 @@ fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             } else {
                 vals[mid]
             };
-            Ok(RValue::Vector(Vector::Double(vec![Some(median)])))
+            Ok(RValue::Vector(Vector::Double(vec![Some(median)].into())))
         }
-        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)]))),
+        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into()))),
     }
 }
 
@@ -246,13 +246,13 @@ fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
             let vals: Vec<f64> = v.to_doubles().into_iter().flatten().collect();
             let n = vals.len() as f64;
             if n < 2.0 {
-                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)])));
+                return Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into())));
             }
             let mean = vals.iter().sum::<f64>() / n;
             let var = vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-            Ok(RValue::Vector(Vector::Double(vec![Some(var)])))
+            Ok(RValue::Vector(Vector::Double(vec![Some(var)].into())))
         }
-        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)]))),
+        _ => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into()))),
     }
 }
 
@@ -260,7 +260,10 @@ fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     match builtin_var(args, named)? {
         RValue::Vector(Vector::Double(v)) => Ok(RValue::Vector(Vector::Double(
-            v.iter().map(|x| x.map(f64::sqrt)).collect(),
+            v.iter()
+                .map(|x| x.map(f64::sqrt))
+                .collect::<Vec<_>>()
+                .into(),
         ))),
         other => Ok(other),
     }
@@ -281,7 +284,7 @@ fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
@@ -302,7 +305,7 @@ fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
@@ -323,7 +326,7 @@ fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
@@ -344,7 +347,7 @@ fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
@@ -381,14 +384,14 @@ fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     if let Some(len) = length_out {
         let len = len as usize;
         if len == 0 {
-            return Ok(RValue::Vector(Vector::Double(vec![])));
+            return Ok(RValue::Vector(Vector::Double(vec![].into())));
         }
         if len == 1 {
-            return Ok(RValue::Vector(Vector::Double(vec![Some(from)])));
+            return Ok(RValue::Vector(Vector::Double(vec![Some(from)].into())));
         }
         let step = (to - from) / (len - 1) as f64;
         let result: Vec<Option<f64>> = (0..len).map(|i| Some(from + step * i as f64)).collect();
-        return Ok(RValue::Vector(Vector::Double(result)));
+        return Ok(RValue::Vector(Vector::Double(result.into())));
     }
 
     let by = by.unwrap_or(if to >= from { 1.0 } else { -1.0 });
@@ -411,7 +414,7 @@ fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
             val += by;
         }
     }
-    Ok(RValue::Vector(Vector::Double(result)))
+    Ok(RValue::Vector(Vector::Double(result.into())))
 }
 
 #[builtin(name = "seq_len", min_args = 1)]
@@ -421,14 +424,14 @@ fn builtin_seq_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0);
     let result: Vec<Option<i64>> = (1..=n).map(Some).collect();
-    Ok(RValue::Vector(Vector::Integer(result)))
+    Ok(RValue::Vector(Vector::Integer(result.into())))
 }
 
 #[builtin(name = "seq_along", min_args = 1)]
 fn builtin_seq_along(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args.first().map(|v| v.length()).unwrap_or(0);
     let result: Vec<Option<i64>> = (1..=n as i64).map(Some).collect();
-    Ok(RValue::Vector(Vector::Integer(result)))
+    Ok(RValue::Vector(Vector::Integer(result.into())))
 }
 
 #[builtin(min_args = 1)]
@@ -447,28 +450,32 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Integer(vals) => Ok(RValue::Vector(Vector::Integer(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Logical(vals) => Ok(RValue::Vector(Vector::Logical(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Character(vals) => Ok(RValue::Vector(Vector::Character(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
         },
         _ => Err(RError::Argument("invalid argument".to_string())),
@@ -518,7 +525,7 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Vector(v)) => {
             let result = match v {
                 Vector::Double(vals) => {
-                    let mut v: Vec<Option<f64>> = vals.clone();
+                    let mut v: Vec<Option<f64>> = vals.0.clone();
                     v.sort_by(|a, b| {
                         let a = a.unwrap_or(f64::NAN);
                         let b = b.unwrap_or(f64::NAN);
@@ -528,7 +535,7 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                             a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
                         }
                     });
-                    Vector::Double(v)
+                    Vector::Double(v.into())
                 }
                 Vector::Integer(vals) => {
                     let mut v = vals.clone();
@@ -560,7 +567,7 @@ fn builtin_order(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
             });
             let result: Vec<Option<i64>> = indices.iter().map(|&i| Some(i as i64 + 1)).collect();
-            Ok(RValue::Vector(Vector::Integer(result)))
+            Ok(RValue::Vector(Vector::Integer(result.into())))
         }
         _ => Ok(RValue::Null),
     }
@@ -574,47 +581,47 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 Vector::Double(vals) => {
                     let mut seen = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals {
+                    for x in vals.iter() {
                         let key = format!("{:?}", x);
                         if !seen.contains(&key) {
                             seen.push(key);
                             result.push(*x);
                         }
                     }
-                    Vector::Double(result)
+                    Vector::Double(result.into())
                 }
                 Vector::Integer(vals) => {
-                    let mut seen = Vec::new();
+                    let mut seen: Vec<Option<i64>> = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals {
+                    for x in vals.iter() {
                         if !seen.contains(x) {
                             seen.push(*x);
                             result.push(*x);
                         }
                     }
-                    Vector::Integer(result)
+                    Vector::Integer(result.into())
                 }
                 Vector::Character(vals) => {
-                    let mut seen = Vec::new();
+                    let mut seen: Vec<Option<String>> = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals {
+                    for x in vals.iter() {
                         if !seen.contains(x) {
                             seen.push(x.clone());
                             result.push(x.clone());
                         }
                     }
-                    Vector::Character(result)
+                    Vector::Character(result.into())
                 }
                 Vector::Logical(vals) => {
                     let mut seen = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals {
+                    for x in vals.iter() {
                         if !seen.contains(x) {
                             seen.push(*x);
                             result.push(*x);
                         }
                     }
-                    Vector::Logical(result)
+                    Vector::Logical(result.into())
                 }
             };
             Ok(RValue::Vector(result))
@@ -638,9 +645,9 @@ fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                     }
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Integer(result)))
+            Ok(RValue::Vector(Vector::Integer(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Integer(vec![]))),
+        _ => Ok(RValue::Vector(Vector::Integer(vec![].into()))),
     }
 }
 
@@ -659,11 +666,11 @@ fn builtin_which_min(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                     }
                 }
             }
-            Ok(RValue::Vector(Vector::Integer(vec![
-                min_idx.map(|i| i as i64 + 1)
-            ])))
+            Ok(RValue::Vector(Vector::Integer(
+                vec![min_idx.map(|i| i as i64 + 1)].into(),
+            )))
         }
-        _ => Ok(RValue::Vector(Vector::Integer(vec![]))),
+        _ => Ok(RValue::Vector(Vector::Integer(vec![].into()))),
     }
 }
 
@@ -682,11 +689,11 @@ fn builtin_which_max(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                     }
                 }
             }
-            Ok(RValue::Vector(Vector::Integer(vec![
-                max_idx.map(|i| i as i64 + 1)
-            ])))
+            Ok(RValue::Vector(Vector::Integer(
+                vec![max_idx.map(|i| i as i64 + 1)].into(),
+            )))
         }
-        _ => Ok(RValue::Vector(Vector::Integer(vec![]))),
+        _ => Ok(RValue::Vector(Vector::Integer(vec![].into()))),
     }
 }
 
@@ -696,7 +703,7 @@ fn builtin_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         (Some(RValue::Vector(v1)), Some(RValue::Vector(v2))) => {
             let mut chars = v1.to_characters();
             chars.extend(v2.to_characters());
-            Ok(RValue::Vector(Vector::Character(chars)))
+            Ok(RValue::Vector(Vector::Character(chars.into())))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }
@@ -714,10 +721,12 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match v {
-                Vector::Double(vals) => Vector::Double(vals[..n.min(vals.len())].to_vec()),
-                Vector::Integer(vals) => Vector::Integer(vals[..n.min(vals.len())].to_vec()),
-                Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec()),
-                Vector::Character(vals) => Vector::Character(vals[..n.min(vals.len())].to_vec()),
+                Vector::Double(vals) => Vector::Double(vals[..n.min(vals.len())].to_vec().into()),
+                Vector::Integer(vals) => Vector::Integer(vals[..n.min(vals.len())].to_vec().into()),
+                Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec().into()),
+                Vector::Character(vals) => {
+                    Vector::Character(vals[..n.min(vals.len())].to_vec().into())
+                }
             };
             Ok(RValue::Vector(result))
         }
@@ -739,10 +748,10 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             let len = v.len();
             let start = len.saturating_sub(n);
             let result = match v {
-                Vector::Double(vals) => Vector::Double(vals[start..].to_vec()),
-                Vector::Integer(vals) => Vector::Integer(vals[start..].to_vec()),
-                Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec()),
-                Vector::Character(vals) => Vector::Character(vals[start..].to_vec()),
+                Vector::Double(vals) => Vector::Double(vals[start..].to_vec().into()),
+                Vector::Integer(vals) => Vector::Integer(vals[start..].to_vec().into()),
+                Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec().into()),
+                Vector::Character(vals) => Vector::Character(vals[start..].to_vec().into()),
             };
             Ok(RValue::Vector(result))
         }
@@ -766,7 +775,9 @@ fn builtin_range(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             }
         }
     }
-    Ok(RValue::Vector(Vector::Double(vec![Some(min), Some(max)])))
+    Ok(RValue::Vector(Vector::Double(
+        vec![Some(min), Some(max)].into(),
+    )))
 }
 
 #[builtin(min_args = 1)]
@@ -775,7 +786,7 @@ fn builtin_diff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         Some(RValue::Vector(v)) => {
             let vals = v.to_doubles();
             if vals.len() < 2 {
-                return Ok(RValue::Vector(Vector::Double(vec![])));
+                return Ok(RValue::Vector(Vector::Double(vec![].into())));
             }
             let result: Vec<Option<f64>> = vals
                 .windows(2)
@@ -784,7 +795,7 @@ fn builtin_diff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     _ => None,
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Double(result)))
+            Ok(RValue::Vector(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
@@ -819,16 +830,36 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             }
             match v {
                 Vector::Double(vals) => Ok(RValue::Vector(Vector::Double(
-                    vals.iter().cycle().take(length_out).cloned().collect(),
+                    vals.iter()
+                        .cycle()
+                        .take(length_out)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into(),
                 ))),
                 Vector::Integer(vals) => Ok(RValue::Vector(Vector::Integer(
-                    vals.iter().cycle().take(length_out).cloned().collect(),
+                    vals.iter()
+                        .cycle()
+                        .take(length_out)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into(),
                 ))),
                 Vector::Logical(vals) => Ok(RValue::Vector(Vector::Logical(
-                    vals.iter().cycle().take(length_out).cloned().collect(),
+                    vals.iter()
+                        .cycle()
+                        .take(length_out)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into(),
                 ))),
                 Vector::Character(vals) => Ok(RValue::Vector(Vector::Character(
-                    vals.iter().cycle().take(length_out).cloned().collect(),
+                    vals.iter()
+                        .cycle()
+                        .take(length_out)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into(),
                 ))),
             }
         }
@@ -852,28 +883,32 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Integer(vals) => Ok(RValue::Vector(Vector::Integer(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Logical(vals) => Ok(RValue::Vector(Vector::Logical(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
             Vector::Character(vals) => Ok(RValue::Vector(Vector::Character(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
                     .cloned()
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into(),
             ))),
         },
         _ => Err(RError::Argument("invalid argument".to_string())),
