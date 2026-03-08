@@ -7,6 +7,7 @@ use std::fs;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
 use interpreter::with_interpreter;
+use parser::ast::Expr;
 use parser::{parse_program, ParseError};
 
 fn main() {
@@ -91,7 +92,7 @@ Type 'q()' to quit.
                     Ok(ast) => {
                         match with_interpreter(|interp| interp.eval(&ast)) {
                             Ok(val) => {
-                                if !val.is_null() && !is_assignment_or_invisible(&buffer) {
+                                if !val.is_null() && !is_invisible_result(&ast) {
                                     println!("{}", val);
                                 }
                             }
@@ -127,15 +128,19 @@ Type 'q()' to quit.
     }
 }
 
-fn is_assignment_or_invisible(input: &str) -> bool {
-    let trimmed = input.trim();
-    trimmed.contains("<-")
-        || trimmed.contains("<<-")
-        || (trimmed.contains('=') && !trimmed.contains("==") && !trimmed.contains("!="))
-        || trimmed.starts_with("for")
-        || trimmed.starts_with("while")
-        || trimmed.starts_with("if")
-        || trimmed.starts_with("invisible")
+fn is_invisible_result(ast: &Expr) -> bool {
+    match ast {
+        Expr::Assign { .. } => true,
+        Expr::For { .. } => true,
+        Expr::While { .. } => true,
+        Expr::Repeat { .. } => true,
+        Expr::Call { func, .. } => {
+            matches!(func.as_ref(), Expr::Symbol(name) if name == "invisible")
+        }
+        Expr::Program(exprs) => exprs.last().is_some_and(is_invisible_result),
+        Expr::Block(exprs) => exprs.last().is_some_and(is_invisible_result),
+        _ => false,
+    }
 }
 
 fn is_likely_incomplete(input: &str, _error: &ParseError) -> bool {
