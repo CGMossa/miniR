@@ -608,18 +608,26 @@ impl Interpreter {
                 self.eval_index_double_assign(object, indices, val, env)
             }
             Expr::Dollar { object, member } => self.eval_dollar_assign(object, member, val, env),
-            // Handle function calls on left side like names(x) <- val
-            Expr::Call { func, args } => {
+            // Handle function calls on left side like names(x) <- val, attr(x, "which") <- val
+            Expr::Call {
+                func,
+                args: call_args,
+            } => {
                 if let Expr::Symbol(fname) = func.as_ref() {
                     let replacement_fn = format!("{}<-", fname);
-                    if let Some(arg) = args.first() {
-                        if let Some(ref val_expr) = arg.value {
+                    if let Some(first_arg) = call_args.first() {
+                        if let Some(ref val_expr) = first_arg.value {
                             let obj = self.eval_in(val_expr, env)?;
-                            // Try calling the replacement function
                             if let Some(f) = env.get(&replacement_fn) {
-                                let result =
-                                    self.call_function(&f, &[obj, val.clone()], &[], env)?;
-                                // Assign result back to the variable
+                                // Evaluate extra args (e.g. "which" in attr(x, "which") <- val)
+                                let mut positional = vec![obj];
+                                for arg in &call_args[1..] {
+                                    if let Some(ref v) = arg.value {
+                                        positional.push(self.eval_in(v, env)?);
+                                    }
+                                }
+                                positional.push(val.clone());
+                                let result = self.call_function(&f, &positional, &[], env)?;
                                 if let Expr::Symbol(var_name) = val_expr {
                                     env.set(var_name.clone(), result);
                                 }
