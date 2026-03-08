@@ -1481,39 +1481,70 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         }
     }
 
-    let mut list = RList::new(vec![(None, RValue::vec(Vector::Double(mat.into())))]);
-    list.set_attr(
+    let mut rv = RVector::from(Vector::Double(mat.into()));
+    rv.set_attr(
         "class".to_string(),
         RValue::vec(Vector::Character(
             vec![Some("matrix".to_string()), Some("array".to_string())].into(),
         )),
     );
-    list.set_attr(
+    rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
             vec![Some(nrow as i64), Some(ncol as i64)].into(),
         )),
     );
-    Ok(RValue::List(list))
+    Ok(RValue::Vector(rv))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_dim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => Ok(rv.get_attr("dim").cloned().unwrap_or(RValue::Null)),
         Some(RValue::List(l)) => Ok(l.get_attr("dim").cloned().unwrap_or(RValue::Null)),
         _ => Ok(RValue::Null),
+    }
+}
+
+#[builtin(name = "dim<-", min_args = 2)]
+fn builtin_dim_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let dim_val = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            if dim_val.is_null() {
+                rv.attrs.as_mut().map(|a| a.remove("dim"));
+                rv.attrs.as_mut().map(|a| a.remove("class"));
+            } else {
+                rv.set_attr("dim".to_string(), dim_val);
+                rv.set_attr(
+                    "class".to_string(),
+                    RValue::vec(Vector::Character(
+                        vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+                    )),
+                );
+            }
+            Ok(RValue::Vector(rv))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
 }
 
 #[builtin(min_args = 1)]
 fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => {
+            if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                if !dims.is_empty() {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
+                }
+            }
+            Ok(RValue::Null)
+        }
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(dims) = &rv.inner {
-                    if !dims.is_empty() {
-                        return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
-                    }
+            if let Some(dims) = get_dim_ints(l.get_attr("dim")) {
+                if !dims.is_empty() {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
                 }
             }
             if let Some(rn) = l.get_attr("row.names") {
@@ -1530,12 +1561,18 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 #[builtin(min_args = 1)]
 fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => {
+            if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                if dims.len() >= 2 {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
+                }
+            }
+            Ok(RValue::Null)
+        }
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(dims) = &rv.inner {
-                    if dims.len() >= 2 {
-                        return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
-                    }
+            if let Some(dims) = get_dim_ints(l.get_attr("dim")) {
+                if dims.len() >= 2 {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
                 }
             }
             if has_class(args.first().unwrap(), "data.frame") {
@@ -1552,21 +1589,26 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 #[builtin(name = "nrow", min_args = 1, names = ["NROW"])]
 fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => {
+            if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                if !dims.is_empty() {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
+                }
+            }
+            Ok(RValue::vec(Vector::Integer(
+                vec![Some(rv.len() as i64)].into(),
+            )))
+        }
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(dims) = &rv.inner {
-                    if !dims.is_empty() {
-                        return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
-                    }
+            if let Some(dims) = get_dim_ints(l.get_attr("dim")) {
+                if !dims.is_empty() {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
                 }
             }
             Ok(RValue::vec(Vector::Integer(
                 vec![Some(l.values.len() as i64)].into(),
             )))
         }
-        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Integer(
-            vec![Some(v.len() as i64)].into(),
-        ))),
         Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
         _ => Ok(RValue::vec(Vector::Integer(vec![Some(1)].into()))),
     }
@@ -1575,12 +1617,18 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(name = "ncol", min_args = 1, names = ["NCOL"])]
 fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => {
+            if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                if dims.len() >= 2 {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
+                }
+            }
+            Ok(RValue::vec(Vector::Integer(vec![Some(1)].into())))
+        }
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(dims) = &rv.inner {
-                    if dims.len() >= 2 {
-                        return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
-                    }
+            if let Some(dims) = get_dim_ints(l.get_attr("dim")) {
+                if dims.len() >= 2 {
+                    return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
                 }
             }
             Ok(RValue::vec(Vector::Integer(vec![Some(1)].into())))
@@ -1593,30 +1641,13 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 1)]
 fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::List(l)) => {
-            let dims = if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(d) = &rv.inner {
-                    if d.len() >= 2 {
-                        (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
-                    } else {
-                        return Ok(args[0].clone());
-                    }
-                } else {
-                    return Ok(args[0].clone());
-                }
-            } else {
-                return Ok(args[0].clone());
+        Some(RValue::Vector(rv)) => {
+            let dims = match get_dim_ints(rv.get_attr("dim")) {
+                Some(d) if d.len() >= 2 => (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize),
+                _ => return Ok(args[0].clone()),
             };
             let (nrow, ncol) = dims;
-            let data = if let Some((_, RValue::Vector(rv))) = l.values.first() {
-                if let Vector::Double(v) = &rv.inner {
-                    v.clone()
-                } else {
-                    return Ok(args[0].clone());
-                }
-            } else {
-                return Ok(args[0].clone());
-            };
+            let data = rv.to_doubles();
             let mut transposed = vec![Some(0.0f64); nrow * ncol];
             for i in 0..nrow {
                 for j in 0..ncol {
@@ -1628,8 +1659,7 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
                         .unwrap_or(None);
                 }
             }
-            let mut result =
-                RList::new(vec![(None, RValue::vec(Vector::Double(transposed.into())))]);
+            let mut result = RVector::from(Vector::Double(transposed.into()));
             result.set_attr(
                 "class".to_string(),
                 RValue::vec(Vector::Character(
@@ -1642,7 +1672,7 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
                     vec![Some(ncol as i64), Some(nrow as i64)].into(),
                 )),
             );
-            Ok(RValue::List(result))
+            Ok(RValue::Vector(result))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }
@@ -1793,6 +1823,17 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+/// Extract integer dim values from a dim attribute
+fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
+    match dim_attr {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Integer(dims) => Some(dims.0.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn has_class(val: &RValue, class_name: &str) -> bool {
     if let RValue::List(l) = val {
         if let Some(RValue::Vector(rv)) = l.get_attr("class") {
@@ -1819,18 +1860,17 @@ fn builtin_is_data_frame(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 #[builtin(min_args = 1)]
 fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| {
+        // Check class attribute
         if has_class(v, "matrix") {
             return true;
         }
         // A matrix is any object with a dim attribute of length 2
-        if let RValue::List(l) = v {
-            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
-                if let Vector::Integer(dims) = &rv.inner {
-                    return dims.len() == 2;
-                }
-            }
-        }
-        false
+        let dim_attr = match v {
+            RValue::Vector(rv) => rv.get_attr("dim"),
+            RValue::List(l) => l.get_attr("dim"),
+            _ => None,
+        };
+        get_dim_ints(dim_attr).is_some_and(|d| d.len() == 2)
     });
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }

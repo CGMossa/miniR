@@ -791,6 +791,11 @@ impl Interpreter {
             return Ok(obj);
         }
 
+        // 2D indexing: x[i, j] for matrices
+        if indices.len() >= 2 {
+            return self.eval_matrix_index(&obj, indices, env);
+        }
+
         // Evaluate indices
         let idx_val = if let Some(ref val_expr) = indices[0].value {
             self.eval_in(val_expr, env)?
@@ -852,6 +857,225 @@ impl Interpreter {
             }
             _ => Err(RError::Index("object is not subsettable".to_string())),
         }
+    }
+
+    /// 2D matrix indexing: x[i, j] where the vector has a dim attribute
+    fn eval_matrix_index(
+        &self,
+        obj: &RValue,
+        indices: &[Arg],
+        env: &Environment,
+    ) -> Result<RValue, RError> {
+        // Get the dim attribute
+        let (data, dim_attr) = match obj {
+            RValue::Vector(rv) => (&rv.inner, rv.get_attr("dim")),
+            RValue::List(l) => {
+                // Data frame: x[rows, cols] or list with dim
+                return self.eval_list_2d_index(l, indices, env);
+            }
+            _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+        };
+
+        let dims = match dim_attr {
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Integer(d) => d.0.clone(),
+                _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+            },
+            _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+        };
+
+        if dims.len() < 2 {
+            return Err(RError::Index("incorrect number of dimensions".to_string()));
+        }
+        let nrow = dims[0].unwrap_or(0) as usize;
+        let ncol = dims[1].unwrap_or(0) as usize;
+
+        // Evaluate row indices (empty = all rows)
+        let row_idx = if let Some(ref val_expr) = indices[0].value {
+            let v = self.eval_in(val_expr, env)?;
+            Some(v)
+        } else {
+            None // empty = all
+        };
+
+        // Evaluate col indices (empty = all cols)
+        let col_idx = if let Some(ref val_expr) = indices[1].value {
+            let v = self.eval_in(val_expr, env)?;
+            Some(v)
+        } else {
+            None
+        };
+
+        let rows: Vec<usize> = match &row_idx {
+            None => (0..nrow).collect(),
+            Some(RValue::Vector(rv)) => rv
+                .to_integers()
+                .iter()
+                .filter_map(|x| x.map(|i| (i - 1) as usize))
+                .collect(),
+            _ => return Err(RError::Index("invalid row index".to_string())),
+        };
+
+        let cols: Vec<usize> = match &col_idx {
+            None => (0..ncol).collect(),
+            Some(RValue::Vector(rv)) => rv
+                .to_integers()
+                .iter()
+                .filter_map(|x| x.map(|i| (i - 1) as usize))
+                .collect(),
+            _ => return Err(RError::Index("invalid column index".to_string())),
+        };
+
+        // Extract elements in column-major order
+        let doubles = data.to_doubles();
+        let mut result = Vec::new();
+        for &j in &cols {
+            for &i in &rows {
+                let flat_idx = j * nrow + i;
+                result.push(doubles.get(flat_idx).copied().unwrap_or(None));
+            }
+        }
+
+        // If result is a single element, return scalar
+        if rows.len() == 1 && cols.len() == 1 {
+            return Ok(RValue::vec(Vector::Double(result.into())));
+        }
+
+        // If selecting a sub-matrix, add dim attribute
+        let mut rv = RVector::from(Vector::Double(result.into()));
+        if rows.len() > 1 || cols.len() > 1 {
+            rv.set_attr(
+                "dim".to_string(),
+                RValue::vec(Vector::Integer(
+                    vec![Some(rows.len() as i64), Some(cols.len() as i64)].into(),
+                )),
+            );
+        }
+        Ok(RValue::Vector(rv))
+    }
+
+    /// 2D indexing for lists/data frames: x[rows, cols]
+    fn eval_list_2d_index(
+        &self,
+        list: &RList,
+        indices: &[Arg],
+        env: &Environment,
+    ) -> Result<RValue, RError> {
+        // For data frames: x[rows, cols]
+        let is_df = if let Some(RValue::Vector(rv)) = list.get_attr("class") {
+            if let Vector::Character(cls) = &rv.inner {
+                cls.iter().any(|c| c.as_deref() == Some("data.frame"))
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if !is_df {
+            // Non-data-frame list with 2D index — just use first index
+            if let Some(ref val_expr) = indices[0].value {
+                let idx_val = self.eval_in(val_expr, env)?;
+                return match &idx_val {
+                    RValue::Vector(iv) => {
+                        let i = iv.as_integer_scalar().unwrap_or(0) as usize;
+                        if i > 0 && i <= list.values.len() {
+                            Ok(list.values[i - 1].1.clone())
+                        } else {
+                            Ok(RValue::Null)
+                        }
+                    }
+                    _ => Ok(RValue::Null),
+                };
+            }
+            return Ok(RValue::Null);
+        }
+
+        // Data frame: columns from second index, then rows from first
+        let col_idx = if let Some(ref val_expr) = indices[1].value {
+            Some(self.eval_in(val_expr, env)?)
+        } else {
+            None
+        };
+
+        let selected_cols: Vec<(Option<String>, RValue)> = match &col_idx {
+            None => list.values.clone(),
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(names) = &rv.inner else {
+                    unreachable!()
+                };
+                names
+                    .iter()
+                    .filter_map(|n| {
+                        n.as_ref().and_then(|name| {
+                            list.values
+                                .iter()
+                                .find(|(k, _)| k.as_ref() == Some(name))
+                                .cloned()
+                        })
+                    })
+                    .collect()
+            }
+            Some(RValue::Vector(rv)) => {
+                let idxs = rv.to_integers();
+                idxs.iter()
+                    .filter_map(|i| {
+                        i.map(|i| {
+                            let i = (i - 1) as usize;
+                            list.values.get(i).cloned()
+                        })
+                        .flatten()
+                    })
+                    .collect()
+            }
+            _ => list.values.clone(),
+        };
+
+        // Now apply row subsetting
+        let row_idx = if let Some(ref val_expr) = indices[0].value {
+            Some(self.eval_in(val_expr, env)?)
+        } else {
+            None
+        };
+
+        if row_idx.is_none() {
+            // All rows
+            let mut result = RList::new(selected_cols);
+            result.set_attr(
+                "class".to_string(),
+                RValue::vec(Vector::Character(
+                    vec![Some("data.frame".to_string())].into(),
+                )),
+            );
+            return Ok(RValue::List(result));
+        }
+
+        // Single column with row selection — return the column vector subsetted
+        if selected_cols.len() == 1 {
+            return Ok(selected_cols[0].1.clone());
+        }
+
+        // Multiple columns with row selection — subset each column
+        let mut result_cols = Vec::new();
+        for (name, col_val) in &selected_cols {
+            if let RValue::Vector(rv) = col_val {
+                let rows = match &row_idx {
+                    Some(RValue::Vector(idx)) => idx.to_integers(),
+                    _ => continue,
+                };
+                let indexed = self.index_by_integer(&rv.inner, &rows)?;
+                result_cols.push((name.clone(), indexed));
+            } else {
+                result_cols.push((name.clone(), col_val.clone()));
+            }
+        }
+        let mut result = RList::new(result_cols);
+        result.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(
+                vec![Some("data.frame".to_string())].into(),
+            )),
+        );
+        Ok(RValue::List(result))
     }
 
     fn index_by_integer(&self, v: &Vector, indices: &[Option<i64>]) -> Result<RValue, RError> {
