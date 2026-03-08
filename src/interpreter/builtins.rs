@@ -525,6 +525,10 @@ fn builtin_as_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 1)]
 fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(RValue::Vector(rv)) => match rv.get_attr("names") {
+            Some(v) => Ok(v.clone()),
+            None => Ok(RValue::Null),
+        },
         Some(RValue::List(l)) => {
             if let Some(names_attr) = l.get_attr("names") {
                 return Ok(names_attr.clone());
@@ -540,6 +544,65 @@ fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 }
 
+#[builtin(name = "names<-", min_args = 2)]
+fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let names_val = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            if names_val.is_null() {
+                rv.attrs.as_mut().map(|a| a.remove("names"));
+            } else {
+                rv.set_attr("names".to_string(), names_val);
+            }
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(l)) => {
+            let mut l = l.clone();
+            if let Some(names_vec) = names_val.as_vector() {
+                let names = names_vec.to_characters();
+                for (i, name) in names.iter().enumerate() {
+                    if i < l.values.len() {
+                        l.values[i].0 = name.clone();
+                    }
+                }
+            } else if names_val.is_null() {
+                for entry in &mut l.values {
+                    entry.0 = None;
+                }
+            }
+            Ok(RValue::List(l))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+#[builtin(name = "class<-", min_args = 2)]
+fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let class_val = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            if class_val.is_null() {
+                rv.attrs.as_mut().map(|a| a.remove("class"));
+            } else {
+                rv.set_attr("class".to_string(), class_val);
+            }
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(l)) => {
+            let mut l = l.clone();
+            if class_val.is_null() {
+                l.attrs.as_mut().map(|a| a.remove("class"));
+            } else {
+                l.set_attr("class".to_string(), class_val);
+            }
+            Ok(RValue::List(l))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
+}
+
 #[builtin(min_args = 1)]
 fn builtin_typeof(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let t = args.first().map(|v| v.type_name()).unwrap_or("NULL");
@@ -550,6 +613,13 @@ fn builtin_typeof(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 #[builtin(min_args = 1)]
 fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Check for explicit class attribute on vectors
+    if let Some(RValue::Vector(rv)) = args.first() {
+        if let Some(cls) = rv.get_attr("class") {
+            return Ok(cls.clone());
+        }
+    }
+    // Check for explicit class attribute on lists
     if let Some(RValue::List(l)) = args.first() {
         if let Some(cls) = l.get_attr("class") {
             return Ok(cls.clone());
@@ -1586,6 +1656,7 @@ fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         .and_then(|v| v.as_character_scalar())
         .ok_or_else(|| RError::Argument("'which' must be a character string".to_string()))?;
     match args.first() {
+        Some(RValue::Vector(rv)) => Ok(rv.get_attr(&which).cloned().unwrap_or(RValue::Null)),
         Some(RValue::List(l)) => Ok(l.get_attr(&which).cloned().unwrap_or(RValue::Null)),
         _ => Ok(RValue::Null),
     }
@@ -1600,6 +1671,15 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .ok_or_else(|| RError::Argument("'which' must be a character string".to_string()))?;
     let value = args.get(2).cloned().unwrap_or(RValue::Null);
     match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            if value.is_null() {
+                rv.attrs.as_mut().map(|a| a.remove(&which));
+            } else {
+                rv.set_attr(which, value);
+            }
+            Ok(RValue::Vector(rv))
+        }
         Some(RValue::List(l)) => {
             let mut l = l.clone();
             if value.is_null() {
@@ -1615,17 +1695,19 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 
 #[builtin(min_args = 1)]
 fn builtin_attributes(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::List(l)) => match &l.attrs {
-            Some(attrs) if !attrs.is_empty() => {
-                let values: Vec<(Option<String>, RValue)> = attrs
-                    .iter()
-                    .map(|(k, v)| (Some(k.clone()), v.clone()))
-                    .collect();
-                Ok(RValue::List(RList::new(values)))
-            }
-            _ => Ok(RValue::Null),
-        },
+    let attrs = match args.first() {
+        Some(RValue::Vector(rv)) => rv.attrs.as_deref(),
+        Some(RValue::List(l)) => l.attrs.as_deref(),
+        _ => None,
+    };
+    match attrs {
+        Some(a) if !a.is_empty() => {
+            let values: Vec<(Option<String>, RValue)> = a
+                .iter()
+                .map(|(k, v)| (Some(k.clone()), v.clone()))
+                .collect();
+            Ok(RValue::List(RList::new(values)))
+        }
         _ => Ok(RValue::Null),
     }
 }
@@ -1655,12 +1737,15 @@ fn builtin_structure(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             }
             Ok(RValue::List(l))
         }
-        RValue::Vector(v) => {
-            let mut list = RList::new(vec![(None, RValue::Vector(v))]);
+        RValue::Vector(mut rv) => {
             for (name, value) in named {
-                list.set_attr(name.clone(), value.clone());
+                if name == ".Names" || name == "names" {
+                    rv.set_attr("names".to_string(), value.clone());
+                } else {
+                    rv.set_attr(name.clone(), value.clone());
+                }
             }
-            Ok(RValue::List(list))
+            Ok(RValue::Vector(rv))
         }
         other => Ok(other),
     }
@@ -1686,12 +1771,18 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                 vec!["list".to_string()]
             }
         }
-        Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Logical(_) => vec!["logical".to_string()],
-            Vector::Integer(_) => vec!["integer".to_string()],
-            Vector::Double(_) => vec!["numeric".to_string()],
-            Vector::Character(_) => vec!["character".to_string()],
-        },
+        Some(RValue::Vector(rv)) => {
+            if let Some(cls) = rv.class() {
+                cls
+            } else {
+                match &rv.inner {
+                    Vector::Logical(_) => vec!["logical".to_string()],
+                    Vector::Integer(_) => vec!["integer".to_string()],
+                    Vector::Double(_) => vec!["numeric".to_string()],
+                    Vector::Character(_) => vec!["character".to_string()],
+                }
+            }
+        }
         Some(RValue::Function(_)) => vec!["function".to_string()],
         _ => vec![],
     };
@@ -1921,7 +2012,19 @@ fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 
 #[builtin(min_args = 1)]
 fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            rv.attrs.as_mut().map(|a| a.remove("class"));
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(l)) => {
+            let mut l = l.clone();
+            l.attrs.as_mut().map(|a| a.remove("class"));
+            Ok(RValue::List(l))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
 }
 
 #[builtin(name = "missing", min_args = 1)]
