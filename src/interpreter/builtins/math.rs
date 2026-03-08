@@ -1,5 +1,4 @@
 use crate::interpreter::value::*;
-use linkme::distributed_slice;
 use newr_macros::{builtin, noop_builtin};
 
 noop_builtin!("pmax");
@@ -9,10 +8,6 @@ noop_builtin!("cumany", 1);
 noop_builtin!("runif", 1);
 noop_builtin!("rnorm", 1);
 noop_builtin!("rbinom", 2);
-
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static ALIAS_SEQ_INT: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("seq.int", builtin_seq, 0);
 
 // === Math functions ===
 
@@ -353,7 +348,7 @@ fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
-#[builtin(min_args = 0)]
+#[builtin(min_args = 0, names = ["seq.int"])]
 fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let from = named
         .iter()
