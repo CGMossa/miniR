@@ -116,7 +116,6 @@ const NOOP_STUBS: &[(&str, usize)] = &[
     ("Reduce", 2),
     ("Filter", 2),
     ("Map", 2),
-    ("switch", 1),
     ("tryCatch", 1),
     ("try", 1),
     ("withCallingHandlers", 1),
@@ -197,7 +196,6 @@ const NOOP_STUBS: &[(&str, usize)] = &[
     ("sys.on.exit", 0),
     ("normalizePath", 1),
     ("path.expand", 1),
-    ("system.time", 1),
 ];
 
 pub fn register_builtins(env: &Environment) {
@@ -1103,15 +1101,24 @@ fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 #[builtin(name = "Sys.time")]
 fn builtin_sys_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Vector(Vector::Double(vec![Some(0.0)])))
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    Ok(RValue::Vector(Vector::Double(vec![Some(secs)])))
 }
 
 #[builtin]
 fn builtin_proc_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    // R returns c(user.self, sys.self, elapsed) — we approximate with wall time
     Ok(RValue::Vector(Vector::Double(vec![
+        Some(secs),
         Some(0.0),
-        Some(0.0),
-        Some(0.0),
+        Some(secs),
     ])))
 }
 
@@ -1714,7 +1721,18 @@ fn builtin_is_data_frame(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 
 #[builtin(min_args = 1)]
 fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| has_class(v, "matrix"));
+    let r = args.first().is_some_and(|v| {
+        if has_class(v, "matrix") {
+            return true;
+        }
+        // A matrix is any object with a dim attribute of length 2
+        if let RValue::List(l) = v {
+            if let Some(RValue::Vector(Vector::Integer(dims))) = l.get_attr("dim") {
+                return dims.len() == 2;
+            }
+        }
+        false
+    });
     Ok(RValue::Vector(Vector::Logical(vec![Some(r)])))
 }
 
@@ -1900,9 +1918,36 @@ fn builtin_vapply_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     ))
 }
 
+// The following are handled at interpreter level (need env/special eval access),
+// but registered here so the names exist in the environment.
+
+#[builtin(name = "switch", min_args = 1)]
+fn builtin_switch_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+#[builtin(name = "get", min_args = 1)]
+fn builtin_get_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "get() requires interpreter context".to_string(),
+    ))
+}
+
+#[builtin(name = "assign", min_args = 2)]
+fn builtin_assign_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "assign() requires interpreter context".to_string(),
+    ))
+}
+
 #[builtin(name = "exists", min_args = 1)]
 fn builtin_exists_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Vector(Vector::Logical(vec![Some(false)])))
+}
+
+#[builtin(name = "system.time", min_args = 1)]
+fn builtin_system_time_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
 #[builtin(name = "missing", min_args = 1)]
@@ -1911,8 +1956,73 @@ fn builtin_missing_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 }
 
 #[builtin(name = "match.arg", min_args = 1)]
-fn builtin_match_arg_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
+fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let arg = args.first().cloned().unwrap_or(RValue::Null);
+    let choices = args
+        .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "choices").map(|(_, v)| v));
+
+    let arg_str = match &arg {
+        RValue::Vector(v) => v.as_character_scalar(),
+        RValue::Null => None,
+        _ => None,
+    };
+
+    let choices_vec = match choices {
+        Some(RValue::Vector(Vector::Character(v))) => {
+            v.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
+        }
+        Some(RValue::Null) | None => {
+            // No choices provided — return arg as-is (R would use formals, we can't)
+            return Ok(arg);
+        }
+        _ => return Ok(arg),
+    };
+
+    if choices_vec.is_empty() {
+        return Ok(arg);
+    }
+
+    match arg_str {
+        None => {
+            // NULL arg: return first choice (R behavior)
+            Ok(RValue::Vector(Vector::Character(vec![Some(
+                choices_vec[0].clone(),
+            )])))
+        }
+        Some(ref s) => {
+            // Exact match first
+            if choices_vec.contains(s) {
+                return Ok(RValue::Vector(Vector::Character(vec![Some(s.clone())])));
+            }
+            // Partial match
+            let matches: Vec<&String> = choices_vec
+                .iter()
+                .filter(|c| c.starts_with(s.as_str()))
+                .collect();
+            match matches.len() {
+                1 => Ok(RValue::Vector(Vector::Character(vec![Some(
+                    matches[0].clone(),
+                )]))),
+                0 => Err(RError::Argument(format!(
+                    "'arg' should be one of {}",
+                    choices_vec
+                        .iter()
+                        .map(|c| format!("'{}'", c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))),
+                _ => Err(RError::Argument(format!(
+                    "'arg' should be one of {}",
+                    choices_vec
+                        .iter()
+                        .map(|c| format!("'{}'", c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))),
+            }
+        }
+    }
 }
 
 #[builtin(name = "sys.call")]

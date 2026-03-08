@@ -671,6 +671,28 @@ impl Interpreter {
                     "try" => {
                         return Ok(positional.first().cloned().unwrap_or(RValue::Null));
                     }
+                    "switch" => {
+                        return self.eval_switch(positional, named);
+                    }
+                    "get" => {
+                        return self.eval_get(positional, named, env);
+                    }
+                    "assign" => {
+                        return self.eval_builtin_assign(positional, named, env);
+                    }
+                    "exists" => {
+                        return self.eval_exists(positional, named, env);
+                    }
+                    "system.time" => {
+                        let start = std::time::Instant::now();
+                        let _result = positional.first().cloned().unwrap_or(RValue::Null);
+                        let elapsed = start.elapsed().as_secs_f64();
+                        return Ok(RValue::Vector(Vector::Double(vec![
+                            Some(elapsed),
+                            Some(0.0),
+                            Some(elapsed),
+                        ])));
+                    }
                     _ => {}
                 }
                 func(positional, named)
@@ -838,6 +860,132 @@ impl Interpreter {
     ) -> Result<RValue, RError> {
         // Just return the first argument (simplified tryCatch)
         Ok(positional.first().cloned().unwrap_or(RValue::Null))
+    }
+
+    fn eval_switch(
+        &mut self,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+    ) -> Result<RValue, RError> {
+        let expr = positional
+            .first()
+            .ok_or_else(|| RError::Argument("'EXPR' is missing".to_string()))?;
+
+        // Character EXPR → named matching; numeric EXPR → positional indexing
+        let is_character = matches!(expr, RValue::Vector(Vector::Character(_)));
+
+        if is_character {
+            let s = match expr {
+                RValue::Vector(v) => v.as_character_scalar().unwrap_or_default(),
+                _ => String::new(),
+            };
+            // Named matching with fall-through
+            let mut found = false;
+            for (name, val) in named {
+                if name == &s {
+                    found = true;
+                    if !matches!(val, RValue::Null) {
+                        return Ok(val.clone());
+                    }
+                } else if found && !matches!(val, RValue::Null) {
+                    return Ok(val.clone());
+                }
+            }
+            // Unnamed default (last positional after EXPR)
+            if let Some(default) = positional.get(1) {
+                return Ok(default.clone());
+            }
+            Ok(RValue::Null)
+        } else {
+            // Numeric indexing into alternatives (after EXPR)
+            let idx = match expr {
+                RValue::Vector(v) => v.as_integer_scalar(),
+                _ => None,
+            };
+            match idx {
+                Some(i) if i >= 1 => {
+                    // Collect all alternatives: unnamed positional (after EXPR) + named values
+                    let mut alts: Vec<&RValue> = positional.iter().skip(1).collect();
+                    for (_, v) in named {
+                        alts.push(v);
+                    }
+                    Ok(alts
+                        .get((i - 1) as usize)
+                        .map(|v| (*v).clone())
+                        .unwrap_or(RValue::Null))
+                }
+                _ => Ok(RValue::Null),
+            }
+        }
+    }
+
+    fn eval_get(
+        &mut self,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+        env: &Environment,
+    ) -> Result<RValue, RError> {
+        let name = positional
+            .first()
+            .and_then(|v| {
+                if let RValue::Vector(vec) = v {
+                    vec.as_character_scalar()
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| RError::Argument("invalid first argument".to_string()))?;
+        let _envir = named.iter().find(|(n, _)| n == "envir").map(|(_, v)| v);
+        // TODO: use envir parameter when environments are first-class
+        env.get(&name)
+            .ok_or_else(|| RError::Other(format!("object '{}' not found", name)))
+    }
+
+    fn eval_builtin_assign(
+        &mut self,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+        env: &Environment,
+    ) -> Result<RValue, RError> {
+        let name = positional
+            .first()
+            .and_then(|v| {
+                if let RValue::Vector(vec) = v {
+                    vec.as_character_scalar()
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| RError::Argument("invalid first argument".to_string()))?;
+        let value = positional
+            .get(1)
+            .or_else(|| named.iter().find(|(n, _)| n == "value").map(|(_, v)| v))
+            .cloned()
+            .unwrap_or(RValue::Null);
+        // TODO: support envir parameter
+        env.set(name, value.clone());
+        Ok(value)
+    }
+
+    fn eval_exists(
+        &mut self,
+        positional: &[RValue],
+        _named: &[(String, RValue)],
+        env: &Environment,
+    ) -> Result<RValue, RError> {
+        let name = positional
+            .first()
+            .and_then(|v| {
+                if let RValue::Vector(vec) = v {
+                    vec.as_character_scalar()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        // TODO: support envir, mode, inherits parameters
+        let found = env.get(&name).is_some();
+        Ok(RValue::Vector(Vector::Logical(vec![Some(found)])))
     }
 
     fn eval_index(
