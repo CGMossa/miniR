@@ -161,10 +161,82 @@ Everything listed here currently returns NULL, does nothing, or has a simplified
 - [ ] `reg.finalizer(e, f)` — register finalizer
 - [ ] `R.Version()` — version info (stub returns list)
 
+## Missing Builtins (discovered from tests/)
+
+These builtins are needed to pass the R test suite in `tests/`.
+
+### Core / Reflection
+
+- [ ] `dput(x)` — output R representation of object
+- [ ] `ls()` — list objects in environment
+- [ ] `class<-` — replacement function for setting class
+- [ ] `names<-` — replacement function for setting names
+- [ ] `dimnames(x)` / `dimnames<-` — get/set dimension names
+- [ ] `unname(x)` — remove names
+- [ ] `.Platform` — platform info list
+- [ ] `capabilities()` — R capabilities
+- [ ] `sessionInfo()` — session info
+- [ ] `l10n_info()` — localization info
+- [ ] `Sys.info()` — system info
+- [ ] `Sys.timezone()` — current timezone
+- [ ] `suppressWarnings(expr)` — suppress warnings
+- [ ] `withVisible(expr)` — evaluate with visibility flag
+- [ ] `as.environment(x)` — coerce to environment
+
+### Numeric / Math
+
+- [ ] `outer(X, Y, FUN)` — outer product
+- [ ] `Re(z)` / `Im(z)` / `Mod(z)` / `Arg(z)` / `Conj(z)` — complex accessors
+- [ ] `signif(x, digits)` — significant digits
+- [ ] `lower.tri(x)` / `upper.tri(x)` — matrix triangular extraction
+- [ ] `rhyper(nn, m, n, k)` — hypergeometric random
+- [ ] `RNGversion(vstr)` — set RNG version
+
+### Strings / IO
+
+- [ ] `intToUtf8(x)` / `utf8ToInt(x)` — UTF-8 ↔ integer
+- [ ] `read.table(file)` / `write.table(x, file)` — tabular I/O
+
+### Date/Time
+
+- [ ] `as.POSIXct(x)` / `as.POSIXlt(x)` — datetime constructors
+- [ ] `ISOdate(...)` / `ISOdatetime(...)` — ISO datetime
+- [ ] `strptime(x, format)` / `strftime(x, format)` — date formatting
+- [ ] `format.POSIXlt(x)` — format dates
+
+### S4 / OOP
+
+- [ ] `setClass(Class, ...)` — define S4 class
+- [ ] `setMethod(f, ...)` — define S4 method
+- [ ] `setGeneric(name, ...)` — define S4 generic
+
+### Packages / Namespaces
+
+- [ ] `tools::*` — tools package namespace
+- [ ] `.packages()` — list attached packages
+- [ ] `system.file(...)` — find package files
+- [ ] `demo(topic)` — run demo
+
+### Graphics (stubs)
+
+- [ ] `pdf(...)` / `dev.off()` — PDF graphics device
+- [ ] `windows(...)` — Windows graphics device
+
+### Statistics (stubs)
+
+- [ ] `lm(formula, data)` — linear model
+- [ ] `aov(formula)` — analysis of variance
+- [ ] `nls(formula, data)` — nonlinear least squares
+- [ ] `ts(data, start, frequency)` — time series
+
+## Module Refactoring
+
+- [ ] Ensure all modules use `foo.rs` + `foo/` style, not `foo/mod.rs`
+
 ## Misc
 
 - [ ] rename newr to minir.
 - [x] add linkme.
 - [ ] plan an r package builder
 - [ ] add typst conversion of Rdocumentation and produce the manual.
-- [ ] I wish for more decoupling. see     fn call_function( for an example of something that could be decoupled. use custom proc-macros if you need to.
+- [x] decouple builtins with proc-macros (interpreter_builtin, pre_eval_builtin, noop_builtin)
