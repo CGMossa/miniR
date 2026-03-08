@@ -53,7 +53,7 @@ We will diverge from R behavior when R behavior is absurd. This is not a drop-in
 
 ## Code Quality
 
-- Run `cargo clippy` before committing — zero warnings required
+- Before committing, always run: `cargo fmt`, `cargo clippy` (zero warnings), and `cargo test`
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 
 ## Tool Rules
