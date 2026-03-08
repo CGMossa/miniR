@@ -7,7 +7,7 @@ use std::fs;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
 use interpreter::Interpreter;
-use parser::parse_program;
+use parser::{parse_program, ParseError};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -47,7 +47,8 @@ fn run_file(filename: &str) {
                 std::process::exit(1);
             }
         },
-        Err(e) => {
+        Err(mut e) => {
+            e.filename = Some(filename.to_string());
             eprintln!("{}", e);
             std::process::exit(1);
         }
@@ -105,7 +106,7 @@ Type 'q()' to quit.
                         buffer.clear();
                     }
                     Err(e) => {
-                        if is_likely_incomplete(&buffer) {
+                        if is_likely_incomplete(&buffer, &e) {
                             continue;
                         }
                         eprintln!("{}", e);
@@ -141,21 +142,30 @@ fn is_assignment_or_invisible(input: &str) -> bool {
         || trimmed.starts_with("invisible")
 }
 
-fn is_likely_incomplete(input: &str) -> bool {
+fn is_likely_incomplete(input: &str, _error: &ParseError) -> bool {
     let mut open_parens = 0i32;
     let mut open_braces = 0i32;
     let mut open_brackets = 0i32;
     let mut in_string = false;
     let mut string_char = ' ';
     let mut prev_char = ' ';
+    let mut in_comment = false;
 
     for c in input.chars() {
+        if in_comment {
+            if c == '\n' {
+                in_comment = false;
+            }
+            prev_char = c;
+            continue;
+        }
         if in_string {
             if c == string_char && prev_char != '\\' {
                 in_string = false;
             }
         } else {
             match c {
+                '#' => in_comment = true,
                 '"' | '\'' => {
                     in_string = true;
                     string_char = c;
@@ -172,5 +182,36 @@ fn is_likely_incomplete(input: &str) -> bool {
         prev_char = c;
     }
 
-    open_parens > 0 || open_braces > 0 || open_brackets > 0 || in_string
+    if open_parens > 0 || open_braces > 0 || open_brackets > 0 || in_string {
+        return true;
+    }
+
+    // Trailing binary operator means the expression continues
+    let trimmed = input.trim_end();
+    let trailing = trimmed
+        .rfind(|c: char| !c.is_whitespace())
+        .map(|i| &trimmed[i..])
+        .unwrap_or("");
+    if trailing.ends_with('+')
+        || trailing.ends_with('*')
+        || trailing.ends_with('/')
+        || trailing.ends_with(',')
+        || trailing.ends_with('|')
+        || trailing.ends_with('&')
+        || trailing.ends_with('~')
+        || trailing.ends_with("<-")
+        || trailing.ends_with("<<-")
+        || trailing.ends_with("|>")
+        || trailing.ends_with("||")
+        || trailing.ends_with("&&")
+    {
+        return true;
+    }
+
+    // Trailing '-' that isn't part of '->' or '->>'
+    if trailing.ends_with('-') && !trailing.ends_with("->") {
+        return true;
+    }
+
+    false
 }
