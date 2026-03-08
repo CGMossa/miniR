@@ -3,6 +3,8 @@
 Mapping every missing/stub R builtin to the Rust std module that powers its implementation.
 Organized by Rust std module → R functions it enables.
 
+API details sourced from `rustup doc std::*` (Rust 1.93.0).
+
 ## Current stats
 
 - **Real implementations:** ~150 functions
@@ -14,11 +16,32 @@ Organized by Rust std module → R functions it enables.
 
 ## Phase 1 — `std::f64` / `std::num` → Numeric builtins
 
-Rust gives us: `f64::abs`, `f64::sqrt`, `f64::floor`, `f64::ceil`, `f64::round`,
-`f64::sin`, `f64::cos`, `f64::tan`, `f64::asin`, `f64::acos`, `f64::atan`, `f64::atan2`,
-`f64::exp`, `f64::ln`, `f64::log2`, `f64::log10`, `f64::powi`, `f64::powf`,
-`f64::is_finite`, `f64::is_nan`, `f64::is_infinite`, `f64::is_sign_positive`,
-`f64::INFINITY`, `f64::NAN`, `f64::consts::PI`, etc.
+> `rustup doc f64` — 64-bit floating-point primitive type.
+
+### Available f64 methods (from rustdoc)
+
+Math: `floor`, `ceil`, `round`, `round_ties_even`, `trunc`, `fract`,
+`abs`, `signum`, `copysign`, `mul_add`, `div_euclid`, `rem_euclid`,
+`powi`, `powf`, `sqrt`, `cbrt`, `hypot`, `exp`, `exp2`, `exp_m1`,
+`ln`, `log`, `log2`, `log10`, `ln_1p`
+
+Trig: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sin_cos`,
+`sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`
+
+Special: `gamma`, `ln_gamma`, `erf`, `erfc`
+
+Comparison: `max`, `min`, `maximum`, `minimum`, `midpoint`, `clamp`, `total_cmp`
+
+Classification: `is_nan`, `is_infinite`, `is_finite`, `is_subnormal`, `is_normal`,
+`is_sign_positive`, `is_sign_negative`, `classify`
+
+Conversion: `to_degrees`, `to_radians`, `recip`, `to_bits`, `from_bits`
+
+### Constants (`f64::consts`)
+
+`PI`, `TAU`, `E`, `SQRT_2`, `LN_2`, `LN_10`, `LOG2_E`, `LOG2_10`,
+`LOG10_E`, `LOG10_2`, `FRAC_PI_2`, `FRAC_PI_3`, `FRAC_PI_4`, `FRAC_PI_6`,
+`FRAC_PI_8`, `FRAC_1_PI`, `FRAC_2_PI`, `FRAC_2_SQRT_PI`, `FRAC_1_SQRT_2`
 
 ### Already done
 
@@ -57,10 +80,30 @@ Rust gives us: `f64::abs`, `f64::sqrt`, `f64::floor`, `f64::ceil`, `f64::round`,
 
 ## Phase 2 — `std::string` / `std::str` → String builtins
 
-Rust gives us: `str::contains`, `str::starts_with`, `str::ends_with`, `str::find`,
-`str::replace`, `str::replacen`, `str::to_uppercase`, `str::to_lowercase`,
-`str::trim`, `str::trim_start`, `str::trim_end`, `str::split`, `str::chars`,
-`str::len`, `str::repeat`, `str::parse`, `String::push_str`, `format!`, etc.
+> `rustup doc std::str` — Utilities for the `str` primitive type.
+> `rustup doc std::string` — A UTF-8–encoded, growable string.
+
+### Available str methods (from rustdoc)
+
+Searching: `contains`, `starts_with`, `ends_with`, `find`, `rfind`,
+`matches`, `rmatches`, `match_indices`, `rmatch_indices`
+
+Splitting: `split`, `rsplit`, `splitn`, `rsplitn`, `split_whitespace`,
+`split_ascii_whitespace`, `split_terminator`, `lines`
+
+Transforming: `replace`, `replacen`, `to_uppercase`, `to_lowercase`,
+`to_ascii_uppercase`, `to_ascii_lowercase`, `repeat`
+
+Trimming: `trim`, `trim_start`, `trim_end`, `trim_matches`,
+`trim_start_matches`, `trim_end_matches`, `strip_prefix`, `strip_suffix`
+
+Conversion: `parse`, `chars`, `char_indices`, `bytes`, `as_bytes`,
+`encode_utf16`, `is_ascii`, `is_empty`, `len`
+
+Iterators: `Bytes`, `Chars`, `CharIndices`, `Lines`, `SplitWhitespace`
+
+String: `String::new`, `String::from`, `String::push_str`, `String::push`,
+`String::from_utf8`, `String::from_utf16`, `format!`
 
 ### Already done
 
@@ -95,7 +138,13 @@ Rust gives us: `str::contains`, `str::starts_with`, `str::ends_with`, `str::find
 
 ## Phase 3 — `std::collections` → Data structure builtins
 
-Rust gives us: `Vec`, `HashMap`, `BTreeMap`, `HashSet`, `BinaryHeap`, `VecDeque`.
+> `rustup doc std::collections` — Collection types.
+
+Sequences: `Vec`, `VecDeque`, `LinkedList`
+Maps: `HashMap`, `BTreeMap`
+Sets: `HashSet`, `BTreeSet`
+Misc: `BinaryHeap`
+
 R's vectors are already `Vec<Option<T>>`. Lists are `Vec<(Option<String>, RValue)>`.
 
 ### Already done
@@ -127,8 +176,12 @@ R's vectors are already `Vec<Option<T>>`. Lists are `Vec<(Option<String>, RValue
 
 ## Phase 4 — `std::collections::HashMap` → Environment & lookup builtins
 
-Rust gives us: `HashMap::get`, `HashMap::insert`, `HashMap::contains_key`,
-`HashMap::keys`, `HashMap::remove`.
+> `rustup doc std::collections::HashMap` — A hash map implemented with
+> quadratic probing and SIMD lookup (SwissTable).
+
+Key methods: `get`, `get_mut`, `insert`, `remove`, `contains_key`,
+`keys`, `values`, `iter`, `len`, `is_empty`, `entry`, `retain`
+
 Our `Environment` already wraps `HashMap<String, RValue>` in `Rc<RefCell<>>`.
 
 ### Already done
@@ -186,11 +239,38 @@ Parameters to handle:
 
 ---
 
-## Phase 6 — `std::fs` / `std::path` → File I/O builtins
+## Phase 6 — `std::fs` / `std::path` / `std::env` → File I/O builtins
 
-Rust gives us: `std::fs::read_to_string`, `std::fs::write`, `std::fs::metadata`,
-`std::fs::create_dir`, `std::fs::remove_file`, `std::fs::rename`, `std::fs::copy`,
-`std::fs::read_dir`, `std::path::Path::exists`, `std::path::Path::canonicalize`, etc.
+> `rustup doc std::fs` — Filesystem manipulation operations.
+> `rustup doc std::path` — Cross-platform path manipulation.
+> `rustup doc std::env` — Inspection and manipulation of the process's environment.
+
+### std::fs functions (from rustdoc)
+
+`canonicalize`, `copy`, `create_dir`, `create_dir_all`, `exists`,
+`hard_link`, `metadata`, `read`, `read_dir`, `read_link`,
+`read_to_string`, `remove_dir`, `remove_dir_all`, `remove_file`,
+`rename`, `set_permissions`, `symlink_metadata`, `write`
+
+Structs: `File`, `DirEntry`, `ReadDir`, `Metadata`, `Permissions`,
+`FileType`, `OpenOptions`, `DirBuilder`
+
+### std::path types
+
+`Path` — immutable path reference (like `&str` for paths)
+`PathBuf` — owned path (like `String` for paths)
+
+Methods: `exists`, `is_file`, `is_dir`, `canonicalize`, `parent`,
+`file_name`, `file_stem`, `extension`, `join`, `with_extension`,
+`components`, `starts_with`, `ends_with`, `display`
+
+### std::env functions (from rustdoc)
+
+`current_dir`, `set_current_dir`, `current_exe`, `home_dir`,
+`temp_dir`, `var`, `var_os`, `set_var`, `remove_var`,
+`vars`, `args`, `split_paths`, `join_paths`
+
+Constants: `std::env::consts::OS`, `ARCH`, `FAMILY`, `EXE_SUFFIX`
 
 ### Already done
 
@@ -231,7 +311,20 @@ Rust gives us: `std::fs::read_to_string`, `std::fs::write`, `std::fs::metadata`,
 
 ## Phase 7 — `std::time` → Date/time builtins
 
-Rust gives us: `SystemTime`, `Instant`, `Duration`, `UNIX_EPOCH`.
+> `rustup doc std::time` — Temporal quantification.
+
+Structs: `Duration`, `Instant`, `SystemTime`, `SystemTimeError`
+
+`Duration` — span of time: `from_secs`, `from_millis`, `from_micros`,
+`from_nanos`, `from_secs_f64`, `as_secs`, `as_secs_f64`
+
+`Instant` — monotonically nondecreasing clock:
+`now()`, `elapsed()`, `duration_since()`, `checked_add()`, `checked_sub()`
+
+`SystemTime` — wall-clock time:
+`now()`, `elapsed()`, `duration_since(UNIX_EPOCH)`
+
+Constants: `UNIX_EPOCH`
 
 ### Already done
 
@@ -260,8 +353,17 @@ Rust gives us: `SystemTime`, `Instant`, `Duration`, `UNIX_EPOCH`.
 
 ## Phase 8 — `std::process` → System builtins
 
-Rust gives us: `Command::new`, `Command::output`, `Command::status`,
-`Command::spawn`, `process::exit`.
+> `rustup doc std::process` — A module for working with processes.
+
+`Command` — configure and spawn: `new(program)`, `arg(a)`, `args(list)`,
+`env(key, val)`, `current_dir(path)`, `stdin(cfg)`, `stdout(cfg)`,
+`stderr(cfg)`, `spawn()`, `output()`, `status()`
+
+`Output` — result: `stdout: Vec<u8>`, `stderr: Vec<u8>`, `status: ExitStatus`
+
+`Stdio` — pipe config: `piped()`, `inherit()`, `null()`
+
+Functions: `exit(code)`, `abort()`, `id()`
 
 ### Already done
 
@@ -284,7 +386,13 @@ Rust gives us: `Command::new`, `Command::output`, `Command::status`,
 
 ## Phase 9 — `std::random` → Random number builtins
 
-Rust 1.86+ has `std::random`. Before that, use `rand` crate (already common).
+> `rustup doc std::random` — Random value generation. (nightly-only experimental API)
+
+`random::<f64>()` — generate random f64 in [0, 1)
+`DefaultRandomSource` — the default random source
+
+Note: `std::random` is still unstable (#130703). For stable Rust, either
+use `rand` crate or implement a simple RNG (xoshiro256, PCG) inline.
 
 ### Currently noop
 
@@ -305,7 +413,13 @@ Rust 1.86+ has `std::random`. Before that, use `rand` crate (already common).
 
 ## Phase 10 — `std::hash` → Hashing builtins (newr extension)
 
-Rust gives us: `Hash` trait, `DefaultHasher`, `SipHash`.
+> `rustup doc std::hash` — Generic hashing support.
+
+Traits: `Hash`, `Hasher`, `BuildHasher`
+Struct: `DefaultHasher` (SipHash 1-3)
+
+Usage: `#[derive(Hash)]` or impl `Hash` manually, then feed to a `Hasher`
+and call `finish()` to get `u64`.
 
 Not standard R, but useful:
 
@@ -320,8 +434,18 @@ Not standard R, but useful:
 
 ## Phase 11 — `std::io` → I/O builtins
 
-Rust gives us: `BufReader`, `BufWriter`, `stdin`, `stdout`, `stderr`,
-`Read`, `Write`, `Seek`, `BufRead`.
+> `rustup doc std::io` — Traits, helpers, and type definitions for core I/O.
+
+Core traits: `Read`, `Write`, `Seek`, `BufRead`
+
+Structs: `BufReader`, `BufWriter`, `Cursor`, `Stdin`, `Stdout`, `Stderr`,
+`Take`, `Chain`, `Bytes`, `Lines`
+
+Functions: `stdin()`, `stdout()`, `stderr()`, `copy(reader, writer)`
+
+`BufRead::lines()` → iterator of `Result<String>` (line-by-line reading)
+`BufRead::read_line(&mut buf)` → read one line into String
+`Read::read_to_string(&mut buf)` → slurp entire contents
 
 ### Already done
 
@@ -351,8 +475,20 @@ Rust gives us: `BufReader`, `BufWriter`, `stdin`, `stdout`, `stderr`,
 
 ## Phase 12 — `std::iter` → Apply family & functional builtins
 
-Rust gives us: `Iterator` trait with `map`, `filter`, `fold`, `zip`, `enumerate`,
-`take`, `skip`, `chain`, `collect`, `any`, `all`, `find`, `position`, `count`.
+> `rustup doc std::iter` — Composable external iteration.
+
+Core trait: `Iterator` with `Item` type and `next()` method.
+
+Key adapters: `map`, `filter`, `filter_map`, `flat_map`, `flatten`,
+`zip`, `enumerate`, `chain`, `take`, `skip`, `take_while`, `skip_while`,
+`peekable`, `step_by`, `inspect`, `rev`, `cycle`, `cloned`, `copied`
+
+Consumers: `collect`, `fold`, `reduce`, `for_each`, `count`, `sum`,
+`product`, `min`, `max`, `min_by`, `max_by`, `any`, `all`, `find`,
+`find_map`, `position`, `nth`, `last`, `unzip`, `partition`
+
+Three forms of iteration: `iter()` (&T), `iter_mut()` (&mut T),
+`into_iter()` (T).
 
 ### Already done
 
@@ -379,7 +515,13 @@ Rust gives us: `Iterator` trait with `map`, `filter`, `fold`, `zip`, `enumerate`
 
 ## Phase 13 — `std::cmp` / `std::ops` → Comparison & operator builtins
 
-Rust gives us: `PartialOrd`, `Ord`, `PartialEq`, `Eq`, `min`, `max`.
+> `rustup doc std::cmp` — Utilities for comparing and ordering values.
+
+Traits: `PartialEq`, `Eq`, `PartialOrd`, `Ord`
+Enum: `Ordering` (Less, Equal, Greater)
+Struct: `Reverse` (reverse ordering wrapper)
+Functions: `min`, `max`, `min_by`, `max_by`, `min_by_key`, `max_by_key`,
+`minmax` (experimental)
 
 ### Already done
 
