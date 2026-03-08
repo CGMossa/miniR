@@ -167,3 +167,4 @@ Everything listed here currently returns NULL, does nothing, or has a simplified
 - [x] add linkme.
 - [ ] plan an r package builder
 - [ ] add typst conversion of Rdocumentation and produce the manual.
+- [ ] I wish for more decoupling. see     fn call_function( for an example of something that could be decoupled. use custom proc-macros if you need to.
