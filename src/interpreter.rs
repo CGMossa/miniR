@@ -4,6 +4,8 @@ pub mod value;
 
 use std::cell::RefCell;
 
+use ndarray::{Array2, ShapeBuilder};
+
 use crate::parser::ast::*;
 use environment::Environment;
 use value::*;
@@ -277,6 +279,7 @@ impl Interpreter {
         match op {
             BinaryOp::Range => return self.eval_range(left, right),
             BinaryOp::Special(SpecialOp::In) => return self.eval_in_op(left, right),
+            BinaryOp::Special(SpecialOp::MatMul) => return self.eval_matmul(left, right),
             _ => {}
         };
 
@@ -303,6 +306,7 @@ impl Interpreter {
         match op {
             BinaryOp::Range => self.eval_range(left, right),
             BinaryOp::Special(SpecialOp::In) => self.eval_in_op(left, right),
+            BinaryOp::Special(SpecialOp::MatMul) => self.eval_matmul(left, right),
             BinaryOp::Special(_) => Ok(RValue::Null),
 
             // Arithmetic (vectorized with recycling)
@@ -567,6 +571,69 @@ impl Interpreter {
             }
             _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
         }
+    }
+
+    /// Matrix multiplication using ndarray
+    fn eval_matmul(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+        // Helper to extract matrix dims and data
+        fn to_matrix(val: &RValue) -> Result<(Array2<f64>, usize, usize), RError> {
+            let (data, dim_attr) = match val {
+                RValue::Vector(rv) => (rv.to_doubles(), rv.get_attr("dim")),
+                _ => {
+                    return Err(RError::Type(
+                        "requires numeric/complex matrix/vector arguments".to_string(),
+                    ))
+                }
+            };
+            let (nrow, ncol) = match dim_attr {
+                Some(RValue::Vector(rv)) => match &rv.inner {
+                    Vector::Integer(d) if d.len() >= 2 => {
+                        (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
+                    }
+                    _ => (data.len(), 1), // treat as column vector
+                },
+                _ => (data.len(), 1), // treat as column vector
+            };
+            let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
+            // ndarray uses row-major by default, R uses column-major
+            // Array2::from_shape_vec with column-major (Fortran) order
+            let arr = Array2::from_shape_vec((nrow, ncol).f(), flat)
+                .map_err(|e| RError::Other(format!("matrix shape error: {}", e)))?;
+            Ok((arr, nrow, ncol))
+        }
+
+        let (a, _arows, acols) = to_matrix(left)?;
+        let (b, brows, bcols) = to_matrix(right)?;
+
+        if acols != brows {
+            return Err(RError::Other(format!(
+                "non-conformable arguments: {}x{} vs {}x{}",
+                a.nrows(),
+                acols,
+                brows,
+                bcols
+            )));
+        }
+
+        let c = a.dot(&b);
+        let (rrows, rcols) = (c.nrows(), c.ncols());
+
+        // Convert back to column-major R vector
+        let mut result = Vec::with_capacity(rrows * rcols);
+        for j in 0..rcols {
+            for i in 0..rrows {
+                result.push(Some(c[[i, j]]));
+            }
+        }
+
+        let mut rv = RVector::from(Vector::Double(result.into()));
+        rv.set_attr(
+            "dim".to_string(),
+            RValue::vec(Vector::Integer(
+                vec![Some(rrows as i64), Some(rcols as i64)].into(),
+            )),
+        );
+        Ok(RValue::Vector(rv))
     }
 
     fn eval_pipe(&self, lhs: &Expr, rhs: &Expr, env: &Environment) -> Result<RValue, RError> {

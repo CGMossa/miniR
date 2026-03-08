@@ -913,6 +913,7 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
             Rule::pipe_op => BinaryOp::Pipe,
             Rule::special_op => match op_pair.as_str() {
                 "%in%" => BinaryOp::Special(SpecialOp::In),
+                "%*%" => BinaryOp::Special(SpecialOp::MatMul),
                 "%%" => BinaryOp::Mod,
                 "%/%" => BinaryOp::IntDiv,
                 _ => BinaryOp::Special(SpecialOp::Other),
