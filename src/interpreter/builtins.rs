@@ -32,7 +32,7 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result: Vec<Option<f64>> = v.to_doubles().iter().map(|x| x.map(f)).collect();
-            Ok(RValue::Vector(Vector::Double(result.into())))
+            Ok(RValue::vec(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument(
             "non-numeric argument to mathematical function".to_string(),
@@ -85,51 +85,51 @@ pub fn register_builtins(env: &Environment) {
     // Constants
     env.set(
         "pi".to_string(),
-        RValue::Vector(Vector::Double(vec![Some(std::f64::consts::PI)].into())),
+        RValue::vec(Vector::Double(vec![Some(std::f64::consts::PI)].into())),
     );
     env.set(
         "T".to_string(),
-        RValue::Vector(Vector::Logical(vec![Some(true)].into())),
+        RValue::vec(Vector::Logical(vec![Some(true)].into())),
     );
     env.set(
         "F".to_string(),
-        RValue::Vector(Vector::Logical(vec![Some(false)].into())),
+        RValue::vec(Vector::Logical(vec![Some(false)].into())),
     );
     env.set(
         "TRUE".to_string(),
-        RValue::Vector(Vector::Logical(vec![Some(true)].into())),
+        RValue::vec(Vector::Logical(vec![Some(true)].into())),
     );
     env.set(
         "FALSE".to_string(),
-        RValue::Vector(Vector::Logical(vec![Some(false)].into())),
+        RValue::vec(Vector::Logical(vec![Some(false)].into())),
     );
     env.set(
         "Inf".to_string(),
-        RValue::Vector(Vector::Double(vec![Some(f64::INFINITY)].into())),
+        RValue::vec(Vector::Double(vec![Some(f64::INFINITY)].into())),
     );
     env.set(
         "NaN".to_string(),
-        RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into())),
+        RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())),
     );
     env.set(
         "NA".to_string(),
-        RValue::Vector(Vector::Logical(vec![None].into())),
+        RValue::vec(Vector::Logical(vec![None].into())),
     );
     env.set(
         "NA_integer_".to_string(),
-        RValue::Vector(Vector::Integer(vec![None].into())),
+        RValue::vec(Vector::Integer(vec![None].into())),
     );
     env.set(
         "NA_real_".to_string(),
-        RValue::Vector(Vector::Double(vec![None].into())),
+        RValue::vec(Vector::Double(vec![None].into())),
     );
     env.set(
         "NA_character_".to_string(),
-        RValue::Vector(Vector::Character(vec![None].into())),
+        RValue::vec(Vector::Character(vec![None].into())),
     );
     env.set(
         "LETTERS".to_string(),
-        RValue::Vector(Vector::Character(
+        RValue::vec(Vector::Character(
             (b'A'..=b'Z')
                 .map(|c| Some(String::from(c as char)))
                 .collect::<Vec<_>>()
@@ -138,7 +138,7 @@ pub fn register_builtins(env: &Environment) {
     );
     env.set(
         "letters".to_string(),
-        RValue::Vector(Vector::Character(
+        RValue::vec(Vector::Character(
             (b'a'..=b'z')
                 .map(|c| Some(String::from(c as char)))
                 .collect::<Vec<_>>()
@@ -150,19 +150,19 @@ pub fn register_builtins(env: &Environment) {
         RValue::List(RList::new(vec![
             (
                 Some("integer.max".to_string()),
-                RValue::Vector(Vector::Integer(vec![Some(i32::MAX as i64)].into())),
+                RValue::vec(Vector::Integer(vec![Some(i32::MAX as i64)].into())),
             ),
             (
                 Some("double.eps".to_string()),
-                RValue::Vector(Vector::Double(vec![Some(f64::EPSILON)].into())),
+                RValue::vec(Vector::Double(vec![Some(f64::EPSILON)].into())),
             ),
             (
                 Some("double.xmax".to_string()),
-                RValue::Vector(Vector::Double(vec![Some(f64::MAX)].into())),
+                RValue::vec(Vector::Double(vec![Some(f64::MAX)].into())),
             ),
             (
                 Some("double.xmin".to_string()),
-                RValue::Vector(Vector::Double(vec![Some(f64::MIN_POSITIVE)].into())),
+                RValue::vec(Vector::Double(vec![Some(f64::MIN_POSITIVE)].into())),
             ),
         ])),
     );
@@ -205,9 +205,9 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 
     for val in &all_values {
         match val {
-            RValue::Vector(Vector::Character(_)) => has_char = true,
-            RValue::Vector(Vector::Double(_)) => has_double = true,
-            RValue::Vector(Vector::Integer(_)) => has_int = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => has_char = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Double(_)) => has_double = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Integer(_)) => has_int = true,
             RValue::Null => {}
             _ => {}
         }
@@ -222,7 +222,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::Vector(Vector::Character(result.into())))
+        Ok(RValue::vec(Vector::Character(result.into())))
     } else if has_double {
         let mut result = Vec::new();
         for val in &all_values {
@@ -232,7 +232,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::Vector(Vector::Double(result.into())))
+        Ok(RValue::vec(Vector::Double(result.into())))
     } else if has_int {
         let mut result = Vec::new();
         for val in &all_values {
@@ -242,7 +242,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::Vector(Vector::Integer(result.into())))
+        Ok(RValue::vec(Vector::Integer(result.into())))
     } else {
         let mut result = Vec::new();
         for val in &all_values {
@@ -252,7 +252,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::Vector(Vector::Logical(result.into())))
+        Ok(RValue::vec(Vector::Logical(result.into())))
     }
 }
 
@@ -276,7 +276,7 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .iter()
         .map(|arg| match arg {
             RValue::Vector(v) => {
-                let elems: Vec<String> = match v {
+                let elems: Vec<String> = match &v.inner {
                     Vector::Character(vals) => vals
                         .iter()
                         .map(|x| x.clone().unwrap_or_else(|| "NA".to_string()))
@@ -336,7 +336,7 @@ fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .collect();
 
     if char_vecs.is_empty() {
-        return Ok(RValue::Vector(Vector::Character(
+        return Ok(RValue::vec(Vector::Character(
             vec![Some(String::new())].into(),
         )));
     }
@@ -344,7 +344,7 @@ fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     // Recycle to max length
     let max_len = char_vecs.iter().map(|v| v.len()).max().unwrap_or(0);
     if max_len == 0 {
-        return Ok(RValue::Vector(Vector::Character(vec![].into())));
+        return Ok(RValue::vec(Vector::Character(vec![].into())));
     }
 
     let result: Vec<Option<String>> = (0..max_len)
@@ -366,11 +366,9 @@ fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(&col);
-            Ok(RValue::Vector(Vector::Character(
-                vec![Some(collapsed)].into(),
-            )))
+            Ok(RValue::vec(Vector::Character(vec![Some(collapsed)].into())))
         }
-        None => Ok(RValue::Vector(Vector::Character(result.into()))),
+        None => Ok(RValue::vec(Vector::Character(result.into()))),
     }
 }
 
@@ -380,7 +378,7 @@ fn builtin_paste0(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     if !new_named.iter().any(|(n, _)| n == "sep") {
         new_named.push((
             "sep".to_string(),
-            RValue::Vector(Vector::Character(vec![Some(String::new())].into())),
+            RValue::vec(Vector::Character(vec![Some(String::new())].into())),
         ));
     }
     builtin_paste(args, &new_named)
@@ -389,36 +387,37 @@ fn builtin_paste0(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 1)]
 fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let len = args.first().map(|v| v.length()).unwrap_or(0);
-    Ok(RValue::Vector(Vector::Integer(
-        vec![Some(len as i64)].into(),
-    )))
+    Ok(RValue::vec(Vector::Integer(vec![Some(len as i64)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(Vector::Character(vals))) => {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
             let result: Vec<Option<i64>> = vals
                 .iter()
                 .map(|s| s.as_ref().map(|s| s.len() as i64))
                 .collect();
-            Ok(RValue::Vector(Vector::Integer(result.into())))
+            Ok(RValue::vec(Vector::Integer(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Integer(vec![None].into()))),
+        _ => Ok(RValue::vec(Vector::Integer(vec![None].into()))),
     }
 }
 
 #[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist", "is.environment"])]
 fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Null));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = match v {
+            let result: Vec<Option<bool>> = match &v.inner {
                 Vector::Logical(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
                 Vector::Integer(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
                 Vector::Double(vals) => vals
@@ -427,9 +426,9 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
                     .collect(),
                 Vector::Character(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
             };
-            Ok(RValue::Vector(Vector::Logical(result.into())))
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     }
 }
 
@@ -437,86 +436,89 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_is_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(
         args.first(),
-        Some(RValue::Vector(Vector::Double(_) | Vector::Integer(_)))
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Double(_) | Vector::Integer(_))
     );
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(Vector::Character(_))));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    let r = matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(Vector::Logical(_))));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    let r =
+        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(Vector::Integer(_))));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    let r =
+        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Integer(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(Vector::Double(_))));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    let r =
+        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Double(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1, names = ["is.primitive"])]
 fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Function(_)));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Vector(_)));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::List(_)));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1, names = ["as.double"])]
 fn builtin_as_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Double(v.to_doubles().into()))),
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Double(vec![].into()))),
-        _ => Ok(RValue::Vector(Vector::Double(vec![None].into()))),
+        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Double(v.to_doubles().into()))),
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Double(vec![].into()))),
+        _ => Ok(RValue::vec(Vector::Double(vec![None].into()))),
     }
 }
 
 #[builtin(min_args = 1)]
 fn builtin_as_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Integer(v.to_integers().into()))),
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Integer(vec![].into()))),
-        _ => Ok(RValue::Vector(Vector::Integer(vec![None].into()))),
+        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Integer(v.to_integers().into()))),
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![].into()))),
+        _ => Ok(RValue::vec(Vector::Integer(vec![None].into()))),
     }
 }
 
 #[builtin(min_args = 1)]
 fn builtin_as_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Character(v.to_characters().into()))),
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Character(vec![].into()))),
-        _ => Ok(RValue::Vector(Vector::Character(vec![None].into()))),
+        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Character(v.to_characters().into()))),
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Character(vec![].into()))),
+        _ => Ok(RValue::vec(Vector::Character(vec![None].into()))),
     }
 }
 
 #[builtin(min_args = 1)]
 fn builtin_as_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Logical(v.to_logicals().into()))),
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Logical(vec![].into()))),
-        _ => Ok(RValue::Vector(Vector::Logical(vec![None].into()))),
+        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Logical(v.to_logicals().into()))),
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Logical(vec![].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
     }
 }
 
@@ -531,7 +533,7 @@ fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             if names.iter().all(|n| n.is_none()) {
                 Ok(RValue::Null)
             } else {
-                Ok(RValue::Vector(Vector::Character(names.into())))
+                Ok(RValue::vec(Vector::Character(names.into())))
             }
         }
         _ => Ok(RValue::Null),
@@ -541,7 +543,7 @@ fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
 #[builtin(min_args = 1)]
 fn builtin_typeof(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let t = args.first().map(|v| v.type_name()).unwrap_or("NULL");
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(t.to_string())].into(),
     )))
 }
@@ -554,16 +556,18 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         }
     }
     let c = match args.first() {
-        Some(RValue::Vector(Vector::Logical(_))) => "logical",
-        Some(RValue::Vector(Vector::Integer(_))) => "integer",
-        Some(RValue::Vector(Vector::Double(_))) => "numeric",
-        Some(RValue::Vector(Vector::Character(_))) => "character",
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Logical(_) => "logical",
+            Vector::Integer(_) => "integer",
+            Vector::Double(_) => "numeric",
+            Vector::Character(_) => "character",
+        },
         Some(RValue::List(_)) => "list",
         Some(RValue::Function(_)) => "function",
         Some(RValue::Null) => "NULL",
         _ => "NULL",
     };
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(c.to_string())].into(),
     )))
 }
@@ -571,15 +575,17 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
 #[builtin(min_args = 1)]
 fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let m = match args.first() {
-        Some(RValue::Vector(Vector::Logical(_))) => "logical",
-        Some(RValue::Vector(Vector::Integer(_) | Vector::Double(_))) => "numeric",
-        Some(RValue::Vector(Vector::Character(_))) => "character",
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Logical(_) => "logical",
+            Vector::Integer(_) | Vector::Double(_) => "numeric",
+            Vector::Character(_) => "character",
+        },
         Some(RValue::List(_)) => "list",
         Some(RValue::Function(_)) => "function",
         Some(RValue::Null) => "NULL",
         _ => "NULL",
     };
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(m.to_string())].into(),
     )))
 }
@@ -592,7 +598,7 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                 RValue::Vector(v) => {
                     let len = v.len();
                     let type_name = v.type_name();
-                    let preview: String = match v {
+                    let preview: String = match &v.inner {
                         Vector::Double(vals) => vals
                             .iter()
                             .take(10)
@@ -649,7 +655,7 @@ fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         return Err(RError::Argument("need 2 arguments".to_string()));
     }
     let result = format!("{:?}", args[0]) == format!("{:?}", args[1]);
-    Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
 #[builtin(min_args = 2)]
@@ -668,14 +674,14 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             let d1 = v1.to_doubles();
             let d2 = v2.to_doubles();
             if d1.len() != d2.len() {
-                return Ok(RValue::Vector(Vector::Character(
+                return Ok(RValue::vec(Vector::Character(
                     vec![Some(format!("lengths ({}, {}) differ", d1.len(), d2.len()))].into(),
                 )));
             }
             for (a, b) in d1.iter().zip(d2.iter()) {
                 match (a, b) {
                     (Some(a), Some(b)) if (a - b).abs() > tolerance => {
-                        return Ok(RValue::Vector(Vector::Character(
+                        return Ok(RValue::vec(Vector::Character(
                             vec![Some(format!("Mean relative difference: {}", (a - b).abs()))]
                                 .into(),
                         )));
@@ -683,11 +689,11 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
                     _ => {}
                 }
             }
-            Ok(RValue::Vector(Vector::Logical(vec![Some(true)].into())))
+            Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
         }
         _ => {
             let result = format!("{:?}", args[0]) == format!("{:?}", args[1]);
-            Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
+            Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
         }
     }
 }
@@ -704,18 +710,14 @@ fn builtin_any(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         if let Some(v) = arg.as_vector() {
             for l in v.to_logicals() {
                 match l {
-                    Some(true) => {
-                        return Ok(RValue::Vector(Vector::Logical(vec![Some(true)].into())))
-                    }
-                    None if !na_rm => {
-                        return Ok(RValue::Vector(Vector::Logical(vec![None].into())))
-                    }
+                    Some(true) => return Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
+                    None if !na_rm => return Ok(RValue::vec(Vector::Logical(vec![None].into()))),
                     _ => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
 #[builtin]
@@ -731,17 +733,15 @@ fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
             for l in v.to_logicals() {
                 match l {
                     Some(false) => {
-                        return Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+                        return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
                     }
-                    None if !na_rm => {
-                        return Ok(RValue::Vector(Vector::Logical(vec![None].into())))
-                    }
+                    None if !na_rm => return Ok(RValue::vec(Vector::Logical(vec![None].into()))),
                     _ => {}
                 }
             }
         }
     }
-    Ok(RValue::Vector(Vector::Logical(vec![Some(true)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
 #[builtin(min_args = 2)]
@@ -752,8 +752,8 @@ fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     let a = args[0].as_vector().and_then(|v| v.as_logical_scalar());
     let b = args[1].as_vector().and_then(|v| v.as_logical_scalar());
     match (a, b) {
-        (Some(a), Some(b)) => Ok(RValue::Vector(Vector::Logical(vec![Some(a ^ b)].into()))),
-        _ => Ok(RValue::Vector(Vector::Logical(vec![None].into()))),
+        (Some(a), Some(b)) => Ok(RValue::vec(Vector::Logical(vec![Some(a ^ b)].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
     }
 }
 
@@ -780,20 +780,16 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0) as usize;
     match mode.as_str() {
-        "numeric" | "double" => Ok(RValue::Vector(Vector::Double(
-            vec![Some(0.0); length].into(),
-        ))),
-        "integer" => Ok(RValue::Vector(Vector::Integer(
-            vec![Some(0); length].into(),
-        ))),
-        "character" => Ok(RValue::Vector(Vector::Character(
+        "numeric" | "double" => Ok(RValue::vec(Vector::Double(vec![Some(0.0); length].into()))),
+        "integer" => Ok(RValue::vec(Vector::Integer(vec![Some(0); length].into()))),
+        "character" => Ok(RValue::vec(Vector::Character(
             vec![Some(String::new()); length].into(),
         ))),
-        "logical" => Ok(RValue::Vector(Vector::Logical(
+        "logical" => Ok(RValue::vec(Vector::Logical(
             vec![Some(false); length].into(),
         ))),
         "list" => Ok(RValue::List(RList::new(vec![(None, RValue::Null); length]))),
-        _ => Ok(RValue::Vector(Vector::Logical(
+        _ => Ok(RValue::vec(Vector::Logical(
             vec![Some(false); length].into(),
         ))),
     }
@@ -804,27 +800,22 @@ fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     match args.first() {
         Some(RValue::List(l)) => Ok(RValue::List(l.clone())),
         Some(RValue::Vector(v)) => {
-            let values: Vec<(Option<String>, RValue)> = match v {
+            let values: Vec<(Option<String>, RValue)> = match &v.inner {
                 Vector::Double(vals) => vals
                     .iter()
-                    .map(|x| (None, RValue::Vector(Vector::Double(vec![*x].into()))))
+                    .map(|x| (None, RValue::vec(Vector::Double(vec![*x].into()))))
                     .collect(),
                 Vector::Integer(vals) => vals
                     .iter()
-                    .map(|x| (None, RValue::Vector(Vector::Integer(vec![*x].into()))))
+                    .map(|x| (None, RValue::vec(Vector::Integer(vec![*x].into()))))
                     .collect(),
                 Vector::Logical(vals) => vals
                     .iter()
-                    .map(|x| (None, RValue::Vector(Vector::Logical(vec![*x].into()))))
+                    .map(|x| (None, RValue::vec(Vector::Logical(vec![*x].into()))))
                     .collect(),
                 Vector::Character(vals) => vals
                     .iter()
-                    .map(|x| {
-                        (
-                            None,
-                            RValue::Vector(Vector::Character(vec![x.clone()].into())),
-                        )
-                    })
+                    .map(|x| (None, RValue::vec(Vector::Character(vec![x.clone()].into()))))
                     .collect(),
             };
             Ok(RValue::List(RList::new(values)))
@@ -904,7 +895,7 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match test {
         Some(true) => Ok(args[1].clone()),
         Some(false) => Ok(args[2].clone()),
-        None => Ok(RValue::Vector(Vector::Logical(vec![None].into()))),
+        None => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
     }
 }
 
@@ -915,11 +906,11 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
     let x = match &args[0] {
         RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::Vector(Vector::Integer(vec![None].into()))),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
     };
     let table = match &args[1] {
         RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::Vector(Vector::Integer(vec![None].into()))),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
     };
 
     let result: Vec<Option<i64>> = x
@@ -933,7 +924,7 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             })
         })
         .collect();
-    Ok(RValue::Vector(Vector::Integer(result.into())))
+    Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
 #[builtin(min_args = 3)]
@@ -965,7 +956,7 @@ fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     }
                 }
             }
-            Ok(RValue::Vector(Vector::Double(doubles.into())))
+            Ok(RValue::vec(Vector::Double(doubles.into())))
         }
         _ => Ok(args[0].clone()),
     }
@@ -983,9 +974,9 @@ fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
     match name.as_str() {
-        "digits" => Ok(RValue::Vector(Vector::Integer(vec![Some(7)].into()))),
-        "warn" => Ok(RValue::Vector(Vector::Integer(vec![Some(0)].into()))),
-        "OutDec" => Ok(RValue::Vector(Vector::Character(
+        "digits" => Ok(RValue::vec(Vector::Integer(vec![Some(7)].into()))),
+        "warn" => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
+        "OutDec" => Ok(RValue::vec(Vector::Character(
             vec![Some(".".to_string())].into(),
         ))),
         _ => Ok(RValue::Null),
@@ -998,7 +989,7 @@ fn builtin_sys_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
-    Ok(RValue::Vector(Vector::Double(vec![Some(secs)].into())))
+    Ok(RValue::vec(Vector::Double(vec![Some(secs)].into())))
 }
 
 #[builtin]
@@ -1008,7 +999,7 @@ fn builtin_proc_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
     // R returns c(user.self, sys.self, elapsed) — we approximate with wall time
-    Ok(RValue::Vector(Vector::Double(
+    Ok(RValue::vec(Vector::Double(
         vec![Some(secs), Some(0.0), Some(secs)].into(),
     )))
 }
@@ -1030,7 +1021,7 @@ fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     print!("{}", prompt);
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).ok();
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(input.trim_end().to_string())].into(),
     )))
 }
@@ -1042,7 +1033,7 @@ fn builtin_sys_getenv(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
     let val = std::env::var(&name).unwrap_or_default();
-    Ok(RValue::Vector(Vector::Character(vec![Some(val)].into())))
+    Ok(RValue::vec(Vector::Character(vec![Some(val)].into())))
 }
 
 #[builtin]
@@ -1057,7 +1048,7 @@ fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         .iter()
         .filter_map(|v| v.as_vector()?.as_character_scalar())
         .collect();
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(parts.join(&sep))].into(),
     )))
 }
@@ -1074,7 +1065,7 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
             Some(std::path::Path::new(&path).exists())
         })
         .collect();
-    Ok(RValue::Vector(Vector::Logical(results.into())))
+    Ok(RValue::vec(Vector::Logical(results.into())))
 }
 
 #[builtin(name = "readLines", min_args = 1)]
@@ -1101,7 +1092,7 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
             .map(|l| Some(l.to_string()))
             .collect()
     };
-    Ok(RValue::Vector(Vector::Character(lines.into())))
+    Ok(RValue::vec(Vector::Character(lines.into())))
 }
 
 #[builtin(name = "writeLines", min_args = 1)]
@@ -1150,7 +1141,7 @@ fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
         "Warning: package '{}' is not available in this R implementation",
         pkg
     );
-    Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
 #[builtin(name = "R.Version", names = ["version"])]
@@ -1158,19 +1149,19 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::List(RList::new(vec![
         (
             Some("major".to_string()),
-            RValue::Vector(Vector::Character(vec![Some("0".to_string())].into())),
+            RValue::vec(Vector::Character(vec![Some("0".to_string())].into())),
         ),
         (
             Some("minor".to_string()),
-            RValue::Vector(Vector::Character(vec![Some("1.0".to_string())].into())),
+            RValue::vec(Vector::Character(vec![Some("1.0".to_string())].into())),
         ),
         (
             Some("language".to_string()),
-            RValue::Vector(Vector::Character(vec![Some("R".to_string())].into())),
+            RValue::vec(Vector::Character(vec![Some("R".to_string())].into())),
         ),
         (
             Some("engine".to_string()),
-            RValue::Vector(Vector::Character(
+            RValue::vec(Vector::Character(
                 vec![Some("newr (Rust)".to_string())].into(),
             )),
         ),
@@ -1180,13 +1171,13 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 1)]
 fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::List(_)));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Vector(_) | RValue::Null));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -1198,9 +1189,9 @@ fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 .iter()
                 .map(|x| Some(x.map(|f| f.is_finite()).unwrap_or(false)))
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result.into())))
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     }
 }
 
@@ -1213,9 +1204,9 @@ fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
                 .iter()
                 .map(|x| Some(x.map(|f| f.is_infinite()).unwrap_or(false)))
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result.into())))
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     }
 }
 
@@ -1228,9 +1219,9 @@ fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .iter()
                 .map(|x| Some(x.map(|f| f.is_nan()).unwrap_or(false)))
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result.into())))
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     }
 }
 
@@ -1248,7 +1239,7 @@ fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .map(|v| v.to_characters())
         .unwrap_or_default();
     let result: Vec<Option<String>> = x.into_iter().filter(|xi| !y.contains(xi)).collect();
-    Ok(RValue::Vector(Vector::Character(result.into())))
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 #[builtin(min_args = 2)]
@@ -1265,7 +1256,7 @@ fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         .map(|v| v.to_characters())
         .unwrap_or_default();
     let result: Vec<Option<String>> = x.into_iter().filter(|xi| y.contains(xi)).collect();
-    Ok(RValue::Vector(Vector::Character(result.into())))
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 #[builtin(min_args = 2)]
@@ -1287,7 +1278,7 @@ fn builtin_union(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             result.push(yi);
         }
     }
-    Ok(RValue::Vector(Vector::Character(result.into())))
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 #[builtin(min_args = 1)]
@@ -1308,9 +1299,9 @@ fn builtin_duplicated(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                     }
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result.into())))
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Ok(RValue::Vector(Vector::Logical(vec![].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![].into()))),
     }
 }
 
@@ -1319,7 +1310,7 @@ fn builtin_getwd(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
-    Ok(RValue::Vector(Vector::Character(vec![Some(cwd)].into())))
+    Ok(RValue::vec(Vector::Character(vec![Some(cwd)].into())))
 }
 
 #[builtin(names = ["double"])]
@@ -1328,7 +1319,7 @@ fn builtin_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0) as usize;
-    Ok(RValue::Vector(Vector::Double(vec![Some(0.0); n].into())))
+    Ok(RValue::vec(Vector::Double(vec![Some(0.0); n].into())))
 }
 
 #[builtin]
@@ -1337,7 +1328,7 @@ fn builtin_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0) as usize;
-    Ok(RValue::Vector(Vector::Integer(vec![Some(0); n].into())))
+    Ok(RValue::vec(Vector::Integer(vec![Some(0); n].into())))
 }
 
 #[builtin]
@@ -1346,7 +1337,7 @@ fn builtin_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0) as usize;
-    Ok(RValue::Vector(Vector::Logical(vec![Some(false); n].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(false); n].into())))
 }
 
 #[builtin]
@@ -1355,7 +1346,7 @@ fn builtin_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
         .unwrap_or(0) as usize;
-    Ok(RValue::Vector(Vector::Character(
+    Ok(RValue::vec(Vector::Character(
         vec![Some(String::new()); n].into(),
     )))
 }
@@ -1365,7 +1356,7 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let data = args
         .first()
         .cloned()
-        .unwrap_or(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into())));
+        .unwrap_or(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())));
     let nrow_arg = named
         .iter()
         .find(|(n, _)| n == "nrow")
@@ -1420,16 +1411,16 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         }
     }
 
-    let mut list = RList::new(vec![(None, RValue::Vector(Vector::Double(mat.into())))]);
+    let mut list = RList::new(vec![(None, RValue::vec(Vector::Double(mat.into())))]);
     list.set_attr(
         "class".to_string(),
-        RValue::Vector(Vector::Character(
+        RValue::vec(Vector::Character(
             vec![Some("matrix".to_string()), Some("array".to_string())].into(),
         )),
     );
     list.set_attr(
         "dim".to_string(),
-        RValue::Vector(Vector::Integer(
+        RValue::vec(Vector::Integer(
             vec![Some(nrow as i64), Some(ncol as i64)].into(),
         )),
     );
@@ -1448,13 +1439,15 @@ fn builtin_dim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(Vector::Integer(dims))) = l.get_attr("dim") {
-                if !dims.is_empty() {
-                    return Ok(RValue::Vector(Vector::Integer(vec![dims[0]].into())));
+            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(dims) = &rv.inner {
+                    if !dims.is_empty() {
+                        return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
+                    }
                 }
             }
             if let Some(rn) = l.get_attr("row.names") {
-                return Ok(RValue::Vector(Vector::Integer(
+                return Ok(RValue::vec(Vector::Integer(
                     vec![Some(rn.length() as i64)].into(),
                 )));
             }
@@ -1468,13 +1461,15 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => {
-            if let Some(RValue::Vector(Vector::Integer(dims))) = l.get_attr("dim") {
-                if dims.len() >= 2 {
-                    return Ok(RValue::Vector(Vector::Integer(vec![dims[1]].into())));
+            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(dims) = &rv.inner {
+                    if dims.len() >= 2 {
+                        return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
+                    }
                 }
             }
             if has_class(args.first().unwrap(), "data.frame") {
-                return Ok(RValue::Vector(Vector::Integer(
+                return Ok(RValue::vec(Vector::Integer(
                     vec![Some(l.values.len() as i64)].into(),
                 )));
             }
@@ -1487,33 +1482,41 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 #[builtin(name = "nrow", min_args = 1, names = ["NROW"])]
 fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::List(l)) => match l.get_attr("dim") {
-            Some(RValue::Vector(Vector::Integer(dims))) if !dims.is_empty() => {
-                Ok(RValue::Vector(Vector::Integer(vec![dims[0]].into())))
+        Some(RValue::List(l)) => {
+            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(dims) = &rv.inner {
+                    if !dims.is_empty() {
+                        return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
+                    }
+                }
             }
-            _ => Ok(RValue::Vector(Vector::Integer(
+            Ok(RValue::vec(Vector::Integer(
                 vec![Some(l.values.len() as i64)].into(),
-            ))),
-        },
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Integer(
+            )))
+        }
+        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Integer(
             vec![Some(v.len() as i64)].into(),
         ))),
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Integer(vec![Some(0)].into()))),
-        _ => Ok(RValue::Vector(Vector::Integer(vec![Some(1)].into()))),
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
+        _ => Ok(RValue::vec(Vector::Integer(vec![Some(1)].into()))),
     }
 }
 
 #[builtin(name = "ncol", min_args = 1, names = ["NCOL"])]
 fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::List(l)) => match l.get_attr("dim") {
-            Some(RValue::Vector(Vector::Integer(dims))) if dims.len() >= 2 => {
-                Ok(RValue::Vector(Vector::Integer(vec![dims[1]].into())))
+        Some(RValue::List(l)) => {
+            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(dims) = &rv.inner {
+                    if dims.len() >= 2 {
+                        return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
+                    }
+                }
             }
-            _ => Ok(RValue::Vector(Vector::Integer(vec![Some(1)].into()))),
-        },
-        Some(RValue::Null) => Ok(RValue::Vector(Vector::Integer(vec![Some(0)].into()))),
-        _ => Ok(RValue::Vector(Vector::Integer(vec![Some(1)].into()))),
+            Ok(RValue::vec(Vector::Integer(vec![Some(1)].into())))
+        }
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
+        _ => Ok(RValue::vec(Vector::Integer(vec![Some(1)].into()))),
     }
 }
 
@@ -1521,16 +1524,28 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => {
-            let dims = match l.get_attr("dim") {
-                Some(RValue::Vector(Vector::Integer(d))) if d.len() >= 2 => {
-                    (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
+            let dims = if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(d) = &rv.inner {
+                    if d.len() >= 2 {
+                        (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
+                    } else {
+                        return Ok(args[0].clone());
+                    }
+                } else {
+                    return Ok(args[0].clone());
                 }
-                _ => return Ok(args[0].clone()),
+            } else {
+                return Ok(args[0].clone());
             };
             let (nrow, ncol) = dims;
-            let data = match l.values.first() {
-                Some((_, RValue::Vector(Vector::Double(v)))) => v.clone(),
-                _ => return Ok(args[0].clone()),
+            let data = if let Some((_, RValue::Vector(rv))) = l.values.first() {
+                if let Vector::Double(v) = &rv.inner {
+                    v.clone()
+                } else {
+                    return Ok(args[0].clone());
+                }
+            } else {
+                return Ok(args[0].clone());
             };
             let mut transposed = vec![Some(0.0f64); nrow * ncol];
             for i in 0..nrow {
@@ -1543,19 +1558,17 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
                         .unwrap_or(None);
                 }
             }
-            let mut result = RList::new(vec![(
-                None,
-                RValue::Vector(Vector::Double(transposed.into())),
-            )]);
+            let mut result =
+                RList::new(vec![(None, RValue::vec(Vector::Double(transposed.into())))]);
             result.set_attr(
                 "class".to_string(),
-                RValue::Vector(Vector::Character(
+                RValue::vec(Vector::Character(
                     vec![Some("matrix".to_string()), Some("array".to_string())].into(),
                 )),
             );
             result.set_attr(
                 "dim".to_string(),
-                RValue::Vector(Vector::Integer(
+                RValue::vec(Vector::Integer(
                     vec![Some(ncol as i64), Some(nrow as i64)].into(),
                 )),
             );
@@ -1627,10 +1640,12 @@ fn builtin_structure(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         RValue::List(mut l) => {
             for (name, value) in named {
                 if name == ".Names" || name == "names" {
-                    if let RValue::Vector(Vector::Character(names)) = value {
-                        for (i, n) in names.iter().enumerate() {
-                            if i < l.values.len() {
-                                l.values[i].0 = n.clone();
+                    if let RValue::Vector(rv) = value {
+                        if let Vector::Character(names) = &rv.inner {
+                            for (i, n) in names.iter().enumerate() {
+                                if i < l.values.len() {
+                                    l.values[i].0 = n.clone();
+                                }
                             }
                         }
                     }
@@ -1660,16 +1675,23 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or_default();
 
     let classes = match args.first() {
-        Some(RValue::List(l)) => match l.get_attr("class") {
-            Some(RValue::Vector(Vector::Character(cls))) => {
-                cls.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
+        Some(RValue::List(l)) => {
+            if let Some(RValue::Vector(rv)) = l.get_attr("class") {
+                if let Vector::Character(cls) = &rv.inner {
+                    cls.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
+                } else {
+                    vec!["list".to_string()]
+                }
+            } else {
+                vec!["list".to_string()]
             }
-            _ => vec!["list".to_string()],
+        }
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Logical(_) => vec!["logical".to_string()],
+            Vector::Integer(_) => vec!["integer".to_string()],
+            Vector::Double(_) => vec!["numeric".to_string()],
+            Vector::Character(_) => vec!["character".to_string()],
         },
-        Some(RValue::Vector(Vector::Logical(_))) => vec!["logical".to_string()],
-        Some(RValue::Vector(Vector::Integer(_))) => vec!["integer".to_string()],
-        Some(RValue::Vector(Vector::Double(_))) => vec!["numeric".to_string()],
-        Some(RValue::Vector(Vector::Character(_))) => vec!["character".to_string()],
         Some(RValue::Function(_)) => vec!["function".to_string()],
         _ => vec![],
     };
@@ -1677,13 +1699,15 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     let result = what
         .iter()
         .any(|w| w.as_ref().is_some_and(|w| classes.iter().any(|c| c == w)));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
 fn has_class(val: &RValue, class_name: &str) -> bool {
     if let RValue::List(l) = val {
-        if let Some(RValue::Vector(Vector::Character(cls))) = l.get_attr("class") {
-            return cls.iter().any(|c| c.as_deref() == Some(class_name));
+        if let Some(RValue::Vector(rv)) = l.get_attr("class") {
+            if let Vector::Character(cls) = &rv.inner {
+                return cls.iter().any(|c| c.as_deref() == Some(class_name));
+            }
         }
     }
     false
@@ -1692,13 +1716,13 @@ fn has_class(val: &RValue, class_name: &str) -> bool {
 #[builtin(min_args = 1)]
 fn builtin_is_factor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "factor"));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_data_frame(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "data.frame"));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -1709,19 +1733,21 @@ fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         }
         // A matrix is any object with a dim attribute of length 2
         if let RValue::List(l) = v {
-            if let Some(RValue::Vector(Vector::Integer(dims))) = l.get_attr("dim") {
-                return dims.len() == 2;
+            if let Some(RValue::Vector(rv)) = l.get_attr("dim") {
+                if let Vector::Integer(dims) = &rv.inner {
+                    return dims.len() == 2;
+                }
             }
         }
         false
     });
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "array"));
-    Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 2)]
@@ -1731,11 +1757,11 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
     let x = match &args[0] {
         RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     };
     let table = match &args[1] {
         RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     };
     let result: Vec<Option<bool>> = x
         .iter()
@@ -1746,7 +1772,7 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             )
         })
         .collect();
-    Ok(RValue::Vector(Vector::Logical(result.into())))
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 #[builtin]
@@ -1774,18 +1800,18 @@ fn builtin_data_frame(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     let mut list = RList::new(columns);
     list.set_attr(
         "class".to_string(),
-        RValue::Vector(Vector::Character(
+        RValue::vec(Vector::Character(
             vec![Some("data.frame".to_string())].into(),
         )),
     );
     list.set_attr(
         "names".to_string(),
-        RValue::Vector(Vector::Character(col_names.into())),
+        RValue::vec(Vector::Character(col_names.into())),
     );
     let row_names: Vec<Option<i64>> = (1..=max_len as i64).map(Some).collect();
     list.set_attr(
         "row.names".to_string(),
-        RValue::Vector(Vector::Integer(row_names.into())),
+        RValue::vec(Vector::Integer(row_names.into())),
     );
     Ok(RValue::List(list))
 }
@@ -1807,32 +1833,45 @@ fn builtin_globalenv_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RV
 
 #[builtin(name = "nargs", names = ["sys.nframe", "sys.function"])]
 fn builtin_nargs_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Vector(Vector::Integer(vec![Some(0)].into())))
+    Ok(RValue::vec(Vector::Integer(vec![Some(0)].into())))
 }
 
 #[builtin(name = "isTRUE", min_args = 1)]
 fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
-        Some(RValue::Vector(Vector::Logical(v))) => v.len() == 1 && v[0] == Some(true),
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
+            let Vector::Logical(v) = &rv.inner else {
+                unreachable!()
+            };
+            v.len() == 1 && v[0] == Some(true)
+        }
         _ => false,
     };
-    Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
 #[builtin(name = "isFALSE", min_args = 1)]
 fn builtin_is_false(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
-        Some(RValue::Vector(Vector::Logical(v))) => v.len() == 1 && v[0] == Some(false),
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
+            let Vector::Logical(v) = &rv.inner else {
+                unreachable!()
+            };
+            v.len() == 1 && v[0] == Some(false)
+        }
         _ => false,
     };
-    Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
 #[builtin]
 fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     for (i, arg) in args.iter().enumerate() {
         match arg {
-            RValue::Vector(Vector::Logical(v)) => {
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Logical(_)) => {
+                let Vector::Logical(v) = &rv.inner else {
+                    unreachable!()
+                };
                 for (j, val) in v.iter().enumerate() {
                     match val {
                         Some(true) => {}
@@ -1887,7 +1926,7 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 
 #[builtin(name = "missing", min_args = 1)]
 fn builtin_missing_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
 #[builtin(name = "match.arg", min_args = 1)]
@@ -1904,7 +1943,10 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     };
 
     let choices_vec = match choices {
-        Some(RValue::Vector(Vector::Character(v))) => {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(v) = &rv.inner else {
+                unreachable!()
+            };
             v.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
         }
         Some(RValue::Null) | None => {
@@ -1921,16 +1963,14 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     match arg_str {
         None => {
             // NULL arg: return first choice (R behavior)
-            Ok(RValue::Vector(Vector::Character(
+            Ok(RValue::vec(Vector::Character(
                 vec![Some(choices_vec[0].clone())].into(),
             )))
         }
         Some(ref s) => {
             // Exact match first
             if choices_vec.contains(s) {
-                return Ok(RValue::Vector(Vector::Character(
-                    vec![Some(s.clone())].into(),
-                )));
+                return Ok(RValue::vec(Vector::Character(vec![Some(s.clone())].into())));
             }
             // Partial match
             let matches: Vec<&String> = choices_vec
@@ -1938,7 +1978,7 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
                 .filter(|c| c.starts_with(s.as_str()))
                 .collect();
             match matches.len() {
-                1 => Ok(RValue::Vector(Vector::Character(
+                1 => Ok(RValue::vec(Vector::Character(
                     vec![Some(matches[0].clone())].into(),
                 ))),
                 0 => Err(RError::Argument(format!(

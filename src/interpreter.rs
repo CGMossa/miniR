@@ -65,23 +65,21 @@ impl Interpreter {
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
-                NaType::Logical => RValue::Vector(Vector::Logical(vec![None].into())),
-                NaType::Integer => RValue::Vector(Vector::Integer(vec![None].into())),
-                NaType::Real => RValue::Vector(Vector::Double(vec![None].into())),
-                NaType::Character => RValue::Vector(Vector::Character(vec![None].into())),
-                NaType::Complex => RValue::Vector(Vector::Double(vec![None].into())),
+                NaType::Logical => RValue::vec(Vector::Logical(vec![None].into())),
+                NaType::Integer => RValue::vec(Vector::Integer(vec![None].into())),
+                NaType::Real => RValue::vec(Vector::Double(vec![None].into())),
+                NaType::Character => RValue::vec(Vector::Character(vec![None].into())),
+                NaType::Complex => RValue::vec(Vector::Double(vec![None].into())),
             }),
-            Expr::Inf => Ok(RValue::Vector(Vector::Double(
+            Expr::Inf => Ok(RValue::vec(Vector::Double(
                 vec![Some(f64::INFINITY)].into(),
             ))),
-            Expr::NaN => Ok(RValue::Vector(Vector::Double(vec![Some(f64::NAN)].into()))),
-            Expr::Bool(b) => Ok(RValue::Vector(Vector::Logical(vec![Some(*b)].into()))),
-            Expr::Integer(i) => Ok(RValue::Vector(Vector::Integer(vec![Some(*i)].into()))),
-            Expr::Double(f) => Ok(RValue::Vector(Vector::Double(vec![Some(*f)].into()))),
-            Expr::String(s) => Ok(RValue::Vector(Vector::Character(
-                vec![Some(s.clone())].into(),
-            ))),
-            Expr::Complex(f) => Ok(RValue::Vector(Vector::Double(vec![Some(*f)].into()))), // stub: treat as double
+            Expr::NaN => Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into()))),
+            Expr::Bool(b) => Ok(RValue::vec(Vector::Logical(vec![Some(*b)].into()))),
+            Expr::Integer(i) => Ok(RValue::vec(Vector::Integer(vec![Some(*i)].into()))),
+            Expr::Double(f) => Ok(RValue::vec(Vector::Double(vec![Some(*f)].into()))),
+            Expr::String(s) => Ok(RValue::vec(Vector::Character(vec![Some(s.clone())].into()))),
+            Expr::Complex(f) => Ok(RValue::vec(Vector::Double(vec![Some(*f)].into()))), // stub: treat as double
             Expr::Symbol(name) => env.get(name).ok_or_else(|| RError::Name(name.clone())),
             Expr::Dots => Ok(RValue::Null),
             Expr::DotDot(_) => Ok(RValue::Null), // stub for ..1, ..2 etc.
@@ -211,7 +209,7 @@ impl Interpreter {
         match op {
             UnaryOp::Neg => match val {
                 RValue::Vector(v) => {
-                    let result = match v {
+                    let result = match &v.inner {
                         Vector::Double(vals) => Vector::Double(
                             vals.iter()
                                 .map(|x| x.map(|f| -f))
@@ -236,7 +234,7 @@ impl Interpreter {
                             ))
                         }
                     };
-                    Ok(RValue::Vector(result))
+                    Ok(RValue::vec(result))
                 }
                 _ => Err(RError::Type(
                     "invalid argument to unary operator".to_string(),
@@ -248,7 +246,7 @@ impl Interpreter {
                     let logicals = v.to_logicals();
                     let result: Vec<Option<bool>> =
                         logicals.iter().map(|x| x.map(|b| !b)).collect();
-                    Ok(RValue::Vector(Vector::Logical(result.into())))
+                    Ok(RValue::vec(Vector::Logical(result.into())))
                 }
                 _ => Err(RError::Type("invalid argument type".to_string())),
             },
@@ -256,7 +254,12 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_binary(&self, op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    pub fn eval_binary(
+        &self,
+        op: BinaryOp,
+        left: &RValue,
+        right: &RValue,
+    ) -> Result<RValue, RError> {
         match op {
             BinaryOp::Range => return self.eval_range(left, right),
             BinaryOp::Special(SpecialOp::In) => return self.eval_in_op(left, right),
@@ -314,12 +317,12 @@ impl Interpreter {
                 let b = rv.as_logical_scalar();
                 match (a, b) {
                     (Some(false), _) | (_, Some(false)) => {
-                        Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+                        Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
                     }
                     (Some(true), Some(true)) => {
-                        Ok(RValue::Vector(Vector::Logical(vec![Some(true)].into())))
+                        Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
                     }
-                    _ => Ok(RValue::Vector(Vector::Logical(vec![None].into()))),
+                    _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
                 }
             }
             BinaryOp::OrScalar => {
@@ -327,12 +330,12 @@ impl Interpreter {
                 let b = rv.as_logical_scalar();
                 match (a, b) {
                     (Some(true), _) | (_, Some(true)) => {
-                        Ok(RValue::Vector(Vector::Logical(vec![Some(true)].into())))
+                        Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
                     }
                     (Some(false), Some(false)) => {
-                        Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
+                        Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
                     }
-                    _ => Ok(RValue::Vector(Vector::Logical(vec![None].into()))),
+                    _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
                 }
             }
 
@@ -357,7 +360,7 @@ impl Interpreter {
             let ri = rv.to_integers();
             let len = li.len().max(ri.len());
             if len == 0 {
-                return Ok(RValue::Vector(Vector::Integer(vec![].into())));
+                return Ok(RValue::vec(Vector::Integer(vec![].into())));
             }
             let result: Vec<Option<i64>> = (0..len)
                 .map(|i| {
@@ -388,14 +391,14 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            return Ok(RValue::Vector(Vector::Integer(result.into())));
+            return Ok(RValue::vec(Vector::Integer(result.into())));
         }
 
         let ld = lv.to_doubles();
         let rd = rv.to_doubles();
         let len = ld.len().max(rd.len());
         if len == 0 {
-            return Ok(RValue::Vector(Vector::Double(vec![].into())));
+            return Ok(RValue::vec(Vector::Double(vec![].into())));
         }
 
         let result: Vec<Option<f64>> = (0..len)
@@ -417,7 +420,7 @@ impl Interpreter {
                 }
             })
             .collect();
-        Ok(RValue::Vector(Vector::Double(result.into())))
+        Ok(RValue::vec(Vector::Double(result.into())))
     }
 
     fn eval_compare(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
@@ -444,14 +447,14 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            return Ok(RValue::Vector(Vector::Logical(result.into())));
+            return Ok(RValue::vec(Vector::Logical(result.into())));
         }
 
         let ld = lv.to_doubles();
         let rd = rv.to_doubles();
         let len = ld.len().max(rd.len());
         if len == 0 {
-            return Ok(RValue::Vector(Vector::Logical(vec![].into())));
+            return Ok(RValue::vec(Vector::Logical(vec![].into())));
         }
 
         let result: Vec<Option<bool>> = (0..len)
@@ -472,7 +475,7 @@ impl Interpreter {
                 }
             })
             .collect();
-        Ok(RValue::Vector(Vector::Logical(result.into())))
+        Ok(RValue::vec(Vector::Logical(result.into())))
     }
 
     fn eval_logical_vec(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
@@ -499,7 +502,7 @@ impl Interpreter {
                 }
             })
             .collect();
-        Ok(RValue::Vector(Vector::Logical(result.into())))
+        Ok(RValue::vec(Vector::Logical(result.into())))
     }
 
     fn eval_range(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
@@ -517,19 +520,21 @@ impl Interpreter {
         } else {
             (to..=from).rev().map(Some).collect()
         };
-        Ok(RValue::Vector(Vector::Integer(result.into())))
+        Ok(RValue::vec(Vector::Integer(result.into())))
     }
 
     fn eval_in_op(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
         match (left, right) {
             (RValue::Vector(lv), RValue::Vector(rv)) => {
                 // If either side is character, compare as strings
-                if matches!(lv, Vector::Character(_)) || matches!(rv, Vector::Character(_)) {
+                if matches!(lv.inner, Vector::Character(_))
+                    || matches!(rv.inner, Vector::Character(_))
+                {
                     let table = rv.to_characters();
                     let vals = lv.to_characters();
                     let result: Vec<Option<bool>> =
                         vals.iter().map(|x| Some(table.contains(x))).collect();
-                    return Ok(RValue::Vector(Vector::Logical(result.into())));
+                    return Ok(RValue::vec(Vector::Logical(result.into())));
                 }
                 // Otherwise compare as doubles (handles int/double/logical correctly)
                 let table = rv.to_doubles();
@@ -544,9 +549,9 @@ impl Interpreter {
                         None => Some(table.iter().any(|t| t.is_none())),
                     })
                     .collect();
-                Ok(RValue::Vector(Vector::Logical(result.into())))
+                Ok(RValue::vec(Vector::Logical(result.into())))
             }
-            _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
+            _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
         }
     }
 
@@ -776,7 +781,7 @@ impl Interpreter {
                 match &idx_val {
                     RValue::Vector(idx_vec) => {
                         // Logical indexing
-                        if let Vector::Logical(mask) = idx_vec {
+                        if let Vector::Logical(mask) = &idx_vec.inner {
                             return self.index_by_logical(v, mask);
                         }
                         // Negative indexing (exclusion)
@@ -795,7 +800,7 @@ impl Interpreter {
                 match &idx_val {
                     RValue::Vector(idx_vec) => {
                         // String indexing
-                        if let Vector::Character(names) = idx_vec {
+                        if let Vector::Character(names) = &idx_vec.inner {
                             let mut result = Vec::new();
                             for name in names.iter().flatten() {
                                 let found = list
@@ -843,7 +848,7 @@ impl Interpreter {
                         })
                     })
                     .collect();
-                Ok(RValue::Vector(Vector::$variant(result.into())))
+                Ok(RValue::vec(Vector::$variant(result.into())))
             }};
         }
         match v {
@@ -868,7 +873,7 @@ impl Interpreter {
                     .filter(|(i, _)| !exclude.contains(&(i + 1)))
                     .map(|(_, v)| v.clone())
                     .collect();
-                Ok(RValue::Vector(Vector::$variant(result.into())))
+                Ok(RValue::vec(Vector::$variant(result.into())))
             }};
         }
         match v {
@@ -888,7 +893,7 @@ impl Interpreter {
                     .filter(|(i, _)| mask.get(*i).copied().flatten().unwrap_or(false))
                     .map(|(_, v)| v.clone())
                     .collect();
-                Ok(RValue::Vector(Vector::$variant(result.into())))
+                Ok(RValue::vec(Vector::$variant(result.into())))
             }};
         }
         match v {
@@ -918,7 +923,10 @@ impl Interpreter {
 
         match &obj {
             RValue::List(list) => match &idx_val {
-                RValue::Vector(Vector::Character(names)) => {
+                RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                    let Vector::Character(names) = &rv.inner else {
+                        unreachable!()
+                    };
                     if let Some(Some(name)) = names.first() {
                         for (n, v) in &list.values {
                             if n.as_ref() == Some(name) {
@@ -945,17 +953,17 @@ impl Interpreter {
                 };
                 if i > 0 && i <= v.len() {
                     let idx = i - 1;
-                    match v {
+                    match &v.inner {
                         Vector::Double(vals) => {
-                            Ok(RValue::Vector(Vector::Double(vec![vals[idx]].into())))
+                            Ok(RValue::vec(Vector::Double(vec![vals[idx]].into())))
                         }
                         Vector::Integer(vals) => {
-                            Ok(RValue::Vector(Vector::Integer(vec![vals[idx]].into())))
+                            Ok(RValue::vec(Vector::Integer(vec![vals[idx]].into())))
                         }
                         Vector::Logical(vals) => {
-                            Ok(RValue::Vector(Vector::Logical(vec![vals[idx]].into())))
+                            Ok(RValue::vec(Vector::Logical(vec![vals[idx]].into())))
                         }
-                        Vector::Character(vals) => Ok(RValue::Vector(Vector::Character(
+                        Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
                             vec![vals[idx].clone()].into(),
                         ))),
                     }
@@ -1045,13 +1053,16 @@ impl Interpreter {
                         }
                     }
                 }
-                let new_obj = RValue::Vector(Vector::Double(doubles.into()));
+                let new_obj = RValue::vec(Vector::Double(doubles.into()));
                 env.set(var_name, new_obj.clone());
                 Ok(val)
             }
             RValue::List(list) => {
                 match &idx_val {
-                    RValue::Vector(Vector::Character(names)) => {
+                    RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                        let Vector::Character(names) = &rv.inner else {
+                            unreachable!()
+                        };
                         if let Some(Some(name)) = names.first() {
                             if let Some(entry) = list
                                 .values
@@ -1078,7 +1089,10 @@ impl Interpreter {
             RValue::Null => {
                 // Create new vector/list
                 match &idx_val {
-                    RValue::Vector(Vector::Character(names)) => {
+                    RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                        let Vector::Character(names) = &rv.inner else {
+                            unreachable!()
+                        };
                         let mut list = RList::new(vec![]);
                         if let Some(Some(name)) = names.first() {
                             list.values.push((Some(name.clone()), val.clone()));
@@ -1096,7 +1110,7 @@ impl Interpreter {
                                 doubles[idx - 1] = vv.to_doubles().into_iter().next().flatten();
                             }
                         }
-                        env.set(var_name, RValue::Vector(Vector::Double(doubles.into())));
+                        env.set(var_name, RValue::vec(Vector::Double(doubles.into())));
                     }
                 }
                 Ok(val)
@@ -1129,7 +1143,10 @@ impl Interpreter {
         match &mut obj {
             RValue::List(list) => {
                 match &idx_val {
-                    RValue::Vector(Vector::Character(names)) => {
+                    RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                        let Vector::Character(names) = &rv.inner else {
+                            unreachable!()
+                        };
                         if let Some(Some(name)) = names.first() {
                             if let Some(entry) = list
                                 .values
@@ -1228,18 +1245,12 @@ impl Interpreter {
             RValue::Vector(v) => {
                 let len = v.len();
                 for i in 0..len {
-                    let elem = match v {
-                        Vector::Double(vals) => {
-                            RValue::Vector(Vector::Double(vec![vals[i]].into()))
-                        }
-                        Vector::Integer(vals) => {
-                            RValue::Vector(Vector::Integer(vec![vals[i]].into()))
-                        }
-                        Vector::Logical(vals) => {
-                            RValue::Vector(Vector::Logical(vec![vals[i]].into()))
-                        }
+                    let elem = match &v.inner {
+                        Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[i]].into())),
+                        Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[i]].into())),
+                        Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[i]].into())),
                         Vector::Character(vals) => {
-                            RValue::Vector(Vector::Character(vec![vals[i].clone()].into()))
+                            RValue::vec(Vector::Character(vec![vals[i].clone()].into()))
                         }
                     };
                     env.set(var.to_string(), elem);
@@ -1278,16 +1289,23 @@ impl Interpreter {
     ) -> Result<RValue, RError> {
         // Get class of first argument
         let classes = match positional.first() {
-            Some(RValue::List(l)) => match l.get_attr("class") {
-                Some(RValue::Vector(Vector::Character(cls))) => {
-                    cls.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
+            Some(RValue::List(l)) => {
+                if let Some(RValue::Vector(rv)) = l.get_attr("class") {
+                    if let Vector::Character(cls) = &rv.inner {
+                        cls.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
+                    } else {
+                        vec!["list".to_string()]
+                    }
+                } else {
+                    vec!["list".to_string()]
                 }
-                _ => vec!["list".to_string()],
+            }
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Logical(_) => vec!["logical".to_string()],
+                Vector::Integer(_) => vec!["integer".to_string()],
+                Vector::Double(_) => vec!["numeric".to_string()],
+                Vector::Character(_) => vec!["character".to_string()],
             },
-            Some(RValue::Vector(Vector::Logical(_))) => vec!["logical".to_string()],
-            Some(RValue::Vector(Vector::Integer(_))) => vec!["integer".to_string()],
-            Some(RValue::Vector(Vector::Double(_))) => vec!["numeric".to_string()],
-            Some(RValue::Vector(Vector::Character(_))) => vec!["character".to_string()],
             Some(RValue::Function(_)) => vec!["function".to_string()],
             Some(RValue::Null) => vec!["NULL".to_string()],
             _ => vec![],
