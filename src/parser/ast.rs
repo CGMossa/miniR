@@ -167,6 +167,7 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Copy)]
 pub enum SpecialOp {
     In,
+    MatMul,
     Other,
 }
 

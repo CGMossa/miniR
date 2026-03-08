@@ -19,8 +19,6 @@ noop_builtin!("tapply", 3);
 noop_builtin!("by", 3);
 // Linear algebra
 noop_builtin!("diag", 1);
-noop_builtin!("crossprod", 1);
-noop_builtin!("tcrossprod", 1);
 noop_builtin!("solve", 1);
 noop_builtin!("qr", 1);
 noop_builtin!("svd", 1);

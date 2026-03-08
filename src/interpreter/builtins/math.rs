@@ -1,3 +1,5 @@
+use ndarray::{Array2, ShapeBuilder};
+
 use crate::interpreter::value::*;
 use newr_macros::{builtin, noop_builtin};
 
@@ -914,4 +916,75 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         },
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
+}
+
+/// Convert an RValue to an ndarray Array2 (column-major)
+fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
+    let (data, dim_attr) = match val {
+        RValue::Vector(rv) => (rv.to_doubles(), rv.get_attr("dim")),
+        _ => {
+            return Err(RError::Type(
+                "requires numeric matrix/vector arguments".to_string(),
+            ))
+        }
+    };
+    let (nrow, ncol) = match dim_attr {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Integer(d) if d.len() >= 2 => {
+                (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
+            }
+            _ => (data.len(), 1),
+        },
+        _ => (data.len(), 1),
+    };
+    let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
+    Array2::from_shape_vec((nrow, ncol).f(), flat)
+        .map_err(|e| RError::Other(format!("matrix shape error: {}", e)))
+}
+
+/// Convert an ndarray Array2 back to an RValue matrix
+fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
+    let (nrow, ncol) = (arr.nrows(), arr.ncols());
+    let mut result = Vec::with_capacity(nrow * ncol);
+    for j in 0..ncol {
+        for i in 0..nrow {
+            result.push(Some(arr[[i, j]]));
+        }
+    }
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(nrow as i64), Some(ncol as i64)].into(),
+        )),
+    );
+    RValue::Vector(rv)
+}
+
+/// crossprod(x, y) = t(x) %*% y
+#[builtin(min_args = 1)]
+fn builtin_crossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let y = if let Some(b) = args.get(1) {
+        rvalue_to_array2(b)?
+    } else {
+        x.clone()
+    };
+    let xt = x.t();
+    let result = xt.dot(&y);
+    Ok(array2_to_rvalue(&result))
+}
+
+/// tcrossprod(x, y) = x %*% t(y)
+#[builtin(min_args = 1)]
+fn builtin_tcrossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let y = if let Some(b) = args.get(1) {
+        rvalue_to_array2(b)?
+    } else {
+        x.clone()
+    };
+    let yt = y.t();
+    let result = x.dot(&yt);
+    Ok(array2_to_rvalue(&result))
 }

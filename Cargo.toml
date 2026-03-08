@@ -15,6 +15,7 @@ exclude = ["cran/", ".cargo/", "doc/", "docs/", "plans/", "scripts/", "share/", 
 [dependencies]
 derive_more = { version = "2.1", features = ["deref", "deref_mut", "from", "into", "constructor"] }
 linkme = "0.3"
+ndarray = "0.17"
 newr-macros = { path = "newr-macros" }
 pest = "2.8"
 pest_derive = "2.8"
