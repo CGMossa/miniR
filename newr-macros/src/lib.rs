@@ -38,6 +38,7 @@ pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_args = parse_macro_input!(attr as BuiltinAttr);
 
     let fn_name = &input.sig.ident;
+    let extra_names = attr_args.names;
     let r_name = attr_args
         .name
         .unwrap_or_else(|| infer_r_name(&fn_name.to_string()));
@@ -45,12 +46,27 @@ pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let reg_name = format_ident!("__BUILTIN_REG_{}", fn_name.to_string().to_uppercase());
 
+    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
+        let alias_reg = format_ident!(
+            "__BUILTIN_REG_{}_ALIAS_{}",
+            fn_name.to_string().to_uppercase(),
+            i
+        );
+        quote! {
+            #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
+            static #alias_reg: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
+                (#alias, #fn_name, #min_args);
+        }
+    });
+
     let expanded = quote! {
         #input
 
         #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
         static #reg_name: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
             (#r_name, #fn_name, #min_args);
+
+        #(#alias_regs)*
     };
 
     expanded.into()
@@ -94,12 +110,15 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
 
 struct BuiltinAttr {
     name: Option<String>,
+    names: Vec<String>,
     min_args: u64,
 }
+
 
 impl syn::parse::Parse for BuiltinAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut name = None;
+        let mut names = Vec::new();
         let mut min_args = 0u64;
 
         while !input.is_empty() {
@@ -110,6 +129,17 @@ impl syn::parse::Parse for BuiltinAttr {
                 "name" => {
                     let lit: LitStr = input.parse()?;
                     name = Some(lit.value());
+                }
+                "names" => {
+                    let content;
+                    syn::bracketed!(content in input);
+                    while !content.is_empty() {
+                        let lit: LitStr = content.parse()?;
+                        names.push(lit.value());
+                        if content.peek(syn::Token![,]) {
+                            content.parse::<syn::Token![,]>()?;
+                        }
+                    }
                 }
                 "min_args" => {
                     let lit: LitInt = input.parse()?;
@@ -128,7 +158,11 @@ impl syn::parse::Parse for BuiltinAttr {
             }
         }
 
-        Ok(BuiltinAttr { name, min_args })
+        Ok(BuiltinAttr {
+            name,
+            names,
+            min_args,
+        })
     }
 }
 
@@ -159,10 +193,24 @@ pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream 
     let fn_name = &input.sig.ident;
     let fn_str = fn_name.to_string();
     let base = fn_str.strip_prefix("interp_").unwrap_or(&fn_str);
+    let extra_names = attr_args.names;
     let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
     let min_args = attr_args.min_args as usize;
 
     let reg_name = format_ident!("__INTERP_REG_{}", fn_name.to_string().to_uppercase());
+
+    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
+        let alias_reg = format_ident!(
+            "__INTERP_REG_{}_ALIAS_{}",
+            fn_name.to_string().to_uppercase(),
+            i
+        );
+        quote! {
+            #[linkme::distributed_slice(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY)]
+            static #alias_reg: (&str, crate::interpreter::builtins::InterpreterBuiltinFn, usize) =
+                (#alias, #fn_name, #min_args);
+        }
+    });
 
     let expanded = quote! {
         #input
@@ -170,6 +218,8 @@ pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream 
         #[linkme::distributed_slice(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY)]
         static #reg_name: (&str, crate::interpreter::builtins::InterpreterBuiltinFn, usize) =
             (#r_name, #fn_name, #min_args);
+
+        #(#alias_regs)*
     };
 
     expanded.into()
@@ -199,10 +249,24 @@ pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input.sig.ident;
     let fn_str = fn_name.to_string();
     let base = fn_str.strip_prefix("pre_eval_").unwrap_or(&fn_str);
+    let extra_names = attr_args.names;
     let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
     let min_args = attr_args.min_args as usize;
 
     let reg_name = format_ident!("__PRE_EVAL_REG_{}", fn_name.to_string().to_uppercase());
+
+    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
+        let alias_reg = format_ident!(
+            "__PRE_EVAL_REG_{}_ALIAS_{}",
+            fn_name.to_string().to_uppercase(),
+            i
+        );
+        quote! {
+            #[linkme::distributed_slice(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY)]
+            static #alias_reg: (&str, crate::interpreter::builtins::PreEvalBuiltinFn, usize) =
+                (#alias, #fn_name, #min_args);
+        }
+    });
 
     let expanded = quote! {
         #input
@@ -210,6 +274,8 @@ pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[linkme::distributed_slice(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY)]
         static #reg_name: (&str, crate::interpreter::builtins::PreEvalBuiltinFn, usize) =
             (#r_name, #fn_name, #min_args);
+
+        #(#alias_regs)*
     };
 
     expanded.into()

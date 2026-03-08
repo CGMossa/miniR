@@ -45,62 +45,6 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
     }
 }
 
-// Aliases: multiple R names pointing to the same implementation.
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_AS_DOUBLE: (&str, BuiltinFn, usize) = ("as.double", builtin_as_numeric, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_PMATCH: (&str, BuiltinFn, usize) = ("pmatch", builtin_match, 2);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_CHARMATCH: (&str, BuiltinFn, usize) = ("charmatch", builtin_match, 2);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_ATTR_SET: (&str, BuiltinFn, usize) = ("attr<-", builtin_attr_set, 3);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_ORDERED: (&str, BuiltinFn, usize) = ("is.ordered", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_PRIMITIVE: (&str, BuiltinFn, usize) = ("is.primitive", builtin_is_function, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_ENVIRONMENT: (&str, BuiltinFn, usize) = ("is.environment", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_NROW_SAFE: (&str, BuiltinFn, usize) = ("NROW", builtin_nrow_safe, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_NCOL_SAFE: (&str, BuiltinFn, usize) = ("NCOL", builtin_ncol_safe, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_DOUBLE: (&str, BuiltinFn, usize) = ("double", builtin_numeric, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_CALL: (&str, BuiltinFn, usize) = ("is.call", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_SYMBOL: (&str, BuiltinFn, usize) = ("is.symbol", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_NAME: (&str, BuiltinFn, usize) = ("is.name", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_EXPRESSION: (&str, BuiltinFn, usize) = ("is.expression", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_IS_PAIRLIST: (&str, BuiltinFn, usize) = ("is.pairlist", builtin_is_null, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_R_VERSION: (&str, BuiltinFn, usize) = ("R.Version", builtin_r_version, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_VERSION: (&str, BuiltinFn, usize) = ("version", builtin_r_version, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_ISTRUE: (&str, BuiltinFn, usize) = ("isTRUE", builtin_is_true, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_ISFALSE: (&str, BuiltinFn, usize) = ("isFALSE", builtin_is_false, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_QUIT: (&str, BuiltinFn, usize) = ("quit", builtin_q, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_REQUIRE: (&str, BuiltinFn, usize) = ("require", builtin_require_stub, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_LIBRARY: (&str, BuiltinFn, usize) = ("library", builtin_require_stub, 1);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_SYS_NFRAME: (&str, BuiltinFn, usize) = ("sys.nframe", builtin_nargs_stub, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_SYS_FUNCTION: (&str, BuiltinFn, usize) = ("sys.function", builtin_nargs_stub, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_BASEENV: (&str, BuiltinFn, usize) = ("baseenv", builtin_globalenv_stub, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_EMPTYENV: (&str, BuiltinFn, usize) = ("emptyenv", builtin_globalenv_stub, 0);
-#[distributed_slice(BUILTIN_REGISTRY)]
-static ALIAS_PARENT_ENV: (&str, BuiltinFn, usize) = ("parent.env", builtin_globalenv_stub, 0);
-
 /// Placeholder for interpreter-level builtins — never actually called because
 /// dispatch is intercepted by the interpreter/pre-eval registries.
 fn placeholder_builtin(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -469,7 +413,7 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist", "is.environment"])]
 fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Null));
     Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
@@ -527,7 +471,7 @@ fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
 }
 
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, names = ["is.primitive"])]
 fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Function(_)));
     Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
@@ -545,7 +489,7 @@ fn builtin_is_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::Vector(Vector::Logical(vec![Some(r)].into())))
 }
 
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, names = ["as.double"])]
 fn builtin_as_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => Ok(RValue::Vector(Vector::Double(v.to_doubles().into()))),
@@ -969,7 +913,7 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
-#[builtin(min_args = 2)]
+#[builtin(min_args = 2, names = ["pmatch", "charmatch"])]
 fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
         return Err(RError::Argument("need 2 arguments".to_string()));
@@ -1201,6 +1145,7 @@ fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
     Ok(RValue::Null)
 }
 
+#[builtin(name = "require", min_args = 1, names = ["library"])]
 fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pkg = args
         .first()
@@ -1213,6 +1158,7 @@ fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into())))
 }
 
+#[builtin(name = "R.Version", names = ["version"])]
 fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![
         (
@@ -1381,7 +1327,7 @@ fn builtin_getwd(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     Ok(RValue::Vector(Vector::Character(vec![Some(cwd)].into())))
 }
 
-#[builtin]
+#[builtin(names = ["double"])]
 fn builtin_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
         .first()
@@ -1543,6 +1489,7 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+#[builtin(name = "nrow", min_args = 1, names = ["NROW"])]
 fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => match l.get_attr("dim") {
@@ -1561,6 +1508,7 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+#[builtin(name = "ncol", min_args = 1, names = ["NCOL"])]
 fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => match l.get_attr("dim") {
@@ -1635,6 +1583,7 @@ fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+#[builtin(name = "attr<-", min_args = 3)]
 fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let which = args
         .get(1)
@@ -1856,14 +1805,17 @@ fn builtin_new_env_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     Ok(RValue::Environment(Environment::new_global()))
 }
 
+#[builtin(name = "globalenv", names = ["baseenv", "emptyenv", "parent.env"])]
 fn builtin_globalenv_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Null)
 }
 
+#[builtin(name = "nargs", names = ["sys.nframe", "sys.function"])]
 fn builtin_nargs_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Vector(Vector::Integer(vec![Some(0)].into())))
 }
 
+#[builtin(name = "isTRUE", min_args = 1)]
 fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
         Some(RValue::Vector(Vector::Logical(v))) => v.len() == 1 && v[0] == Some(true),
@@ -1872,6 +1824,7 @@ fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::Vector(Vector::Logical(vec![Some(result)].into())))
 }
 
+#[builtin(name = "isFALSE", min_args = 1)]
 fn builtin_is_false(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
         Some(RValue::Vector(Vector::Logical(v))) => v.len() == 1 && v[0] == Some(false),
@@ -2019,7 +1972,7 @@ fn builtin_sys_call_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::Null)
 }
 
-#[builtin]
+#[builtin(names = ["quit"])]
 fn builtin_q(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     std::process::exit(0);
 }
