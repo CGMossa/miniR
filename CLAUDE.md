@@ -37,6 +37,10 @@ We will diverge from R behavior when R behavior is absurd. This is not a drop-in
 - Use `--verbose` flag to see per-file results
 - `just update-cran-test-packages` — clone/refresh the CRAN test packages in `cran/`
 
+## Plans
+
+- Don't use phases in plans — just list what needs to be done in a flat, prioritized order
+
 ## Commits
 
 - Commit early and often — don't batch unrelated changes
