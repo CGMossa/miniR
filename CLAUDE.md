@@ -47,9 +47,9 @@ We will diverge from R behavior when R behavior is absurd. This is not a drop-in
 
 ## Module Structure
 
-- When splitting a file into sub-modules, use the Rust 2018 style: `foo.rs` alongside `foo/` directory
-- Do NOT use the `foo/mod.rs` pattern — use `foo.rs` as the parent module instead
+- NEVER use the `mod.rs` pattern (`foo/mod.rs`) — always use the `foo.rs` alongside `foo/` directory pattern instead
 - Example: `builtins.rs` + `builtins/math.rs` + `builtins/strings.rs`
+- If you find existing `mod.rs` files, refactor them to the `foo.rs` pattern
 
 ## Code Quality
 
