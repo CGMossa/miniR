@@ -611,6 +611,15 @@ impl Interpreter {
             f
         };
 
+        // tryCatch and try need special handling before args are evaluated
+        if let RValue::Function(RFunction::Builtin { name, .. }) = &f {
+            match name.as_str() {
+                "tryCatch" => return self.eval_try_catch_raw(args, env),
+                "try" => return self.eval_try_raw(args, env),
+                _ => {}
+            }
+        }
+
         let mut positional = Vec::new();
         let mut named = Vec::new();
 
@@ -665,11 +674,14 @@ impl Interpreter {
                         // Return the function as-is (simplified)
                         return Ok(positional.first().cloned().unwrap_or(RValue::Null));
                     }
-                    "tryCatch" => {
-                        return self.eval_try_catch(positional, named, env);
+                    "Reduce" => {
+                        return self.eval_reduce(positional, named, env);
                     }
-                    "try" => {
-                        return Ok(positional.first().cloned().unwrap_or(RValue::Null));
+                    "Filter" => {
+                        return self.eval_filter(positional, env);
+                    }
+                    "Map" => {
+                        return self.eval_map(positional, env);
                     }
                     "switch" => {
                         return self.eval_switch(positional, named);
@@ -682,6 +694,9 @@ impl Interpreter {
                     }
                     "exists" => {
                         return self.eval_exists(positional, named, env);
+                    }
+                    "source" => {
+                        return self.eval_source(positional);
                     }
                     "system.time" => {
                         let start = std::time::Instant::now();
@@ -852,14 +867,275 @@ impl Interpreter {
         Ok(RValue::List(RList::new(values)))
     }
 
-    fn eval_try_catch(
+    fn eval_try_catch_raw(&mut self, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+        // First unnamed arg is the expression to evaluate
+        let expr = args
+            .iter()
+            .find(|a| a.name.is_none())
+            .and_then(|a| a.value.as_ref());
+
+        // Collect named handlers (error=, warning=, finally=)
+        let mut error_handler = None;
+        let mut finally_expr = None;
+        for arg in args {
+            match arg.name.as_deref() {
+                Some("error") => {
+                    if let Some(ref val_expr) = arg.value {
+                        error_handler = Some(self.eval_in(val_expr, env)?);
+                    }
+                }
+                Some("finally") => {
+                    finally_expr = arg.value.clone();
+                }
+                _ => {}
+            }
+        }
+
+        let result = match expr {
+            Some(e) => match self.eval_in(e, env) {
+                Ok(val) => Ok(val),
+                Err(err) => {
+                    if let Some(handler) = error_handler {
+                        // Call the error handler with a simpleError-like message
+                        let err_msg = format!("{}", err);
+                        let err_val = RValue::Vector(Vector::Character(vec![Some(err_msg)]));
+                        self.call_function(&handler, &[err_val], &[], env)
+                    } else {
+                        Err(err)
+                    }
+                }
+            },
+            None => Ok(RValue::Null),
+        };
+
+        // Run finally block if present
+        if let Some(ref fin) = finally_expr {
+            self.eval_in(fin, env)?;
+        }
+
+        result
+    }
+
+    fn eval_try_raw(&mut self, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+        let expr = args
+            .iter()
+            .find(|a| a.name.is_none())
+            .and_then(|a| a.value.as_ref());
+        match expr {
+            Some(e) => match self.eval_in(e, env) {
+                Ok(val) => Ok(val),
+                Err(err) => {
+                    let msg = format!("{}", err);
+                    eprintln!("Error in try : {}", msg);
+                    Ok(RValue::Vector(Vector::Character(vec![Some(msg)])))
+                }
+            },
+            None => Ok(RValue::Null),
+        }
+    }
+
+    fn eval_reduce(
         &mut self,
         positional: &[RValue],
-        _named: &[(String, RValue)],
-        _env: &Environment,
+        named: &[(String, RValue)],
+        env: &Environment,
     ) -> Result<RValue, RError> {
-        // Just return the first argument (simplified tryCatch)
-        Ok(positional.first().cloned().unwrap_or(RValue::Null))
+        if positional.len() < 2 {
+            return Err(RError::Argument(
+                "Reduce requires at least 2 arguments".to_string(),
+            ));
+        }
+        let f = &positional[0];
+        let x = &positional[1];
+        let init = positional
+            .get(2)
+            .or_else(|| named.iter().find(|(n, _)| n == "init").map(|(_, v)| v));
+        let accumulate = named
+            .iter()
+            .find(|(n, _)| n == "accumulate")
+            .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+            .unwrap_or(false);
+
+        let items: Vec<RValue> = match x {
+            RValue::Vector(v) => match v {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Double(vec![*x])))
+                    .collect(),
+                Vector::Integer(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Integer(vec![*x])))
+                    .collect(),
+                Vector::Character(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Character(vec![x.clone()])))
+                    .collect(),
+                Vector::Logical(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Logical(vec![*x])))
+                    .collect(),
+            },
+            RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
+            _ => vec![x.clone()],
+        };
+
+        if items.is_empty() {
+            return Ok(init.cloned().unwrap_or(RValue::Null));
+        }
+
+        let (mut acc, start) = match init {
+            Some(v) => (v.clone(), 0),
+            None => (items[0].clone(), 1),
+        };
+
+        let mut accum_results = if accumulate {
+            vec![acc.clone()]
+        } else {
+            vec![]
+        };
+
+        for item in items.iter().skip(start) {
+            acc = self.call_function(f, &[acc, item.clone()], &[], env)?;
+            if accumulate {
+                accum_results.push(acc.clone());
+            }
+        }
+
+        if accumulate {
+            let values: Vec<(Option<String>, RValue)> =
+                accum_results.into_iter().map(|v| (None, v)).collect();
+            Ok(RValue::List(RList::new(values)))
+        } else {
+            Ok(acc)
+        }
+    }
+
+    fn eval_filter(&mut self, positional: &[RValue], env: &Environment) -> Result<RValue, RError> {
+        if positional.len() < 2 {
+            return Err(RError::Argument("Filter requires 2 arguments".to_string()));
+        }
+        let f = &positional[0];
+        let x = &positional[1];
+
+        let items: Vec<RValue> = match x {
+            RValue::Vector(v) => match v {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Double(vec![*x])))
+                    .collect(),
+                Vector::Integer(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Integer(vec![*x])))
+                    .collect(),
+                Vector::Character(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Character(vec![x.clone()])))
+                    .collect(),
+                Vector::Logical(vals) => vals
+                    .iter()
+                    .map(|x| RValue::Vector(Vector::Logical(vec![*x])))
+                    .collect(),
+            },
+            RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
+            _ => vec![x.clone()],
+        };
+
+        let mut results = Vec::new();
+        for item in &items {
+            let keep = self.call_function(f, std::slice::from_ref(item), &[], env)?;
+            if keep
+                .as_vector()
+                .and_then(|v| v.as_logical_scalar())
+                .unwrap_or(false)
+            {
+                results.push(item.clone());
+            }
+        }
+
+        // Return same type as input
+        match x {
+            RValue::List(_) => {
+                let values: Vec<(Option<String>, RValue)> =
+                    results.into_iter().map(|v| (None, v)).collect();
+                Ok(RValue::List(RList::new(values)))
+            }
+            _ => {
+                // Combine back into vector via c()
+                if results.is_empty() {
+                    Ok(RValue::Null)
+                } else {
+                    crate::interpreter::builtins::builtin_c(&results, &[])
+                }
+            }
+        }
+    }
+
+    fn eval_map(&mut self, positional: &[RValue], env: &Environment) -> Result<RValue, RError> {
+        if positional.len() < 2 {
+            return Err(RError::Argument(
+                "Map requires at least 2 arguments".to_string(),
+            ));
+        }
+        let f = &positional[0];
+
+        // Collect all input sequences
+        let seqs: Vec<Vec<RValue>> = positional[1..]
+            .iter()
+            .map(|x| match x {
+                RValue::Vector(v) => match v {
+                    Vector::Double(vals) => vals
+                        .iter()
+                        .map(|x| RValue::Vector(Vector::Double(vec![*x])))
+                        .collect(),
+                    Vector::Integer(vals) => vals
+                        .iter()
+                        .map(|x| RValue::Vector(Vector::Integer(vec![*x])))
+                        .collect(),
+                    Vector::Character(vals) => vals
+                        .iter()
+                        .map(|x| RValue::Vector(Vector::Character(vec![x.clone()])))
+                        .collect(),
+                    Vector::Logical(vals) => vals
+                        .iter()
+                        .map(|x| RValue::Vector(Vector::Logical(vec![*x])))
+                        .collect(),
+                },
+                RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
+                _ => vec![x.clone()],
+            })
+            .collect();
+
+        let max_len = seqs.iter().map(|s| s.len()).max().unwrap_or(0);
+        let mut results = Vec::new();
+
+        for i in 0..max_len {
+            let call_args: Vec<RValue> = seqs
+                .iter()
+                .map(|s| {
+                    if s.is_empty() {
+                        RValue::Null
+                    } else {
+                        s[i % s.len()].clone()
+                    }
+                })
+                .collect();
+            let result = self.call_function(f, &call_args, &[], env)?;
+            results.push((None, result));
+        }
+
+        Ok(RValue::List(RList::new(results)))
+    }
+
+    fn eval_source(&mut self, positional: &[RValue]) -> Result<RValue, RError> {
+        let path = positional
+            .first()
+            .and_then(|v| v.as_vector()?.as_character_scalar())
+            .ok_or_else(|| RError::Argument("invalid 'file' argument".to_string()))?;
+        let source = std::fs::read_to_string(&path)
+            .map_err(|e| RError::Other(format!("cannot open file '{}': {}", path, e)))?;
+        let ast = crate::parser::parse_program(&source)
+            .map_err(|e| RError::Other(format!("parse error in '{}': {}", path, e)))?;
+        self.eval(&ast)
     }
 
     fn eval_switch(
