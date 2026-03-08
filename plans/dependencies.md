@@ -38,6 +38,18 @@ Future crates to consider:
 - ndarray (N-dimensional arrays for matrix/array operations)
 - slotmap (slot-based arena allocator, for interned/GC'd value handles)
 
+BurntSushi crates:
+
+- jiff (datetime library: Zoned, Timestamp, Span — replaces `time` for R date/time)
+- csv (CSV reader/writer for read.csv/write.csv)
+- globset (glob pattern matching for Sys.glob, list.files)
+- walkdir (recursive directory traversal for list.files(recursive=TRUE))
+- tabwriter (elastic tabstops for formatted table output)
+- termcolor (colored terminal output for REPL/error formatting)
+- bstr (byte strings not required to be UTF-8, for R's mixed-encoding strings)
+- aho-corasick (fast multi-pattern string matching for grep with multiple patterns)
+- memchr (optimized byte/string search for fast fixed-pattern grep/grepl)
+
 Dev/bench dependencies:
 
 - assert_cmd
@@ -47,3 +59,4 @@ Dev/bench dependencies:
 - serial_test
 - divan (benchmarking framework)
 - tempfile
+- quickcheck (property-based testing for R builtin correctness)
