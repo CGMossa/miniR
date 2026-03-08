@@ -1,16 +1,35 @@
+mod interp;
 mod math;
+mod pre_eval;
 mod strings;
 mod stubs;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
+use crate::parser::ast::Arg;
 use linkme::distributed_slice;
 use newr_macros::builtin;
 
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
 
+pub type InterpreterBuiltinFn = fn(
+    &mut super::Interpreter,
+    &[RValue],
+    &[(String, RValue)],
+    &Environment,
+) -> Result<RValue, RError>;
+
+pub type PreEvalBuiltinFn =
+    fn(&mut super::Interpreter, &[Arg], &Environment) -> Result<RValue, RError>;
+
 #[distributed_slice]
 pub static BUILTIN_REGISTRY: [(&str, BuiltinFn, usize)];
+
+#[distributed_slice]
+pub static INTERPRETER_BUILTIN_REGISTRY: [(&str, InterpreterBuiltinFn, usize)];
+
+#[distributed_slice]
+pub static PRE_EVAL_BUILTIN_REGISTRY: [(&str, PreEvalBuiltinFn, usize)];
 
 /// Helper for unary math builtins: applies `f64 -> f64` element-wise.
 #[inline]
@@ -82,6 +101,14 @@ static ALIAS_EMPTYENV: (&str, BuiltinFn, usize) = ("emptyenv", builtin_globalenv
 #[distributed_slice(BUILTIN_REGISTRY)]
 static ALIAS_PARENT_ENV: (&str, BuiltinFn, usize) = ("parent.env", builtin_globalenv_stub, 0);
 
+/// Placeholder for interpreter-level builtins — never actually called because
+/// dispatch is intercepted by the interpreter/pre-eval registries.
+fn placeholder_builtin(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "internal error: interpreter builtin not intercepted".to_string(),
+    ))
+}
+
 pub fn register_builtins(env: &Environment) {
     // Auto-registered builtins (via #[builtin] + linkme, including noop stubs)
     for &(name, func, _min_args) in BUILTIN_REGISTRY {
@@ -90,6 +117,28 @@ pub fn register_builtins(env: &Environment) {
             RValue::Function(RFunction::Builtin {
                 name: name.to_string(),
                 func,
+            }),
+        );
+    }
+
+    // Interpreter-level builtins (intercepted at dispatch time)
+    for &(name, _, _) in INTERPRETER_BUILTIN_REGISTRY {
+        env.set(
+            name.to_string(),
+            RValue::Function(RFunction::Builtin {
+                name: name.to_string(),
+                func: placeholder_builtin,
+            }),
+        );
+    }
+
+    // Pre-eval builtins (intercepted before argument evaluation)
+    for &(name, _, _) in PRE_EVAL_BUILTIN_REGISTRY {
+        env.set(
+            name.to_string(),
+            RValue::Function(RFunction::Builtin {
+                name: name.to_string(),
+                func: placeholder_builtin,
             }),
         );
     }
@@ -1846,97 +1895,6 @@ fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 1)]
 fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
-
-#[builtin(name = "sapply", min_args = 2)]
-fn builtin_sapply_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "sapply requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "lapply", min_args = 2)]
-fn builtin_lapply_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "lapply requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "vapply", min_args = 3)]
-fn builtin_vapply_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "vapply requires interpreter context".to_string(),
-    ))
-}
-
-// The following are handled at interpreter level (need env/special eval access),
-// but registered here so the names exist in the environment.
-
-#[builtin(name = "switch", min_args = 1)]
-fn builtin_switch_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
-
-#[builtin(name = "get", min_args = 1)]
-fn builtin_get_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "get() requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "assign", min_args = 2)]
-fn builtin_assign_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "assign() requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "exists", min_args = 1)]
-fn builtin_exists_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Vector(Vector::Logical(vec![Some(false)])))
-}
-
-#[builtin(name = "system.time", min_args = 1)]
-fn builtin_system_time_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
-
-#[builtin(name = "source", min_args = 1)]
-fn builtin_source_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "source() requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "tryCatch", min_args = 1)]
-fn builtin_try_catch_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
-
-#[builtin(name = "try", min_args = 1)]
-fn builtin_try_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
-
-#[builtin(name = "Reduce", min_args = 2)]
-fn builtin_reduce_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "Reduce() requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "Filter", min_args = 2)]
-fn builtin_filter_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "Filter() requires interpreter context".to_string(),
-    ))
-}
-
-#[builtin(name = "Map", min_args = 2)]
-fn builtin_map_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "Map() requires interpreter context".to_string(),
-    ))
 }
 
 #[builtin(name = "missing", min_args = 1)]

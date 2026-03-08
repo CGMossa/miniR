@@ -132,6 +132,89 @@ impl syn::parse::Parse for BuiltinAttr {
     }
 }
 
+/// Attribute macro for interpreter-level builtins that need `&mut Interpreter` and `&Environment`.
+///
+/// These are builtins whose implementations require calling back into the interpreter
+/// (e.g., to evaluate sub-expressions, look up environments, etc.).
+///
+/// The function must have signature:
+/// `fn(&mut Interpreter, &[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>`
+///
+/// The R name is inferred from the function name (stripping `interp_` prefix),
+/// or can be overridden with `name = "..."`.
+///
+/// # Usage
+///
+/// ```ignore
+/// #[interpreter_builtin(name = "switch", min_args = 1)]
+/// fn interp_switch(interp: &mut Interpreter, args: &[RValue], named: &[(String, RValue)], env: &Environment) -> Result<RValue, RError> {
+///     // ...
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    let attr_args = parse_macro_input!(attr as BuiltinAttr);
+
+    let fn_name = &input.sig.ident;
+    let fn_str = fn_name.to_string();
+    let base = fn_str.strip_prefix("interp_").unwrap_or(&fn_str);
+    let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
+    let min_args = attr_args.min_args as usize;
+
+    let reg_name = format_ident!("__INTERP_REG_{}", fn_name.to_string().to_uppercase());
+
+    let expanded = quote! {
+        #input
+
+        #[linkme::distributed_slice(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY)]
+        static #reg_name: (&str, crate::interpreter::builtins::InterpreterBuiltinFn, usize) =
+            (#r_name, #fn_name, #min_args);
+    };
+
+    expanded.into()
+}
+
+/// Attribute macro for pre-eval builtins that intercept before argument evaluation.
+///
+/// These are builtins that need access to raw AST arguments (e.g., tryCatch, try)
+/// because they must control when/whether arguments are evaluated.
+///
+/// The function must have signature:
+/// `fn(&mut Interpreter, &[Arg], &Environment) -> Result<RValue, RError>`
+///
+/// # Usage
+///
+/// ```ignore
+/// #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
+/// fn pre_eval_try_catch(interp: &mut Interpreter, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+///     // ...
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    let attr_args = parse_macro_input!(attr as BuiltinAttr);
+
+    let fn_name = &input.sig.ident;
+    let fn_str = fn_name.to_string();
+    let base = fn_str.strip_prefix("pre_eval_").unwrap_or(&fn_str);
+    let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
+    let min_args = attr_args.min_args as usize;
+
+    let reg_name = format_ident!("__PRE_EVAL_REG_{}", fn_name.to_string().to_uppercase());
+
+    let expanded = quote! {
+        #input
+
+        #[linkme::distributed_slice(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY)]
+        static #reg_name: (&str, crate::interpreter::builtins::PreEvalBuiltinFn, usize) =
+            (#r_name, #fn_name, #min_args);
+    };
+
+    expanded.into()
+}
+
 struct NoopArgs {
     name: String,
     min_args: u64,
