@@ -21,8 +21,16 @@ fn main() {
 }
 
 fn run_file(filename: &str) {
+    // Try UTF-8 first, fall back to lossy conversion for Latin-1/other encodings
     let source = match fs::read_to_string(filename) {
         Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => match fs::read(filename) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e2) => {
+                eprintln!("Error reading file '{}': {}", filename, e2);
+                std::process::exit(1);
+            }
+        },
         Err(e) => {
             eprintln!("Error reading file '{}': {}", filename, e);
             std::process::exit(1);
