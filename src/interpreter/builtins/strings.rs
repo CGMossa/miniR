@@ -28,7 +28,7 @@ fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     } else {
         String::new()
     };
-    Ok(RValue::Vector(Vector::Character(vec![Some(result)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(result)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -39,7 +39,7 @@ fn builtin_toupper(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .iter()
                 .map(|s| s.as_ref().map(|s| s.to_uppercase()))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -53,7 +53,7 @@ fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .iter()
                 .map(|s| s.as_ref().map(|s| s.to_lowercase()))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -67,7 +67,7 @@ fn builtin_trimws(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .iter()
                 .map(|s| s.as_ref().map(|s| s.trim().to_string()))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -89,7 +89,7 @@ fn builtin_gsub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 .iter()
                 .map(|s| s.as_ref().map(|s| s.replace(&pattern, &replacement)))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -119,7 +119,7 @@ fn builtin_sub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -137,7 +137,7 @@ fn builtin_grepl(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 .iter()
                 .map(|s| Some(s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false)))
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result)))
+            Ok(RValue::Vector(Vector::Logical(result.into())))
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
     }
@@ -163,7 +163,7 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     .filter(|s| s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false))
                     .cloned()
                     .collect();
-                Ok(RValue::Vector(Vector::Character(result)))
+                Ok(RValue::Vector(Vector::Character(result.into())))
             } else {
                 let result: Vec<Option<i64>> = vals
                     .iter()
@@ -171,7 +171,7 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     .filter(|(_, s)| s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false))
                     .map(|(i, _)| Some(i as i64 + 1))
                     .collect();
-                Ok(RValue::Vector(Vector::Integer(result)))
+                Ok(RValue::Vector(Vector::Integer(result.into())))
             }
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
@@ -251,17 +251,18 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             i += 1;
         }
     }
-    Ok(RValue::Vector(Vector::Character(vec![Some(output)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(output)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_format(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(val) => Ok(RValue::Vector(Vector::Character(vec![Some(format!(
-            "{}",
-            val
-        ))]))),
-        None => Ok(RValue::Vector(Vector::Character(vec![Some(String::new())]))),
+        Some(val) => Ok(RValue::Vector(Vector::Character(
+            vec![Some(format!("{}", val))].into(),
+        ))),
+        None => Ok(RValue::Vector(Vector::Character(
+            vec![Some(String::new())].into(),
+        ))),
     }
 }
 
@@ -281,7 +282,7 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
             .map(|c| {
                 (
                     None,
-                    RValue::Vector(Vector::Character(vec![Some(c.to_string())])),
+                    RValue::Vector(Vector::Character(vec![Some(c.to_string())].into())),
                 )
             })
             .collect()
@@ -289,7 +290,10 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         vec![(
             None,
             RValue::Vector(Vector::Character(
-                s.split(&split).map(|p| Some(p.to_string())).collect(),
+                s.split(&split)
+                    .map(|p| Some(p.to_string()))
+                    .collect::<Vec<_>>()
+                    .into(),
             )),
         )]
     };
@@ -306,9 +310,9 @@ fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    Ok(RValue::Vector(Vector::Logical(vec![Some(
-        x.starts_with(&prefix),
-    )])))
+    Ok(RValue::Vector(Vector::Logical(
+        vec![Some(x.starts_with(&prefix))].into(),
+    )))
 }
 
 #[builtin(name = "endsWith", min_args = 2)]
@@ -321,9 +325,9 @@ fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    Ok(RValue::Vector(Vector::Logical(vec![Some(
-        x.ends_with(&suffix),
-    )])))
+    Ok(RValue::Vector(Vector::Logical(
+        vec![Some(x.ends_with(&suffix))].into(),
+    )))
 }
 
 #[builtin(min_args = 3)]
@@ -352,7 +356,7 @@ fn builtin_chartr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             }
         })
         .collect();
-    Ok(RValue::Vector(Vector::Character(vec![Some(result)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(result)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -381,7 +385,7 @@ fn builtin_make_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                     })
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }
@@ -393,7 +397,7 @@ fn builtin_make_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
         Some(RValue::Vector(Vector::Character(vals))) => {
             let mut result = Vec::new();
             let mut counts: HashMap<String, usize> = HashMap::new();
-            for v in vals {
+            for v in vals.iter() {
                 if let Some(s) = v {
                     let count = counts.entry(s.clone()).or_insert(0);
                     if *count > 0 {
@@ -406,7 +410,7 @@ fn builtin_make_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
                     result.push(None);
                 }
             }
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }
@@ -422,7 +426,7 @@ fn builtin_basename(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or(path);
-    Ok(RValue::Vector(Vector::Character(vec![Some(base)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(base)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -435,7 +439,7 @@ fn builtin_dirname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
-    Ok(RValue::Vector(Vector::Character(vec![Some(dir)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(dir)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -444,7 +448,7 @@ fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .first()
         .map(|v| format!("{}", v))
         .unwrap_or_else(|| "NULL".to_string());
-    Ok(RValue::Vector(Vector::Character(vec![Some(s)])))
+    Ok(RValue::Vector(Vector::Character(vec![Some(s)].into())))
 }
 
 #[builtin(min_args = 1)]
@@ -460,8 +464,8 @@ fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_integer_scalar()))
         .unwrap_or(10) as u32;
     match i64::from_str_radix(x.trim(), base) {
-        Ok(n) => Ok(RValue::Vector(Vector::Integer(vec![Some(n)]))),
-        Err(_) => Ok(RValue::Vector(Vector::Integer(vec![None]))),
+        Ok(n) => Ok(RValue::Vector(Vector::Integer(vec![Some(n)].into()))),
+        Err(_) => Ok(RValue::Vector(Vector::Integer(vec![None].into()))),
     }
 }
 
@@ -476,14 +480,16 @@ fn builtin_nzchar(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                     None => Some(true),
                 })
                 .collect();
-            Ok(RValue::Vector(Vector::Logical(result)))
+            Ok(RValue::Vector(Vector::Logical(result.into())))
         }
         Some(val) => {
             let s = val
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
-            Ok(RValue::Vector(Vector::Logical(vec![Some(!s.is_empty())])))
+            Ok(RValue::Vector(Vector::Logical(
+                vec![Some(!s.is_empty())].into(),
+            )))
         }
         None => Err(RError::Argument("argument is missing".to_string())),
     }
@@ -497,19 +503,18 @@ fn builtin_squote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .iter()
                 .map(|s| s.as_ref().map(|s| format!("\u{2018}{}\u{2019}", s)))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         Some(val) => {
             let s = val
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
-            Ok(RValue::Vector(Vector::Character(vec![Some(format!(
-                "\u{2018}{}\u{2019}",
-                s
-            ))])))
+            Ok(RValue::Vector(Vector::Character(
+                vec![Some(format!("\u{2018}{}\u{2019}", s))].into(),
+            )))
         }
-        None => Ok(RValue::Vector(Vector::Character(vec![None]))),
+        None => Ok(RValue::Vector(Vector::Character(vec![None].into()))),
     }
 }
 
@@ -521,18 +526,17 @@ fn builtin_dquote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .iter()
                 .map(|s| s.as_ref().map(|s| format!("\u{201C}{}\u{201D}", s)))
                 .collect();
-            Ok(RValue::Vector(Vector::Character(result)))
+            Ok(RValue::Vector(Vector::Character(result.into())))
         }
         Some(val) => {
             let s = val
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
-            Ok(RValue::Vector(Vector::Character(vec![Some(format!(
-                "\u{201C}{}\u{201D}",
-                s
-            ))])))
+            Ok(RValue::Vector(Vector::Character(
+                vec![Some(format!("\u{201C}{}\u{201D}", s))].into(),
+            )))
         }
-        _ => Ok(RValue::Vector(Vector::Character(vec![None]))),
+        _ => Ok(RValue::Vector(Vector::Character(vec![None].into()))),
     }
 }
