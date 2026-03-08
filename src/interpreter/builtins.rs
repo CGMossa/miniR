@@ -1,5 +1,6 @@
 mod math;
 mod strings;
+mod stubs;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
@@ -81,133 +82,14 @@ static ALIAS_EMPTYENV: (&str, BuiltinFn, usize) = ("emptyenv", builtin_globalenv
 #[distributed_slice(BUILTIN_REGISTRY)]
 static ALIAS_PARENT_ENV: (&str, BuiltinFn, usize) = ("parent.env", builtin_globalenv_stub, 0);
 
-// Noop stubs: not-yet-implemented functions.
-const NOOP_STUBS: &[(&str, usize)] = &[
-    ("on.exit", 0),
-    ("UseMethod", 1),
-    ("NextMethod", 0),
-    ("array", 0),
-    ("rbind", 0),
-    ("cbind", 0),
-    ("apply", 3),
-    ("mapply", 2),
-    ("tapply", 3),
-    ("by", 3),
-    ("Vectorize", 1),
-    ("diag", 1),
-    ("crossprod", 1),
-    ("tcrossprod", 1),
-    ("solve", 1),
-    ("qr", 1),
-    ("svd", 1),
-    ("eigen", 1),
-    ("det", 1),
-    ("chol", 1),
-    ("norm", 1),
-    ("complex", 0),
-    ("raw", 0),
-    ("tabulate", 1),
-    ("table", 0),
-    ("factor", 0),
-    ("levels", 1),
-    ("nlevels", 1),
-    ("Recall", 0),
-    ("do.call", 2),
-    ("withCallingHandlers", 1),
-    ("conditionMessage", 1),
-    ("conditionCall", 1),
-    ("simpleCondition", 1),
-    ("simpleError", 1),
-    ("simpleWarning", 1),
-    ("simpleMessage", 1),
-    ("scan", 0),
-    ("loadNamespace", 1),
-    ("requireNamespace", 1),
-    ("installed.packages", 0),
-    ("install.packages", 0),
-    ("Sys.which", 1),
-    ("system", 1),
-    ("system2", 1),
-    ("Sys.setenv", 0),
-    ("setwd", 1),
-    ("rawToChar", 1),
-    ("charToRaw", 1),
-    ("rawShift", 2),
-    ("bitwNot", 1),
-    ("bitwAnd", 2),
-    ("bitwOr", 2),
-    ("bitwXor", 2),
-    ("bitwShiftL", 2),
-    ("bitwShiftR", 2),
-    ("reg.finalizer", 2),
-    ("regmatches", 2),
-    ("regexpr", 2),
-    ("gregexpr", 2),
-    ("regexec", 2),
-    ("Sys.glob", 1),
-    ("glob2rx", 1),
-    ("list.files", 0),
-    ("dir", 0),
-    ("file.info", 1),
-    ("file.size", 1),
-    ("file.copy", 2),
-    ("file.rename", 2),
-    ("file.remove", 1),
-    ("file.create", 1),
-    ("dir.create", 1),
-    ("dir.exists", 1),
-    ("tempfile", 0),
-    ("tempdir", 0),
-    ("unlink", 1),
-    ("url", 1),
-    ("connection", 1),
-    ("close", 1),
-    ("open", 1),
-    ("readRDS", 1),
-    ("saveRDS", 2),
-    ("load", 1),
-    ("save", 0),
-    ("parse", 0),
-    ("eval", 1),
-    ("evalq", 1),
-    ("quote", 1),
-    ("substitute", 1),
-    ("bquote", 1),
-    ("call", 1),
-    ("expression", 0),
-    ("body", 1),
-    ("formals", 1),
-    ("arity", 1),
-    ("args", 1),
-    ("sys.frame", 0),
-    ("parent.frame", 0),
-    ("sys.parents", 0),
-    ("sys.calls", 0),
-    ("sys.frames", 0),
-    ("sys.on.exit", 0),
-    ("normalizePath", 1),
-    ("path.expand", 1),
-];
-
 pub fn register_builtins(env: &Environment) {
-    // Auto-registered builtins (via #[builtin] + linkme)
+    // Auto-registered builtins (via #[builtin] + linkme, including noop stubs)
     for &(name, func, _min_args) in BUILTIN_REGISTRY {
         env.set(
             name.to_string(),
             RValue::Function(RFunction::Builtin {
                 name: name.to_string(),
                 func,
-            }),
-        );
-    }
-
-    // Noop stubs for not-yet-implemented functions
-    for &(name, _min_args) in NOOP_STUBS {
-        env.set(
-            name.to_string(),
-            RValue::Function(RFunction::Builtin {
-                name: name.to_string(),
-                func: builtin_noop,
             }),
         );
     }
@@ -2135,11 +2017,6 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
 #[builtin(name = "sys.call")]
 fn builtin_sys_call_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Null)
-}
-
-pub fn builtin_noop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    eprintln!("Warning: this function is not yet implemented");
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
 #[builtin]

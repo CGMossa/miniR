@@ -1,28 +1,14 @@
 use crate::interpreter::value::*;
 use linkme::distributed_slice;
-use newr_macros::builtin;
+use newr_macros::{builtin, noop_builtin};
 
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_PMAX: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("pmax", crate::interpreter::builtins::builtin_noop, 0);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_PMIN: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("pmin", crate::interpreter::builtins::builtin_noop, 0);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_CUMALL: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("cumall", crate::interpreter::builtins::builtin_noop, 1);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_CUMANY: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("cumany", crate::interpreter::builtins::builtin_noop, 1);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_RUNIF: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("runif", crate::interpreter::builtins::builtin_noop, 1);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_RNORM: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("rnorm", crate::interpreter::builtins::builtin_noop, 1);
-#[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-static NOOP_RBINOM: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-    ("rbinom", crate::interpreter::builtins::builtin_noop, 2);
+noop_builtin!("pmax");
+noop_builtin!("pmin");
+noop_builtin!("cumall", 1);
+noop_builtin!("cumany", 1);
+noop_builtin!("runif", 1);
+noop_builtin!("rnorm", 1);
+noop_builtin!("rbinom", 2);
 
 #[distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
 static ALIAS_SEQ_INT: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
