@@ -2,9 +2,24 @@ pub mod builtins;
 pub mod environment;
 pub mod value;
 
+use std::cell::RefCell;
+
 use crate::parser::ast::*;
 use environment::Environment;
 use value::*;
+
+thread_local! {
+    static INTERPRETER: RefCell<Interpreter> = RefCell::new(Interpreter::new());
+}
+
+/// Access the thread-local interpreter. Safe for nested/re-entrant calls
+/// because all methods take `&self` (shared borrows are re-entrant).
+pub fn with_interpreter<F, R>(f: F) -> R
+where
+    F: FnOnce(&Interpreter) -> R,
+{
+    INTERPRETER.with(|cell| f(&cell.borrow()))
+}
 
 /// Extract generic name from a UseMethod("name") call in a function body.
 /// Handles: UseMethod("name"), { UseMethod("name") }, { ...; UseMethod("name") }
@@ -42,11 +57,11 @@ impl Interpreter {
         Interpreter { global_env }
     }
 
-    pub fn eval(&mut self, expr: &Expr) -> Result<RValue, RError> {
-        self.eval_in(expr, &self.global_env.clone())
+    pub fn eval(&self, expr: &Expr) -> Result<RValue, RError> {
+        self.eval_in(expr, &self.global_env)
     }
 
-    pub fn eval_in(&mut self, expr: &Expr, env: &Environment) -> Result<RValue, RError> {
+    pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RError> {
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
@@ -521,7 +536,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_pipe(&mut self, lhs: &Expr, rhs: &Expr, env: &Environment) -> Result<RValue, RError> {
+    fn eval_pipe(&self, lhs: &Expr, rhs: &Expr, env: &Environment) -> Result<RValue, RError> {
         let left_val = self.eval_in(lhs, env)?;
         // rhs should be a function call; inject left_val as first argument
         match rhs {
@@ -550,7 +565,7 @@ impl Interpreter {
     }
 
     fn eval_assign(
-        &mut self,
+        &self,
         op: &AssignOp,
         target: &Expr,
         val: RValue,
@@ -612,12 +627,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_call(
-        &mut self,
-        func: &Expr,
-        args: &[Arg],
-        env: &Environment,
-    ) -> Result<RValue, RError> {
+    fn eval_call(&self, func: &Expr, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
         let f = self.eval_in(func, env)?;
 
         // R behavior: if the symbol resolved to a non-function but we're in
@@ -638,7 +648,7 @@ impl Interpreter {
         if let RValue::Function(RFunction::Builtin { name, .. }) = &f {
             for &(pname, pfunc, _) in builtins::PRE_EVAL_BUILTIN_REGISTRY {
                 if pname == name {
-                    return pfunc(self, args, env);
+                    return pfunc(args, env);
                 }
             }
         }
@@ -663,7 +673,7 @@ impl Interpreter {
     }
 
     pub fn call_function(
-        &mut self,
+        &self,
         func: &RValue,
         positional: &[RValue],
         named: &[(String, RValue)],
@@ -671,10 +681,10 @@ impl Interpreter {
     ) -> Result<RValue, RError> {
         match func {
             RValue::Function(RFunction::Builtin { func, name, .. }) => {
-                // Check interpreter-level builtins (need &mut self / env access)
+                // Check interpreter-level builtins (access interp via thread-local)
                 for &(iname, ifunc, _) in builtins::INTERPRETER_BUILTIN_REGISTRY {
                     if iname == name {
-                        return ifunc(self, positional, named, env);
+                        return ifunc(positional, named, env);
                     }
                 }
                 func(positional, named)
@@ -729,7 +739,7 @@ impl Interpreter {
     }
 
     fn eval_index(
-        &mut self,
+        &self,
         object: &Expr,
         indices: &[Arg],
         env: &Environment,
@@ -876,7 +886,7 @@ impl Interpreter {
     }
 
     fn eval_index_double(
-        &mut self,
+        &self,
         object: &Expr,
         indices: &[Arg],
         env: &Environment,
@@ -944,7 +954,7 @@ impl Interpreter {
     }
 
     fn eval_dollar(
-        &mut self,
+        &self,
         object: &Expr,
         member: &str,
         env: &Environment,
@@ -967,7 +977,7 @@ impl Interpreter {
     }
 
     fn eval_index_assign(
-        &mut self,
+        &self,
         object: &Expr,
         indices: &[Arg],
         val: RValue,
@@ -1082,7 +1092,7 @@ impl Interpreter {
     }
 
     fn eval_index_double_assign(
-        &mut self,
+        &self,
         object: &Expr,
         indices: &[Arg],
         val: RValue,
@@ -1137,7 +1147,7 @@ impl Interpreter {
     }
 
     fn eval_dollar_assign(
-        &mut self,
+        &self,
         object: &Expr,
         member: &str,
         val: RValue,
@@ -1180,7 +1190,7 @@ impl Interpreter {
     }
 
     fn eval_ns_get(
-        &mut self,
+        &self,
         namespace: &Expr,
         name: &str,
         env: &Environment,
@@ -1194,7 +1204,7 @@ impl Interpreter {
     }
 
     fn eval_for(
-        &mut self,
+        &self,
         var: &str,
         iter_val: &RValue,
         body: &Expr,
@@ -1246,7 +1256,7 @@ impl Interpreter {
 
     /// S3 method dispatch: look up generic.class in the environment chain
     fn dispatch_s3(
-        &mut self,
+        &self,
         generic: &str,
         positional: &[RValue],
         named: &[(String, RValue)],

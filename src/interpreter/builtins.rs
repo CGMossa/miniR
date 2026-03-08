@@ -12,15 +12,10 @@ use newr_macros::builtin;
 
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
 
-pub type InterpreterBuiltinFn = fn(
-    &mut super::Interpreter,
-    &[RValue],
-    &[(String, RValue)],
-    &Environment,
-) -> Result<RValue, RError>;
+pub type InterpreterBuiltinFn =
+    fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>;
 
-pub type PreEvalBuiltinFn =
-    fn(&mut super::Interpreter, &[Arg], &Environment) -> Result<RValue, RError>;
+pub type PreEvalBuiltinFn = fn(&[Arg], &Environment) -> Result<RValue, RError>;
 
 #[distributed_slice]
 pub static BUILTIN_REGISTRY: [(&str, BuiltinFn, usize)];
