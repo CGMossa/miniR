@@ -5,39 +5,61 @@
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
+use crate::parser::ast::{BinaryOp, UnaryOp};
 use newr_macros::interpreter_builtin;
+
+/// Resolve a function specification: accepts an RValue::Function directly,
+/// or a string naming a function to look up in the environment.
+/// Equivalent to R's match.fun().
+fn match_fun(f: &RValue, env: &Environment) -> Result<RValue, RError> {
+    match f {
+        RValue::Function(_) => Ok(f.clone()),
+        RValue::Vector(Vector::Character(s)) => {
+            let name = s
+                .first()
+                .and_then(|x| x.as_ref())
+                .ok_or_else(|| RError::Argument("not a valid function name".to_string()))?;
+            env.get_function(name)
+                .ok_or_else(|| RError::Other(format!("could not find function '{}'", name)))
+        }
+        _ => Err(RError::Argument(
+            "FUN is not a function and not a string naming a function".to_string(),
+        )),
+    }
+}
 
 #[interpreter_builtin(name = "sapply", min_args = 2)]
 fn interp_sapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    _env: &Environment,
+    env: &Environment,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, true)
+    eval_apply(args, named, true, env)
 }
 
 #[interpreter_builtin(name = "lapply", min_args = 2)]
 fn interp_lapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    _env: &Environment,
+    env: &Environment,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, false)
+    eval_apply(args, named, false, env)
 }
 
 #[interpreter_builtin(name = "vapply", min_args = 3)]
 fn interp_vapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    _env: &Environment,
+    env: &Environment,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, true)
+    eval_apply(args, named, true, env)
 }
 
 fn eval_apply(
     positional: &[RValue],
     _named: &[(String, RValue)],
     simplify: bool,
+    env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::Argument(
@@ -45,7 +67,7 @@ fn eval_apply(
         ));
     }
     let x = &positional[0];
-    let f = &positional[1];
+    let f = match_fun(&positional[1], env)?;
 
     let items: Vec<RValue> = match x {
         RValue::Vector(v) => match v {
@@ -71,10 +93,9 @@ fn eval_apply(
     };
 
     with_interpreter(|interp| {
-        let env = &interp.global_env;
         let mut results: Vec<RValue> = Vec::new();
         for item in &items {
-            let result = interp.call_function(f, std::slice::from_ref(item), &[], env)?;
+            let result = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
             results.push(result);
         }
 
@@ -145,13 +166,13 @@ fn interp_do_call(
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() >= 2 {
-        let f = &positional[0];
+        let f = match_fun(&positional[0], env)?;
         return with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
                 let args: Vec<RValue> = l.values.iter().map(|(_, v)| v.clone()).collect();
-                interp.call_function(f, &args, named, env)
+                interp.call_function(&f, &args, named, env)
             }
-            _ => interp.call_function(f, &positional[1..], named, env),
+            _ => interp.call_function(&f, &positional[1..], named, env),
         });
     }
     Err(RError::Argument(
@@ -179,7 +200,7 @@ fn interp_reduce(
             "Reduce requires at least 2 arguments".to_string(),
         ));
     }
-    let f = &positional[0];
+    let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
     let init = positional
         .get(2)
@@ -209,7 +230,7 @@ fn interp_reduce(
 
     with_interpreter(|interp| {
         for item in items.iter().skip(start) {
-            acc = interp.call_function(f, &[acc, item.clone()], &[], env)?;
+            acc = interp.call_function(&f, &[acc, item.clone()], &[], env)?;
             if accumulate {
                 accum_results.push(acc.clone());
             }
@@ -234,7 +255,7 @@ fn interp_filter(
     if positional.len() < 2 {
         return Err(RError::Argument("Filter requires 2 arguments".to_string()));
     }
-    let f = &positional[0];
+    let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
 
     let items: Vec<RValue> = rvalue_to_items(x);
@@ -242,7 +263,7 @@ fn interp_filter(
     let mut results = Vec::new();
     with_interpreter(|interp| {
         for item in &items {
-            let keep = interp.call_function(f, std::slice::from_ref(item), &[], env)?;
+            let keep = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
             if keep
                 .as_vector()
                 .and_then(|v| v.as_logical_scalar())
@@ -281,7 +302,7 @@ fn interp_map(
             "Map requires at least 2 arguments".to_string(),
         ));
     }
-    let f = &positional[0];
+    let f = match_fun(&positional[0], env)?;
 
     let seqs: Vec<Vec<RValue>> = positional[1..].iter().map(rvalue_to_items).collect();
 
@@ -300,7 +321,7 @@ fn interp_map(
                     }
                 })
                 .collect();
-            let result = interp.call_function(f, &call_args, &[], env)?;
+            let result = interp.call_function(&f, &call_args, &[], env)?;
             results.push((None, result));
         }
         Ok(())
@@ -464,6 +485,167 @@ fn interp_system_time(
     Ok(RValue::Vector(Vector::Double(
         vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
     )))
+}
+
+// --- Operator builtins: R operators as first-class functions ---
+// These allow `Reduce("+", 1:10)`, `sapply(x, "-")`, `do.call("*", list(3,4))`, etc.
+
+fn eval_binop(op: BinaryOp, args: &[RValue]) -> Result<RValue, RError> {
+    let left = args.first().cloned().unwrap_or(RValue::Null);
+    let right = args.get(1).cloned().unwrap_or(RValue::Null);
+    with_interpreter(|interp| interp.eval_binary(op, &left, &right))
+}
+
+#[interpreter_builtin(name = "+", min_args = 1)]
+fn interp_op_add(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    if args.len() == 1 {
+        with_interpreter(|interp| interp.eval_unary(UnaryOp::Pos, &args[0]))
+    } else {
+        eval_binop(BinaryOp::Add, args)
+    }
+}
+
+#[interpreter_builtin(name = "-", min_args = 1)]
+fn interp_op_sub(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    if args.len() == 1 {
+        with_interpreter(|interp| interp.eval_unary(UnaryOp::Neg, &args[0]))
+    } else {
+        eval_binop(BinaryOp::Sub, args)
+    }
+}
+
+#[interpreter_builtin(name = "*", min_args = 2)]
+fn interp_op_mul(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Mul, args)
+}
+
+#[interpreter_builtin(name = "/", min_args = 2)]
+fn interp_op_div(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Div, args)
+}
+
+#[interpreter_builtin(name = "^", min_args = 2)]
+fn interp_op_pow(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Pow, args)
+}
+
+#[interpreter_builtin(name = "%%", min_args = 2)]
+fn interp_op_mod(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Mod, args)
+}
+
+#[interpreter_builtin(name = "%/%", min_args = 2)]
+fn interp_op_intdiv(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::IntDiv, args)
+}
+
+#[interpreter_builtin(name = "==", min_args = 2)]
+fn interp_op_eq(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Eq, args)
+}
+
+#[interpreter_builtin(name = "!=", min_args = 2)]
+fn interp_op_ne(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Ne, args)
+}
+
+#[interpreter_builtin(name = "<", min_args = 2)]
+fn interp_op_lt(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Lt, args)
+}
+
+#[interpreter_builtin(name = ">", min_args = 2)]
+fn interp_op_gt(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Gt, args)
+}
+
+#[interpreter_builtin(name = "<=", min_args = 2)]
+fn interp_op_le(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Le, args)
+}
+
+#[interpreter_builtin(name = ">=", min_args = 2)]
+fn interp_op_ge(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Ge, args)
+}
+
+#[interpreter_builtin(name = "&", min_args = 2)]
+fn interp_op_and(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::And, args)
+}
+
+#[interpreter_builtin(name = "|", min_args = 2)]
+fn interp_op_or(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    eval_binop(BinaryOp::Or, args)
+}
+
+#[interpreter_builtin(name = "!", min_args = 1)]
+fn interp_op_not(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| interp.eval_unary(UnaryOp::Not, &args[0]))
 }
 
 /// Convert an RValue to a Vec of individual items (for apply/map/filter/reduce).

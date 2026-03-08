@@ -207,7 +207,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_unary(&self, op: UnaryOp, val: &RValue) -> Result<RValue, RError> {
+    pub fn eval_unary(&self, op: UnaryOp, val: &RValue) -> Result<RValue, RError> {
         match op {
             UnaryOp::Neg => match val {
                 RValue::Vector(v) => {
@@ -256,7 +256,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_binary(&self, op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    pub fn eval_binary(&self, op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RError> {
         match op {
             BinaryOp::Range => return self.eval_range(left, right),
             BinaryOp::Special(SpecialOp::In) => return self.eval_in_op(left, right),
@@ -521,15 +521,29 @@ impl Interpreter {
     }
 
     fn eval_in_op(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
-        let table = match right {
-            RValue::Vector(v) => v.to_characters(),
-            _ => vec![],
-        };
-        match left {
-            RValue::Vector(v) => {
-                let chars = v.to_characters();
-                let result: Vec<Option<bool>> =
-                    chars.iter().map(|x| Some(table.contains(x))).collect();
+        match (left, right) {
+            (RValue::Vector(lv), RValue::Vector(rv)) => {
+                // If either side is character, compare as strings
+                if matches!(lv, Vector::Character(_)) || matches!(rv, Vector::Character(_)) {
+                    let table = rv.to_characters();
+                    let vals = lv.to_characters();
+                    let result: Vec<Option<bool>> =
+                        vals.iter().map(|x| Some(table.contains(x))).collect();
+                    return Ok(RValue::Vector(Vector::Logical(result.into())));
+                }
+                // Otherwise compare as doubles (handles int/double/logical correctly)
+                let table = rv.to_doubles();
+                let vals = lv.to_doubles();
+                let result: Vec<Option<bool>> = vals
+                    .iter()
+                    .map(|x| match x {
+                        Some(v) => Some(table.iter().any(|t| match t {
+                            Some(t) => (*t == *v) || (t.is_nan() && v.is_nan()),
+                            None => false,
+                        })),
+                        None => Some(table.iter().any(|t| t.is_none())),
+                    })
+                    .collect();
                 Ok(RValue::Vector(Vector::Logical(result.into())))
             }
             _ => Ok(RValue::Vector(Vector::Logical(vec![Some(false)].into()))),
