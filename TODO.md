@@ -26,10 +26,10 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 - [x] 🔧 `array(data, dim)` — create array
 - [ ] `data.frame(...)` — create data frame (see plans/polars-dataframe.md)
-- [ ] 🔧 `factor(x, levels, labels)` — create factor
-- [ ] 🔧 `levels(x)` / `nlevels(x)` — factor levels
+- [x] 🔧 `factor(x, levels, labels)` — create factor
+- [x] 🔧 `levels(x)` / `nlevels(x)` — factor levels
 - [x] 🔧 `rbind(...)` / `cbind(...)` — row/column bind
-- [ ] 🔧 `table(...)` / `tabulate(x)` — contingency table
+- [x] 🔧 `table(...)` / `tabulate(x)` — contingency table
 - [x] 🔧 `dimnames(x)` / `dimnames<-` — get/set dimension names
 - [x] 🔧 `unname(x)` — remove names
 
