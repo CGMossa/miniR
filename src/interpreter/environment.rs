@@ -79,12 +79,30 @@ impl Environment {
         self.inner.borrow_mut().bindings.remove(name).is_some()
     }
 
-    #[allow(dead_code)]
-    pub fn names(&self) -> Vec<String> {
-        self.inner.borrow().bindings.keys().cloned().collect()
+    pub fn new_empty() -> Self {
+        Environment {
+            inner: Rc::new(RefCell::new(EnvInner {
+                bindings: HashMap::new(),
+                parent: None,
+                name: Some("R_EmptyEnv".to_string()),
+            })),
+        }
     }
 
-    #[allow(dead_code)]
+    pub fn ls(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.inner.borrow().bindings.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    pub fn name(&self) -> Option<String> {
+        self.inner.borrow().name.clone()
+    }
+
+    pub fn set_name(&self, name: String) {
+        self.inner.borrow_mut().name = Some(name);
+    }
+
     pub fn parent(&self) -> Option<Environment> {
         self.inner.borrow().parent.clone()
     }
