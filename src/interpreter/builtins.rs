@@ -2783,7 +2783,7 @@ fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                         p.name.clone()
                     };
                     let value = match &p.default {
-                        Some(expr) => RValue::Language(Box::new(expr.clone())),
+                        Some(expr) => RValue::Language(Language::new(expr.clone())),
                         None => {
                             if p.is_dots {
                                 // ... has no default — represent as empty symbol
@@ -2812,7 +2812,7 @@ fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 fn builtin_body(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Function(RFunction::Closure { body, .. })) => {
-            Ok(RValue::Language(Box::new(body.clone())))
+            Ok(RValue::Language(Language::new(body.clone())))
         }
         Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
         _ => Err(RError::Argument(
@@ -2864,7 +2864,7 @@ fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         args: call_args,
     };
 
-    Ok(RValue::Language(Box::new(expr)))
+    Ok(RValue::Language(Language::new(expr)))
 }
 
 // `expression()` is a pre-eval builtin — see builtins/pre_eval.rs
@@ -2883,7 +2883,7 @@ fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// Convert an RValue back to an AST expression (for call/expression construction).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
-        RValue::Language(expr) => *expr.clone(),
+        RValue::Language(expr) => *expr.0.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(d) if d.len() == 1 => match d[0] {

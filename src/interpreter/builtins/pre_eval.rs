@@ -270,7 +270,7 @@ fn pre_eval_expression(args: &[Arg], _env: &Environment) -> Result<RValue, RErro
         .filter_map(|a| {
             a.value
                 .as_ref()
-                .map(|expr| (None, RValue::Language(Box::new(expr.clone()))))
+                .map(|expr| (None, RValue::Language(Language::new(expr.clone()))))
         })
         .collect();
     Ok(RValue::List(RList::new(entries)))
