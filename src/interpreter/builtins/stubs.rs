@@ -40,8 +40,7 @@ noop_builtin!("simpleError", 1);
 noop_builtin!("simpleWarning", 1);
 noop_builtin!("simpleMessage", 1);
 
-// File I/O
-noop_builtin!("scan");
+// File I/O (scan — builtins.rs)
 noop_builtin!("file.info", 1);
 
 // Package management
