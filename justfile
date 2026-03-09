@@ -5,18 +5,12 @@ root := justfile_directory()
 default:
     echo 'Hello, world!'
 
-# Re-vendor crates only when Cargo.lock has changed
+# Re-vendor crates (cargo vendor resolves from crates.io, bypassing source replacement)
 vendor:
     #!/usr/bin/env bash
     set -euo pipefail
-    STAMP="{{root}}/vendor/.cargo-lock-hash"
-    CURRENT=$(md5 -q "{{root}}/Cargo.lock" 2>/dev/null || md5sum "{{root}}/Cargo.lock" | cut -d' ' -f1)
-    if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$CURRENT" ]; then
-        echo "vendor/ up to date"; exit 0
-    fi
     cargo vendor --quiet "{{root}}/vendor"
-    printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update. Only re-vendors when `Cargo.lock` changes.\n' > "{{root}}/vendor/README.md"
-    echo "$CURRENT" > "$STAMP"
+    printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
 
 # Dump public API of a vendored crate as rustdoc JSON (requires nightly + jq)
 crate-docs crate:
