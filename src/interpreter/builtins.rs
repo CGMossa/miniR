@@ -2389,7 +2389,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 }
 
 /// Extract integer dim values from a dim attribute
-fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
+pub(crate) fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
     match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Integer(dims) => Some(dims.0.clone()),

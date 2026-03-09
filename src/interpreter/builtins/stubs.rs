@@ -9,11 +9,7 @@ noop_builtin!("UseMethod", 1);
 
 // Data structures
 
-// Apply family
-noop_builtin!("apply", 3);
-noop_builtin!("mapply", 2);
-noop_builtin!("tapply", 3);
-noop_builtin!("by", 3);
+// Apply family (apply, mapply, tapply, by — interp.rs)
 // Linear algebra (norm, solve, outer — math.rs; crossprod, tcrossprod — math.rs)
 noop_builtin!("qr", 1);
 noop_builtin!("svd", 1);
