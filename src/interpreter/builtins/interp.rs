@@ -865,5 +865,5 @@ fn interp_parse(
 
     let parsed =
         crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
-    Ok(RValue::Language(Box::new(parsed)))
+    Ok(RValue::Language(Language::new(parsed)))
 }

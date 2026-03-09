@@ -120,7 +120,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Architecture
 
-- [ ] `Language(Box<Expr>)` should have a dedicated `Language` newtype, so the enum variant becomes `Language(Language)` — use derive_more if needed
+- [x] `Language(Box<Expr>)` should have a dedicated `Language` newtype, so the enum variant becomes `Language(Language)` — use derive_more if needed
 - [ ] rename newr to minir
 - [ ] plan an r package builder
 - [ ] add typst conversion of R documentation and produce the manual

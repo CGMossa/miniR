@@ -82,7 +82,7 @@ fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
 #[pre_eval_builtin(name = "quote", min_args = 1)]
 fn pre_eval_quote(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
     match args.first().and_then(|a| a.value.as_ref()) {
-        Some(expr) => Ok(RValue::Language(Box::new(expr.clone()))),
+        Some(expr) => Ok(RValue::Language(Language::new(expr.clone()))),
         None => Ok(RValue::Null),
     }
 }
@@ -95,7 +95,7 @@ fn pre_eval_substitute(args: &[Arg], env: &Environment) -> Result<RValue, RError
     };
     // Walk the AST and replace symbols with their values from the environment
     let substituted = substitute_expr(&expr, env);
-    Ok(RValue::Language(Box::new(substituted)))
+    Ok(RValue::Language(Language::new(substituted)))
 }
 
 /// Walk an AST, replacing symbols with their values from the environment.
@@ -194,7 +194,7 @@ fn pre_eval_bquote(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
         None => return Ok(RValue::Null),
     };
     let result = bquote_expr(&expr, env)?;
-    Ok(RValue::Language(Box::new(result)))
+    Ok(RValue::Language(Language::new(result)))
 }
 
 /// Walk an AST for bquote: evaluate .() splice expressions, leave everything else quoted.
@@ -264,7 +264,7 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
 /// Convert an RValue back to an AST expression (for substitute).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
-        RValue::Language(expr) => *expr.clone(),
+        RValue::Language(expr) => *expr.0.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(d) if d.len() == 1 => match d[0] {
