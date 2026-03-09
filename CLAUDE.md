@@ -2,11 +2,24 @@
 
 An R interpreter written in Rust.
 
+## Goals
+
+1. **Run top CRAN packages** — the interpreter should handle real-world R code from popular CRAN packages, not just toy examples
+2. **Well-written code** — clean, idiomatic Rust; no hacks, no over-engineering
+3. **Reentrant interpreter** — multiple R interpreters must coexist in the same process. No process-global statics. Thread-local storage (TLS) is the baseline for per-interpreter state. This enables embedding newr as a library, running parallel R sessions, and testing interpreters in isolation.
+
 ## Design Philosophy
 
 We will diverge from R behavior when R behavior is absurd. This is not a drop-in replacement for GNU R — it is a new implementation that respects R's useful semantics while fixing the nonsensical ones. Breaking changes from GNU R will be documented. Don't worry about backwards compatibility with GNU R — correctness and clarity come first.
 
 Error messages should be *better* than GNU R's — more informative, more specific, with suggestions for how to fix the problem. We have the advantage of building from scratch without legacy constraints. Every error message is an opportunity to teach the user something. Don't just say what went wrong — say why it went wrong and what to do about it.
+
+## Concurrency Rules
+
+- **No process-global mutable statics** — use `thread_local!` for interpreter state that builtins need to access (e.g. `with_interpreter()` pattern)
+- **`thread_local!` is the baseline** — each thread gets its own interpreter instance, no cross-thread sharing needed for interpreter state
+- **`Rc<RefCell<>>` is fine** — the interpreter is single-threaded per instance; no need for `Arc<Mutex<>>` unless explicitly sharing across threads
+- When adding new state (RNG, temp dirs, options, etc.), put it on the `Interpreter` struct, not in a static
 
 ## Project Structure
 
