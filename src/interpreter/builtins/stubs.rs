@@ -12,11 +12,6 @@ noop_builtin!("array");
 noop_builtin!("rbind");
 noop_builtin!("cbind");
 
-// Apply family
-noop_builtin!("apply", 3);
-noop_builtin!("mapply", 2);
-noop_builtin!("tapply", 3);
-noop_builtin!("by", 3);
 // Linear algebra
 noop_builtin!("solve", 1);
 noop_builtin!("qr", 1);
