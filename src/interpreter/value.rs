@@ -85,16 +85,6 @@ impl RVector {
             _ => None,
         }
     }
-
-    pub fn names(&self) -> Option<Vec<Option<String>>> {
-        match self.get_attr("names") {
-            Some(RValue::Vector(rv)) => match &rv.inner {
-                Vector::Character(v) => Some(v.0.clone()),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -322,13 +312,6 @@ impl RValue {
     pub fn as_vector(&self) -> Option<&Vector> {
         match self {
             RValue::Vector(rv) => Some(&rv.inner),
-            _ => None,
-        }
-    }
-
-    pub fn as_rvector(&self) -> Option<&RVector> {
-        match self {
-            RValue::Vector(rv) => Some(rv),
             _ => None,
         }
     }
