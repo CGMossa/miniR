@@ -6,7 +6,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Interpreter Stubs (src/interpreter/mod.rs)
 
-- [ ] Complex numbers — parsed but treated as doubles
+- [ ] Complex numbers — parsed but treated as doubles (see plans/num-complex.md)
 - [ ] `..1`, `..2` etc. — parsed but return NULL
 - [ ] Formula (`~`) — parsed, binary and unary both return NULL
 
@@ -45,12 +45,12 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] 🔧 `norm(x)` — matrix norm
 - [ ] 🔧 `solve(a, b)` — solve linear system (ndarray)
 - [ ] 🔧 `outer(X, Y, FUN)` — outer product
-- [ ] `qr(x)` — QR decomposition (needs linalg dep)
-- [ ] `svd(x)` — singular value decomposition (needs linalg dep)
-- [ ] `eigen(x)` — eigenvalues (needs linalg dep)
-- [ ] `det(x)` — determinant (needs linalg dep)
-- [ ] `chol(x)` — Cholesky decomposition (needs linalg dep)
-- [ ] `complex(...)` — create complex number
+- [ ] `qr(x)` — QR decomposition (see plans/nalgebra.md)
+- [ ] `svd(x)` — singular value decomposition (see plans/nalgebra.md)
+- [ ] `eigen(x)` — eigenvalues (see plans/nalgebra.md)
+- [ ] `det(x)` — determinant (see plans/nalgebra.md)
+- [ ] `chol(x)` — Cholesky decomposition (see plans/nalgebra.md)
+- [ ] `complex(...)` — create complex number (see plans/num-complex.md)
 
 ## Builtin Stubs — Random Numbers
 
@@ -79,8 +79,8 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — File I/O
 
-- [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (needs format design)
-- [ ] `load(file)` / `save(..., file)` — workspace I/O (needs format design)
+- [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (see plans/serde.md)
+- [ ] `load(file)` / `save(..., file)` — workspace I/O (see plans/serde.md)
 - [ ] 🔧 `scan(file, ...)` — read data
 - [ ] 🔧 `file.info(path)` — file metadata
 - [ ] `tempfile()` / `tempdir()` — rewrite with temp-dir crate for session-scoped cleanup (see plans/temp-dir.md)
@@ -89,15 +89,15 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — System
 
-- [ ] 🔧 `Sys.glob(paths)` — glob expansion
+- [ ] `Sys.glob(paths)` — glob expansion (see plans/globset.md)
 - [ ] `install.packages(pkgs)` / `installed.packages()` — package management
 - [ ] `require(pkg)` / `library(pkg)` / `loadNamespace(pkg)` / `requireNamespace(pkg)` — package loading (stub prints warning)
 
 ## Builtin Stubs — Date/Time
 
-- [ ] `as.POSIXct(x)` / `as.POSIXlt(x)` — datetime constructors (see plans/chrono.md)
-- [ ] `ISOdate(...)` / `ISOdatetime(...)` — ISO datetime
-- [ ] `strptime(x, format)` / `strftime(x, format)` — date formatting
+- [ ] `as.POSIXct(x)` / `as.POSIXlt(x)` — datetime constructors (see plans/chrono.md, plans/jiff.md)
+- [ ] `ISOdate(...)` / `ISOdatetime(...)` — ISO datetime (see plans/chrono.md, plans/jiff.md)
+- [ ] `strptime(x, format)` / `strftime(x, format)` — date formatting (see plans/chrono.md, plans/jiff.md)
 
 ## Builtin Stubs — S4 / OOP
 
@@ -109,7 +109,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 - [ ] `pdf(...)` / `dev.off()` — PDF graphics device
 - [ ] `plot(...)` — plotting
-- [ ] `lm(formula, data)` — linear model (see plans/ for stats)
+- [ ] `lm(formula, data)` — linear model (needs stats plan, depends on formula + data.frame)
 
 ## Builtin Stubs — Misc
 
