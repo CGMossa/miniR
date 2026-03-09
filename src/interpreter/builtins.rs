@@ -1929,6 +1929,320 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
     }
 }
 
+#[builtin(min_args = 1)]
+fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            rv.attrs.as_mut().map(|a| a.remove("names"));
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(l)) => {
+            let mut l = l.clone();
+            for entry in &mut l.values {
+                entry.0 = None;
+            }
+            l.attrs.as_mut().map(|a| a.remove("names"));
+            Ok(RValue::List(l))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+#[builtin(min_args = 1)]
+fn builtin_dimnames(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(rv)) => Ok(rv.get_attr("dimnames").cloned().unwrap_or(RValue::Null)),
+        Some(RValue::List(l)) => Ok(l.get_attr("dimnames").cloned().unwrap_or(RValue::Null)),
+        _ => Ok(RValue::Null),
+    }
+}
+
+#[builtin(name = "dimnames<-", min_args = 2)]
+fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let dimnames_val = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            if dimnames_val.is_null() {
+                rv.attrs.as_mut().map(|a| a.remove("dimnames"));
+            } else {
+                rv.set_attr("dimnames".to_string(), dimnames_val);
+            }
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(l)) => {
+            let mut l = l.clone();
+            if dimnames_val.is_null() {
+                l.attrs.as_mut().map(|a| a.remove("dimnames"));
+            } else {
+                l.set_attr("dimnames".to_string(), dimnames_val);
+            }
+            Ok(RValue::List(l))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+#[builtin]
+fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // array(data = NA, dim = length(data), dimnames = NULL)
+    let data = args
+        .first()
+        .cloned()
+        .unwrap_or(RValue::vec(Vector::Logical(vec![None].into())));
+    let dim_arg = named
+        .iter()
+        .find(|(n, _)| n == "dim")
+        .map(|(_, v)| v)
+        .or(args.get(1));
+    let dimnames_arg = named
+        .iter()
+        .find(|(n, _)| n == "dimnames")
+        .map(|(_, v)| v)
+        .or(args.get(2));
+
+    let data_vec = match &data {
+        RValue::Vector(v) => v.to_doubles(),
+        RValue::Null => vec![],
+        _ => vec![Some(f64::NAN)],
+    };
+
+    // Parse dim: can be a single integer or a vector of integers
+    let dims: Vec<usize> = match dim_arg {
+        Some(val) => {
+            let ints = match val.as_vector() {
+                Some(v) => v.to_integers(),
+                None => {
+                    return Err(RError::Argument(
+                        "'dim' must be a numeric vector".to_string(),
+                    ))
+                }
+            };
+            ints.iter().map(|x| x.unwrap_or(0) as usize).collect()
+        }
+        None => vec![data_vec.len()],
+    };
+
+    // Calculate total elements
+    let total: usize = dims.iter().product();
+
+    // Recycle data to fill the array
+    let mut mat = Vec::with_capacity(total);
+    if data_vec.is_empty() {
+        mat.resize(total, None);
+    } else {
+        for i in 0..total {
+            mat.push(data_vec[i % data_vec.len()]);
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(mat.into()));
+
+    // Set class: arrays with 2 dims get "matrix" + "array", others just "array"
+    if dims.len() == 2 {
+        rv.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(
+                vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+            )),
+        );
+    } else {
+        rv.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(vec![Some("array".to_string())].into())),
+        );
+    }
+
+    // Set dim attribute
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            dims.iter()
+                .map(|&d| Some(d as i64))
+                .collect::<Vec<_>>()
+                .into(),
+        )),
+    );
+
+    // Set dimnames if provided
+    if let Some(dn) = dimnames_arg {
+        if !dn.is_null() {
+            rv.set_attr("dimnames".to_string(), dn.clone());
+        }
+    }
+
+    Ok(RValue::Vector(rv))
+}
+
+#[builtin(min_args = 1)]
+fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    if args.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    // Collect all inputs as (data, nrow, ncol)
+    let mut inputs: Vec<(Vec<Option<f64>>, usize, usize)> = Vec::new();
+    for arg in args {
+        match arg {
+            RValue::Vector(rv) => {
+                let data = rv.to_doubles();
+                if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                    if dims.len() >= 2 {
+                        let nr = dims[0].unwrap_or(0) as usize;
+                        let nc = dims[1].unwrap_or(0) as usize;
+                        inputs.push((data, nr, nc));
+                        continue;
+                    }
+                }
+                // Plain vector becomes a 1-row matrix
+                let len = data.len();
+                inputs.push((data, 1, len));
+            }
+            RValue::Null => continue,
+            _ => {
+                return Err(RError::Argument(
+                    "cannot rbind non-vector/matrix arguments".to_string(),
+                ))
+            }
+        }
+    }
+
+    if inputs.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    // All inputs must have the same number of columns (after recycling)
+    let max_ncol = inputs.iter().map(|(_, _, nc)| *nc).max().unwrap_or(0);
+    if max_ncol == 0 {
+        return Ok(RValue::Null);
+    }
+
+    // Check column compatibility
+    for (_, _, nc) in &inputs {
+        if *nc != max_ncol && max_ncol % nc != 0 && nc % max_ncol != 0 {
+            return Err(RError::Argument(
+                "number of columns of arguments do not match".to_string(),
+            ));
+        }
+    }
+
+    // Total rows
+    let total_nrow: usize = inputs.iter().map(|(_, nr, _)| *nr).sum();
+
+    // Build result column-major: for each column j, concatenate rows from all inputs
+    let mut result = Vec::with_capacity(total_nrow * max_ncol);
+    for j in 0..max_ncol {
+        for (data, nr, nc) in &inputs {
+            let actual_j = j % nc;
+            for i in 0..*nr {
+                // Column-major index: col * nrow + row
+                let idx = actual_j * nr + i;
+                result.push(if idx < data.len() { data[idx] } else { None });
+            }
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+        )),
+    );
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(total_nrow as i64), Some(max_ncol as i64)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+#[builtin(min_args = 1)]
+fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    if args.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    // Collect all inputs as (data, nrow, ncol)
+    let mut inputs: Vec<(Vec<Option<f64>>, usize, usize)> = Vec::new();
+    for arg in args {
+        match arg {
+            RValue::Vector(rv) => {
+                let data = rv.to_doubles();
+                if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
+                    if dims.len() >= 2 {
+                        let nr = dims[0].unwrap_or(0) as usize;
+                        let nc = dims[1].unwrap_or(0) as usize;
+                        inputs.push((data, nr, nc));
+                        continue;
+                    }
+                }
+                // Plain vector becomes a 1-column matrix
+                let len = data.len();
+                inputs.push((data, len, 1));
+            }
+            RValue::Null => continue,
+            _ => {
+                return Err(RError::Argument(
+                    "cannot cbind non-vector/matrix arguments".to_string(),
+                ))
+            }
+        }
+    }
+
+    if inputs.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    // All inputs must have the same number of rows (after recycling)
+    let max_nrow = inputs.iter().map(|(_, nr, _)| *nr).max().unwrap_or(0);
+    if max_nrow == 0 {
+        return Ok(RValue::Null);
+    }
+
+    // Check row compatibility
+    for (_, nr, _) in &inputs {
+        if *nr != max_nrow && max_nrow % nr != 0 && nr % max_nrow != 0 {
+            return Err(RError::Argument(
+                "number of rows of arguments do not match".to_string(),
+            ));
+        }
+    }
+
+    // Total columns
+    let total_ncol: usize = inputs.iter().map(|(_, _, nc)| *nc).sum();
+
+    // Build result column-major: for each input, append its columns (recycling rows)
+    let mut result = Vec::with_capacity(max_nrow * total_ncol);
+    for (data, nr, nc) in &inputs {
+        for j in 0..*nc {
+            for i in 0..max_nrow {
+                // Recycle: wrap row index within the input's actual nrow
+                let actual_i = i % nr;
+                let idx = j * nr + actual_i;
+                result.push(if idx < data.len() { data[idx] } else { None });
+            }
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+        )),
+    );
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(max_nrow as i64), Some(total_ncol as i64)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
 #[builtin(min_args = 2)]
 fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let which = args
@@ -2086,11 +2400,14 @@ fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
 }
 
 fn has_class(val: &RValue, class_name: &str) -> bool {
-    if let RValue::List(l) = val {
-        if let Some(RValue::Vector(rv)) = l.get_attr("class") {
-            if let Vector::Character(cls) = &rv.inner {
-                return cls.iter().any(|c| c.as_deref() == Some(class_name));
-            }
+    let class_attr = match val {
+        RValue::Vector(rv) => rv.get_attr("class"),
+        RValue::List(l) => l.get_attr("class"),
+        _ => None,
+    };
+    if let Some(RValue::Vector(rv)) = class_attr {
+        if let Vector::Character(cls) = &rv.inner {
+            return cls.iter().any(|c| c.as_deref() == Some(class_name));
         }
     }
     false
