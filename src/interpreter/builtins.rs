@@ -407,9 +407,21 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-#[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist", "is.environment"])]
+#[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist"])]
 fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Null));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+#[builtin(name = "is.environment", min_args = 1)]
+fn builtin_is_environment(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(args.first(), Some(RValue::Environment(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+#[builtin(name = "is.language", min_args = 1)]
+fn builtin_is_language(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(args.first(), Some(RValue::Language(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -2149,18 +2161,56 @@ fn builtin_data_frame(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 }
 
 #[builtin(name = "environment")]
-fn builtin_environment_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
+fn builtin_environment(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { env, .. })) => {
+            Ok(RValue::Environment(env.clone()))
+        }
+        Some(_) => Ok(RValue::Null),
+        // No args: should return the current env, but we don't have it here
+        // This is handled by the interpreter builtin for the no-arg case
+        None => Ok(RValue::Null),
+    }
 }
 
 #[builtin(name = "new.env")]
-fn builtin_new_env_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Environment(Environment::new_global()))
+fn builtin_new_env(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let parent_val = named
+        .iter()
+        .find(|(n, _)| n == "parent")
+        .map(|(_, v)| v)
+        .or_else(|| args.first());
+    let parent = parent_val.and_then(|v| {
+        if let RValue::Environment(e) = v {
+            Some(e.clone())
+        } else {
+            None
+        }
+    });
+    match parent {
+        Some(p) => Ok(RValue::Environment(Environment::new_child(&p))),
+        None => Ok(RValue::Environment(Environment::new_empty())),
+    }
 }
 
-#[builtin(name = "globalenv", names = ["baseenv", "emptyenv", "parent.env"])]
-fn builtin_globalenv_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
+#[builtin(name = "environmentName", min_args = 1)]
+fn builtin_environment_name(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let name = match args.first() {
+        Some(RValue::Environment(e)) => e.name().unwrap_or_default(),
+        _ => String::new(),
+    };
+    Ok(RValue::vec(Vector::Character(vec![Some(name)].into())))
+}
+
+#[builtin(name = "parent.env", min_args = 1)]
+fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Environment(e)) => match e.parent() {
+            Some(p) => Ok(RValue::Environment(p)),
+            None => Ok(RValue::Null),
+        },
+        _ => Err(RError::Argument("not an environment".to_string())),
+    }
 }
 
 #[builtin(name = "nargs", names = ["sys.nframe", "sys.function"])]

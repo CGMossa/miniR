@@ -65,8 +65,10 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let base_env = Environment::new_global();
+        base_env.set_name("base".to_string());
         builtins::register_builtins(&base_env);
         let global_env = Environment::new_child(&base_env);
+        global_env.set_name("R_GlobalEnv".to_string());
         Interpreter {
             global_env,
             s3_dispatch_stack: RefCell::new(Vec::new()),

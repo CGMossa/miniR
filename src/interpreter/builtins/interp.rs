@@ -746,6 +746,66 @@ fn interp_next_method(
     })
 }
 
+#[interpreter_builtin(name = "globalenv")]
+fn interp_globalenv(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| Ok(RValue::Environment(interp.global_env.clone())))
+}
+
+#[interpreter_builtin(name = "baseenv")]
+fn interp_baseenv(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        Ok(RValue::Environment(
+            interp
+                .global_env
+                .parent()
+                .unwrap_or_else(|| interp.global_env.clone()),
+        ))
+    })
+}
+
+#[interpreter_builtin(name = "emptyenv")]
+fn interp_emptyenv(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    Ok(RValue::Environment(Environment::new_empty()))
+}
+
+#[interpreter_builtin(name = "ls", names = ["objects"])]
+fn interp_ls(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    // Determine which environment to list
+    let target_env = named
+        .iter()
+        .find(|(n, _)| n == "envir")
+        .map(|(_, v)| v)
+        .or_else(|| positional.first())
+        .and_then(|v| {
+            if let RValue::Environment(e) = v {
+                Some(e.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| env.clone());
+
+    let names = target_env.ls();
+    let chars: Vec<Option<String>> = names.into_iter().map(Some).collect();
+    Ok(RValue::vec(Vector::Character(chars.into())))
+}
+
 #[interpreter_builtin(name = "eval", min_args = 1)]
 fn interp_eval(
     positional: &[RValue],
