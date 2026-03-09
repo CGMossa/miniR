@@ -3218,3 +3218,275 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         }
     }
 }
+
+// ── File I/O: read.table / write.table ──────────────────────────────
+
+/// `read.table(file, header, sep, ...)` — read a delimited text file into a named list.
+///
+/// Returns a list of columns (not a proper data frame — no row.names or class).
+/// Each column is a character vector by default.
+#[builtin(min_args = 1)]
+fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let file = match &args[0] {
+        RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
+            RError::Argument("read.table() requires a file path string".to_string())
+        })?,
+        _ => {
+            return Err(RError::Argument(
+                "read.table() requires a file path string".to_string(),
+            ))
+        }
+    };
+
+    let header = named
+        .iter()
+        .find(|(n, _)| n == "header")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_logical_scalar(),
+            _ => None,
+        })
+        .unwrap_or(false);
+
+    let sep = named
+        .iter()
+        .find(|(n, _)| n == "sep")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            _ => None,
+        })
+        .unwrap_or_else(|| "".to_string()); // empty = whitespace
+
+    let content = std::fs::read_to_string(&file)
+        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+
+    let mut lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return Ok(RValue::List(RList::new(vec![])));
+    }
+
+    // Parse column names from header
+    let col_names: Vec<String> = if header {
+        let header_line = lines.remove(0);
+        split_line(header_line, &sep)
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // Parse data
+    let rows: Vec<Vec<String>> = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| split_line(l, &sep).iter().map(|s| s.to_string()).collect())
+        .collect();
+
+    if rows.is_empty() {
+        return Ok(RValue::List(RList::new(vec![])));
+    }
+
+    let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut columns: Vec<(Option<String>, RValue)> = Vec::with_capacity(ncols);
+
+    for col_idx in 0..ncols {
+        let col_data: Vec<Option<String>> = rows.iter().map(|r| r.get(col_idx).cloned()).collect();
+
+        // Try to detect numeric columns
+        let all_numeric = col_data.iter().all(|v| {
+            v.as_ref().is_none_or(|s| {
+                s.is_empty() || s == "NA" || s.parse::<f64>().is_ok()
+            })
+        });
+
+        let col_val = if all_numeric {
+            let vals: Vec<Option<f64>> = col_data
+                .iter()
+                .map(|v| {
+                    v.as_ref().and_then(|s| {
+                        if s == "NA" || s.is_empty() {
+                            None
+                        } else {
+                            s.parse().ok()
+                        }
+                    })
+                })
+                .collect();
+            RValue::vec(Vector::Double(vals.into()))
+        } else {
+            RValue::vec(Vector::Character(col_data.into()))
+        };
+
+        let name = col_names
+            .get(col_idx)
+            .cloned()
+            .or_else(|| Some(format!("V{}", col_idx + 1)));
+        columns.push((name, col_val));
+    }
+
+    Ok(RValue::List(RList::new(columns)))
+}
+
+/// `write.table(x, file, sep, row.names, col.names, quote)` — write a list/matrix to a text file.
+#[builtin(min_args = 2)]
+fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let file = match &args[1] {
+        RValue::Vector(rv) => rv
+            .inner
+            .as_character_scalar()
+            .ok_or_else(|| RError::Argument("write.table() requires a file path".to_string()))?,
+        _ => {
+            return Err(RError::Argument(
+                "write.table() requires a file path as second argument".to_string(),
+            ))
+        }
+    };
+
+    let sep = named
+        .iter()
+        .find(|(n, _)| n == "sep")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            _ => None,
+        })
+        .unwrap_or_else(|| " ".to_string());
+
+    let col_names = named
+        .iter()
+        .find(|(n, _)| n == "col.names")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_logical_scalar(),
+            _ => None,
+        })
+        .unwrap_or(true);
+
+    let quote = named
+        .iter()
+        .find(|(n, _)| n == "quote")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_logical_scalar(),
+            _ => None,
+        })
+        .unwrap_or(true);
+
+    let mut output = String::new();
+
+    match &args[0] {
+        RValue::List(list) => {
+            let ncols = list.values.len();
+            let nrows = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+
+            // Header
+            if col_names {
+                let names: Vec<String> = list
+                    .values
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, _))| {
+                        let n = name.clone().unwrap_or_else(|| format!("V{}", i + 1));
+                        if quote {
+                            format!("\"{}\"", n)
+                        } else {
+                            n
+                        }
+                    })
+                    .collect();
+                output.push_str(&names.join(&sep));
+                output.push('\n');
+            }
+
+            // Rows
+            for row_idx in 0..nrows {
+                let cells: Vec<String> = (0..ncols)
+                    .map(|col_idx| {
+                        let (_, val) = &list.values[col_idx];
+                        format_cell(val, row_idx, quote)
+                    })
+                    .collect();
+                output.push_str(&cells.join(&sep));
+                output.push('\n');
+            }
+        }
+        RValue::Vector(rv) => {
+            // Matrix — write rows
+            let dim = rv.get_attr("dim");
+            match dim {
+                Some(RValue::Vector(dim_rv)) => {
+                    if let Vector::Integer(d) = &dim_rv.inner {
+                        if d.len() >= 2 {
+                            let nrow = d[0].unwrap_or(0) as usize;
+                            let ncol = d[1].unwrap_or(0) as usize;
+                            for r in 0..nrow {
+                                let cells: Vec<String> = (0..ncol)
+                                    .map(|c| {
+                                        let idx = c * nrow + r;
+                                        format_cell(&args[0], idx, quote)
+                                    })
+                                    .collect();
+                                output.push_str(&cells.join(&sep));
+                                output.push('\n');
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Plain vector — one element per line
+                    for i in 0..rv.inner.len() {
+                        output.push_str(&format_cell(&args[0], i, quote));
+                        output.push('\n');
+                    }
+                }
+            }
+        }
+        _ => {
+            return Err(RError::Type(
+                "write.table() requires a list or matrix".to_string(),
+            ))
+        }
+    }
+
+    std::fs::write(&file, output)
+        .map_err(|e| RError::Other(format!("cannot write to file '{}': {}", file, e)))?;
+
+    Ok(RValue::Null)
+}
+
+/// Split a line by separator (whitespace if empty).
+fn split_line<'a>(line: &'a str, sep: &str) -> Vec<&'a str> {
+    if sep.is_empty() {
+        line.split_whitespace().collect()
+    } else {
+        line.split(sep).collect()
+    }
+}
+
+/// Format a single cell from a vector for write.table output.
+fn format_cell(val: &RValue, idx: usize, quote: bool) -> String {
+    match val {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Double(v) => v
+                .get(idx)
+                .and_then(|x| *x)
+                .map_or("NA".to_string(), |f| format!("{}", f)),
+            Vector::Integer(v) => v
+                .get(idx)
+                .and_then(|x| *x)
+                .map_or("NA".to_string(), |i| format!("{}", i)),
+            Vector::Logical(v) => v.get(idx).and_then(|x| *x).map_or("NA".to_string(), |b| {
+                if b { "TRUE" } else { "FALSE" }.to_string()
+            }),
+            Vector::Character(v) => {
+                v.get(idx)
+                    .and_then(|x| x.as_ref())
+                    .map_or("NA".to_string(), |s| {
+                        if quote {
+                            format!("\"{}\"", s)
+                        } else {
+                            s.clone()
+                        }
+                    })
+            }
+        },
+        _ => "NA".to_string(),
+    }
+}
