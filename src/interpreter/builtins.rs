@@ -2443,3 +2443,152 @@ fn builtin_sys_call_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
 fn builtin_q(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     std::process::exit(0);
 }
+
+// === Metaprogramming builtins ===
+
+use crate::parser::ast::Expr;
+
+/// `formals(fn)` — return the formal parameter list of a function as a named list.
+/// For closures, returns param names with defaults (if any). For builtins, returns NULL.
+#[builtin(min_args = 1)]
+fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { params, .. })) => {
+            if params.is_empty() {
+                return Ok(RValue::Null);
+            }
+            let entries: Vec<(Option<String>, RValue)> = params
+                .iter()
+                .map(|p| {
+                    let name = if p.is_dots {
+                        "...".to_string()
+                    } else {
+                        p.name.clone()
+                    };
+                    let value = match &p.default {
+                        Some(expr) => RValue::Language(Box::new(expr.clone())),
+                        None => {
+                            if p.is_dots {
+                                // ... has no default — represent as empty symbol
+                                RValue::Null
+                            } else {
+                                // Missing default — represent as empty symbol (R uses missing)
+                                RValue::Null
+                            }
+                        }
+                    };
+                    (Some(name), value)
+                })
+                .collect();
+            Ok(RValue::List(RList::new(entries)))
+        }
+        Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
+        _ => Err(RError::Argument(
+            "'fn' is not a function — formals() requires a function argument".to_string(),
+        )),
+    }
+}
+
+/// `body(fn)` — return the body of a function as a Language object.
+/// For closures, returns the body expression. For builtins, returns NULL.
+#[builtin(min_args = 1)]
+fn builtin_body(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { body, .. })) => {
+            Ok(RValue::Language(Box::new(body.clone())))
+        }
+        Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
+        _ => Err(RError::Argument(
+            "'fn' is not a function — body() requires a function argument".to_string(),
+        )),
+    }
+}
+
+/// `args(fn)` — return the formals of a function (simplified: same as formals).
+/// In GNU R, args() returns a function with the same formals but NULL body.
+/// We simplify to just returning formals, which covers all practical uses.
+#[builtin(min_args = 1)]
+fn builtin_args(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    builtin_formals(args, named)
+}
+
+/// `call(name, ...)` — construct an unevaluated function call expression.
+/// `call("f", 1, 2)` returns the language object `f(1, 2)`.
+#[builtin(name = "call", min_args = 1)]
+fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let func_name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::Argument(
+                "first argument must be a character string naming the function to call".to_string(),
+            )
+        })?;
+
+    // Build Arg list from remaining positional args + named args
+    let mut call_args: Vec<crate::parser::ast::Arg> = Vec::new();
+
+    for val in args.iter().skip(1) {
+        call_args.push(Arg {
+            name: None,
+            value: Some(rvalue_to_expr(val)),
+        });
+    }
+
+    for (name, val) in named {
+        call_args.push(Arg {
+            name: Some(name.clone()),
+            value: Some(rvalue_to_expr(val)),
+        });
+    }
+
+    let expr = Expr::Call {
+        func: Box::new(Expr::Symbol(func_name)),
+        args: call_args,
+    };
+
+    Ok(RValue::Language(Box::new(expr)))
+}
+
+// `expression()` is a pre-eval builtin — see builtins/pre_eval.rs
+
+/// `Recall(...)` — recursive self-call. Requires a call stack to know the current
+/// function. Not yet implemented since we don't track a call stack.
+#[builtin(name = "Recall")]
+fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::Other(
+        "Recall() is not yet available — it requires call stack tracking, which is not yet implemented. \
+         As a workaround, give your function a name and call it directly for recursion."
+            .to_string(),
+    ))
+}
+
+/// Convert an RValue back to an AST expression (for call/expression construction).
+fn rvalue_to_expr(val: &RValue) -> Expr {
+    match val {
+        RValue::Language(expr) => *expr.clone(),
+        RValue::Null => Expr::Null,
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Double(d) if d.len() == 1 => match d[0] {
+                Some(v) if v.is_infinite() && v > 0.0 => Expr::Inf,
+                Some(v) if v.is_nan() => Expr::NaN,
+                Some(v) => Expr::Double(v),
+                None => Expr::Na(crate::parser::ast::NaType::Real),
+            },
+            Vector::Integer(i) if i.len() == 1 => match i[0] {
+                Some(v) => Expr::Integer(v),
+                None => Expr::Na(crate::parser::ast::NaType::Integer),
+            },
+            Vector::Logical(l) if l.len() == 1 => match l[0] {
+                Some(v) => Expr::Bool(v),
+                None => Expr::Na(crate::parser::ast::NaType::Logical),
+            },
+            Vector::Character(c) if c.len() == 1 => match &c[0] {
+                Some(v) => Expr::String(v.clone()),
+                None => Expr::Na(crate::parser::ast::NaType::Character),
+            },
+            _ => Expr::Symbol(format!("{}", val)),
+        },
+        _ => Expr::Symbol(format!("{}", val)),
+    }
+}
