@@ -3,6 +3,7 @@ mod math;
 mod pre_eval;
 mod strings;
 mod stubs;
+mod system;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
@@ -163,6 +164,43 @@ pub fn register_builtins(env: &Environment) {
             (
                 Some("double.xmin".to_string()),
                 RValue::vec(Vector::Double(vec![Some(f64::MIN_POSITIVE)].into())),
+            ),
+        ])),
+    );
+
+    // .Platform constant
+    let os_type = if cfg!(unix) { "unix" } else { "windows" };
+    let file_sep = if cfg!(windows) { "\\" } else { "/" };
+    let path_sep = if cfg!(windows) { ";" } else { ":" };
+    let dynlib_ext = if cfg!(target_os = "macos") {
+        ".dylib"
+    } else if cfg!(windows) {
+        ".dll"
+    } else {
+        ".so"
+    };
+    env.set(
+        ".Platform".to_string(),
+        RValue::List(RList::new(vec![
+            (
+                Some("OS.type".to_string()),
+                RValue::vec(Vector::Character(vec![Some(os_type.to_string())].into())),
+            ),
+            (
+                Some("file.sep".to_string()),
+                RValue::vec(Vector::Character(vec![Some(file_sep.to_string())].into())),
+            ),
+            (
+                Some("path.sep".to_string()),
+                RValue::vec(Vector::Character(vec![Some(path_sep.to_string())].into())),
+            ),
+            (
+                Some("dynlib.ext".to_string()),
+                RValue::vec(Vector::Character(vec![Some(dynlib_ext.to_string())].into())),
+            ),
+            (
+                Some("pkgType".to_string()),
+                RValue::vec(Vector::Character(vec![Some("source".to_string())].into())),
             ),
         ])),
     );
