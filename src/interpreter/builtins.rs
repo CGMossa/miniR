@@ -1201,6 +1201,192 @@ fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
     Ok(RValue::Null)
 }
 
+#[builtin(name = "read.csv", min_args = 1)]
+fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("invalid 'file' argument".to_string()))?;
+
+    let header = named
+        .iter()
+        .find(|(n, _)| n == "header")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let sep = named
+        .iter()
+        .find(|(n, _)| n == "sep")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .and_then(|s| s.bytes().next())
+        .unwrap_or(b',');
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(header)
+        .delimiter(sep)
+        .from_path(&path)
+        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", path, e)))?;
+
+    let col_names: Vec<String> = if header {
+        rdr.headers()
+            .map_err(|e| RError::Other(format!("error reading CSV headers: {}", e)))?
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        // Auto-generate V1, V2, ... column names from first record
+        let ncols = rdr
+            .records()
+            .next()
+            .and_then(|r| r.ok())
+            .map(|r| r.len())
+            .unwrap_or(0);
+        (1..=ncols).map(|i| format!("V{}", i)).collect()
+    };
+
+    let ncols = col_names.len();
+    let mut columns: Vec<Vec<Option<String>>> = vec![vec![]; ncols];
+    let mut nrows = 0usize;
+
+    for result in rdr.records() {
+        let record =
+            result.map_err(|e| RError::Other(format!("error reading CSV record: {}", e)))?;
+        for (i, field) in record.iter().enumerate() {
+            if i < ncols {
+                if field == "NA" || field.is_empty() {
+                    columns[i].push(None);
+                } else {
+                    columns[i].push(Some(field.to_string()));
+                }
+            }
+        }
+        nrows += 1;
+    }
+
+    // Try to coerce columns to numeric where possible
+    let mut list_cols: Vec<(Option<String>, RValue)> = Vec::new();
+    for (i, col_data) in columns.into_iter().enumerate() {
+        let name = col_names.get(i).cloned();
+        // Try parsing all as doubles
+        let all_numeric = col_data.iter().all(|v| match v {
+            None => true,
+            Some(s) => s.parse::<f64>().is_ok(),
+        });
+        if all_numeric {
+            // Try integer first
+            let all_int = col_data.iter().all(|v| match v {
+                None => true,
+                Some(s) => s.parse::<i64>().is_ok(),
+            });
+            if all_int {
+                let vals: Vec<Option<i64>> =
+                    col_data.iter().map(|v| v.as_ref()?.parse().ok()).collect();
+                list_cols.push((name, RValue::vec(Vector::Integer(vals.into()))));
+            } else {
+                let vals: Vec<Option<f64>> =
+                    col_data.iter().map(|v| v.as_ref()?.parse().ok()).collect();
+                list_cols.push((name, RValue::vec(Vector::Double(vals.into()))));
+            }
+        } else {
+            list_cols.push((name, RValue::vec(Vector::Character(col_data.into()))));
+        }
+    }
+
+    let mut list = RList::new(list_cols);
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    list.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            col_names.into_iter().map(Some).collect::<Vec<_>>().into(),
+        )),
+    );
+    let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+    list.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Integer(row_names.into())),
+    );
+    Ok(RValue::List(list))
+}
+
+#[builtin(name = "write.csv", min_args = 1)]
+fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let data = args
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+    let file = args
+        .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "file").map(|(_, v)| v))
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("argument 'file' is missing".to_string()))?;
+
+    let row_names = named
+        .iter()
+        .find(|(n, _)| n == "row.names")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let RValue::List(list) = data else {
+        return Err(RError::Argument(
+            "write.csv requires a data frame or list".to_string(),
+        ));
+    };
+
+    let mut wtr = csv::Writer::from_path(&file)
+        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+
+    // Write header
+    let col_names: Vec<String> = list
+        .values
+        .iter()
+        .map(|(n, _)| n.clone().unwrap_or_default())
+        .collect();
+
+    if row_names {
+        let mut header = vec!["".to_string()];
+        header.extend(col_names.clone());
+        wtr.write_record(&header)
+            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+    } else {
+        wtr.write_record(&col_names)
+            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+    }
+
+    // Determine number of rows
+    let nrows = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+
+    // Write rows
+    for row in 0..nrows {
+        let mut record: Vec<String> = Vec::new();
+        if row_names {
+            record.push((row + 1).to_string());
+        }
+        for (_, col_val) in &list.values {
+            if let RValue::Vector(rv) = col_val {
+                let chars = rv.to_characters();
+                record.push(
+                    chars
+                        .get(row)
+                        .and_then(|v| v.clone())
+                        .unwrap_or_else(|| "NA".to_string()),
+                );
+            } else {
+                record.push("NA".to_string());
+            }
+        }
+        wtr.write_record(&record)
+            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+    }
+
+    wtr.flush()
+        .map_err(|e| RError::Other(format!("error flushing CSV: {}", e)))?;
+    Ok(RValue::Null)
+}
+
 #[builtin(name = "require", min_args = 1, names = ["library"])]
 fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pkg = args
