@@ -129,6 +129,113 @@ fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+// region: file.info
+
+#[builtin(name = "file.info", min_args = 1)]
+fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let paths: Vec<String> = args
+        .iter()
+        .filter_map(|v| v.as_vector()?.as_character_scalar())
+        .collect();
+
+    if paths.is_empty() {
+        return Err(RError::Argument(
+            "'...' must contain at least one file path".to_string(),
+        ));
+    }
+
+    let mut sizes: Vec<Option<f64>> = Vec::new();
+    let mut isdirs: Vec<Option<bool>> = Vec::new();
+    let mut modes: Vec<Option<i64>> = Vec::new();
+    let mut mtimes: Vec<Option<f64>> = Vec::new();
+    let mut ctimes: Vec<Option<f64>> = Vec::new();
+    let mut atimes: Vec<Option<f64>> = Vec::new();
+
+    for path in &paths {
+        match fs::metadata(path) {
+            Ok(meta) => {
+                sizes.push(Some(meta.len() as f64));
+                isdirs.push(Some(meta.is_dir()));
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    modes.push(Some((meta.permissions().mode() & 0o777) as i64));
+                }
+                #[cfg(not(unix))]
+                {
+                    modes.push(Some(0o644));
+                }
+
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64());
+                mtimes.push(mtime);
+
+                let ctime = meta
+                    .created()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64());
+                ctimes.push(ctime);
+
+                let atime = meta
+                    .accessed()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64());
+                atimes.push(atime);
+            }
+            Err(_) => {
+                sizes.push(None);
+                isdirs.push(None);
+                modes.push(None);
+                mtimes.push(None);
+                ctimes.push(None);
+                atimes.push(None);
+            }
+        }
+    }
+
+    let row_names: Vec<Option<String>> = paths.into_iter().map(Some).collect();
+    let mut list = RList::new(vec![
+        (
+            Some("size".to_string()),
+            RValue::vec(Vector::Double(sizes.into())),
+        ),
+        (
+            Some("isdir".to_string()),
+            RValue::vec(Vector::Logical(isdirs.into())),
+        ),
+        (
+            Some("mode".to_string()),
+            RValue::vec(Vector::Integer(modes.into())),
+        ),
+        (
+            Some("mtime".to_string()),
+            RValue::vec(Vector::Double(mtimes.into())),
+        ),
+        (
+            Some("ctime".to_string()),
+            RValue::vec(Vector::Double(ctimes.into())),
+        ),
+        (
+            Some("atime".to_string()),
+            RValue::vec(Vector::Double(atimes.into())),
+        ),
+    ]);
+
+    list.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Character(row_names.into())),
+    );
+
+    Ok(RValue::List(list))
+}
+// endregion
+
 // === Directory operations ===
 
 #[builtin(name = "dir.create", min_args = 1)]

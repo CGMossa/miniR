@@ -39,8 +39,6 @@ noop_builtin!("simpleWarning", 1);
 noop_builtin!("simpleMessage", 1);
 
 // File I/O (scan — builtins.rs)
-noop_builtin!("file.info", 1);
-
 // Package management
 noop_builtin!("loadNamespace", 1);
 noop_builtin!("requireNamespace", 1);
