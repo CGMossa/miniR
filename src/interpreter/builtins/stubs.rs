@@ -27,12 +27,7 @@ noop_builtin!("norm", 1);
 noop_builtin!("complex");
 noop_builtin!("raw");
 
-// Factors & tables
-noop_builtin!("tabulate", 1);
-noop_builtin!("table");
-noop_builtin!("factor");
-noop_builtin!("levels", 1);
-noop_builtin!("nlevels", 1);
+// Factors & tables (factor, levels, nlevels, table, tabulate — builtins.rs)
 
 // Function tools (Recall — stub with informative error, see builtins.rs)
 
