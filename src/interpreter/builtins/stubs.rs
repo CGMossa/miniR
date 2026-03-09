@@ -113,11 +113,7 @@ noop_builtin!("load", 1);
 noop_builtin!("save");
 
 // Metaprogramming
-noop_builtin!("parse");
-noop_builtin!("eval", 1);
 noop_builtin!("evalq", 1);
-noop_builtin!("quote", 1);
-noop_builtin!("substitute", 1);
 noop_builtin!("bquote", 1);
 noop_builtin!("call", 1);
 noop_builtin!("expression");
