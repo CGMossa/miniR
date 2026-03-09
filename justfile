@@ -14,7 +14,7 @@ vendor:
 
 # Update Cargo.lock from crates.io, bypassing vendor source replacement
 update *args:
-    CARGO_SOURCE_CRATES_IO_REPLACE_WITH="" cargo update {{args}}
+    CARGO_SOURCE_CRATES_IO_REPLACE_WITH="" CARGO_SOURCE_VENDORED_SOURCES_DIRECTORY="" cargo update {{args}}
 
 # Dump public API of a vendored crate as rustdoc JSON (requires nightly + jq)
 crate-docs crate:
