@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
+use derive_more::{Deref, DerefMut};
+
 use crate::interpreter::environment::Environment;
 use crate::parser::ast::{Expr, Param};
 
@@ -19,6 +21,18 @@ pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError
 
 /// Attribute map — every R object can carry named attributes
 pub type Attributes = HashMap<String, RValue>;
+
+/// Unevaluated expression (language object) — returned by quote(), parse().
+///
+/// Wraps a boxed AST node. Derefs to `Expr` for pattern matching.
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct Language(pub Box<Expr>);
+
+impl Language {
+    pub fn new(expr: Expr) -> Self {
+        Language(Box::new(expr))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum RValue {
@@ -32,8 +46,8 @@ pub enum RValue {
     Function(RFunction),
     /// Environment reference
     Environment(Environment),
-    /// Unevaluated expression (language object) — returned by quote(), parse()
-    Language(Box<Expr>),
+    /// Language object (unevaluated expression)
+    Language(Language),
 }
 
 /// Atomic vector with optional attributes (names, class, dim, etc.)
