@@ -230,6 +230,7 @@ do literal substring matching only.
 | `regexec(pattern, x)` | noop | `Regex::captures` → groups |
 
 Parameters to handle:
+
 - `fixed = TRUE` → literal matching (current behavior)
 - `ignore.case = TRUE` → `RegexBuilder::case_insensitive(true)`
 - `perl = TRUE` → default in modern R, use `regex` crate
@@ -541,7 +542,7 @@ Functions: `min`, `max`, `min_by`, `max_by`, `min_by_key`, `max_by_key`,
 
 ## Implementation Order (recommended)
 
-```
+```text
 Session 1:  Phase 1 partial — trig (asin/acos/atan/atan2), pmin/pmax
 Session 2:  Phase 6 partial — getwd, setwd, list.files, dir.exists, file ops
 Session 3:  Phase 5         — add regex crate, upgrade grep/sub/gsub

@@ -1,7 +1,7 @@
 # num-complex integration plan
 
 > `num-complex` 0.4 — Complex number type.
-> https://github.com/rust-num/num-complex
+> <https://github.com/rust-num/num-complex>
 
 ## What it does
 
@@ -48,6 +48,7 @@ enum Vector {
 ### 3. Complex math
 
 All math functions should work on complex inputs:
+
 - `sqrt(-1+0i)` → `0+1i`
 - `exp(z)`, `log(z)`, `sin(z)`, `cos(z)` — all defined for complex
 - `polyroot()` — polynomial root finding returns complex

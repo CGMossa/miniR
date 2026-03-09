@@ -1,7 +1,7 @@
 # walkdir integration plan
 
 > `walkdir` 2.5 — Recursive directory traversal by BurntSushi.
-> https://github.com/BurntSushi/walkdir
+> <https://github.com/BurntSushi/walkdir>
 
 ## What it does
 

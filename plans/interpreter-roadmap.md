@@ -24,6 +24,7 @@ Everything in R hangs on attributes. Classes, dimensions, names, factors — all
 Add `attrs: Option<HashMap<String, RValue>>` to `RValue::Vector` and `RValue::List`.
 
 Key attributes:
+
 - `names` — vector/list element names
 - `class` — S3 class (character vector)
 - `dim` — matrix/array dimensions (integer vector)
@@ -34,6 +35,7 @@ Key attributes:
 ### 1.2 attr() / attributes() / structure()
 
 Implement properly (currently stubs):
+
 - `attr(x, "name")` — get/set single attribute
 - `attr(x, "name") <- value` — replacement form
 - `attributes(x)` — get all as list
@@ -66,6 +68,7 @@ Implement properly (currently stubs):
 ### 2.1 UseMethod()
 
 When a generic function like `print(x)` is called:
+
 1. Get `class(x)` → e.g., `c("data.frame", "list")`
 2. For each class, look up `print.data.frame`, `print.list`, `print.default`
 3. Call the first match found
@@ -82,6 +85,7 @@ When a generic function like `print(x)` is called:
 ### 2.3 Common generics to dispatch
 
 These generics need default methods + class-specific methods:
+
 - `print`, `format`, `str`, `summary`
 - `[`, `[[`, `$`, `[<-`, `[[<-`, `$<-`
 - `c`, `length`, `names`, `dim`
@@ -126,6 +130,7 @@ A matrix is a vector with a `dim` attribute. No new RValue variant needed.
 ### 4.1 data.frame construction
 
 A data frame is a list with:
+
 - `class = "data.frame"`
 - `names` attribute (column names)
 - `row.names` attribute
@@ -193,6 +198,7 @@ Top 50 most-called functions in CRAN that we don't implement properly:
 ### 5.3 Quick wins (easy to implement, high value)
 
 These can be done in an afternoon:
+
 - `isTRUE(x)` → `identical(x, TRUE)`
 - `isFALSE(x)` → `identical(x, FALSE)`
 - `nzchar(x)` → `nchar(x) > 0`
@@ -280,7 +286,7 @@ Current grep/grepl/gsub use naive string matching. Need actual regex:
 
 ## Implementation Order
 
-```
+```text
 Phase 5.3 (quick wins)          ← do first, immediate impact
 Phase 1 (attributes)            ← foundation for everything else
 Phase 2 (S3 dispatch)           ← unlocks OOP
@@ -299,11 +305,13 @@ Phase 10 (I/O)
 ## Measurement
 
 After each phase, re-run:
+
 ```sh
 ./scripts/parse-test.sh cran/    # should stay 100%
 ```
 
 And build an eval-test harness:
+
 ```sh
 ./scripts/eval-test.sh cran/     # track % of files that run without error
 ```

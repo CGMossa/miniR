@@ -42,7 +42,7 @@ their values with
 
 These do not check or set the type tag. To create and initialize a new
 immediate binding in a cell use
-	  
+
 - `INTSXP`: `NEW_BNDCELL_IVAL(cell, val)`
 - `LGLSXP`: `NEW_BNDCELL_LVAL(cell, val)`
 - `REALSXP`:`NEW_BNDCELL_DVAL(cell, val)`
@@ -56,13 +56,12 @@ to a different environment and binding representation.
 The setters, such as `SETCAR`, clear an immediate binding marker
 without signaling an error.
 
-
 ## Notes
 
-  - For now, the `sxpinfo.extra` field is used to hold the binding
+- For now, the `sxpinfo.extra` field is used to hold the binding
     tag.
 
-  - Two implementations are provided for representing the immediate
+- Two implementations are provided for representing the immediate
     values. One replaces the `SEXP` `CAR` field by a union; he other
     allocates a boxed value. The union representation is conceptually
     more natural and a little more efficient. But it would require a
@@ -77,7 +76,7 @@ without signaling an error.
     binary version and rebuilding all packages with compiled code.
     This should probably be done before release.
 
-  - The approach taken for now is to just allow immediate values in
+- The approach taken for now is to just allow immediate values in
     the `CAR` of binding cells. An alternative would be to allow
     immediate values in all `CONS` cells, or even more widely, such as
     in vector element. Allowing immediate values in all `CONS` cells
@@ -89,19 +88,19 @@ without signaling an error.
     In case immediate values are to be supported more widely the GC is
     suspended when when boxing values in `R_expand_binding_value`.
   
-  - Serialization handles environment frames with standard pairlist
+- Serialization handles environment frames with standard pairlist
     code, so the code not checks for an immediate binding and boxes
     the value if necessary. An alternative would be to update the
     serialization format to support immediate bindings. But given how
     challenging it is to change the format it seemed best just to box.
   
-  - Only unlocked standard environment bindings that can be cached can
+- Only unlocked standard environment bindings that can be cached can
     be turned into immediate bindings. Symbol bindings for the base
     environment are not cached, and bindings for user data bases are
     locked when returned by `findVarLoc` or findVarLocInFrame, so
     neither of these can become immediate bindings.
 
-  - `BINDING_VALUE` is defined slightly differently in `eval.c` and
+- `BINDING_VALUE` is defined slightly differently in `eval.c` and
     `envir.c`. It would be good to unify these eventually.
 
 <!--

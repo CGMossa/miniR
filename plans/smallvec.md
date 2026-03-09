@@ -12,6 +12,7 @@
 ### R is full of small vectors
 
 Most R operations produce small results:
+
 - Function arguments: typically 1-5 args
 - Named argument pairs: typically 0-3
 - Scalar operations: vectors of length 1

@@ -1,7 +1,7 @@
 # termcolor integration plan
 
 > `termcolor` 1.4 — Cross-platform colored terminal output by BurntSushi.
-> https://github.com/BurntSushi/termcolor
+> <https://github.com/BurntSushi/termcolor>
 
 ## What it does
 
@@ -24,17 +24,19 @@ writeln!(&mut stdout, "something went wrong")?;
 ### 1. Error/warning/message display
 
 Color-code R's diagnostic output:
+
 - `stop()` → red bold "Error: ..."
 - `warning()` → yellow "Warning message: ..."
 - `message()` → cyan (or default) stderr output
 
 ### 2. REPL prompt styling
 
-Color the `> ` prompt, continuation `+ ` prompt, or output differently from input.
+Color the `>` prompt, continuation `+` prompt, or output differently from input.
 
 ### 3. `cli` package equivalents
 
 R's `cli` package provides styled terminal output. Built-in equivalents:
+
 - `cli::cli_alert_success()` → green checkmark
 - `cli::cli_alert_danger()` → red cross
 - `cli::cli_text()` → styled text
@@ -42,6 +44,7 @@ R's `cli` package provides styled terminal output. Built-in equivalents:
 ### Comparison with crossterm
 
 termcolor is simpler and more focused:
+
 - **termcolor** — just colored text output, minimal API
 - **crossterm** — full terminal control (cursor, events, raw mode, etc.)
 

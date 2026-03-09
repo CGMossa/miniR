@@ -1,7 +1,7 @@
 # num-traits integration plan
 
 > `num-traits` 0.2 — Numeric trait abstractions.
-> https://github.com/rust-num/num-traits
+> <https://github.com/rust-num/num-traits>
 
 ## What it does
 

@@ -5,7 +5,7 @@
 Parse errors are pest's default output — a raw `format!("Parse error: {}", e)` string.
 Pest errors show grammar rule names that mean nothing to users:
 
-```
+```text
 > "hello""
 Parse error:  --> 1:8
   |
@@ -16,7 +16,8 @@ Parse error:  --> 1:8
 ```
 
 R gives:
-```
+
+```text
 > "hello""
 Error: unexpected string constant in ""hello""
 ```
@@ -100,7 +101,7 @@ Before falling through to the generic error, check for known patterns:
 
 ### Colored error display
 
-```
+```text
 error: unexpected string constant
  --> script.R:1:8
   |
@@ -111,6 +112,7 @@ error: unexpected string constant
 ```
 
 Use ANSI codes (crossterm is already a transitive dep):
+
 - "error:" bold red
 - File/line/col in blue
 - The `^` pointer in bold red
@@ -128,7 +130,7 @@ Improve by also detecting:
 
 ### File-mode errors show filename and surrounding context
 
-```
+```text
 error: object 'x' not found
  --> script.R:7:12
   |
@@ -147,6 +149,7 @@ error: object 'x' not found
 ## R error message style reference
 
 R follows these patterns:
+
 - `Error: <message>` — errors without call context
 - `Error in <call> : <message>` — errors in a specific call
 - Parse errors: `Error in parse(...) : <file>:<line>:<col>: <description>`

@@ -1,7 +1,7 @@
 # bstr integration plan
 
 > `bstr` 1.12 — Byte strings not required to be valid UTF-8, by BurntSushi.
-> https://github.com/BurntSushi/bstr
+> <https://github.com/BurntSushi/bstr>
 
 ## What it does
 
@@ -28,6 +28,7 @@ encoding. R's `Encoding()` function returns `"UTF-8"`, `"latin1"`, `"bytes"`, or
 `"unknown"`.
 
 Currently newr uses Rust `String` (always UTF-8). This breaks when R code:
+
 - Reads a Latin-1 file without conversion
 - Uses `chartr()` or `iconv()` between encodings
 - Has `Encoding(x) <- "bytes"` (raw byte strings)

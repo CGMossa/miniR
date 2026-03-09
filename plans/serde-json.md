@@ -1,7 +1,7 @@
 # serde_json integration plan
 
 > `serde_json` 1.0 — JSON serialization/deserialization.
-> https://github.com/serde-rs/json
+> <https://github.com/serde-rs/json>
 
 ## What it does
 
@@ -31,6 +31,7 @@ toJSON(list(x = 1:3, y = "abc"))
 ```
 
 Mapping:
+
 - JSON `null` → R `NULL`
 - JSON `bool` → R `logical`
 - JSON `number` → R `double` (or `integer` if whole)

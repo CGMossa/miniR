@@ -1,7 +1,7 @@
 # time integration plan
 
 > `time` 0.3 — Date and time library.
-> https://github.com/time-rs/time
+> <https://github.com/time-rs/time>
 
 ## What it does
 
@@ -21,6 +21,7 @@ ISO 8601 duration parsing, and a cleaner API. See `plans/jiff.md`.
 ### R's date/time system
 
 R has three date/time classes:
+
 - `Date` — days since 1970-01-01 (stored as double)
 - `POSIXct` — seconds since epoch (stored as double)
 - `POSIXlt` — broken-down time (named list with sec, min, hour, mday, mon, year, etc.)

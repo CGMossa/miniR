@@ -6,6 +6,7 @@
 ## What it does
 
 Highly optimized routines for searching bytes in slices:
+
 - `memchr(needle, haystack)` — find first occurrence of a byte
 - `memchr2`, `memchr3` — find first of 2 or 3 bytes
 - `memrchr` — reverse search

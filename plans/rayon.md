@@ -1,7 +1,7 @@
 # rayon integration plan
 
 > `rayon` 1.11 — Data parallelism library.
-> https://github.com/rayon-rs/rayon
+> <https://github.com/rayon-rs/rayon>
 
 ## What it does
 

@@ -1,7 +1,7 @@
 # csv integration plan
 
 > `csv` 1.4 — Fast CSV reader/writer by BurntSushi.
-> https://github.com/BurntSushi/rust-csv
+> <https://github.com/BurntSushi/rust-csv>
 
 ## What it does
 

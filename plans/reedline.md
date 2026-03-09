@@ -1,11 +1,12 @@
 # reedline integration plan
 
 > `reedline` 0.46+bashisms — Modern readline-style line editor.
-> https://github.com/nushell/reedline
+> <https://github.com/nushell/reedline>
 
 ## What it does
 
 Line editor library from the Nushell project. Features:
+
 - Multiline editing, syntax highlighting, completions
 - Vi and Emacs keybinding modes
 - History (file-backed, searchable, with deduplication)
@@ -17,7 +18,8 @@ Line editor library from the Nushell project. Features:
 ### Already in use
 
 reedline is the REPL backend in `src/main.rs`. Current integration includes:
-- Basic prompt (`> ` for input, `+ ` for continuation)
+
+- Basic prompt (`>` for input, `+` for continuation)
 - History persistence
 - Multiline R expression input
 
@@ -29,7 +31,7 @@ reedline is the REPL backend in `src/main.rs`. Current integration includes:
    function arguments, file paths
 3. **Custom keybindings** — Vi mode for R (like ESS in Emacs)
 4. **Multiline continuation** — Detect incomplete expressions (unclosed `{`, `(`,
-   unfinished `if`) and continue prompting with `+ `
+   unfinished `if`) and continue prompting with `+`
 5. **`history()` builtin** — Access reedline's history from R code
 
 ## Relationship to builtins plan

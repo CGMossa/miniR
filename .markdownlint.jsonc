@@ -1,0 +1,17 @@
+{
+  // disabled — too noisy or not useful for this project
+  "MD013": false,  // line length
+  "MD033": false,  // inline HTML (we use <> for links)
+  "MD024": false,  // multiple headings same content (plan files reuse "Implementation order" etc.)
+  "MD041": false,  // first line heading (blockquote-first plan format)
+  "MD060": false,  // table column style (428 errors, no autofix, low value)
+
+  // enabled — real issues worth fixing
+  "MD034": true,   // bare URLs — wrap in <> or [text](url)
+  "MD032": true,   // lists surrounded by blank lines
+  "MD040": true,   // fenced code blocks should have language
+  "MD009": true,   // no trailing spaces
+  "MD010": true,   // no hard tabs
+  "MD022": true,   // headings must have blank line after
+  "MD012": true    // no multiple consecutive blank lines
+}

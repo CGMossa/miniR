@@ -1,7 +1,7 @@
 # zmij integration plan
 
 > `zmij` 1.0.21 — Fast f64-to-string conversion (Schubfach/yy algorithm).
-> https://github.com/dtolnay/zmij
+> <https://github.com/dtolnay/zmij>
 
 ## What it does
 

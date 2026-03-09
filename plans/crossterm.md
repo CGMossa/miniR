@@ -1,7 +1,7 @@
 # crossterm integration plan
 
 > `crossterm` 0.29 — Cross-platform terminal manipulation.
-> https://github.com/crossterm-rs/crossterm
+> <https://github.com/crossterm-rs/crossterm>
 
 ## What it does
 
@@ -9,6 +9,7 @@ Pure-Rust terminal library. Cursor movement, styled output, event reading
 (keyboard/mouse/resize), raw mode, alternate screen. Works on Windows, macOS, Linux.
 
 Key APIs:
+
 - `crossterm::style` — `SetForegroundColor`, `SetAttribute`, `Print`, `Stylize` trait
 - `crossterm::cursor` — `MoveTo`, `Hide`, `Show`, `SavePosition`, `RestorePosition`
 - `crossterm::terminal` — `size()`, `Clear`, `enable_raw_mode`, `EnterAlternateScreen`

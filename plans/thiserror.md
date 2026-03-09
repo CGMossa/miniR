@@ -96,6 +96,7 @@ pub enum RError {
 ```
 
 This makes errors machine-parseable and enables:
+
 - "Did you mean..." suggestions (using edit distance on the `name` field)
 - Precise error context in IDE integrations
 - Better error formatting with colors (nu-ansi-term)

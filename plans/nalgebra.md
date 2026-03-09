@@ -1,7 +1,7 @@
 # nalgebra integration plan
 
 > `nalgebra` 0.34 — General-purpose linear algebra library.
-> https://github.com/dimforge/nalgebra
+> <https://github.com/dimforge/nalgebra>
 
 ## What it does
 
@@ -10,6 +10,7 @@ QR, LU, SVD, Cholesky, Schur, Hessenberg, eigendecomposition. Solvers for linear
 systems. Pure Rust, optional BLAS/LAPACK acceleration.
 
 Key types:
+
 - `DMatrix<f64>` — dynamically-sized matrix (what R uses)
 - `DVector<f64>` — dynamically-sized vector
 - Decompositions: `QR`, `LU`, `SVD`, `Cholesky`, `Eigen`, `Schur`
@@ -69,5 +70,6 @@ link to OpenBLAS via `openblas-src`.
 **Effort:** 3-4 hours for core matrix ops, additional sessions for decompositions.
 
 **Alternatives:**
+
 - `ndarray` + `ndarray-linalg` — more NumPy-like API but less complete decompositions
 - `faer` — newer, very fast, but less mature ecosystem

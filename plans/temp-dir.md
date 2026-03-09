@@ -1,7 +1,7 @@
 # temp-dir integration plan
 
 > `temp-dir` 0.2 — Zero-dependency temporary directory with auto-cleanup on drop.
-> https://lib.rs/crates/temp-dir
+> <https://lib.rs/crates/temp-dir>
 > Apache-2.0, zero deps, zero unsafe.
 
 ## What it does
@@ -32,6 +32,7 @@ Our current builtins (in `builtins/system.rs`) use a DIY approach:
 - `tempfile()` — constructs a path with `{pid}{nanoseconds}` but never creates the file or dir
 
 Problems:
+
 - `tempdir()` returns the shared system temp dir, not a unique per-session directory like R does
 - `tempfile()` paths could collide in theory (timestamp-based)
 - No cleanup of temp files on interpreter exit
