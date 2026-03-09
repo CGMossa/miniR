@@ -69,6 +69,13 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Each review file should describe: what was attempted, what went wrong, and what it implies about missing functionality
 - Name files descriptively, e.g. `reviews/missing-named-arg-matching.md`
 
+## Vendor Audit
+
+- When dependencies change (new crates added, `just vendor` run), audit the vendor/ directory for R-relevant crates
+- Write a `plans/` file for each vendored crate that could be integrated into the R interpreter
+- Update `analysis/vendor-crate-audit.md` with the full categorization (integrated, high/medium/low priority, infrastructure)
+- Use `just vendor` to re-vendor — never run `cargo vendor` directly (the justfile preserves README.md and .cargo-lock-hash)
+
 ## Tool Rules
 
 - Do NOT tail or truncate `cargo vendor` output — let it run fully so the config snippet is visible
