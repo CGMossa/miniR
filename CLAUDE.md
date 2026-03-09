@@ -62,6 +62,13 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Before committing, always run: `cargo fmt`, `cargo clippy` (zero warnings), and `cargo test`
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 
+## Reviews
+
+- When things go wrong during development (test failures, runtime errors, unexpected behavior), write down what happened in `reviews/` as a markdown file
+- These notes indicate missing features, edge cases, or bugs in the interpreter
+- Each review file should describe: what was attempted, what went wrong, and what it implies about missing functionality
+- Name files descriptively, e.g. `reviews/missing-named-arg-matching.md`
+
 ## Tool Rules
 
 - Do NOT tail or truncate `cargo vendor` output — let it run fully so the config snippet is visible
