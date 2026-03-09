@@ -261,6 +261,21 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
     }
 }
 
+/// `expression(...)` — construct an expression object from unevaluated arguments.
+/// Returns a list of Language objects, each wrapping the unevaluated expression.
+#[pre_eval_builtin(name = "expression")]
+fn pre_eval_expression(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
+    let entries: Vec<(Option<String>, RValue)> = args
+        .iter()
+        .filter_map(|a| {
+            a.value
+                .as_ref()
+                .map(|expr| (None, RValue::Language(Box::new(expr.clone()))))
+        })
+        .collect();
+    Ok(RValue::List(RList::new(entries)))
+}
+
 /// Convert an RValue back to an AST expression (for substitute).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
