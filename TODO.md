@@ -29,7 +29,6 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] 🔧 `factor(x, levels, labels)` — create factor
 - [ ] 🔧 `levels(x)` / `nlevels(x)` — factor levels
 - [ ] 🔧 `rbind(...)` / `cbind(...)` — row/column bind
-- [ ] 🔧 `diag(x)` — diagonal matrix
 - [ ] 🔧 `table(...)` / `tabulate(x)` — contingency table
 - [ ] 🔧 `dimnames(x)` / `dimnames<-` — get/set dimension names
 - [ ] 🔧 `unname(x)` — remove names
@@ -43,13 +42,9 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Math & Statistics
 
-- [ ] 🔧 `pmin(...)` / `pmax(...)` — parallel min/max
 - [ ] 🔧 `norm(x)` — matrix norm
 - [ ] 🔧 `solve(a, b)` — solve linear system (ndarray)
 - [ ] 🔧 `outer(X, Y, FUN)` — outer product
-- [ ] 🔧 `signif(x, digits)` — significant digits
-- [ ] 🔧 `lower.tri(x)` / `upper.tri(x)` — matrix triangular extraction
-- [ ] 🔧 `cumall(x)` / `cumany(x)` — cumulative logical
 - [ ] `qr(x)` — QR decomposition (needs linalg dep)
 - [ ] `svd(x)` — singular value decomposition (needs linalg dep)
 - [ ] `eigen(x)` — eigenvalues (needs linalg dep)
@@ -66,21 +61,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — String & Regex
 
-- [ ] 🔧 `regexpr(pattern, text)` — regex match positions (regex crate)
-- [ ] 🔧 `gregexpr(pattern, text)` — global regex match (regex crate)
-- [ ] 🔧 `regmatches(x, m)` — extract regex matches
-- [ ] 🔧 `regexec(pattern, text)` — regex match with groups (regex crate)
-- [ ] 🔧 `glob2rx(pattern)` — glob to regex conversion
-- [ ] 🔧 `charToRaw(x)` / `rawToChar(x)` — raw conversion
 - [ ] 🔧 `raw(length)` / `rawShift(x, n)` — raw vectors
-- [ ] 🔧 `intToUtf8(x)` / `utf8ToInt(x)` — UTF-8 integer conversion
-
-## Builtin Stubs — Metaprogramming
-
-- [ ] 🔧 `evalq(expr, envir)` — evaluate quoted expression
-- [ ] 🔧 `bquote(expr)` — partial substitution
-- [ ] 🔧 `deparse(expr)` — expression to string
-- [ ] 🔧 `dput(x)` — output R representation of object
 
 ## Builtin Stubs — Environments
 
@@ -100,37 +81,16 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (needs format design)
 - [ ] `load(file)` / `save(..., file)` — workspace I/O (needs format design)
 - [ ] 🔧 `scan(file, ...)` — read data
-- [ ] 🔧 `file.copy(from, to)` / `file.create(path)` / `file.remove(path)` / `file.rename(from, to)` — file ops
-- [ ] 🔧 `file.info(path)` / `file.size(path)` — file metadata
-- [ ] 🔧 `dir(path)` / `dir.create(path)` / `dir.exists(path)` / `list.files(path)` — directory ops
-- [ ] 🔧 `tempfile()` / `tempdir()` — temp paths
+- [ ] 🔧 `file.info(path)` — file metadata
+- [ ] `tempfile()` / `tempdir()` — rewrite with temp-dir crate for session-scoped cleanup (see plans/temp-dir.md)
 - [ ] `url(...)` / `open(con)` / `close(con)` / `connection(...)` — connections
-- [ ] 🔧 `unlink(path)` — delete files
 - [ ] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
 
 ## Builtin Stubs — System
 
-- [ ] 🔧 `system(command)` / `system2(command)` — run shell command
-- [ ] 🔧 `Sys.setenv(...)` — set environment variable
 - [ ] 🔧 `Sys.glob(paths)` — glob expansion
-- [ ] 🔧 `Sys.which(names)` — find executables
-- [ ] 🔧 `Sys.info()` — system info
-- [ ] 🔧 `Sys.timezone()` — current timezone
-- [ ] 🔧 `normalizePath(path)` / `path.expand(path)` — path normalization
-- [ ] 🔧 `setwd(dir)` — change working directory
 - [ ] `install.packages(pkgs)` / `installed.packages()` — package management
 - [ ] `require(pkg)` / `library(pkg)` / `loadNamespace(pkg)` / `requireNamespace(pkg)` — package loading (stub prints warning)
-- [ ] 🔧 `.Platform` — platform info list
-- [ ] 🔧 `capabilities()` — R capabilities
-- [ ] 🔧 `sessionInfo()` — session info
-- [ ] 🔧 `l10n_info()` — localization info
-- [ ] 🔧 `R.Version()` — version info
-
-## Builtin Stubs — Bitwise
-
-- [ ] 🔧 `bitwAnd(a, b)` / `bitwOr(a, b)` / `bitwXor(a, b)` — bitwise ops
-- [ ] 🔧 `bitwNot(a)` — bitwise NOT
-- [ ] 🔧 `bitwShiftL(a, n)` / `bitwShiftR(a, n)` — bit shifts
 
 ## Builtin Stubs — Date/Time
 
