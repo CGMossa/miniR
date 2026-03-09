@@ -35,16 +35,16 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Apply Family
 
-- [ ] 🔧 `apply(X, MARGIN, FUN)` — matrix apply
-- [ ] 🔧 `mapply(FUN, ...)` — multivariate apply
-- [ ] 🔧 `tapply(X, INDEX, FUN)` — table apply
-- [ ] 🔧 `by(data, INDICES, FUN)` — group apply
+- [x] 🔧 `apply(X, MARGIN, FUN)` — matrix apply
+- [x] 🔧 `mapply(FUN, ...)` — multivariate apply
+- [x] 🔧 `tapply(X, INDEX, FUN)` — table apply
+- [x] 🔧 `by(data, INDICES, FUN)` — group apply
 
 ## Builtin Stubs — Math & Statistics
 
-- [ ] 🔧 `norm(x)` — matrix norm
-- [ ] 🔧 `solve(a, b)` — solve linear system (ndarray)
-- [ ] 🔧 `outer(X, Y, FUN)` — outer product
+- [x] 🔧 `norm(x)` — matrix norm
+- [x] 🔧 `solve(a, b)` — solve linear system (ndarray)
+- [x] 🔧 `outer(X, Y, FUN)` — outer product
 - [ ] `qr(x)` — QR decomposition (see plans/nalgebra.md)
 - [ ] `svd(x)` — singular value decomposition (see plans/nalgebra.md)
 - [ ] `eigen(x)` — eigenvalues (see plans/nalgebra.md)
@@ -67,7 +67,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 ## Builtin Stubs — Environments
 
 - [ ] `parent.frame(n)` — calling frame (see plans/call-stack.md)
-- [ ] 🔧 `as.environment(x)` — coerce to environment
+- [x] 🔧 `as.environment(x)` — coerce to environment
 
 ## Builtin Stubs — Error Handling
 
@@ -75,14 +75,14 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] `conditionMessage(c)` / `conditionCall(c)` — condition accessors (see plans/conditions.md)
 - [ ] `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` — condition constructors (see plans/conditions.md)
 - [ ] `suppressWarnings(expr)` / `suppressMessages(expr)` — suppress conditions (see plans/conditions.md)
-- [ ] 🔧 `withVisible(expr)` — evaluate with visibility flag
+- [x] 🔧 `withVisible(expr)` — evaluate with visibility flag
 
 ## Builtin Stubs — File I/O
 
 - [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (see plans/serde.md, plans/parquet.md)
 - [ ] `load(file)` / `save(..., file)` — workspace I/O (see plans/serde.md)
 - [x] 🔧 `scan(file, ...)` — read data
-- [ ] 🔧 `file.info(path)` — file metadata
+- [x] 🔧 `file.info(path)` — file metadata
 - [ ] `tempfile()` / `tempdir()` — rewrite with temp-dir crate for session-scoped cleanup (see plans/temp-dir.md)
 - [ ] `url(...)` / `open(con)` / `close(con)` / `connection(...)` — connections
 - [x] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
