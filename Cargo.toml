@@ -10,16 +10,52 @@ edition = "2021"
 name = "r"
 version.workspace = true
 edition.workspace = true
-exclude = ["cran/", ".cargo/", "doc/", "docs/", "plans/", "scripts/", "share/", "tests/", "tools/"]
+exclude = [
+    "cran/",
+    ".cargo/",
+    "doc/",
+    "docs/",
+    "plans/",
+    "scripts/",
+    "share/",
+    "tests/",
+    "tools/",
+]
 
 [dependencies]
-derive_more = { version = "2.1", features = ["deref", "deref_mut", "from", "into", "constructor"] }
+derive_more = { version = "2.1", features = [
+    "deref",
+    "deref_mut",
+    "from",
+    "into",
+    "constructor",
+    # "add",            # derive Add trait (operator +)
+    # "add_assign",     # derive AddAssign trait (operator +=)
+    # "as_ref",         # derive AsRef / AsMut traits
+    # "debug",          # derive Debug with custom format strings
+    # "display",        # derive Display with format strings
+    # "eq",             # derive Eq / PartialEq traits
+    # "error",          # derive Error trait (like thiserror)
+    # "from_str",       # derive FromStr trait
+    # "index",          # derive Index trait (operator [])
+    # "index_mut",      # derive IndexMut trait (operator []=)
+    # "into_iterator",  # derive IntoIterator trait
+    # "is_variant",     # derive is_variant() methods for enums
+    # "mul",            # derive Mul trait (operator *)
+    # "mul_assign",     # derive MulAssign trait (operator *=)
+    # "not",            # derive Not trait (operator !)
+    # "sum",            # derive Sum trait
+    # "try_from",       # derive TryFrom trait
+    # "try_into",       # derive TryInto trait
+    # "try_unwrap",     # derive try_unwrap() methods for enums
+    # "unwrap",         # derive unwrap() methods for enums
+] }
 linkme = "0.3"
 ndarray = "0.17"
 csv = "1.4"
 regex = "1"
-tabled = "0.18"
+tabled = "0.20"
 newr-macros = { path = "newr-macros" }
 pest = "2.8"
 pest_derive = "2.8"
-reedline = "0.46"
+reedline = { version = "0.46" }
