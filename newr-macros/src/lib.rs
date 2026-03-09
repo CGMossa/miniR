@@ -1,12 +1,11 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, ItemFn, LitInt, LitStr};
 
-/// Infer R function name from a Rust ident like `builtin_is_null` → `"is.null"`.
-///
-/// Strips the `builtin_` prefix (if present) and replaces `_` with `.`.
-fn infer_r_name(ident: &str) -> String {
-    let base = ident.strip_prefix("builtin_").unwrap_or(ident);
+/// Infer R function name from a Rust ident, stripping a prefix and replacing `_` with `.`.
+fn infer_r_name(ident: &str, prefix: &str) -> String {
+    let base = ident.strip_prefix(prefix).unwrap_or(ident);
     base.replace('_', ".")
 }
 
@@ -16,6 +15,49 @@ fn r_name_to_ident(name: &str) -> String {
         .replace('<', "_lt_")
         .replace('>', "_gt_")
         .replace('-', "_")
+}
+
+/// Shared code generation for all three builtin macro variants.
+///
+/// Emits: `#[doc(alias)] fn ...` + registry entry + alias entries.
+fn emit_builtin_registration(
+    input: &ItemFn,
+    attr_args: BuiltinAttr,
+    prefix: &str,
+    reg_prefix: &str,
+    registry_path: TokenStream2,
+    fn_type: TokenStream2,
+) -> TokenStream2 {
+    let fn_name = &input.sig.ident;
+    let r_name = attr_args
+        .name
+        .unwrap_or_else(|| infer_r_name(&fn_name.to_string(), prefix));
+    let min_args = attr_args.min_args as usize;
+
+    let reg_name = format_ident!("__{}_{}", reg_prefix, fn_name.to_string().to_uppercase());
+
+    let alias_regs = attr_args.names.iter().enumerate().map(|(i, alias)| {
+        let alias_reg = format_ident!(
+            "{}_{}_ALIAS_{}",
+            reg_name,
+            fn_name.to_string().to_uppercase(),
+            i
+        );
+        quote! {
+            #[linkme::distributed_slice(#registry_path)]
+            static #alias_reg: (&str, #fn_type, usize) = (#alias, #fn_name, #min_args);
+        }
+    });
+
+    quote! {
+        #[doc(alias = #r_name)]
+        #input
+
+        #[linkme::distributed_slice(#registry_path)]
+        static #reg_name: (&str, #fn_type, usize) = (#r_name, #fn_name, #min_args);
+
+        #(#alias_regs)*
+    }
 }
 
 /// Attribute macro for builtin R function definitions.
@@ -36,40 +78,60 @@ fn r_name_to_ident(name: &str) -> String {
 pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
     let attr_args = parse_macro_input!(attr as BuiltinAttr);
+    emit_builtin_registration(
+        &input,
+        attr_args,
+        "builtin_",
+        "BUILTIN_REG",
+        quote!(crate::interpreter::builtins::BUILTIN_REGISTRY),
+        quote!(crate::interpreter::builtins::BuiltinFn),
+    )
+    .into()
+}
 
-    let fn_name = &input.sig.ident;
-    let extra_names = attr_args.names;
-    let r_name = attr_args
-        .name
-        .unwrap_or_else(|| infer_r_name(&fn_name.to_string()));
-    let min_args = attr_args.min_args as usize;
+/// Attribute macro for interpreter-level builtins that need `&Environment` access.
+///
+/// These builtins require calling back into the interpreter (e.g. to evaluate
+/// sub-expressions, look up environments). They access the interpreter via
+/// `crate::interpreter::with_interpreter()`.
+///
+/// The R name is inferred from the function name (stripping `interp_` prefix),
+/// or can be overridden with `name = "..."`.
+#[proc_macro_attribute]
+pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    let attr_args = parse_macro_input!(attr as BuiltinAttr);
+    emit_builtin_registration(
+        &input,
+        attr_args,
+        "interp_",
+        "INTERP_REG",
+        quote!(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY),
+        quote!(crate::interpreter::builtins::InterpreterBuiltinFn),
+    )
+    .into()
+}
 
-    let reg_name = format_ident!("__BUILTIN_REG_{}", fn_name.to_string().to_uppercase());
-
-    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
-        let alias_reg = format_ident!(
-            "__BUILTIN_REG_{}_ALIAS_{}",
-            fn_name.to_string().to_uppercase(),
-            i
-        );
-        quote! {
-            #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-            static #alias_reg: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-                (#alias, #fn_name, #min_args);
-        }
-    });
-
-    let expanded = quote! {
-        #input
-
-        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-        static #reg_name: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-            (#r_name, #fn_name, #min_args);
-
-        #(#alias_regs)*
-    };
-
-    expanded.into()
+/// Attribute macro for pre-eval builtins that intercept before argument evaluation.
+///
+/// These builtins need access to raw AST arguments (e.g. tryCatch, quote)
+/// because they must control when/whether arguments are evaluated.
+///
+/// The R name is inferred from the function name (stripping `pre_eval_` prefix),
+/// or can be overridden with `name = "..."`.
+#[proc_macro_attribute]
+pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    let attr_args = parse_macro_input!(attr as BuiltinAttr);
+    emit_builtin_registration(
+        &input,
+        attr_args,
+        "pre_eval_",
+        "PRE_EVAL_REG",
+        quote!(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY),
+        quote!(crate::interpreter::builtins::PreEvalBuiltinFn),
+    )
+    .into()
 }
 
 /// Function-like macro to declare a noop stub builtin.
@@ -163,123 +225,6 @@ impl syn::parse::Parse for BuiltinAttr {
             min_args,
         })
     }
-}
-
-/// Attribute macro for interpreter-level builtins that need `&Environment` access.
-///
-/// These are builtins whose implementations require calling back into the interpreter
-/// (e.g., to evaluate sub-expressions, look up environments, etc.).
-/// They access the interpreter via `crate::interpreter::with_interpreter()`.
-///
-/// The function must have signature:
-/// `fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>`
-///
-/// The R name is inferred from the function name (stripping `interp_` prefix),
-/// or can be overridden with `name = "..."`.
-///
-/// # Usage
-///
-/// ```ignore
-/// #[interpreter_builtin(name = "switch", min_args = 1)]
-/// fn interp_switch(args: &[RValue], named: &[(String, RValue)], env: &Environment) -> Result<RValue, RError> {
-///     // ...
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemFn);
-    let attr_args = parse_macro_input!(attr as BuiltinAttr);
-
-    let fn_name = &input.sig.ident;
-    let fn_str = fn_name.to_string();
-    let base = fn_str.strip_prefix("interp_").unwrap_or(&fn_str);
-    let extra_names = attr_args.names;
-    let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
-    let min_args = attr_args.min_args as usize;
-
-    let reg_name = format_ident!("__INTERP_REG_{}", fn_name.to_string().to_uppercase());
-
-    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
-        let alias_reg = format_ident!(
-            "__INTERP_REG_{}_ALIAS_{}",
-            fn_name.to_string().to_uppercase(),
-            i
-        );
-        quote! {
-            #[linkme::distributed_slice(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY)]
-            static #alias_reg: (&str, crate::interpreter::builtins::InterpreterBuiltinFn, usize) =
-                (#alias, #fn_name, #min_args);
-        }
-    });
-
-    let expanded = quote! {
-        #input
-
-        #[linkme::distributed_slice(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY)]
-        static #reg_name: (&str, crate::interpreter::builtins::InterpreterBuiltinFn, usize) =
-            (#r_name, #fn_name, #min_args);
-
-        #(#alias_regs)*
-    };
-
-    expanded.into()
-}
-
-/// Attribute macro for pre-eval builtins that intercept before argument evaluation.
-///
-/// These are builtins that need access to raw AST arguments (e.g., tryCatch, try)
-/// because they must control when/whether arguments are evaluated.
-/// They access the interpreter via `crate::interpreter::with_interpreter()`.
-///
-/// The function must have signature:
-/// `fn(&[Arg], &Environment) -> Result<RValue, RError>`
-///
-/// # Usage
-///
-/// ```ignore
-/// #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
-/// fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
-///     // ...
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemFn);
-    let attr_args = parse_macro_input!(attr as BuiltinAttr);
-
-    let fn_name = &input.sig.ident;
-    let fn_str = fn_name.to_string();
-    let base = fn_str.strip_prefix("pre_eval_").unwrap_or(&fn_str);
-    let extra_names = attr_args.names;
-    let r_name = attr_args.name.unwrap_or_else(|| base.replace('_', "."));
-    let min_args = attr_args.min_args as usize;
-
-    let reg_name = format_ident!("__PRE_EVAL_REG_{}", fn_name.to_string().to_uppercase());
-
-    let alias_regs = extra_names.iter().enumerate().map(|(i, alias)| {
-        let alias_reg = format_ident!(
-            "__PRE_EVAL_REG_{}_ALIAS_{}",
-            fn_name.to_string().to_uppercase(),
-            i
-        );
-        quote! {
-            #[linkme::distributed_slice(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY)]
-            static #alias_reg: (&str, crate::interpreter::builtins::PreEvalBuiltinFn, usize) =
-                (#alias, #fn_name, #min_args);
-        }
-    });
-
-    let expanded = quote! {
-        #input
-
-        #[linkme::distributed_slice(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY)]
-        static #reg_name: (&str, crate::interpreter::builtins::PreEvalBuiltinFn, usize) =
-            (#r_name, #fn_name, #min_args);
-
-        #(#alias_regs)*
-    };
-
-    expanded.into()
 }
 
 struct NoopArgs {
