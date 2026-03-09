@@ -71,6 +71,12 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Example: `builtins.rs` + `builtins/math.rs` + `builtins/strings.rs`
 - If you find existing `mod.rs` files, refactor them to the `foo.rs` pattern
 
+## Code Organization
+
+- Use `// region: Description` and `// endregion` comments to delimit logical sections within a file
+- If the section is large enough to warrant its own submodule, prefer that over region/endregion — add a module-level doc comment describing the module's purpose
+- Do NOT use `// ── Section ──────` style section dividers
+
 ## Code Quality
 
 - Before committing, always run: `cargo fmt`, `cargo clippy` (zero warnings), and `cargo test`
