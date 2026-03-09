@@ -12,10 +12,10 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Core Language
 
-- [ ] `missing(x)` — registered but always returns FALSE (needs call-frame arg tracking)
-- [ ] `on.exit(expr)` — register cleanup on function exit
+- [ ] `missing(x)` — registered but always returns FALSE (see plans/call-stack.md)
+- [ ] `on.exit(expr)` — register cleanup on function exit (see plans/call-stack.md)
 - [ ] 🔧 `Recall(...)` — recursive self-call
-- [ ] `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.function()` / `sys.on.exit()` — call stack introspection
+- [ ] `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.function()` / `sys.on.exit()` — call stack introspection (see plans/call-stack.md)
 - [ ] 🔧 `args(fn)` — formal arguments of function
 - [ ] 🔧 `formals(fn)` — get/set formal argument list
 - [ ] 🔧 `body(fn)` — get/set function body
@@ -54,10 +54,11 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Random Numbers
 
-- [ ] 🔧 `runif(n, min, max)` — uniform random (std rand or fastrand)
-- [ ] 🔧 `rnorm(n, mean, sd)` — normal random (Box-Muller)
-- [ ] 🔧 `rbinom(n, size, prob)` — binomial random
-- [ ] 🔧 `set.seed(seed)` — registered but returns NULL (needs RNG state)
+- [ ] `runif(n, min, max)` — uniform random (see plans/rng-state.md)
+- [ ] `rnorm(n, mean, sd)` — normal random (see plans/rng-state.md)
+- [ ] `rbinom(n, size, prob)` — binomial random (see plans/rng-state.md)
+- [ ] `set.seed(seed)` — registered but returns NULL (see plans/rng-state.md)
+- [ ] `sample(x, size, replace, prob)` — random sampling (see plans/rng-state.md)
 
 ## Builtin Stubs — String & Regex
 
@@ -65,15 +66,15 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Environments
 
-- [ ] `parent.frame(n)` — calling frame (needs call stack)
+- [ ] `parent.frame(n)` — calling frame (see plans/call-stack.md)
 - [ ] 🔧 `as.environment(x)` — coerce to environment
 
 ## Builtin Stubs — Error Handling
 
-- [ ] 🔧 `withCallingHandlers(expr, ...)` — condition handlers
-- [ ] 🔧 `conditionMessage(c)` / `conditionCall(c)` — condition accessors
-- [ ] 🔧 `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` — condition constructors
-- [ ] 🔧 `suppressWarnings(expr)` — suppress warnings
+- [ ] `withCallingHandlers(expr, ...)` — condition handlers (see plans/conditions.md)
+- [ ] `conditionMessage(c)` / `conditionCall(c)` — condition accessors (see plans/conditions.md)
+- [ ] `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` — condition constructors (see plans/conditions.md)
+- [ ] `suppressWarnings(expr)` / `suppressMessages(expr)` — suppress conditions (see plans/conditions.md)
 - [ ] 🔧 `withVisible(expr)` — evaluate with visibility flag
 
 ## Builtin Stubs — File I/O
