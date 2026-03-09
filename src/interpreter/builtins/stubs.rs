@@ -8,9 +8,6 @@ noop_builtin!("on.exit");
 noop_builtin!("UseMethod", 1);
 
 // Data structures
-noop_builtin!("array");
-noop_builtin!("rbind");
-noop_builtin!("cbind");
 
 // Apply family
 noop_builtin!("apply", 3);
