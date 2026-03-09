@@ -81,9 +81,6 @@ noop_builtin!("bitwShiftR", 2);
 
 // Regex
 noop_builtin!("reg.finalizer", 2);
-noop_builtin!("regmatches", 2);
-noop_builtin!("regexpr", 2);
-noop_builtin!("gregexpr", 2);
 noop_builtin!("regexec", 2);
 noop_builtin!("Sys.glob", 1);
 noop_builtin!("glob2rx", 1);

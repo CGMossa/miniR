@@ -2,6 +2,56 @@ use std::collections::HashMap;
 
 use crate::interpreter::value::*;
 use newr_macros::builtin;
+use regex::Regex;
+
+/// Extract common regex options from named args: fixed, ignore.case, perl
+fn get_regex_opts(named: &[(String, RValue)]) -> (bool, bool) {
+    let fixed = named
+        .iter()
+        .find(|(n, _)| n == "fixed")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let ignore_case = named
+        .iter()
+        .find(|(n, _)| n == "ignore.case")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    (fixed, ignore_case)
+}
+
+/// Build a compiled regex from a pattern string, respecting fixed and ignore.case options.
+/// Returns Err(RError) if the pattern is invalid regex.
+fn build_regex(pattern: &str, fixed: bool, ignore_case: bool) -> Result<Regex, RError> {
+    let pat = if fixed {
+        regex::escape(pattern)
+    } else {
+        pattern.to_string()
+    };
+    let pat = if ignore_case {
+        format!("(?i){}", pat)
+    } else {
+        pat
+    };
+    Regex::new(&pat).map_err(|e| RError::Argument(format!("invalid regular expression: {}", e)))
+}
+
+/// Convert R-style replacement backreferences (\1, \2) to regex crate style ($1, $2)
+fn convert_replacement(repl: &str) -> String {
+    let mut result = String::with_capacity(repl.len());
+    let chars: Vec<char> = repl.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+            result.push('$');
+            result.push(chars[i + 1]);
+            i += 2;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
 
 #[builtin(min_args = 3, names = ["substring"])]
 fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -78,7 +128,7 @@ fn builtin_trimws(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 }
 
 #[builtin(min_args = 3)]
-fn builtin_gsub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -87,31 +137,13 @@ fn builtin_gsub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    match args.get(2) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<String>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| s.replace(&pattern, &replacement)))
-                .collect();
-            Ok(RValue::vec(Vector::Character(result.into())))
-        }
-        _ => Err(RError::Argument("argument is not character".to_string())),
-    }
-}
-
-#[builtin(min_args = 3)]
-fn builtin_sub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let pattern = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let replacement = args
-        .get(1)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
+    let repl = if fixed {
+        replacement.clone()
+    } else {
+        convert_replacement(&replacement)
+    };
     match args.get(2) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -120,13 +152,43 @@ fn builtin_sub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
             let result: Vec<Option<String>> = vals
                 .iter()
                 .map(|s| {
-                    s.as_ref().map(|s| {
-                        if let Some(pos) = s.find(&pattern) {
-                            format!("{}{}{}", &s[..pos], replacement, &s[pos + pattern.len()..])
-                        } else {
-                            s.clone()
-                        }
-                    })
+                    s.as_ref()
+                        .map(|s| re.replace_all(s, repl.as_str()).into_owned())
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::Argument("argument is not character".to_string())),
+    }
+}
+
+#[builtin(min_args = 3)]
+fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let replacement = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
+    let repl = if fixed {
+        replacement.clone()
+    } else {
+        convert_replacement(&replacement)
+    };
+    match args.get(2) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .map(|s| {
+                    s.as_ref()
+                        .map(|s| re.replace(s, repl.as_str()).into_owned())
                 })
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
@@ -136,11 +198,13 @@ fn builtin_sub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 }
 
 #[builtin(min_args = 2)]
-fn builtin_grepl(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
     match args.get(1) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -148,7 +212,7 @@ fn builtin_grepl(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             };
             let result: Vec<Option<bool>> = vals
                 .iter()
-                .map(|s| Some(s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false)))
+                .map(|s| Some(s.as_ref().map(|s| re.is_match(s)).unwrap_or(false)))
                 .collect();
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
@@ -167,6 +231,8 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .find(|(n, _)| n == "value")
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
 
     match args.get(1) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
@@ -176,7 +242,7 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             if value {
                 let result: Vec<Option<String>> = vals
                     .iter()
-                    .filter(|s| s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false))
+                    .filter(|s| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
                     .cloned()
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
@@ -184,13 +250,188 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 let result: Vec<Option<i64>> = vals
                     .iter()
                     .enumerate()
-                    .filter(|(_, s)| s.as_ref().map(|s| s.contains(&pattern)).unwrap_or(false))
+                    .filter(|(_, s)| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
                     .map(|(i, _)| Some(i as i64 + 1))
                     .collect();
                 Ok(RValue::vec(Vector::Integer(result.into())))
             }
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
+    }
+}
+
+#[builtin(min_args = 2)]
+fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
+    match args.get(1) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let mut positions = Vec::new();
+            let mut lengths = Vec::new();
+            for s in vals.iter() {
+                match s.as_ref().and_then(|s| re.find(s)) {
+                    Some(m) => {
+                        positions.push(Some(m.start() as i64 + 1)); // R is 1-indexed
+                        lengths.push(Some(m.len() as i64));
+                    }
+                    None => {
+                        positions.push(Some(-1));
+                        lengths.push(Some(-1));
+                    }
+                }
+            }
+            let mut rv = RVector::from(Vector::Integer(positions.into()));
+            rv.set_attr(
+                "match.length".to_string(),
+                RValue::vec(Vector::Integer(lengths.into())),
+            );
+            Ok(RValue::Vector(rv))
+        }
+        _ => Err(RError::Argument("argument is not character".to_string())),
+    }
+}
+
+#[builtin(min_args = 2)]
+fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
+    match args.get(1) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let mut list_items = Vec::new();
+            for s in vals.iter() {
+                let (positions, lengths): (Vec<Option<i64>>, Vec<Option<i64>>) = match s.as_ref() {
+                    Some(s) => {
+                        let matches: Vec<_> = re.find_iter(s).collect();
+                        if matches.is_empty() {
+                            (vec![Some(-1)], vec![Some(-1)])
+                        } else {
+                            matches
+                                .iter()
+                                .map(|m| (Some(m.start() as i64 + 1), Some(m.len() as i64)))
+                                .unzip()
+                        }
+                    }
+                    None => (vec![Some(-1)], vec![Some(-1)]),
+                };
+                let mut match_rv = RVector::from(Vector::Integer(positions.into()));
+                match_rv.set_attr(
+                    "match.length".to_string(),
+                    RValue::vec(Vector::Integer(lengths.into())),
+                );
+                list_items.push((None, RValue::Vector(match_rv)));
+            }
+            Ok(RValue::List(RList::new(list_items)))
+        }
+        _ => Err(RError::Argument("argument is not character".to_string())),
+    }
+}
+
+#[builtin(min_args = 2)]
+fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            vals.clone()
+        }
+        _ => return Err(RError::Argument("argument is not character".to_string())),
+    };
+
+    // Second arg is regexpr/gregexpr output
+    match args.get(1) {
+        // regexpr result: single integer vector with match.length attr
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Integer(_)) => {
+            let Vector::Integer(positions) = &rv.inner else {
+                unreachable!()
+            };
+            let lengths = match rv.get_attr("match.length") {
+                Some(RValue::Vector(lv)) => match &lv.inner {
+                    Vector::Integer(l) => l.0.clone(),
+                    _ => return Err(RError::Argument("invalid match data".to_string())),
+                },
+                _ => return Err(RError::Argument("invalid match data".to_string())),
+            };
+            let mut result = Vec::new();
+            for (i, pos) in positions.iter().enumerate() {
+                let p = pos.unwrap_or(-1);
+                let l = lengths.get(i).copied().flatten().unwrap_or(-1);
+                if p > 0 && l > 0 {
+                    if let Some(Some(s)) = x.get(i) {
+                        let start = (p - 1) as usize;
+                        let end = start + l as usize;
+                        if end <= s.len() {
+                            result.push(Some(s[start..end].to_string()));
+                        } else {
+                            result.push(None);
+                        }
+                    } else {
+                        result.push(None);
+                    }
+                }
+                // If no match (p == -1), skip (R returns character(0) effectively)
+            }
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        // gregexpr result: list of integer vectors
+        Some(RValue::List(list)) => {
+            let mut list_items = Vec::new();
+            for (i, (_, match_val)) in list.values.iter().enumerate() {
+                let RValue::Vector(rv) = match_val else {
+                    list_items.push((
+                        None,
+                        RValue::vec(Vector::Character(Vec::<Option<String>>::new().into())),
+                    ));
+                    continue;
+                };
+                let Vector::Integer(positions) = &rv.inner else {
+                    list_items.push((
+                        None,
+                        RValue::vec(Vector::Character(Vec::<Option<String>>::new().into())),
+                    ));
+                    continue;
+                };
+                let lengths = match rv.get_attr("match.length") {
+                    Some(RValue::Vector(lv)) => match &lv.inner {
+                        Vector::Integer(l) => l.0.clone(),
+                        _ => vec![],
+                    },
+                    _ => vec![],
+                };
+                let s = x.get(i).and_then(|s| s.as_ref());
+                let mut matches = Vec::new();
+                for (j, pos) in positions.iter().enumerate() {
+                    let p = pos.unwrap_or(-1);
+                    let l = lengths.get(j).copied().flatten().unwrap_or(-1);
+                    if p > 0 && l > 0 {
+                        if let Some(s) = s {
+                            let start = (p - 1) as usize;
+                            let end = start + l as usize;
+                            if end <= s.len() {
+                                matches.push(Some(s[start..end].to_string()));
+                            }
+                        }
+                    }
+                }
+                list_items.push((None, RValue::vec(Vector::Character(matches.into()))));
+            }
+            Ok(RValue::List(RList::new(list_items)))
+        }
+        _ => Err(RError::Argument("invalid match data".to_string())),
     }
 }
 
