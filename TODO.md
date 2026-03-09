@@ -14,24 +14,24 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 - [ ] `missing(x)` — registered but always returns FALSE (see plans/call-stack.md)
 - [ ] `on.exit(expr)` — register cleanup on function exit (see plans/call-stack.md)
-- [ ] 🔧 `Recall(...)` — recursive self-call
+- [x] 🔧 `Recall(...)` — recursive self-call (informative error until call stack exists)
 - [ ] `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.function()` / `sys.on.exit()` — call stack introspection (see plans/call-stack.md)
-- [ ] 🔧 `args(fn)` — formal arguments of function
-- [ ] 🔧 `formals(fn)` — get/set formal argument list
-- [ ] 🔧 `body(fn)` — get/set function body
-- [ ] 🔧 `call(name, ...)` — construct function call
-- [ ] 🔧 `expression(...)` — construct expression object
+- [x] 🔧 `args(fn)` — formal arguments of function
+- [x] 🔧 `formals(fn)` — get/set formal argument list
+- [x] 🔧 `body(fn)` — get/set function body
+- [x] 🔧 `call(name, ...)` — construct function call
+- [x] 🔧 `expression(...)` — construct expression object
 
 ## Builtin Stubs — Data Structures
 
-- [ ] 🔧 `array(data, dim)` — create array
+- [x] 🔧 `array(data, dim)` — create array
 - [ ] `data.frame(...)` — create data frame (see plans/polars-dataframe.md)
 - [ ] 🔧 `factor(x, levels, labels)` — create factor
 - [ ] 🔧 `levels(x)` / `nlevels(x)` — factor levels
-- [ ] 🔧 `rbind(...)` / `cbind(...)` — row/column bind
+- [x] 🔧 `rbind(...)` / `cbind(...)` — row/column bind
 - [ ] 🔧 `table(...)` / `tabulate(x)` — contingency table
-- [ ] 🔧 `dimnames(x)` / `dimnames<-` — get/set dimension names
-- [ ] 🔧 `unname(x)` — remove names
+- [x] 🔧 `dimnames(x)` / `dimnames<-` — get/set dimension names
+- [x] 🔧 `unname(x)` — remove names
 
 ## Builtin Stubs — Apply Family
 
