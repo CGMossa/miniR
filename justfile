@@ -15,7 +15,8 @@ lint:
 vendor:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo vendor --quiet "{{root}}/vendor"
+    cargo vendor "{{root}}/vendor"
+    printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "{{root}}/vendor"\n' > "{{root}}/.cargo/config.toml"
     printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
 
 # Update Cargo.lock from crates.io, bypassing vendor source replacement
