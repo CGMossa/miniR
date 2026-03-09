@@ -6,6 +6,6 @@
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
         "cran/**": true,
-        "vendor/**": true,
+        "vendor/**": false,
     }
 }
