@@ -240,3 +240,4 @@ These builtins are needed to pass the R test suite in `tests/`.
 - [ ] plan an r package builder
 - [ ] add typst conversion of Rdocumentation and produce the manual.
 - [x] decouple builtins with proc-macros (interpreter_builtin, pre_eval_builtin, noop_builtin)
+- [ ] `Language(Box<Expr>)`, should honestly have a dedicated type like the rest called `Language`, so the enum variant becomes `Language(Language)`. Use derive_more if you need to.
