@@ -81,11 +81,11 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 - [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (see plans/serde.md, plans/parquet.md)
 - [ ] `load(file)` / `save(..., file)` — workspace I/O (see plans/serde.md)
-- [ ] 🔧 `scan(file, ...)` — read data
+- [x] 🔧 `scan(file, ...)` — read data
 - [ ] 🔧 `file.info(path)` — file metadata
 - [ ] `tempfile()` / `tempdir()` — rewrite with temp-dir crate for session-scoped cleanup (see plans/temp-dir.md)
 - [ ] `url(...)` / `open(con)` / `close(con)` / `connection(...)` — connections
-- [ ] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
+- [x] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
 - [ ] `read.parquet(file)` / `write.parquet(df, file)` — Parquet columnar I/O (see plans/parquet.md)
 
 ## Builtin Stubs — System
