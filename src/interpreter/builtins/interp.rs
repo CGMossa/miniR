@@ -867,3 +867,710 @@ fn interp_parse(
         crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
     Ok(RValue::Language(Box::new(parsed)))
 }
+
+// --- apply family: apply, mapply, tapply, by ---
+
+#[interpreter_builtin(name = "apply", min_args = 3)]
+fn interp_apply(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
+    let margin_val = positional
+        .get(1)
+        .ok_or_else(|| RError::Argument("argument 'MARGIN' is missing".to_string()))?;
+    let fun = match_fun(
+        positional
+            .get(2)
+            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        env,
+    )?;
+
+    let margin = margin_val
+        .as_vector()
+        .and_then(|v| v.as_integer_scalar())
+        .ok_or_else(|| {
+            RError::Argument(
+                "MARGIN must be 1 (rows) or 2 (columns) — got a non-integer value".to_string(),
+            )
+        })?;
+
+    // Extract dim attribute — X must be a matrix
+    let (nrow, ncol, data) = match x {
+        RValue::Vector(rv) => {
+            let dims = super::get_dim_ints(rv.get_attr("dim")).ok_or_else(|| {
+                RError::Argument(
+                    "X must have a 'dim' attribute (i.e. be a matrix or array). \
+                     Use matrix() to create one."
+                        .to_string(),
+                )
+            })?;
+            if dims.len() < 2 {
+                return Err(RError::Argument(
+                    "X must be a 2D matrix for apply() — got an array with fewer than 2 dimensions"
+                        .to_string(),
+                ));
+            }
+            let nr = dims[0].unwrap_or(0) as usize;
+            let nc = dims[1].unwrap_or(0) as usize;
+            (nr, nc, rv.to_doubles())
+        }
+        _ => {
+            return Err(RError::Argument(
+                "apply() requires a matrix (vector with dim attribute) as the first argument"
+                    .to_string(),
+            ))
+        }
+    };
+
+    // Extra args to pass to FUN (positional args beyond the first 3)
+    let extra_args: Vec<RValue> = positional.iter().skip(3).cloned().collect();
+
+    match margin {
+        1 => {
+            // Apply FUN to each row
+            let mut results: Vec<RValue> = Vec::with_capacity(nrow);
+            with_interpreter(|interp| {
+                for i in 0..nrow {
+                    // Extract row i: column-major, so element [i,j] is at index i + j*nrow
+                    let row: Vec<Option<f64>> = (0..ncol).map(|j| data[i + j * nrow]).collect();
+                    let row_val = RValue::vec(Vector::Double(row.into()));
+                    let mut call_args = vec![row_val];
+                    call_args.extend(extra_args.iter().cloned());
+                    let result = interp.call_function(&fun, &call_args, named, env)?;
+                    results.push(result);
+                }
+                Ok(())
+            })?;
+            simplify_apply_results(results)
+        }
+        2 => {
+            // Apply FUN to each column
+            let mut results: Vec<RValue> = Vec::with_capacity(ncol);
+            with_interpreter(|interp| {
+                for j in 0..ncol {
+                    // Extract column j: column-major, elements at j*nrow..(j+1)*nrow
+                    let col: Vec<Option<f64>> = (0..nrow).map(|i| data[i + j * nrow]).collect();
+                    let col_val = RValue::vec(Vector::Double(col.into()));
+                    let mut call_args = vec![col_val];
+                    call_args.extend(extra_args.iter().cloned());
+                    let result = interp.call_function(&fun, &call_args, named, env)?;
+                    results.push(result);
+                }
+                Ok(())
+            })?;
+            simplify_apply_results(results)
+        }
+        _ => Err(RError::Argument(format!(
+            "MARGIN must be 1 (rows) or 2 (columns) — got {}. \
+             Higher-dimensional margins are not yet supported.",
+            margin
+        ))),
+    }
+}
+
+/// Simplify apply() results: if all results are scalars, return a vector;
+/// if all are equal-length vectors, return a matrix; otherwise return a list.
+fn simplify_apply_results(results: Vec<RValue>) -> Result<RValue, RError> {
+    if results.is_empty() {
+        return Ok(RValue::List(RList::new(vec![])));
+    }
+
+    // Check if all results are scalar
+    let all_scalar = results.iter().all(|r| r.length() == 1);
+    if all_scalar {
+        let first_type = results[0].type_name();
+        let all_same = results.iter().all(|r| r.type_name() == first_type);
+        if all_same {
+            match first_type {
+                "double" => {
+                    let vals: Vec<Option<f64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return Ok(RValue::vec(Vector::Double(vals.into())));
+                }
+                "integer" => {
+                    let vals: Vec<Option<i64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return Ok(RValue::vec(Vector::Integer(vals.into())));
+                }
+                "character" => {
+                    let vals: Vec<Option<String>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_characters().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return Ok(RValue::vec(Vector::Character(vals.into())));
+                }
+                "logical" => {
+                    let vals: Vec<Option<bool>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_logicals().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return Ok(RValue::vec(Vector::Logical(vals.into())));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Check if all results are equal-length vectors — return a matrix
+    let first_len = results[0].length();
+    let all_same_len = first_len > 1 && results.iter().all(|r| r.length() == first_len);
+    if all_same_len {
+        // Build a matrix: each result becomes a column (R's apply convention)
+        let ncol = results.len();
+        let nrow = first_len;
+        let mut mat_data: Vec<Option<f64>> = Vec::with_capacity(nrow * ncol);
+        for result in &results {
+            if let Some(v) = result.as_vector() {
+                mat_data.extend(v.to_doubles());
+            }
+        }
+        let mut rv = RVector::from(Vector::Double(mat_data.into()));
+        rv.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(
+                vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+            )),
+        );
+        rv.set_attr(
+            "dim".to_string(),
+            RValue::vec(Vector::Integer(
+                vec![Some(nrow as i64), Some(ncol as i64)].into(),
+            )),
+        );
+        return Ok(RValue::Vector(rv));
+    }
+
+    // Fall back to a list
+    let values: Vec<(Option<String>, RValue)> = results.into_iter().map(|v| (None, v)).collect();
+    Ok(RValue::List(RList::new(values)))
+}
+
+#[interpreter_builtin(name = "mapply", min_args = 2)]
+fn interp_mapply(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    // mapply(FUN, ..., MoreArgs = NULL, SIMPLIFY = TRUE, USE.NAMES = TRUE)
+    let fun = match_fun(
+        positional
+            .first()
+            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        env,
+    )?;
+
+    let simplify = named
+        .iter()
+        .find(|(n, _)| n == "SIMPLIFY")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    // Collect the input sequences (all positional args after FUN, excluding named)
+    let seqs: Vec<Vec<RValue>> = positional[1..].iter().map(rvalue_to_items).collect();
+
+    if seqs.is_empty() {
+        return Ok(RValue::List(RList::new(vec![])));
+    }
+
+    // Find the longest sequence for recycling
+    let max_len = seqs.iter().map(|s| s.len()).max().unwrap_or(0);
+
+    let mut results: Vec<RValue> = Vec::with_capacity(max_len);
+
+    with_interpreter(|interp| {
+        for i in 0..max_len {
+            let call_args: Vec<RValue> = seqs
+                .iter()
+                .map(|s| {
+                    if s.is_empty() {
+                        RValue::Null
+                    } else {
+                        s[i % s.len()].clone()
+                    }
+                })
+                .collect();
+            let result = interp.call_function(&fun, &call_args, &[], env)?;
+            results.push(result);
+        }
+        Ok(())
+    })?;
+
+    if simplify {
+        let all_scalar = results.iter().all(|r| r.length() == 1);
+        if all_scalar && !results.is_empty() {
+            let first_type = results[0].type_name();
+            let all_same = results.iter().all(|r| r.type_name() == first_type);
+            if all_same {
+                match first_type {
+                    "double" => {
+                        let vals: Vec<Option<f64>> = results
+                            .iter()
+                            .filter_map(|r| {
+                                r.as_vector()
+                                    .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+                            })
+                            .collect();
+                        return Ok(RValue::vec(Vector::Double(vals.into())));
+                    }
+                    "integer" => {
+                        let vals: Vec<Option<i64>> = results
+                            .iter()
+                            .filter_map(|r| {
+                                r.as_vector()
+                                    .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
+                            })
+                            .collect();
+                        return Ok(RValue::vec(Vector::Integer(vals.into())));
+                    }
+                    "character" => {
+                        let vals: Vec<Option<String>> = results
+                            .iter()
+                            .filter_map(|r| {
+                                r.as_vector()
+                                    .map(|v| v.to_characters().into_iter().next().unwrap_or(None))
+                            })
+                            .collect();
+                        return Ok(RValue::vec(Vector::Character(vals.into())));
+                    }
+                    "logical" => {
+                        let vals: Vec<Option<bool>> = results
+                            .iter()
+                            .filter_map(|r| {
+                                r.as_vector()
+                                    .map(|v| v.to_logicals().into_iter().next().unwrap_or(None))
+                            })
+                            .collect();
+                        return Ok(RValue::vec(Vector::Logical(vals.into())));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let values: Vec<(Option<String>, RValue)> = results.into_iter().map(|v| (None, v)).collect();
+    Ok(RValue::List(RList::new(values)))
+}
+
+#[interpreter_builtin(name = "tapply", min_args = 3)]
+fn interp_tapply(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    // tapply(X, INDEX, FUN)
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
+    let index = positional
+        .get(1)
+        .ok_or_else(|| RError::Argument("argument 'INDEX' is missing".to_string()))?;
+    let fun = match_fun(
+        positional
+            .get(2)
+            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        env,
+    )?;
+
+    let x_items = rvalue_to_items(x);
+    let index_items = rvalue_to_items(index);
+
+    if x_items.len() != index_items.len() {
+        return Err(RError::Argument(format!(
+            "arguments 'X' (length {}) and 'INDEX' (length {}) must have the same length",
+            x_items.len(),
+            index_items.len()
+        )));
+    }
+
+    // Convert index values to string keys for grouping
+    let index_keys: Vec<String> = index_items
+        .iter()
+        .map(|v| match v {
+            RValue::Vector(rv) => rv
+                .inner
+                .as_character_scalar()
+                .unwrap_or_else(|| format!("{}", v)),
+            _ => format!("{}", v),
+        })
+        .collect();
+
+    // Collect unique group names preserving first-seen order
+    let mut group_names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for key in &index_keys {
+        if seen.insert(key.clone()) {
+            group_names.push(key.clone());
+        }
+    }
+
+    // Group X values by INDEX
+    let mut groups: std::collections::HashMap<String, Vec<RValue>> =
+        std::collections::HashMap::new();
+    for (item, key) in x_items.into_iter().zip(index_keys.iter()) {
+        groups.entry(key.clone()).or_default().push(item);
+    }
+
+    // Apply FUN to each group
+    let mut result_entries: Vec<(Option<String>, RValue)> = Vec::with_capacity(group_names.len());
+
+    with_interpreter(|interp| {
+        for name in &group_names {
+            let group = groups.remove(name).unwrap_or_default();
+            // Combine group items into a single vector
+            let group_vec = combine_items_to_vector(&group);
+            let result = interp.call_function(&fun, &[group_vec], named, env)?;
+            result_entries.push((Some(name.clone()), result));
+        }
+        Ok(())
+    })?;
+
+    // Try to simplify to a named vector if all results are scalar
+    let all_scalar = result_entries.iter().all(|(_, v)| v.length() == 1);
+    if all_scalar && !result_entries.is_empty() {
+        let first_type = result_entries[0].1.type_name();
+        let all_same = result_entries
+            .iter()
+            .all(|(_, v)| v.type_name() == first_type);
+        if all_same {
+            let names: Vec<Option<String>> =
+                result_entries.iter().map(|(n, _)| n.clone()).collect();
+            match first_type {
+                "double" => {
+                    let vals: Vec<Option<f64>> = result_entries
+                        .iter()
+                        .filter_map(|(_, r)| {
+                            r.as_vector()
+                                .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    let mut rv = RVector::from(Vector::Double(vals.into()));
+                    rv.set_attr(
+                        "names".to_string(),
+                        RValue::vec(Vector::Character(names.into())),
+                    );
+                    return Ok(RValue::Vector(rv));
+                }
+                "integer" => {
+                    let vals: Vec<Option<i64>> = result_entries
+                        .iter()
+                        .filter_map(|(_, r)| {
+                            r.as_vector()
+                                .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    let mut rv = RVector::from(Vector::Integer(vals.into()));
+                    rv.set_attr(
+                        "names".to_string(),
+                        RValue::vec(Vector::Character(names.into())),
+                    );
+                    return Ok(RValue::Vector(rv));
+                }
+                "character" => {
+                    let vals: Vec<Option<String>> = result_entries
+                        .iter()
+                        .filter_map(|(_, r)| {
+                            r.as_vector()
+                                .map(|v| v.to_characters().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    let mut rv = RVector::from(Vector::Character(vals.into()));
+                    rv.set_attr(
+                        "names".to_string(),
+                        RValue::vec(Vector::Character(names.into())),
+                    );
+                    return Ok(RValue::Vector(rv));
+                }
+                "logical" => {
+                    let vals: Vec<Option<bool>> = result_entries
+                        .iter()
+                        .filter_map(|(_, r)| {
+                            r.as_vector()
+                                .map(|v| v.to_logicals().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    let mut rv = RVector::from(Vector::Logical(vals.into()));
+                    rv.set_attr(
+                        "names".to_string(),
+                        RValue::vec(Vector::Character(names.into())),
+                    );
+                    return Ok(RValue::Vector(rv));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(RValue::List(RList::new(result_entries)))
+}
+
+/// Combine a list of scalar RValues back into a single vector RValue.
+fn combine_items_to_vector(items: &[RValue]) -> RValue {
+    if items.is_empty() {
+        return RValue::Null;
+    }
+
+    // Determine the type from the first element
+    let first_type = items[0].type_name();
+    let all_same = items.iter().all(|v| v.type_name() == first_type);
+
+    if all_same {
+        match first_type {
+            "double" => {
+                let vals: Vec<Option<f64>> = items
+                    .iter()
+                    .flat_map(|r| {
+                        r.as_vector()
+                            .map(|v| v.to_doubles())
+                            .unwrap_or_else(|| vec![None])
+                    })
+                    .collect();
+                RValue::vec(Vector::Double(vals.into()))
+            }
+            "integer" => {
+                let vals: Vec<Option<i64>> = items
+                    .iter()
+                    .flat_map(|r| {
+                        r.as_vector()
+                            .map(|v| v.to_integers())
+                            .unwrap_or_else(|| vec![None])
+                    })
+                    .collect();
+                RValue::vec(Vector::Integer(vals.into()))
+            }
+            "character" => {
+                let vals: Vec<Option<String>> = items
+                    .iter()
+                    .flat_map(|r| {
+                        r.as_vector()
+                            .map(|v| v.to_characters())
+                            .unwrap_or_else(|| vec![None])
+                    })
+                    .collect();
+                RValue::vec(Vector::Character(vals.into()))
+            }
+            "logical" => {
+                let vals: Vec<Option<bool>> = items
+                    .iter()
+                    .flat_map(|r| {
+                        r.as_vector()
+                            .map(|v| v.to_logicals())
+                            .unwrap_or_else(|| vec![None])
+                    })
+                    .collect();
+                RValue::vec(Vector::Logical(vals.into()))
+            }
+            _ => {
+                // Fall back to coercing to doubles
+                let vals: Vec<Option<f64>> = items
+                    .iter()
+                    .flat_map(|r| {
+                        r.as_vector()
+                            .map(|v| v.to_doubles())
+                            .unwrap_or_else(|| vec![None])
+                    })
+                    .collect();
+                RValue::vec(Vector::Double(vals.into()))
+            }
+        }
+    } else {
+        // Mixed types: coerce to doubles (R's coercion hierarchy)
+        let vals: Vec<Option<f64>> = items
+            .iter()
+            .flat_map(|r| {
+                r.as_vector()
+                    .map(|v| v.to_doubles())
+                    .unwrap_or_else(|| vec![None])
+            })
+            .collect();
+        RValue::vec(Vector::Double(vals.into()))
+    }
+}
+
+#[interpreter_builtin(name = "by", min_args = 3)]
+fn interp_by(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    // by(data, INDICES, FUN) — similar to tapply but for data-frame-like objects.
+    // For vectors, delegate to tapply-like behavior.
+    // For lists/data frames, split rows by INDICES and apply FUN to each subset.
+    let data = positional
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'data' is missing".to_string()))?;
+    let indices = positional
+        .get(1)
+        .ok_or_else(|| RError::Argument("argument 'INDICES' is missing".to_string()))?;
+    let fun = match_fun(
+        positional
+            .get(2)
+            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        env,
+    )?;
+
+    // For atomic vectors, treat like tapply
+    if matches!(data, RValue::Vector(_)) {
+        let x_items = rvalue_to_items(data);
+        let index_items = rvalue_to_items(indices);
+
+        if x_items.len() != index_items.len() {
+            return Err(RError::Argument(format!(
+                "arguments 'data' (length {}) and 'INDICES' (length {}) must have the same length",
+                x_items.len(),
+                index_items.len()
+            )));
+        }
+
+        let index_keys: Vec<String> = index_items
+            .iter()
+            .map(|v| match v {
+                RValue::Vector(rv) => rv
+                    .inner
+                    .as_character_scalar()
+                    .unwrap_or_else(|| format!("{}", v)),
+                _ => format!("{}", v),
+            })
+            .collect();
+
+        let mut group_names: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for key in &index_keys {
+            if seen.insert(key.clone()) {
+                group_names.push(key.clone());
+            }
+        }
+
+        let mut groups: std::collections::HashMap<String, Vec<RValue>> =
+            std::collections::HashMap::new();
+        for (item, key) in x_items.into_iter().zip(index_keys.iter()) {
+            groups.entry(key.clone()).or_default().push(item);
+        }
+
+        let mut result_entries: Vec<(Option<String>, RValue)> =
+            Vec::with_capacity(group_names.len());
+
+        with_interpreter(|interp| {
+            for name in &group_names {
+                let group = groups.remove(name).unwrap_or_default();
+                let group_vec = combine_items_to_vector(&group);
+                let result = interp.call_function(&fun, &[group_vec], named, env)?;
+                result_entries.push((Some(name.clone()), result));
+            }
+            Ok(())
+        })?;
+
+        return Ok(RValue::List(RList::new(result_entries)));
+    }
+
+    // For lists (including data frames), split by INDICES and apply FUN
+    if let RValue::List(list) = data {
+        let index_items = rvalue_to_items(indices);
+
+        // For a data frame, determine nrow from the first column
+        let nrow = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+
+        if index_items.len() != nrow {
+            return Err(RError::Argument(format!(
+                "arguments 'data' ({} rows) and 'INDICES' (length {}) must have the same length",
+                nrow,
+                index_items.len()
+            )));
+        }
+
+        let index_keys: Vec<String> = index_items
+            .iter()
+            .map(|v| match v {
+                RValue::Vector(rv) => rv
+                    .inner
+                    .as_character_scalar()
+                    .unwrap_or_else(|| format!("{}", v)),
+                _ => format!("{}", v),
+            })
+            .collect();
+
+        let mut group_names: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for key in &index_keys {
+            if seen.insert(key.clone()) {
+                group_names.push(key.clone());
+            }
+        }
+
+        // For each group, build a subset data frame and call FUN
+        let mut result_entries: Vec<(Option<String>, RValue)> =
+            Vec::with_capacity(group_names.len());
+
+        with_interpreter(|interp| {
+            for name in &group_names {
+                // Find row indices belonging to this group
+                let row_indices: Vec<usize> = index_keys
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, k)| k.as_str() == name)
+                    .map(|(i, _)| i)
+                    .collect();
+
+                // Build a subset list (data frame) with only these rows
+                let mut subset_cols: Vec<(Option<String>, RValue)> = Vec::new();
+                for (col_name, col_val) in &list.values {
+                    let col_items = rvalue_to_items(col_val);
+                    let subset: Vec<RValue> = row_indices
+                        .iter()
+                        .filter_map(|&i| col_items.get(i).cloned())
+                        .collect();
+                    let subset_vec = combine_items_to_vector(&subset);
+                    subset_cols.push((col_name.clone(), subset_vec));
+                }
+
+                let mut subset_list = RList::new(subset_cols);
+                // Preserve data.frame class if the original had it
+                if let Some(cls) = list.get_attr("class") {
+                    subset_list.set_attr("class".to_string(), cls.clone());
+                }
+                // Set row.names for the subset
+                let row_names: Vec<Option<i64>> =
+                    (1..=row_indices.len() as i64).map(Some).collect();
+                subset_list.set_attr(
+                    "row.names".to_string(),
+                    RValue::vec(Vector::Integer(row_names.into())),
+                );
+                // Set names attribute
+                if let Some(names) = list.get_attr("names") {
+                    subset_list.set_attr("names".to_string(), names.clone());
+                }
+
+                let subset_val = RValue::List(subset_list);
+                let result = interp.call_function(&fun, &[subset_val], named, env)?;
+                result_entries.push((Some(name.clone()), result));
+            }
+            Ok(())
+        })?;
+
+        return Ok(RValue::List(RList::new(result_entries)));
+    }
+
+    Err(RError::Argument(
+        "by() requires a vector, list, or data frame as 'data'".to_string(),
+    ))
+}
