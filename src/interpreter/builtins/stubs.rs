@@ -14,14 +14,12 @@ noop_builtin!("apply", 3);
 noop_builtin!("mapply", 2);
 noop_builtin!("tapply", 3);
 noop_builtin!("by", 3);
-// Linear algebra
-noop_builtin!("solve", 1);
+// Linear algebra (norm, solve, outer — math.rs; crossprod, tcrossprod — math.rs)
 noop_builtin!("qr", 1);
 noop_builtin!("svd", 1);
 noop_builtin!("eigen", 1);
 noop_builtin!("det", 1);
 noop_builtin!("chol", 1);
-noop_builtin!("norm", 1);
 
 // Types
 noop_builtin!("complex");

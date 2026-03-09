@@ -1322,3 +1322,239 @@ fn builtin_tcrossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     let result = x.dot(&yt);
     Ok(array2_to_rvalue(&result))
 }
+
+// region: norm, solve, outer
+
+/// `norm(x, type = "O")` — matrix/vector norm.
+///
+/// Supported types: "O"/"1" (one-norm), "I" (infinity-norm), "F" (Frobenius), "M" (max modulus).
+#[builtin(min_args = 1)]
+fn builtin_norm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let norm_type = named
+        .iter()
+        .find(|(n, _)| n == "type")
+        .map(|(_, v)| v)
+        .or(args.get(1))
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "O".to_string());
+
+    let mat = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let nrow = mat.nrows();
+    let ncol = mat.ncols();
+
+    let result = match norm_type.as_str() {
+        "O" | "o" | "1" => {
+            // One-norm: max column sum of absolute values
+            (0..ncol)
+                .map(|j| (0..nrow).map(|i| mat[[i, j]].abs()).sum::<f64>())
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+        "I" | "i" => {
+            // Infinity-norm: max row sum of absolute values
+            (0..nrow)
+                .map(|i| (0..ncol).map(|j| mat[[i, j]].abs()).sum::<f64>())
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+        "F" | "f" => {
+            // Frobenius norm: sqrt of sum of squares
+            mat.iter().map(|x| x * x).sum::<f64>().sqrt()
+        }
+        "M" | "m" => {
+            // Max modulus: max absolute value
+            mat.iter()
+                .map(|x| x.abs())
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+        other => {
+            return Err(RError::Argument(format!(
+                "invalid norm type '{}'. Use \"O\" (one-norm), \"I\" (infinity-norm), \
+                 \"F\" (Frobenius), or \"M\" (max modulus)",
+                other
+            )));
+        }
+    };
+
+    Ok(RValue::vec(Vector::Double(vec![Some(result)].into())))
+}
+
+/// `solve(a, b)` — solve linear system or compute matrix inverse.
+///
+/// - `solve(a)`: returns the inverse of matrix a
+/// - `solve(a, b)`: solves the linear system Ax = b
+#[builtin(min_args = 1)]
+fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let nrow = a.nrows();
+    let ncol = a.ncols();
+
+    if nrow != ncol {
+        return Err(RError::Argument(format!(
+            "solve() requires a square matrix, but got {}x{}. \
+             Non-square systems need qr.solve() or a least-squares method",
+            nrow, ncol
+        )));
+    }
+    let n = nrow;
+
+    if n == 0 {
+        return Err(RError::Argument(
+            "solve() requires a non-empty matrix".to_string(),
+        ));
+    }
+
+    let b_arg = named
+        .iter()
+        .find(|(name, _)| name == "b")
+        .map(|(_, v)| v)
+        .or(args.get(1));
+
+    let b = match b_arg {
+        Some(val) => rvalue_to_array2(val)?,
+        None => Array2::eye(n),
+    };
+
+    if b.nrows() != n {
+        return Err(RError::Argument(format!(
+            "solve(a, b): nrow(a) = {} but nrow(b) = {} — they must match",
+            n,
+            b.nrows()
+        )));
+    }
+
+    let b_ncol = b.ncols();
+
+    // Gaussian elimination with partial pivoting
+    let mut aug = Array2::<f64>::zeros((n, n + b_ncol));
+    for i in 0..n {
+        for j in 0..n {
+            aug[[i, j]] = a[[i, j]];
+        }
+        for j in 0..b_ncol {
+            aug[[i, n + j]] = b[[i, j]];
+        }
+    }
+
+    // Forward elimination with partial pivoting
+    for col in 0..n {
+        let mut max_val = aug[[col, col]].abs();
+        let mut max_row = col;
+        for row in (col + 1)..n {
+            let val = aug[[row, col]].abs();
+            if val > max_val {
+                max_val = val;
+                max_row = row;
+            }
+        }
+
+        if max_val < 1e-15 {
+            return Err(RError::Other(
+                "solve(): matrix is singular (or very close to singular). \
+                 Check that your matrix has full rank — its determinant is effectively zero"
+                    .to_string(),
+            ));
+        }
+
+        if max_row != col {
+            for j in 0..(n + b_ncol) {
+                let tmp = aug[[col, j]];
+                aug[[col, j]] = aug[[max_row, j]];
+                aug[[max_row, j]] = tmp;
+            }
+        }
+
+        for row in (col + 1)..n {
+            let factor = aug[[row, col]] / aug[[col, col]];
+            for j in col..(n + b_ncol) {
+                aug[[row, j]] -= factor * aug[[col, j]];
+            }
+        }
+    }
+
+    // Back substitution
+    let mut result = Array2::<f64>::zeros((n, b_ncol));
+    for bcol in 0..b_ncol {
+        for row in (0..n).rev() {
+            let mut sum = aug[[row, n + bcol]];
+            for j in (row + 1)..n {
+                sum -= aug[[row, j]] * result[[j, bcol]];
+            }
+            result[[row, bcol]] = sum / aug[[row, row]];
+        }
+    }
+
+    Ok(array2_to_rvalue(&result))
+}
+
+/// `outer(X, Y, FUN = "*")` — outer product.
+///
+/// For each (x_i, y_j), computes FUN(x_i, y_j).
+/// Returns a matrix with dim = c(length(X), length(Y)).
+#[builtin(min_args = 2)]
+fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x_vec = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_doubles(),
+        _ => {
+            return Err(RError::Argument(
+                "outer() requires numeric vectors for X and Y".to_string(),
+            ))
+        }
+    };
+    let y_vec = match args.get(1) {
+        Some(RValue::Vector(rv)) => rv.to_doubles(),
+        _ => {
+            return Err(RError::Argument(
+                "outer() requires numeric vectors for X and Y".to_string(),
+            ))
+        }
+    };
+
+    let fun_str = named
+        .iter()
+        .find(|(n, _)| n == "FUN")
+        .map(|(_, v)| v)
+        .or(args.get(2))
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "*".to_string());
+
+    let op: fn(f64, f64) -> f64 = match fun_str.as_str() {
+        "*" => |a, b| a * b,
+        "+" => |a, b| a + b,
+        "-" => |a, b| a - b,
+        "/" => |a, b| a / b,
+        "^" | "**" => |a: f64, b: f64| a.powf(b),
+        "%%" => |a, b| a % b,
+        "%/%" => |a: f64, b: f64| (a / b).floor(),
+        other => {
+            return Err(RError::Argument(format!(
+                "outer() with FUN = \"{}\" is not supported. \
+                 Supported operators: \"*\", \"+\", \"-\", \"/\", \"^\", \"%%\", \"%/%\"",
+                other
+            )));
+        }
+    };
+
+    let nx = x_vec.len();
+    let ny = y_vec.len();
+
+    // R stores matrices column-major: iterate columns (Y) then rows (X)
+    let mut result = Vec::with_capacity(nx * ny);
+    for y_val in &y_vec {
+        for x_val in &x_vec {
+            let val = match (x_val, y_val) {
+                (Some(x), Some(y)) => Some(op(*x, *y)),
+                _ => None,
+            };
+            result.push(val);
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(nx as i64), Some(ny as i64)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+// endregion
