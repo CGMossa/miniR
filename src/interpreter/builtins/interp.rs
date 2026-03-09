@@ -745,3 +745,65 @@ fn interp_next_method(
         )))
     })
 }
+
+#[interpreter_builtin(name = "eval", min_args = 1)]
+fn interp_eval(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    let expr = positional
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'expr' is missing".to_string()))?;
+
+    // Determine evaluation environment
+    let eval_env = named
+        .iter()
+        .find(|(n, _)| n == "envir")
+        .map(|(_, v)| v)
+        .or_else(|| positional.get(1))
+        .and_then(|v| {
+            if let RValue::Environment(e) = v {
+                Some(e.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| env.clone());
+
+    match expr {
+        // Language object: evaluate the AST
+        RValue::Language(ast) => with_interpreter(|interp| interp.eval_in(ast, &eval_env)),
+        // Character string: parse then eval
+        RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+            let text = rv.as_character_scalar().unwrap_or_default();
+            let parsed =
+                crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
+            with_interpreter(|interp| interp.eval_in(&parsed, &eval_env))
+        }
+        // Already evaluated value: return as-is
+        _ => Ok(expr.clone()),
+    }
+}
+
+#[interpreter_builtin(name = "parse", min_args = 0)]
+fn interp_parse(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let text = named
+        .iter()
+        .find(|(n, _)| n == "text")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            positional
+                .first()
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
+        .ok_or_else(|| RError::Argument("argument 'text' is missing".to_string()))?;
+
+    let parsed =
+        crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
+    Ok(RValue::Language(Box::new(parsed)))
+}

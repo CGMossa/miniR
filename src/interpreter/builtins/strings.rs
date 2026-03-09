@@ -4,6 +4,8 @@ use crate::interpreter::value::*;
 use newr_macros::builtin;
 use regex::Regex;
 
+use crate::interpreter::value::deparse_expr;
+
 /// Extract common regex options from named args: fixed, ignore.case, perl
 fn get_regex_opts(named: &[(String, RValue)]) -> (bool, bool) {
     let fixed = named
@@ -707,10 +709,11 @@ fn builtin_dirname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 
 #[builtin(min_args = 1)]
 fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let s = args
-        .first()
-        .map(|v| format!("{}", v))
-        .unwrap_or_else(|| "NULL".to_string());
+    let s = match args.first() {
+        Some(RValue::Language(expr)) => deparse_expr(expr),
+        Some(v) => format!("{}", v),
+        None => "NULL".to_string(),
+    };
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 

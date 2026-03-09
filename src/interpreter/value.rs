@@ -32,6 +32,8 @@ pub enum RValue {
     Function(RFunction),
     /// Environment reference
     Environment(Environment),
+    /// Unevaluated expression (language object) — returned by quote(), parse()
+    Language(Box<Expr>),
 }
 
 /// Atomic vector with optional attributes (names, class, dim, etc.)
@@ -347,6 +349,7 @@ impl RValue {
             RValue::List(_) => "list",
             RValue::Function(_) => "function",
             RValue::Environment(_) => "environment",
+            RValue::Language(_) => "language",
         }
     }
 
@@ -357,6 +360,7 @@ impl RValue {
             RValue::List(l) => l.values.len(),
             RValue::Function(_) => 1,
             RValue::Environment(_) => 0,
+            RValue::Language(_) => 1,
         }
     }
 }
@@ -381,6 +385,7 @@ impl fmt::Display for RValue {
                 RFunction::Builtin { name, .. } => write!(f, ".Primitive(\"{}\")", name),
             },
             RValue::Environment(_env) => write!(f, "<environment>"),
+            RValue::Language(expr) => write!(f, "{}", deparse_expr(expr)),
         }
     }
 }
@@ -495,5 +500,174 @@ impl fmt::Display for RError {
             RError::Break => write!(f, "no loop for break/next, jumping to top level"),
             RError::Next => write!(f, "no loop for break/next, jumping to top level"),
         }
+    }
+}
+
+use crate::parser::ast::{AssignOp, BinaryOp, NaType, SpecialOp, UnaryOp};
+
+/// Convert an AST expression back to R source code (deparse).
+pub fn deparse_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Null => "NULL".to_string(),
+        Expr::Na(NaType::Logical) => "NA".to_string(),
+        Expr::Na(NaType::Integer) => "NA_integer_".to_string(),
+        Expr::Na(NaType::Real) => "NA_real_".to_string(),
+        Expr::Na(NaType::Character) => "NA_character_".to_string(),
+        Expr::Na(NaType::Complex) => "NA_complex_".to_string(),
+        Expr::Inf => "Inf".to_string(),
+        Expr::NaN => "NaN".to_string(),
+        Expr::Bool(true) => "TRUE".to_string(),
+        Expr::Bool(false) => "FALSE".to_string(),
+        Expr::Integer(i) => format!("{}L", i),
+        Expr::Double(d) => format_r_double(*d),
+        Expr::Complex(d) => format!("{}i", d),
+        Expr::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        Expr::Symbol(s) => s.clone(),
+        Expr::Dots => "...".to_string(),
+        Expr::DotDot(n) => format!("..{}", n),
+        Expr::UnaryOp { op, operand } => {
+            let o = deparse_expr(operand);
+            match op {
+                UnaryOp::Neg => format!("-{}", o),
+                UnaryOp::Pos => format!("+{}", o),
+                UnaryOp::Not => format!("!{}", o),
+                UnaryOp::Formula => format!("~{}", o),
+            }
+        }
+        Expr::BinaryOp { op, lhs, rhs } => {
+            let l = deparse_expr(lhs);
+            let r = deparse_expr(rhs);
+            let op_str = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+                BinaryOp::Pow => "^",
+                BinaryOp::Mod => "%%",
+                BinaryOp::IntDiv => "%/%",
+                BinaryOp::Eq => "==",
+                BinaryOp::Ne => "!=",
+                BinaryOp::Lt => "<",
+                BinaryOp::Gt => ">",
+                BinaryOp::Le => "<=",
+                BinaryOp::Ge => ">=",
+                BinaryOp::And => "&",
+                BinaryOp::AndScalar => "&&",
+                BinaryOp::Or => "|",
+                BinaryOp::OrScalar => "||",
+                BinaryOp::Range => ":",
+                BinaryOp::Pipe => "|>",
+                BinaryOp::Special(SpecialOp::In) => "%in%",
+                BinaryOp::Special(SpecialOp::MatMul) => "%*%",
+                BinaryOp::Special(SpecialOp::Other) => "%%",
+                BinaryOp::Tilde => "~",
+            };
+            format!("{} {} {}", l, op_str, r)
+        }
+        Expr::Assign { op, target, value } => {
+            let t = deparse_expr(target);
+            let v = deparse_expr(value);
+            match op {
+                AssignOp::LeftAssign => format!("{} <- {}", t, v),
+                AssignOp::SuperAssign => format!("{} <<- {}", t, v),
+                AssignOp::Equals => format!("{} = {}", t, v),
+                AssignOp::RightAssign => format!("{} -> {}", v, t),
+                AssignOp::RightSuperAssign => format!("{} ->> {}", v, t),
+            }
+        }
+        Expr::Call { func, args } => {
+            let f = deparse_expr(func);
+            let a: Vec<String> = args.iter().map(deparse_arg).collect();
+            format!("{}({})", f, a.join(", "))
+        }
+        Expr::Index { object, indices } => {
+            let o = deparse_expr(object);
+            let i: Vec<String> = indices.iter().map(deparse_arg).collect();
+            format!("{}[{}]", o, i.join(", "))
+        }
+        Expr::IndexDouble { object, indices } => {
+            let o = deparse_expr(object);
+            let i: Vec<String> = indices.iter().map(deparse_arg).collect();
+            format!("{}[[{}]]", o, i.join(", "))
+        }
+        Expr::Dollar { object, member } => format!("{}${}", deparse_expr(object), member),
+        Expr::Slot { object, member } => format!("{}@{}", deparse_expr(object), member),
+        Expr::NsGet { namespace, name } => format!("{}::{}", deparse_expr(namespace), name),
+        Expr::NsGetInt { namespace, name } => format!("{}:::{}", deparse_expr(namespace), name),
+        Expr::Formula { lhs, rhs } => {
+            let l = lhs.as_ref().map(|e| deparse_expr(e)).unwrap_or_default();
+            let r = rhs.as_ref().map(|e| deparse_expr(e)).unwrap_or_default();
+            if l.is_empty() {
+                format!("~{}", r)
+            } else {
+                format!("{} ~ {}", l, r)
+            }
+        }
+        Expr::If {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let c = deparse_expr(condition);
+            let t = deparse_expr(then_body);
+            match else_body {
+                Some(e) => format!("if ({}) {} else {}", c, t, deparse_expr(e)),
+                None => format!("if ({}) {}", c, t),
+            }
+        }
+        Expr::For { var, iter, body } => {
+            format!(
+                "for ({} in {}) {}",
+                var,
+                deparse_expr(iter),
+                deparse_expr(body)
+            )
+        }
+        Expr::While { condition, body } => {
+            format!("while ({}) {}", deparse_expr(condition), deparse_expr(body))
+        }
+        Expr::Repeat { body } => format!("repeat {}", deparse_expr(body)),
+        Expr::Break => "break".to_string(),
+        Expr::Next => "next".to_string(),
+        Expr::Return(Some(e)) => format!("return({})", deparse_expr(e)),
+        Expr::Return(None) => "return()".to_string(),
+        Expr::Block(exprs) => {
+            if exprs.len() == 1 {
+                deparse_expr(&exprs[0])
+            } else {
+                let inner: Vec<String> = exprs.iter().map(deparse_expr).collect();
+                format!("{{\n    {}\n}}", inner.join("\n    "))
+            }
+        }
+        Expr::Function { params, body } => {
+            let p: Vec<String> = params
+                .iter()
+                .map(|p| {
+                    if p.is_dots {
+                        "...".to_string()
+                    } else if let Some(ref d) = p.default {
+                        format!("{} = {}", p.name, deparse_expr(d))
+                    } else {
+                        p.name.clone()
+                    }
+                })
+                .collect();
+            format!("function({}) {}", p.join(", "), deparse_expr(body))
+        }
+        Expr::Program(exprs) => {
+            let inner: Vec<String> = exprs.iter().map(deparse_expr).collect();
+            inner.join("\n")
+        }
+    }
+}
+
+use crate::parser::ast::Arg;
+
+fn deparse_arg(arg: &Arg) -> String {
+    match (&arg.name, &arg.value) {
+        (Some(n), Some(v)) => format!("{} = {}", n, deparse_expr(v)),
+        (None, Some(v)) => deparse_expr(v),
+        (Some(n), None) => format!("{} = ", n),
+        (None, None) => String::new(),
     }
 }
