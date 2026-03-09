@@ -3,10 +3,6 @@ use ndarray::{Array2, ShapeBuilder};
 use crate::interpreter::value::*;
 use newr_macros::{builtin, noop_builtin};
 
-noop_builtin!("pmax");
-noop_builtin!("pmin");
-noop_builtin!("cumall", 1);
-noop_builtin!("cumany", 1);
 noop_builtin!("runif", 1);
 noop_builtin!("rnorm", 1);
 noop_builtin!("rbinom", 2);
@@ -87,6 +83,344 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             Ok(RValue::vec(Vector::Double(result.into())))
         }
         _ => Err(RError::Argument("non-numeric argument".to_string())),
+    }
+}
+
+#[builtin(min_args = 1)]
+fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let digits = named
+        .iter()
+        .find(|(n, _)| n == "digits")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .or_else(|| args.get(1)?.as_vector()?.as_integer_scalar())
+        .unwrap_or(6) as i32;
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let result: Vec<Option<f64>> = v
+                .to_doubles()
+                .iter()
+                .map(|x| {
+                    x.map(|f| {
+                        if f == 0.0 || !f.is_finite() {
+                            return f;
+                        }
+                        let d = f.abs().log10().ceil() as i32;
+                        let factor = 10f64.powi(digits - d);
+                        (f * factor).round() / factor
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+        _ => Err(RError::Argument(
+            "non-numeric argument to signif".to_string(),
+        )),
+    }
+}
+
+// === Parallel min/max ===
+
+#[builtin(min_args = 1)]
+fn builtin_pmin(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named.iter().any(|(n, v)| {
+        n == "na.rm" && v.as_vector().and_then(|v| v.as_logical_scalar()) == Some(true)
+    });
+    parallel_minmax(args, na_rm, false)
+}
+
+#[builtin(min_args = 1)]
+fn builtin_pmax(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named.iter().any(|(n, v)| {
+        n == "na.rm" && v.as_vector().and_then(|v| v.as_logical_scalar()) == Some(true)
+    });
+    parallel_minmax(args, na_rm, true)
+}
+
+fn parallel_minmax(args: &[RValue], na_rm: bool, is_max: bool) -> Result<RValue, RError> {
+    // Collect all argument vectors as doubles
+    let vecs: Vec<Vec<Option<f64>>> = args
+        .iter()
+        .filter_map(|a| {
+            if let RValue::Vector(v) = a {
+                Some(v.to_doubles())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if vecs.is_empty() {
+        return Err(RError::Argument("no arguments to pmin/pmax".to_string()));
+    }
+    // Find max length for recycling
+    let max_len = vecs.iter().map(|v| v.len()).max().unwrap_or(0);
+    let mut result = Vec::with_capacity(max_len);
+    for i in 0..max_len {
+        let mut current: Option<f64> = None;
+        let mut has_na = false;
+        for vec in &vecs {
+            let val = vec[i % vec.len()];
+            match val {
+                Some(f) => {
+                    current = Some(match current {
+                        Some(c) => {
+                            if is_max {
+                                c.max(f)
+                            } else {
+                                c.min(f)
+                            }
+                        }
+                        None => f,
+                    });
+                }
+                None => {
+                    has_na = true;
+                }
+            }
+        }
+        if has_na && !na_rm {
+            result.push(None);
+        } else {
+            result.push(current);
+        }
+    }
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+// === Cumulative logical ===
+
+#[builtin(min_args = 1)]
+fn builtin_cumall(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let logicals = v.to_logicals();
+            let mut acc = true;
+            let result: Vec<Option<bool>> = logicals
+                .iter()
+                .map(|x| match x {
+                    Some(b) => {
+                        acc = acc && *b;
+                        Some(acc)
+                    }
+                    None => None,
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
+        }
+        _ => Err(RError::Argument("invalid argument to cumall".to_string())),
+    }
+}
+
+#[builtin(min_args = 1)]
+fn builtin_cumany(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let logicals = v.to_logicals();
+            let mut acc = false;
+            let result: Vec<Option<bool>> = logicals
+                .iter()
+                .map(|x| match x {
+                    Some(b) => {
+                        acc = acc || *b;
+                        Some(acc)
+                    }
+                    None => None,
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
+        }
+        _ => Err(RError::Argument("invalid argument to cumany".to_string())),
+    }
+}
+
+// === Bitwise operations ===
+
+fn bitwise_binary_op(args: &[RValue], op: fn(i64, i64) -> i64) -> Result<RValue, RError> {
+    let a_ints = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+    let b_ints = args
+        .get(1)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+    let max_len = a_ints.len().max(b_ints.len());
+    let result: Vec<Option<i64>> = (0..max_len)
+        .map(|i| {
+            let a = a_ints[i % a_ints.len()];
+            let b = b_ints[i % b_ints.len()];
+            match (a, b) {
+                (Some(x), Some(y)) => Some(op(x, y)),
+                _ => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+#[builtin(name = "bitwAnd", min_args = 2)]
+fn builtin_bitw_and(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    bitwise_binary_op(args, |a, b| a & b)
+}
+
+#[builtin(name = "bitwOr", min_args = 2)]
+fn builtin_bitw_or(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    bitwise_binary_op(args, |a, b| a | b)
+}
+
+#[builtin(name = "bitwXor", min_args = 2)]
+fn builtin_bitw_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    bitwise_binary_op(args, |a, b| a ^ b)
+}
+
+#[builtin(name = "bitwNot", min_args = 1)]
+fn builtin_bitw_not(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ints = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .ok_or_else(|| RError::Argument("non-integer argument to bitwNot".to_string()))?;
+    let result: Vec<Option<i64>> = ints.iter().map(|x| x.map(|i| !i)).collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+#[builtin(name = "bitwShiftL", min_args = 2)]
+fn builtin_bitw_shift_l(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    bitwise_binary_op(args, |a, n| a << (n as u32))
+}
+
+#[builtin(name = "bitwShiftR", min_args = 2)]
+fn builtin_bitw_shift_r(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    bitwise_binary_op(args, |a, n| a >> (n as u32))
+}
+
+// === Triangular matrix extraction ===
+
+#[builtin(name = "lower.tri", min_args = 1)]
+fn builtin_lower_tri(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let diag_incl = named
+        .iter()
+        .find(|(n, _)| n == "diag")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| args.get(1)?.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    tri_matrix(args, diag_incl, true)
+}
+
+#[builtin(name = "upper.tri", min_args = 1)]
+fn builtin_upper_tri(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let diag_incl = named
+        .iter()
+        .find(|(n, _)| n == "diag")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| args.get(1)?.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    tri_matrix(args, diag_incl, false)
+}
+
+fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, RError> {
+    let (nrow, ncol) = match args.first() {
+        Some(RValue::Vector(rv)) => match rv.get_attr("dim") {
+            Some(RValue::Vector(dim_rv)) => match &dim_rv.inner {
+                Vector::Integer(d) if d.len() >= 2 => {
+                    (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
+                }
+                _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+            },
+            _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+        },
+        _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+    };
+
+    // R stores matrices column-major
+    let mut result = Vec::with_capacity(nrow * ncol);
+    for j in 0..ncol {
+        for i in 0..nrow {
+            let val = if lower {
+                if diag_incl {
+                    i >= j
+                } else {
+                    i > j
+                }
+            } else if diag_incl {
+                i <= j
+            } else {
+                i < j
+            };
+            result.push(Some(val));
+        }
+    }
+    let mut rv = RVector::from(Vector::Logical(result.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(nrow as i64), Some(ncol as i64)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+// === Diagonal matrix ===
+
+#[builtin(min_args = 1)]
+fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            // If x is a matrix, extract the diagonal
+            if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
+                if let Vector::Integer(d) = &dim_rv.inner {
+                    if d.len() >= 2 {
+                        let nrow = d[0].unwrap_or(0) as usize;
+                        let ncol = d[1].unwrap_or(0) as usize;
+                        let data = rv.to_doubles();
+                        let n = nrow.min(ncol);
+                        let result: Vec<Option<f64>> = (0..n)
+                            .map(|i| {
+                                let idx = i * nrow + i; // column-major: col * nrow + row
+                                if idx < data.len() {
+                                    data[idx]
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        return Ok(RValue::vec(Vector::Double(result.into())));
+                    }
+                }
+            }
+
+            let len = rv.len();
+            if len == 1 {
+                // Scalar integer n: create n x n identity matrix
+                let n = rv.as_integer_scalar().unwrap_or(1) as usize;
+                let mut result = vec![Some(0.0); n * n];
+                for i in 0..n {
+                    result[i * n + i] = Some(1.0);
+                }
+                let mut out = RVector::from(Vector::Double(result.into()));
+                out.set_attr(
+                    "dim".to_string(),
+                    RValue::vec(Vector::Integer(vec![Some(n as i64), Some(n as i64)].into())),
+                );
+                Ok(RValue::Vector(out))
+            } else {
+                // Vector: create diagonal matrix from vector
+                let vals = rv.to_doubles();
+                let n = vals.len();
+                let mut result = vec![Some(0.0); n * n];
+                for (i, v) in vals.iter().enumerate() {
+                    result[i * n + i] = *v;
+                }
+                let mut out = RVector::from(Vector::Double(result.into()));
+                out.set_attr(
+                    "dim".to_string(),
+                    RValue::vec(Vector::Integer(vec![Some(n as i64), Some(n as i64)].into())),
+                );
+                Ok(RValue::Vector(out))
+            }
+        }
+        _ => Err(RError::Argument("'x' must be numeric".to_string())),
     }
 }
 
