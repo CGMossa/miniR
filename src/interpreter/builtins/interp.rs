@@ -746,6 +746,67 @@ fn interp_next_method(
     })
 }
 
+#[interpreter_builtin(name = "as.environment", min_args = 1)]
+fn interp_as_environment(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+
+    match x {
+        RValue::Environment(_) => Ok(x.clone()),
+        RValue::Vector(rv) => {
+            if let Some(n) = rv.as_integer_scalar() {
+                return with_interpreter(|interp| {
+                    match n {
+                    1 => Ok(RValue::Environment(interp.global_env.clone())),
+                    -1 => {
+                        let base = interp
+                            .global_env
+                            .parent()
+                            .unwrap_or_else(|| interp.global_env.clone());
+                        Ok(RValue::Environment(base))
+                    }
+                    _ => Err(RError::Argument(format!(
+                        "as.environment({}): only search path positions 1 (global) and -1 (base) are currently supported",
+                        n
+                    ))),
+                }
+                });
+            }
+            if let Some(s) = rv.as_character_scalar() {
+                return with_interpreter(|interp| match s.as_str() {
+                    ".GlobalEnv" | "R_GlobalEnv" => {
+                        Ok(RValue::Environment(interp.global_env.clone()))
+                    }
+                    "package:base" => {
+                        let base = interp
+                            .global_env
+                            .parent()
+                            .unwrap_or_else(|| interp.global_env.clone());
+                        Ok(RValue::Environment(base))
+                    }
+                    _ => Err(RError::Argument(format!(
+                        "no environment called '{}' was found. Use '.GlobalEnv' or 'package:base'",
+                        s
+                    ))),
+                });
+            }
+            Err(RError::Argument(format!(
+                "cannot coerce {} to an environment — expected a number, string, or environment",
+                x.type_name()
+            )))
+        }
+        _ => Err(RError::Argument(format!(
+            "cannot coerce {} to an environment — expected a number, string, or environment",
+            x.type_name()
+        ))),
+    }
+}
+
 #[interpreter_builtin(name = "globalenv")]
 fn interp_globalenv(
     _positional: &[RValue],

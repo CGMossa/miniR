@@ -261,6 +261,25 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
     }
 }
 
+#[pre_eval_builtin(name = "withVisible", min_args = 1)]
+fn pre_eval_with_visible(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    let expr = args
+        .first()
+        .and_then(|a| a.value.as_ref())
+        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+
+    let value = with_interpreter(|interp| interp.eval_in(expr, env))?;
+
+    // We don't track visibility yet, so always TRUE
+    Ok(RValue::List(RList::new(vec![
+        (Some("value".to_string()), value),
+        (
+            Some("visible".to_string()),
+            RValue::vec(Vector::Logical(vec![Some(true)].into())),
+        ),
+    ])))
+}
+
 /// `expression(...)` — construct an expression object from unevaluated arguments.
 /// Returns a list of Language objects, each wrapping the unevaluated expression.
 #[pre_eval_builtin(name = "expression")]
