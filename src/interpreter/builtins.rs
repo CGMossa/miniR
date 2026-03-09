@@ -3140,3 +3140,81 @@ fn builtin_table(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     );
     Ok(RValue::Vector(rv))
 }
+
+// ── File I/O: scan ──────────────────────────────────────────────────
+
+/// `scan(file, what, ...)` — read data from a file or stdin.
+///
+/// Simplified implementation: reads whitespace-delimited tokens from a file.
+/// `what` determines the output type (default character).
+#[builtin]
+fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let file = args
+        .first()
+        .and_then(|v| match v {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    if file.is_empty() {
+        return Err(RError::Argument(
+            "scan() requires a file path — reading from stdin is not yet supported".to_string(),
+        ));
+    }
+
+    let content = std::fs::read_to_string(&file)
+        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+
+    // Determine separator
+    let sep = named
+        .iter()
+        .find(|(n, _)| n == "sep")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            _ => None,
+        });
+
+    let tokens: Vec<&str> = match &sep {
+        Some(s) if !s.is_empty() => content.split(s.as_str()).collect(),
+        _ => content.split_whitespace().collect(),
+    };
+
+    // Determine what type to return (default: character)
+    let what = args
+        .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "what").map(|(_, v)| v));
+
+    match what {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Double(_) => {
+                let vals: Vec<Option<f64>> = tokens.iter().map(|t| t.parse::<f64>().ok()).collect();
+                Ok(RValue::vec(Vector::Double(vals.into())))
+            }
+            Vector::Integer(_) => {
+                let vals: Vec<Option<i64>> = tokens.iter().map(|t| t.parse::<i64>().ok()).collect();
+                Ok(RValue::vec(Vector::Integer(vals.into())))
+            }
+            Vector::Logical(_) => {
+                let vals: Vec<Option<bool>> = tokens
+                    .iter()
+                    .map(|t| match *t {
+                        "TRUE" | "T" => Some(true),
+                        "FALSE" | "F" => Some(false),
+                        _ => None,
+                    })
+                    .collect();
+                Ok(RValue::vec(Vector::Logical(vals.into())))
+            }
+            _ => {
+                let vals: Vec<Option<String>> =
+                    tokens.iter().map(|t| Some(t.to_string())).collect();
+                Ok(RValue::vec(Vector::Character(vals.into())))
+            }
+        },
+        _ => {
+            let vals: Vec<Option<String>> = tokens.iter().map(|t| Some(t.to_string())).collect();
+            Ok(RValue::vec(Vector::Character(vals.into())))
+        }
+    }
+}
