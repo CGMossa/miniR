@@ -2910,7 +2910,7 @@ fn rvalue_to_expr(val: &RValue) -> Expr {
     }
 }
 
-// ── Factors ──────────────────────────────────────────────────────────
+// region: Factors
 
 /// Coerce an RValue to a character vector for level matching.
 fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RError> {
@@ -3061,8 +3061,9 @@ fn builtin_nlevels(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         _ => Ok(RValue::vec(Vector::Integer(vec![Some(0i64)].into()))),
     }
 }
+// endregion
 
-// ── Table / Tabulate ─────────────────────────────────────────────────
+// region: Table / Tabulate
 
 /// `tabulate(bin, nbins)` — count occurrences of each integer value 1..nbins.
 #[builtin(min_args = 1)]
@@ -3140,8 +3141,9 @@ fn builtin_table(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     );
     Ok(RValue::Vector(rv))
 }
+// endregion
 
-// ── File I/O: scan ──────────────────────────────────────────────────
+// region: File I/O
 
 /// `scan(file, what, ...)` — read data from a file or stdin.
 ///
@@ -3219,13 +3221,11 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
-// ── File I/O: read.table / write.table ──────────────────────────────
-
 /// `read.table(file, header, sep, ...)` — read a delimited text file into a named list.
 ///
 /// Returns a list of columns (not a proper data frame — no row.names or class).
 /// Each column is a character vector by default.
-#[builtin(min_args = 1)]
+#[builtin(name = "read.table", min_args = 1)]
 fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[0] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
@@ -3294,9 +3294,8 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
         // Try to detect numeric columns
         let all_numeric = col_data.iter().all(|v| {
-            v.as_ref().is_none_or(|s| {
-                s.is_empty() || s == "NA" || s.parse::<f64>().is_ok()
-            })
+            v.as_ref()
+                .is_none_or(|s| s.is_empty() || s == "NA" || s.parse::<f64>().is_ok())
         });
 
         let col_val = if all_numeric {
@@ -3328,7 +3327,7 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 }
 
 /// `write.table(x, file, sep, row.names, col.names, quote)` — write a list/matrix to a text file.
-#[builtin(min_args = 2)]
+#[builtin(name = "write.table", min_args = 2)]
 fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[1] {
         RValue::Vector(rv) => rv
@@ -3490,3 +3489,4 @@ fn format_cell(val: &RValue, idx: usize, quote: bool) -> String {
         _ => "NA".to_string(),
     }
 }
+// endregion
