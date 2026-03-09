@@ -37,8 +37,7 @@ noop_builtin!("factor");
 noop_builtin!("levels", 1);
 noop_builtin!("nlevels", 1);
 
-// Function tools
-noop_builtin!("Recall");
+// Function tools (Recall — stub with informative error, see builtins.rs)
 
 // Error handling
 noop_builtin!("withCallingHandlers", 1);
@@ -78,13 +77,8 @@ noop_builtin!("saveRDS", 2);
 noop_builtin!("load", 1);
 noop_builtin!("save");
 
-// Metaprogramming
-noop_builtin!("call", 1);
-noop_builtin!("expression");
-noop_builtin!("body", 1);
-noop_builtin!("formals", 1);
+// Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
 noop_builtin!("arity", 1);
-noop_builtin!("args", 1);
 
 // Call stack
 noop_builtin!("sys.frame");
