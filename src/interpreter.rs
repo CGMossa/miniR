@@ -1105,7 +1105,14 @@ impl Interpreter {
         };
 
         if row_idx.is_none() {
-            // All rows
+            // Single column selection with drop=TRUE (R default) returns the vector
+            if col_idx.is_some() && selected_cols.len() == 1 {
+                return Ok(selected_cols.into_iter().next().unwrap().1);
+            }
+            // All rows — return data frame with selected columns
+            let col_names: Vec<Option<String>> =
+                selected_cols.iter().map(|(n, _)| n.clone()).collect();
+            let nrows = selected_cols.first().map(|(_, v)| v.length()).unwrap_or(0);
             let mut result = RList::new(selected_cols);
             result.set_attr(
                 "class".to_string(),
@@ -1113,11 +1120,39 @@ impl Interpreter {
                     vec![Some("data.frame".to_string())].into(),
                 )),
             );
+            result.set_attr(
+                "names".to_string(),
+                RValue::vec(Vector::Character(col_names.into())),
+            );
+            let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+            result.set_attr(
+                "row.names".to_string(),
+                RValue::vec(Vector::Integer(row_names.into())),
+            );
             return Ok(RValue::List(result));
         }
 
+        // Convert logical row index to integer indices
+        let int_rows: Vec<Option<i64>> = match &row_idx {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
+                let Vector::Logical(lv) = &rv.inner else {
+                    unreachable!()
+                };
+                lv.iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.unwrap_or(false))
+                    .map(|(i, _)| Some(i as i64 + 1))
+                    .collect()
+            }
+            Some(RValue::Vector(rv)) => rv.to_integers(),
+            _ => vec![],
+        };
+
         // Single column with row selection — return the column vector subsetted
         if selected_cols.len() == 1 {
+            if let RValue::Vector(rv) = &selected_cols[0].1 {
+                return self.index_by_integer(&rv.inner, &int_rows);
+            }
             return Ok(selected_cols[0].1.clone());
         }
 
@@ -1125,22 +1160,29 @@ impl Interpreter {
         let mut result_cols = Vec::new();
         for (name, col_val) in &selected_cols {
             if let RValue::Vector(rv) = col_val {
-                let rows = match &row_idx {
-                    Some(RValue::Vector(idx)) => idx.to_integers(),
-                    _ => continue,
-                };
-                let indexed = self.index_by_integer(&rv.inner, &rows)?;
+                let indexed = self.index_by_integer(&rv.inner, &int_rows)?;
                 result_cols.push((name.clone(), indexed));
             } else {
                 result_cols.push((name.clone(), col_val.clone()));
             }
         }
+        let col_names: Vec<Option<String>> = result_cols.iter().map(|(n, _)| n.clone()).collect();
+        let nrows = result_cols.first().map(|(_, v)| v.length()).unwrap_or(0);
         let mut result = RList::new(result_cols);
         result.set_attr(
             "class".to_string(),
             RValue::vec(Vector::Character(
                 vec![Some("data.frame".to_string())].into(),
             )),
+        );
+        result.set_attr(
+            "names".to_string(),
+            RValue::vec(Vector::Character(col_names.into())),
+        );
+        let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+        result.set_attr(
+            "row.names".to_string(),
+            RValue::vec(Vector::Integer(row_names.into())),
         );
         Ok(RValue::List(result))
     }

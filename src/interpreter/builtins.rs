@@ -1772,7 +1772,7 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
-#[builtin(name = "nrow", min_args = 1, names = ["NROW"])]
+#[builtin(name = "NROW", min_args = 1)]
 fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(rv)) => {
@@ -1791,6 +1791,16 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                     return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
                 }
             }
+            // Data frame: nrow = length of first column
+            if has_class(args.first().unwrap(), "data.frame") {
+                if let Some(rn) = l.get_attr("row.names") {
+                    return Ok(RValue::vec(Vector::Integer(
+                        vec![Some(rn.length() as i64)].into(),
+                    )));
+                }
+                let n = l.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+                return Ok(RValue::vec(Vector::Integer(vec![Some(n as i64)].into())));
+            }
             Ok(RValue::vec(Vector::Integer(
                 vec![Some(l.values.len() as i64)].into(),
             )))
@@ -1800,7 +1810,7 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
-#[builtin(name = "ncol", min_args = 1, names = ["NCOL"])]
+#[builtin(name = "NCOL", min_args = 1)]
 fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(rv)) => {
@@ -1816,6 +1826,11 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 if dims.len() >= 2 {
                     return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
                 }
+            }
+            if has_class(args.first().unwrap(), "data.frame") {
+                return Ok(RValue::vec(Vector::Integer(
+                    vec![Some(l.values.len() as i64)].into(),
+                )));
             }
             Ok(RValue::vec(Vector::Integer(vec![Some(1)].into())))
         }
