@@ -14,10 +14,37 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
-        let filename = &args[1];
-        run_file(filename);
+        if args[1] == "-e" {
+            if args.len() < 3 {
+                eprintln!("Error: -e requires an expression argument");
+                std::process::exit(1);
+            }
+            run_expr(&args[2]);
+        } else {
+            run_file(&args[1]);
+        }
     } else {
         run_repl();
+    }
+}
+
+fn run_expr(source: &str) {
+    match parse_program(source) {
+        Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
+            Ok(val) => {
+                if !val.is_null() && !is_invisible_result(&ast) {
+                    println!("{}", val);
+                }
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        },
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
     }
 }
 
