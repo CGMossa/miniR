@@ -12,6 +12,10 @@ vendor:
     cargo vendor --quiet "{{root}}/vendor"
     printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
 
+# Update Cargo.lock from crates.io, bypassing vendor source replacement
+update *args:
+    CARGO_SOURCE_CRATES_IO_REPLACE_WITH="" cargo update {{args}}
+
 # Dump public API of a vendored crate as rustdoc JSON (requires nightly + jq)
 crate-docs crate:
     #!/usr/bin/env bash
