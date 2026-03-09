@@ -717,6 +717,179 @@ fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
+#[builtin(name = "intToUtf8", min_args = 1)]
+fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ints = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_integers(),
+        _ => {
+            return Err(RError::Argument(
+                "argument must be an integer vector".to_string(),
+            ))
+        }
+    };
+    let mut result = String::new();
+    for val in &ints {
+        match val {
+            Some(code) if *code >= 0 => match char::from_u32(*code as u32) {
+                Some(c) => result.push(c),
+                None => {
+                    return Err(RError::Argument(format!(
+                        "invalid Unicode code point: {}",
+                        code
+                    )))
+                }
+            },
+            Some(code) => {
+                return Err(RError::Argument(format!(
+                    "invalid Unicode code point: {}",
+                    code
+                )))
+            }
+            None => result.push('\u{FFFD}'), // replacement character for NA
+        }
+    }
+    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
+}
+
+#[builtin(name = "utf8ToInt", min_args = 1)]
+fn builtin_utf8_to_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
+    let result: Vec<Option<i64>> = s.chars().map(|c| Some(c as u32 as i64)).collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+#[builtin(name = "charToRaw", min_args = 1)]
+fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
+    let result: Vec<Option<i64>> = s.bytes().map(|b| Some(b as i64)).collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+#[builtin(name = "rawToChar", min_args = 1)]
+fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ints = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_integers(),
+        _ => {
+            return Err(RError::Argument(
+                "argument must be an integer vector".to_string(),
+            ))
+        }
+    };
+    let mut bytes = Vec::new();
+    for val in &ints {
+        match val {
+            Some(b) if (0..=255).contains(b) => bytes.push(*b as u8),
+            Some(b) => {
+                return Err(RError::Argument(format!(
+                    "out of range for raw byte: {}",
+                    b
+                )))
+            }
+            None => {
+                return Err(RError::Argument(
+                    "embedded nul in rawToChar input".to_string(),
+                ))
+            }
+        }
+    }
+    let s = String::from_utf8(bytes)
+        .map_err(|e| RError::Argument(format!("invalid UTF-8 sequence: {}", e)))?;
+    Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
+}
+
+#[builtin(name = "glob2rx", min_args = 1)]
+fn builtin_glob2rx(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::Argument("argument must be a character string".to_string()))?;
+    let mut result = String::from("^");
+    for c in pattern.chars() {
+        match c {
+            '*' => result.push_str(".*"),
+            '?' => result.push('.'),
+            '.' | '(' | ')' | '+' | '|' | '{' | '}' | '[' | ']' | '^' | '$' | '\\' => {
+                result.push('\\');
+                result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+    result.push('$');
+    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
+}
+
+#[builtin(min_args = 2)]
+fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
+    let re = build_regex(&pattern, fixed, ignore_case)?;
+    match args.get(1) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let mut list_items = Vec::new();
+            for s in vals.iter() {
+                match s.as_ref().and_then(|s| re.captures(s)) {
+                    Some(caps) => {
+                        let mut positions = Vec::new();
+                        let mut lengths = Vec::new();
+                        for i in 0..caps.len() {
+                            match caps.get(i) {
+                                Some(m) => {
+                                    positions.push(Some(m.start() as i64 + 1));
+                                    lengths.push(Some(m.len() as i64));
+                                }
+                                None => {
+                                    positions.push(Some(-1));
+                                    lengths.push(Some(-1));
+                                }
+                            }
+                        }
+                        let mut match_rv = RVector::from(Vector::Integer(positions.into()));
+                        match_rv.set_attr(
+                            "match.length".to_string(),
+                            RValue::vec(Vector::Integer(lengths.into())),
+                        );
+                        list_items.push((None, RValue::Vector(match_rv)));
+                    }
+                    None => {
+                        let mut match_rv = RVector::from(Vector::Integer(vec![Some(-1)].into()));
+                        match_rv.set_attr(
+                            "match.length".to_string(),
+                            RValue::vec(Vector::Integer(vec![Some(-1)].into())),
+                        );
+                        list_items.push((None, RValue::Vector(match_rv)));
+                    }
+                }
+            }
+            Ok(RValue::List(RList::new(list_items)))
+        }
+        _ => Err(RError::Argument("argument is not character".to_string())),
+    }
+}
+
+#[builtin(min_args = 1)]
+fn builtin_dput(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = match args.first() {
+        Some(RValue::Language(expr)) => deparse_expr(expr),
+        Some(v) => format!("{}", v),
+        None => "NULL".to_string(),
+    };
+    println!("{}", s);
+    Ok(RValue::Null)
+}
+
 #[builtin(min_args = 1)]
 fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = args
