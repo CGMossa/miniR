@@ -21,7 +21,7 @@ Style::new().italic().paint("note");
 
 Our CLAUDE.md says: "Error messages should be better than GNU R's — more informative, more specific, with suggestions." Color makes errors significantly more readable.
 
-```
+```text
 Error in eval(expr, envir): object 'x' not found
        ^^^^                         ^^^
        red                          yellow

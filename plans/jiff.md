@@ -1,7 +1,7 @@
 # jiff integration plan
 
 > `jiff` 0.2 — Datetime library by BurntSushi.
-> https://github.com/BurntSushi/jiff
+> <https://github.com/BurntSushi/jiff>
 
 ## What it does
 
@@ -9,6 +9,7 @@ High-level datetime library with first-class timezone support. Inspired by
 Temporal (TC39) and java.time. Better timezone handling than the `time` crate.
 
 Key types:
+
 - `Zoned` — datetime with timezone (like R's POSIXct with tzone attr)
 - `Timestamp` — instant in time (UTC epoch, like R's POSIXct numeric value)
 - `civil::Date` — calendar date (like R's Date)

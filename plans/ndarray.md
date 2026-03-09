@@ -1,7 +1,7 @@
 # ndarray integration plan
 
 > `ndarray` 0.17 — N-dimensional arrays for Rust.
-> https://github.com/rust-ndarray/ndarray
+> <https://github.com/rust-ndarray/ndarray>
 
 ## What it does
 
@@ -34,6 +34,7 @@ ndarray focuses on N-dimensional arrays and element-wise operations.
 nalgebra focuses on linear algebra decompositions.
 
 For R:
+
 - **ndarray** → `array()`, `dim()`, `apply()`, element-wise ops, broadcasting
 - **nalgebra** → `solve()`, `qr()`, `svd()`, `%*%`
 

@@ -12,6 +12,7 @@ Register signal handlers (SIGINT, SIGTERM, SIGHUP, etc.) safely from Rust. Provi
 ### The problem
 
 When a user runs a long R computation and presses Ctrl+C:
+
 - Currently: the entire process is killed (default SIGINT behavior)
 - Expected: the current computation is interrupted, control returns to the REPL
 
@@ -53,6 +54,7 @@ fn check_interrupt() -> Result<(), RError> {
 ```
 
 Then insert `check_interrupt()?` calls at:
+
 - Top of every loop iteration (for, while, repeat)
 - Every N iterations of vectorized operations (sapply, lapply)
 - Inside `Sys.sleep()` polling loop

@@ -21,6 +21,7 @@ simpleError("bad input", call = quote(f(x)))
 ```
 
 Two handling mechanisms:
+
 1. **tryCatch** — unwinds the stack to the handler, like Rust's `?` / catch. The handler runs in the *tryCatch frame*, not the signaling frame.
 2. **withCallingHandlers** — runs the handler *in the signaling frame* without unwinding. Handler can invoke `invokeRestart()` or return to resume.
 
@@ -95,7 +96,7 @@ Each `withCallingHandlers()` call pushes a `Vec<ConditionHandler>` (one per hand
 
 ### Signal flow
 
-```
+```text
 stop("bad input")
   │
   ├─ Create simpleError condition object
@@ -110,7 +111,7 @@ stop("bad input")
 
 For warnings, the flow is different — they don't unwind by default:
 
-```
+```text
 warning("careful")
   │
   ├─ Create simpleWarning condition object

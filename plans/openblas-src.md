@@ -1,7 +1,7 @@
 # openblas-src integration plan
 
 > `openblas-src` — OpenBLAS source distribution (build dependency).
-> https://github.com/blas-lapack-rs/openblas-src
+> <https://github.com/blas-lapack-rs/openblas-src>
 
 ## What it does
 
@@ -13,6 +13,7 @@ Used as a backend for `nalgebra-lapack`, `ndarray-linalg`, and other Rust
 linear algebra crates via the `blas-src` / `lapack-src` trait system.
 
 Features:
+
 - CPU-specific optimized kernels (Haswell, Zen, Apple M-series, etc.)
 - Multi-threaded by default
 - Complete BLAS Level 1/2/3 + full LAPACK

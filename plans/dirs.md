@@ -1,7 +1,7 @@
 # dirs integration plan
 
 > `dirs` 6.0 — Platform-specific standard directories.
-> https://github.com/dirs-dev/dirs-rs
+> <https://github.com/dirs-dev/dirs-rs>
 
 ## What it does
 

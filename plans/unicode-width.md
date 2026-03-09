@@ -6,6 +6,7 @@
 ## What it does
 
 Returns the number of terminal columns a character occupies:
+
 - ASCII and most Latin/Cyrillic: width 1
 - CJK ideographs, fullwidth forms: width 2
 - Zero-width joiners, combining marks: width 0

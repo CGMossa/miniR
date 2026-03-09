@@ -1,7 +1,7 @@
 # serde integration plan
 
 > `serde` 1.0+derive — Serialization/deserialization framework.
-> https://github.com/serde-rs/serde
+> <https://github.com/serde-rs/serde>
 
 ## What it does
 

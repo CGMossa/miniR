@@ -1,10 +1,10 @@
 # aho-corasick + memchr integration plan
 
 > `aho-corasick` — Fast multi-pattern string matching by BurntSushi.
-> https://github.com/BurntSushi/aho-corasick
+> <https://github.com/BurntSushi/aho-corasick>
 >
 > `memchr` — Optimized byte search by BurntSushi.
-> https://github.com/BurntSushi/memchr
+> <https://github.com/BurntSushi/memchr>
 
 ## What they do
 

@@ -1,7 +1,7 @@
 # openssl integration plan
 
 > `openssl` +vendored — OpenSSL bindings for Rust.
-> https://github.com/sfackler/rust-openssl
+> <https://github.com/sfackler/rust-openssl>
 
 ## What it does
 

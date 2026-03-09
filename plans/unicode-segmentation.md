@@ -6,6 +6,7 @@
 ## What it does
 
 Implements Unicode Standard Annex #29: text segmentation. Provides iterators for:
+
 - **Grapheme clusters** — what users perceive as "characters" (handles combining marks, emoji, etc.)
 - **Word boundaries** — natural word breaks
 - **Sentence boundaries** — sentence detection
@@ -15,6 +16,7 @@ Implements Unicode Standard Annex #29: text segmentation. Provides iterators for
 ### The problem
 
 R's `nchar()` can count in three modes:
+
 - `nchar(x, type="bytes")` — byte count (trivial: `s.len()`)
 - `nchar(x, type="chars")` — Unicode scalar count (trivial: `s.chars().count()`)
 - `nchar(x, type="width")` — display width (needs `unicode-width`)

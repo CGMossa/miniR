@@ -5,6 +5,12 @@ root := justfile_directory()
 default:
     echo 'Hello, world!'
 
+# Run all lints: cargo fmt check, clippy, markdownlint
+lint:
+    cargo fmt --check
+    cargo clippy -- -D warnings
+    npx --yes markdownlint-cli2 '**/*.md' '#vendor' '#cran' '#target'
+
 # Re-vendor crates (cargo vendor resolves from crates.io, bypassing source replacement)
 vendor:
     #!/usr/bin/env bash

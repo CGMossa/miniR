@@ -1,7 +1,7 @@
 # lexopt integration plan
 
 > `lexopt` 0.3 — Minimal CLI argument parser.
-> https://github.com/blyber/lexopt
+> <https://github.com/blyber/lexopt>
 
 ## What it does
 
@@ -26,6 +26,7 @@ while let Some(arg) = parser.next()? {
 ### 1. CLI argument parsing — already the right fit
 
 newr's CLI needs:
+
 - `newr script.R` — run a file
 - `newr -e "expr"` — evaluate expression
 - `newr --vanilla` / `--no-init` — skip startup files

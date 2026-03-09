@@ -1,7 +1,7 @@
 # winresource integration plan
 
 > `winresource` 0.1 — Embed Windows resources (icons, version info) in executables.
-> https://github.com/nicklasmoeller/winresource
+> <https://github.com/nicklasmoeller/winresource>
 
 ## What it does
 

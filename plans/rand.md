@@ -1,10 +1,10 @@
 # rand + rand_distr integration plan
 
 > `rand` 0.10 — Random number generation.
-> https://github.com/rust-random/rand
+> <https://github.com/rust-random/rand>
 >
 > `rand_distr` 0.6 — Probability distributions.
-> https://github.com/rust-random/rand
+> <https://github.com/rust-random/rand>
 
 ## What they do
 

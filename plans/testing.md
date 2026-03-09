@@ -117,6 +117,7 @@ arithmetic properties, string operations.
 ## Recommendation
 
 **Add incrementally:**
+
 1. `pretty_assertions` + `rstest` — add now, improve test readability immediately
 2. `assert_cmd` — add when testing CLI modes
 3. `serial_test` — add when tests need sequential execution

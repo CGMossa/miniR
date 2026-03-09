@@ -1,7 +1,7 @@
 # log + simplelog integration plan
 
-> `log` 0.4 — Logging facade. https://github.com/rust-lang/log
-> `simplelog` 0.12 — Simple logging implementations. https://github.com/Drakulix/simplelog.rs
+> `log` 0.4 — Logging facade. <https://github.com/rust-lang/log>
+> `simplelog` 0.12 — Simple logging implementations. <https://github.com/Drakulix/simplelog.rs>
 
 ## What they do
 
@@ -24,13 +24,14 @@ log::warn!("Deprecated function called: {}", name);
 ### 1. Interpreter diagnostics
 
 Internal logging for development and debugging:
+
 - `debug!("eval: {:?}", expr)` — trace evaluation
 - `info!("Loading source: {}", path)` — file operations
 - `warn!("Coercing {} to {}", from, to)` — implicit coercions
 
 ### 2. `--verbose` / `--debug` CLI flags
 
-```
+```bash
 newr --verbose script.R    # show info! messages
 newr --debug script.R      # show debug! messages
 ```

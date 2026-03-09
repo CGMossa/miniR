@@ -100,6 +100,7 @@ for (param, value) in bound_params {
 ## Numbering convention
 
 R numbers frames from 0 (global) upward. `sys.call(0)` is the top-level call. Negative indices count from the current frame. Map this to our Vec indices:
+
 - Frame 0 = global (not in the Vec)
 - Frame 1 = `call_stack[0]`
 - Frame n = `call_stack[n - 1]`

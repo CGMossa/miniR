@@ -1,7 +1,7 @@
 # arrow integration plan
 
 > `arrow` 58.0 — Apache Arrow columnar format implementation.
-> https://github.com/apache/arrow-rs
+> <https://github.com/apache/arrow-rs>
 
 ## What it does
 
@@ -9,6 +9,7 @@ In-memory columnar data format. Zero-copy reads, SIMD-accelerated operations,
 interoperability with Parquet, CSV, JSON. Used by DataFusion, Polars, DuckDB.
 
 Key types:
+
 - `Array` trait — typed columnar arrays (Int32Array, Float64Array, StringArray, etc.)
 - `RecordBatch` — named columns (like a data frame)
 - `Schema` — column names and types
@@ -32,6 +33,7 @@ let batch = RecordBatch::try_new(schema, vec![
 ```
 
 Benefits:
+
 - Columnar layout → cache-friendly aggregations
 - Null bitmap instead of `Option<T>` → compact NA representation
 - SIMD operations on numeric columns

@@ -1,7 +1,7 @@
 # indexmap integration plan
 
 > `indexmap` 2.13 — Insertion-order-preserving hash map.
-> https://github.com/indexmap-rs/indexmap
+> <https://github.com/indexmap-rs/indexmap>
 
 ## What it does
 

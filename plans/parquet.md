@@ -1,7 +1,7 @@
 # Parquet integration plan
 
 > `parquet` 58.0 — Apache Parquet columnar storage format.
-> https://lib.rs/crates/parquet
+> <https://lib.rs/crates/parquet>
 > Apache-2.0. Part of the arrow-rs project.
 
 ## What it does
@@ -9,6 +9,7 @@
 Reads and writes Apache Parquet files — the standard columnar file format for analytics. Parquet is to data frames what CSV is to text: the default interchange format for structured data in Python (pandas/polars), R (arrow), Spark, DuckDB, etc.
 
 Key capabilities:
+
 - Column-oriented storage with per-column compression
 - Schema-embedded (self-describing files)
 - Predicate pushdown / column pruning (read only what you need)
@@ -129,6 +130,7 @@ Parquet's columnar format means reading 2 columns from a 100-column file is near
 ### arrow.md
 
 Parquet depends on Arrow (the `arrow` feature). Adding parquet effectively adds Arrow too. This means:
+
 - `read.csv()` can also use Arrow's CSV reader (faster than our csv crate for large files)
 - Data frame internals could optionally use Arrow RecordBatch
 - **Decision:** Add parquet+arrow together; they share the dependency tree
@@ -156,6 +158,7 @@ R's `saveRDS()` / `readRDS()` uses R's internal XDR binary format — completely
 | CSV | Text tabular data | `csv` (already vendored) |
 
 For RDS, we need to either:
+
 1. Implement R's actual RDS binary format (for compatibility with GNU R)
 2. Define our own binary format using serde (simpler, not GNU R compatible)
 

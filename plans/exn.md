@@ -1,7 +1,7 @@
 # exn integration plan
 
 > `exn` 0.3 — Context-aware concrete Error type with tree-structured frames.
-> https://github.com/fast/exn
+> <https://github.com/fast/exn>
 > Zero runtime dependencies, no_std compatible.
 
 ## What it does
@@ -78,7 +78,7 @@ fn eval_call(name: &str, args: &[RValue], env: &Environment) -> RResult<RValue> 
 
 When an error propagates through multiple call levels, exn shows the full context tree:
 
-```
+```text
 Error in aggregate(): failed to compute summary
   └─ Error in mean(): non-numeric argument to mathematical function
        at src/interpreter/builtins/math.rs:42:5

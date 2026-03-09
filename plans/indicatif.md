@@ -1,7 +1,7 @@
 # indicatif integration plan
 
 > `indicatif` 0.18 — Progress bars and spinners for CLI applications.
-> https://github.com/console-rs/indicatif
+> <https://github.com/console-rs/indicatif>
 
 ## What it does
 

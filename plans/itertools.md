@@ -1,7 +1,7 @@
 # itertools integration plan
 
 > `itertools` 0.14 — Extra iterator adaptors, functions, and macros.
-> https://github.com/rust-itertools/itertools
+> <https://github.com/rust-itertools/itertools>
 
 ## What it does
 

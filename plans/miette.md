@@ -1,11 +1,12 @@
 # miette integration plan
 
 > `miette` 7.6 — Rich diagnostic error reporting with source spans.
-> https://github.com/zkat/miette
+> <https://github.com/zkat/miette>
 
 ## What it does
 
 Error reporting library that renders beautiful diagnostics with:
+
 - Source code snippets with underlined spans
 - Colored labels pointing to the error location
 - Help text and suggestions
@@ -32,7 +33,7 @@ Features: `fancy` (colored output), `fancy-no-backtrace` (no backtrace in fancy 
 
 Currently parse errors show line/column but no source context. With miette:
 
-```
+```text
 Error: parse::unexpected_token
 
   × unexpected token `+`
@@ -50,7 +51,7 @@ via `Pair::as_span()`.
 
 R errors like "object 'x' not found" can show the source line:
 
-```
+```text
 Error: eval::not_found
 
   × object 'x' not found
@@ -64,7 +65,7 @@ Error: eval::not_found
 
 R warnings can be shown as miette warnings (yellow, non-fatal):
 
-```
+```text
 Warning: coerce::na_introduced
 
   ⚠ NAs introduced by coercion

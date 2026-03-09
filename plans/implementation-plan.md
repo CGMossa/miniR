@@ -57,20 +57,24 @@ These should be fixed as we encounter them during implementation, not as a separ
 ### Design Decision: Where to Put Attrs
 
 **Option A:** Add `attrs` to each atomic type (Double, Integer, etc.)
+
 - Pro: data-local, no extra indirection
 - Con: 4x duplication of attr methods, breaks the clean newtype pattern
 
 **Option B:** Add `attrs` to the `Vector` enum
+
 - Pro: single location, natural place for "any vector can have attributes"
 - Con: Vector enum already has 4 variants, adding a field means changing from bare enum to struct-with-enum
 
 **Option C (recommended):** Wrap `Vector` in a struct like `RList`
+
 ```rust
 pub struct RVector {
     pub inner: Vector,
     pub attrs: Option<Box<Attributes>>,
 }
 ```
+
 Then `RValue::Vector(RVector)` instead of `RValue::Vector(Vector)`. This parallels `RList` exactly, gives attribute storage without touching the 4 atomic types, and provides a natural place for `get_attr`/`set_attr`/`class()` methods.
 
 ### Implementation Steps
@@ -134,6 +138,7 @@ Current state: `UseMethod` is a noop in stubs.rs, but `extract_use_method` in in
 ### Priority Generics
 
 These generics need `.default` methods:
+
 - `print` — current print logic becomes `print.default`
 - `format` — format any R value as character
 - `str` — compact display of structure
@@ -227,6 +232,7 @@ Add `RValue::Language(Expr)` — represents an unevaluated R expression (AST nod
 ### 9c. Call Stack
 
 Many metaprogramming functions need a call stack:
+
 - `sys.call(n)`, `sys.function(n)`, `sys.frame(n)`
 - `parent.frame(n)` — caller's environment
 - `on.exit(expr)` — register cleanup
@@ -282,7 +288,7 @@ These should be done opportunistically as we touch the relevant code, not as a s
 
 Strict priority order. Each item builds on the previous.
 
-```
+```text
  1. Fix apply-family bugs (eval_apply env, match_fun, %in%)
  2. Quick-win builtins (isTRUE, nzchar, stopifnot, etc.)
  3. Attribute storage on vectors (RVector wrapper)
@@ -298,12 +304,14 @@ Strict priority order. Each item builds on the previous.
 ```
 
 After each numbered item, run:
+
 ```sh
 cargo test
 ./scripts/parse-test.sh cran/     # must stay 100%
 ```
 
 Build an eval-test harness after item 2:
+
 ```sh
 ./scripts/eval-test.sh cran/      # track % of files that eval without error
 ```

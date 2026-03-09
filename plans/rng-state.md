@@ -34,11 +34,13 @@ impl Interpreter {
 ```
 
 **Why `StdRng`:**
+
 - Deterministic (implements `SeedableRng`) — needed for `set.seed()` reproducibility
 - Cryptographically strong default, but we only care about determinism-when-seeded
 - `ChaCha12Rng` (what `StdRng` currently aliases) is fast enough
 
 **Why on Interpreter, not thread-local:**
+
 - Follows the project's "new state goes on Interpreter struct" rule
 - Multiple interpreters in the same thread get independent RNG streams
 - `RefCell` for interior mutability through `&self` (same pattern as dispatch stack)
@@ -111,6 +113,7 @@ This needs careful implementation but no special RNG state beyond what we alread
 ## Dependencies
 
 Already vendored (transitive through other crates):
+
 - `rand` — check if already in vendor/, otherwise add `rand = "0.9"`
 - `rand_distr` — `rand_distr = "0.5"` for distribution types
 

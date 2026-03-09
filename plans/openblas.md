@@ -1,7 +1,7 @@
 # oxiblas integration plan
 
 > `oxiblas` 0.2 — Pure Rust BLAS/LAPACK implementation.
-> https://lib.rs/crates/oxiblas
+> <https://lib.rs/crates/oxiblas>
 
 ## What it does
 
@@ -9,6 +9,7 @@ Complete BLAS and LAPACK in pure Rust — no C compiler, no system OpenBLAS/MKL
 required. SIMD-optimized for x86_64 (AVX) and AArch64 (NEON).
 
 Capabilities:
+
 - **BLAS Level 1** — dot, nrm2, asum, axpy, scal, swap, copy
 - **BLAS Level 2** — gemv, ger, trsv, symv (matrix-vector operations)
 - **BLAS Level 3** — gemm, trsm, syrk (matrix-matrix operations)
@@ -94,6 +95,7 @@ models.
 ### Integration with nalgebra
 
 Two approaches:
+
 1. **Use oxiblas directly** for BLAS/LAPACK calls, with our own matrix wrapper
 2. **Use nalgebra + oxiblas as backend** if nalgebra adds oxiblas support
 

@@ -1,7 +1,7 @@
 # ctrlc integration plan
 
 > `ctrlc` 3.5 — Cross-platform Ctrl-C (SIGINT) handler.
-> https://github.com/Detber/rust-ctrlc
+> <https://github.com/Detber/rust-ctrlc>
 
 ## What it does
 

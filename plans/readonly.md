@@ -1,7 +1,7 @@
 # readonly integration plan
 
 > `readonly` 0.2.13 — Struct fields readable outside module, writable only inside.
-> https://github.com/dtolnay/readonly
+> <https://github.com/dtolnay/readonly>
 
 ## What it does
 

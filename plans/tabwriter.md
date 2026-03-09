@@ -1,7 +1,7 @@
 # tabwriter integration plan
 
 > `tabwriter` 1.4 — Elastic tabstops text formatting by BurntSushi.
-> https://github.com/BurntSushi/tabwriter
+> <https://github.com/BurntSushi/tabwriter>
 
 ## What it does
 

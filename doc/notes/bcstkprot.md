@@ -41,7 +41,6 @@ assignment could mutate values on the stack from earlier computations.
 A variant of this issue was reported to the R-devel list by Lukas
 Stadler in August 2017.
 
-
 ## Fixes in R 3.5.0 and R 3.6.0
 
 These issues were partially addressed in R 3.5.0 and more completely
@@ -60,7 +59,6 @@ INCREMENT_LINKS(val1);
 val2 = eval(arg2, rho);
 DECREMENT_LINKS(val1);
 ```
-
 
 ## Changes in R 4.0.0
 
@@ -114,7 +112,7 @@ assignments has several components:
   `bcEval` call and restored at the end. This means that top level
   complex assignments in byte compiled code need no further
   protection.
-	
+
 - The protection pointer does need to be raised around non-top-level
   complex assignments. This is done by `INCLNKSTK` and `DECLNKSTK`
   instructions emitted by the compiler for non-top-level complex

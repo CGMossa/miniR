@@ -1,7 +1,7 @@
 # gc-arena integration plan
 
 > `gc-arena` 0.5 — Safe, incremental garbage collection.
-> https://github.com/kyren/gc-arena
+> <https://github.com/kyren/gc-arena>
 
 ## What it does
 
@@ -10,6 +10,7 @@ causing leaks. Safe Rust API — no unsafe required by users. Incremental collec
 (doesn't pause the whole program).
 
 Key types:
+
 - `Arena<R>` — the GC arena, parameterized by a root type
 - `Gc<'gc, T>` — a GC'd pointer (like `Rc` but collected)
 - `GcCell<'gc, T>` — mutable GC'd cell (like `RefCell` but collected)
@@ -33,6 +34,7 @@ lists, and environments. This causes **reference cycles** (e.g. an environment
 that contains a closure that captures that environment) → memory leaks.
 
 With gc-arena:
+
 - `Gc<'gc, Vector>` instead of `Rc<Vec<...>>`
 - `GcCell<'gc, EnvInner>` instead of `Rc<RefCell<EnvInner>>`
 - Cycles are collected automatically

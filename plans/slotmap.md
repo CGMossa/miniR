@@ -1,7 +1,7 @@
 # slotmap integration plan
 
 > `slotmap` 1.1 — Slot-based arena allocator with stable keys.
-> https://github.com/orlp/slotmap
+> <https://github.com/orlp/slotmap>
 
 ## What it does
 
@@ -33,6 +33,7 @@ around lightweight keys.
 
 Instead of `Rc<RefCell<Vec<...>>>` for shared vectors, store all vectors in a
 `SlotMap<VectorKey, Vector>` and reference them by key. This enables:
+
 - Copy-on-write by checking if key has refcount > 1
 - Simpler serialization (keys are just integers)
 - Better cache locality (values stored contiguously)
@@ -46,6 +47,7 @@ This avoids reference cycles entirely (no need for `gc-arena`).
 ### Alternative to gc-arena
 
 SlotMap provides a simpler alternative to full GC:
+
 - No `'gc` lifetime infecting all types
 - Manual management via keys (simpler to reason about)
 - But: no automatic cycle collection — must manually track and free

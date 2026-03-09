@@ -26,6 +26,7 @@ In `eval_apply` (used by sapply/lapply/vapply), the env is hardcoded to `interp.
 ## `InterpreterBuiltinFn` and `BuiltinFn` are nearly identical
 
 After the refactor:
+
 - `BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>`
 - `InterpreterBuiltinFn = fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>`
 

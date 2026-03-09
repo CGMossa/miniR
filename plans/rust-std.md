@@ -66,17 +66,22 @@ These are capabilities from Rust's std that R lacks entirely. These represent
 opportunities for newr to go beyond standard R.
 
 #### 1. `collections::BTreeMap` — Sorted map
+
 R has no ordered/sorted associative container. Could add:
+
 ```r
 sorted_map()          # create sorted map
 sorted_map_insert(m, key, value)
 sorted_map_keys(m)    # returns keys in sorted order
 # or just: sm <- sorted_list(); sm[["key"]] <- value with sorted iteration
 ```
+
 **Priority: Low** — niche use case
 
 #### 2. `collections::VecDeque` — Double-ended queue
+
 R has no deque. Appending/prepending to vectors is O(n). Could add:
+
 ```r
 deque()               # create deque
 deque_push_front(d, x)
@@ -84,20 +89,26 @@ deque_push_back(d, x)
 deque_pop_front(d)
 deque_pop_back(d)
 ```
+
 **Priority: Medium** — useful for BFS, sliding windows, job queues
 
 #### 3. `collections::BinaryHeap` — Priority queue
+
 No priority queue in base R. Could add:
+
 ```r
 heap()                # create min/max heap
 heap_push(h, x)
 heap_pop(h)           # returns min/max
 heap_peek(h)
 ```
+
 **Priority: Medium** — useful for algorithms, scheduling
 
 #### 4. `thread` / `sync` — Real parallelism
+
 R's `parallel` package uses forking (Unix) or socket clusters. newr could offer:
+
 ```r
 thread(expr)          # spawn OS thread
 channel()             # create message-passing channel
@@ -106,11 +117,14 @@ recv(ch)
 mutex(value)          # create mutex-protected value
 atomic(value)         # atomic counter
 ```
+
 **Priority: High** — R's biggest pain point. True shared-memory parallelism
 would be transformative. Rust makes this safe.
 
 #### 5. `net` — Built-in async networking
+
 R's networking is blocking and limited. Could add:
+
 ```r
 tcp_connect(host, port)
 tcp_listen(port)
@@ -118,18 +132,24 @@ tcp_read(conn)
 tcp_write(conn, data)
 udp_socket(port)
 ```
+
 **Priority: Low** — packages handle this, but built-in would be cleaner
 
 #### 6. `hash` — Built-in hashing
+
 R has no native hash function. Could add:
+
 ```r
 hash(x)               # returns integer hash of any R value
 hash_bytes(raw_vec)    # hash raw bytes
 ```
+
 **Priority: Medium** — useful for deduplication, caching, consistent hashing
 
 #### 7. `fs` — Richer file system operations
+
 R's file ops lack some things Rust has:
+
 ```r
 file.metadata(path)       # returns full metadata (permissions, timestamps, size, type)
 file.read_bytes(path)     # read file as raw vector (not text)
@@ -139,18 +159,24 @@ file.canonicalize(path)   # true canonical path (resolving all symlinks)
 file.symlink(target, link)
 file.hardlink(target, link)
 ```
+
 **Priority: Low** — R handles most cases, but `dir.walk` would be nice
 
 #### 8. `time::Instant` — Monotonic high-resolution timer
+
 R's `proc.time()` works but is clunky. Could add:
+
 ```r
 timer_start()          # returns opaque instant
 timer_elapsed(t)       # returns seconds since instant (monotonic, not wall-clock)
 ```
+
 **Priority: Low** — `system.time()` mostly covers this
 
 #### 9. `simd` — Vectorized low-level operations
+
 R vectors are already implicitly vectorized, but actual SIMD could speed up:
+
 ```r
 # No new API needed — just use SIMD internally for:
 # - vector arithmetic (+, -, *, /)
@@ -158,10 +184,13 @@ R vectors are already implicitly vectorized, but actual SIMD could speed up:
 # - sum(), prod(), cumsum()
 # This is an implementation detail, not a user-facing feature
 ```
+
 **Priority: High (internal)** — huge performance win, no API change needed
 
 #### 10. `Result`-style error handling
+
 R's tryCatch is verbose. Could add a Rust-inspired pattern:
+
 ```r
 result <- try_result(expr)  # returns list(ok=value) or list(err=condition)
 unwrap(result)              # returns value or stops
@@ -171,10 +200,13 @@ is_err(result)
 # or pipe-friendly:
 expr |> try_result() |> unwrap_or(NA)
 ```
+
 **Priority: Medium** — ergonomic improvement over tryCatch
 
 #### 11. `iter` — Lazy iterators
+
 R evaluates everything eagerly. Rust's iterator model could inspire:
+
 ```r
 iter(1:1000000)          # lazy iterator (doesn't allocate)
 iter_map(it, fn)         # lazy map
@@ -185,11 +217,14 @@ iter_chain(it1, it2)     # concatenate iterators
 iter_zip(it1, it2)       # zip two iterators
 iter_enumerate(it)       # (index, value) pairs
 ```
+
 **Priority: High** — memory-efficient processing of large data without
 materializing intermediate vectors. R's biggest memory problem.
 
 #### 12. Pattern matching
+
 Rust's `match` is more powerful than R's `switch`:
+
 ```r
 match_expr(x,
   is.numeric ~ sqrt(x),
@@ -198,6 +233,7 @@ match_expr(x,
   _ ~ stop("unknown type")
 )
 ```
+
 **Priority: Medium** — switch() is limited, real pattern matching would help
 
 ## Summary: Top opportunities for newr beyond R

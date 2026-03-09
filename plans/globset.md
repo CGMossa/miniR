@@ -1,7 +1,7 @@
 # globset integration plan
 
 > `globset` 0.4 — Glob pattern matching by BurntSushi.
-> https://github.com/BurntSushi/globset
+> <https://github.com/BurntSushi/globset>
 
 ## What it does
 
