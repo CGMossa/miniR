@@ -43,6 +43,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Function lookup in call position skips non-function bindings (R's findFun behavior)
 - Formula (`~`) and complex numbers are parsed but stubbed in the interpreter
 - Dependencies are vendored (`cargo vendor`) for LLM help and clarity
+- Make as many dependencies optional as possible, and let the default feature include all additive features
 
 ## Testing
 
