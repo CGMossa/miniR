@@ -21,7 +21,7 @@ sm.remove(k2);
 Variants: `SlotMap`, `HopSlotMap` (stable iteration order), `DenseSlotMap`
 (fast iteration, slower insert/remove).
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Interned strings
 

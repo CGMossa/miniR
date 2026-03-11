@@ -16,7 +16,7 @@ Extends Rust's `Iterator` trait with ~80 additional methods:
 - `iproduct!()`, `izip!()` — macros for combining iterators
 - `Itertools::counts()` — frequency counting
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `paste()` / `paste0()` — `join()`
 

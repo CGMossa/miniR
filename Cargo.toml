@@ -1,5 +1,5 @@
 [workspace]
-members = ["newr-macros"]
+members = ["minir-macros"]
 resolver = "2"
 
 [workspace.package]
@@ -58,7 +58,7 @@ ndarray = "0.17"
 csv = "1.4"
 regex = "1"
 tabled = "0.20"
-newr-macros = { path = "newr-macros" }
+minir-macros = { path = "minir-macros" }
 pest = "2.8"
 pest_derive = "2.8"
 rand = { version = "0.9", optional = true }

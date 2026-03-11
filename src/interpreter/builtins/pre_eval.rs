@@ -6,7 +6,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
 use crate::parser::ast::{Arg, Expr};
-use newr_macros::pre_eval_builtin;
+use minir_macros::pre_eval_builtin;
 
 #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
 fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {

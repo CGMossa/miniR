@@ -1,6 +1,6 @@
 # Implementation Plan
 
-A concrete, ordered plan for making newr run real R code. Derived from the roadmap, interpreter discoveries, and a full audit of the current codebase.
+A concrete, ordered plan for making miniR run real R code. Derived from the roadmap, interpreter discoveries, and a full audit of the current codebase.
 
 ## Current State (2026-03-08)
 

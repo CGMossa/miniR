@@ -7,7 +7,7 @@
 
 Case-insensitive string comparison and hashing that properly handles Unicode case folding (not just ASCII tolower). `UniCase::new("Straße") == UniCase::new("STRASSE")`.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R functions with `ignore.case`
 

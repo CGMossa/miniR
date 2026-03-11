@@ -2,7 +2,7 @@ use ndarray::{Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 // === Math functions ===
 

@@ -11,7 +11,7 @@ dependencies.
 Key types: `Date`, `Time`, `PrimitiveDateTime`, `OffsetDateTime`, `Duration`,
 `UtcOffset`. Formatting via `format_description!()` macro or runtime format strings.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### Note: Consider jiff instead
 

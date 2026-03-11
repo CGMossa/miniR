@@ -11,7 +11,7 @@ Returns platform-specific paths for home, config, cache, data, etc. 18 functions
 
 No dependencies, no allocations beyond PathBuf.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `path.expand()` — tilde expansion
 
@@ -31,7 +31,7 @@ fn path_expand(path: &str) -> String {
 ### 2. `Sys.getenv("HOME")` / `R.home()`
 
 - `Sys.getenv("HOME")` → `dirs::home_dir()`
-- `R.home()` → could use `dirs::data_dir()` / "newr" for package library location
+- `R.home()` → could use `dirs::data_dir()` / "miniR" for package library location
 
 ### 3. `.libPaths()` — package library search paths
 

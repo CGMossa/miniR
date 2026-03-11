@@ -16,7 +16,7 @@ Key types:
 - Arrow IPC — binary serialization format
 - CSV/JSON/Parquet readers built on Arrow arrays
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Data frame backend
 

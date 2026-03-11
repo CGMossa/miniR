@@ -1,4 +1,4 @@
-# newr
+# miniR
 
 An R interpreter written in Rust.
 
@@ -6,7 +6,7 @@ An R interpreter written in Rust.
 
 1. **Run top CRAN packages** — the interpreter should handle real-world R code from popular CRAN packages, not just toy examples
 2. **Well-written code** — clean, idiomatic Rust; no hacks, no over-engineering
-3. **Reentrant interpreter** — multiple R interpreters must coexist in the same process. No process-global statics. Thread-local storage (TLS) is the baseline for per-interpreter state. This enables embedding newr as a library, running parallel R sessions, and testing interpreters in isolation.
+3. **Reentrant interpreter** — multiple R interpreters must coexist in the same process. No process-global statics. Thread-local storage (TLS) is the baseline for per-interpreter state. This enables embedding miniR as a library, running parallel R sessions, and testing interpreters in isolation.
 
 ## Design Philosophy
 

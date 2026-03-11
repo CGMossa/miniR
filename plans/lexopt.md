@@ -21,17 +21,17 @@ while let Some(arg) = parser.next()? {
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. CLI argument parsing — already the right fit
 
-newr's CLI needs:
+miniR's CLI needs:
 
-- `newr script.R` — run a file
-- `newr -e "expr"` — evaluate expression
-- `newr --vanilla` / `--no-init` — skip startup files
-- `newr --args ...` — pass args to R script (→ `commandArgs()`)
-- `newr --interactive` / `-i` — force interactive mode
+- `miniR script.R` — run a file
+- `miniR -e "expr"` — evaluate expression
+- `miniR --vanilla` / `--no-init` — skip startup files
+- `miniR --args ...` — pass args to R script (→ `commandArgs()`)
+- `miniR --interactive` / `-i` — force interactive mode
 
 lexopt is perfect for this: lightweight, no proc-macros, handles `--args` passthrough
 cleanly with `parser.raw_args()`.

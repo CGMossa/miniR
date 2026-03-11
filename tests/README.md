@@ -1,6 +1,6 @@
 # tests
 
-R test scripts for newr.
+R test scripts for miniR.
 
 - `grammar_*.R` — parser/grammar test suites (must always pass)
 - `*.R` — test files from the GNU R test suite, used for compatibility testing

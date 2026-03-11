@@ -23,7 +23,7 @@ tw.flush()?;
 // Bob    25   San Francisco
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `print.data.frame()` — formatted table output
 

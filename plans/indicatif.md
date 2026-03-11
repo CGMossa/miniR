@@ -18,7 +18,7 @@ pb.finish_with_message("done");
 
 Styles: `[####----] 50% (ETA: 2s)`, spinners, multi-bar for parallel tasks.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `apply()` family on large data
 

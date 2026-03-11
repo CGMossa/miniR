@@ -7,7 +7,7 @@
 
 `SmallVec<[T; N]>` stores up to N elements inline (on the stack). If the vector grows beyond N, it spills to the heap like a normal `Vec`. This avoids heap allocation for common small cases.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R is full of small vectors
 

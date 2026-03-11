@@ -1,17 +1,17 @@
 # testing dependencies integration plan
 
-> Dev/bench dependencies for newr's test suite.
+> Dev/bench dependencies for miniR's test suite.
 
 ## assert_cmd 2.1
 
-CLI integration testing. Run `newr` as a subprocess and assert on stdout/stderr/exit code.
+CLI integration testing. Run `miniR` as a subprocess and assert on stdout/stderr/exit code.
 
 ```rust
 use assert_cmd::Command;
 
 #[test]
 fn test_script_execution() {
-    Command::cargo_bin("newr").unwrap()
+    Command::cargo_bin("miniR").unwrap()
         .arg("tests/basic.R")
         .assert()
         .success()
@@ -19,7 +19,7 @@ fn test_script_execution() {
 }
 ```
 
-**Use for:** End-to-end tests of `newr script.R` and `newr -e "expr"` modes.
+**Use for:** End-to-end tests of `miniR script.R` and `miniR -e "expr"` modes.
 
 ## pretty_assertions 1.4
 

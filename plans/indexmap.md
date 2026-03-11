@@ -11,7 +11,7 @@ plus index-based access (`get_index(i)`, `swap_remove`, `shift_remove`).
 
 O(1) lookup by key, O(1) lookup by index. Iteration in insertion order.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Named lists — the #1 use case
 

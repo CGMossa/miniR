@@ -4,7 +4,7 @@
 
 use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 use std::fs;
 use std::path::Path;
 
@@ -247,7 +247,7 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::Argument("'path' must be a character string".to_string()))?;
 
-    // newr diverges from R: recursive by default
+    // miniR diverges from R: recursive by default
     match fs::create_dir_all(&path) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
         Err(e) => Err(RError::Other(format!(
@@ -679,7 +679,7 @@ fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result
                 (
                     Some("engine".to_string()),
                     RValue::vec(Vector::Character(
-                        vec![Some("newr (Rust)".to_string())].into(),
+                        vec![Some("miniR (Rust)".to_string())].into(),
                     )),
                 ),
             ])),

@@ -45,7 +45,7 @@ Options:
 
 ### Recommendation: Roll our own initially, migrate to arrow-rs later
 
-For newr's immediate needs, we only need:
+For miniR's immediate needs, we only need:
 - Validity bitmap (compact NA tracking)
 - Contiguous value buffer
 - Basic operations (index, iterate, filter, map)

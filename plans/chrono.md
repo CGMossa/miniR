@@ -7,7 +7,7 @@
 
 Full-featured date/time library: `NaiveDate`, `NaiveTime`, `NaiveDateTime`, `DateTime<Tz>`, `Duration`, `Utc`, `Local`. Parsing via `strftime`-compatible format strings. Timezone support via `chrono-tz` (optional).
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R's date/time system
 

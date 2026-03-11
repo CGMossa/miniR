@@ -18,11 +18,11 @@ struct Config {
 
 The `+derive` feature enables the proc-macro derives.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Configuration files
 
-Deserialize newr configuration from JSON/TOML:
+Deserialize miniR configuration from JSON/TOML:
 
 ```rust
 #[derive(Deserialize)]

@@ -1,7 +1,7 @@
 # Rust std → R Mapping & Opportunities
 
 Mapping every Rust std module to its R equivalent (if any), then identifying
-things Rust std offers that R does NOT have natively — potential extensions for newr.
+things Rust std offers that R does NOT have natively — potential extensions for miniR.
 
 ## Module-by-module mapping
 
@@ -60,10 +60,10 @@ things Rust std offers that R does NOT have natively — potential extensions fo
 | `prelude` | base package auto-attached | R's base is always available |
 | `os` | `.Platform`, `Sys.info()`, `R.version` | Platform info |
 
-### NOT in R — potential newr extensions
+### NOT in R — potential miniR extensions
 
 These are capabilities from Rust's std that R lacks entirely. These represent
-opportunities for newr to go beyond standard R.
+opportunities for miniR to go beyond standard R.
 
 #### 1. `collections::BTreeMap` — Sorted map
 
@@ -107,7 +107,7 @@ heap_peek(h)
 
 #### 4. `thread` / `sync` — Real parallelism
 
-R's `parallel` package uses forking (Unix) or socket clusters. newr could offer:
+R's `parallel` package uses forking (Unix) or socket clusters. miniR could offer:
 
 ```r
 thread(expr)          # spawn OS thread
@@ -236,7 +236,7 @@ match_expr(x,
 
 **Priority: Medium** — switch() is limited, real pattern matching would help
 
-## Summary: Top opportunities for newr beyond R
+## Summary: Top opportunities for miniR beyond R
 
 Ranked by impact:
 

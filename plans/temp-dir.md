@@ -22,7 +22,7 @@ let child = dir.child("myfile.txt");      // PathBuf inside the dir
 dir.dont_delete_on_drop();  // keep it around
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### Current `tempdir()` and `tempfile()` implementations
 

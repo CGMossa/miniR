@@ -9,7 +9,7 @@ Rust bindings to OpenSSL. With `+vendored` feature, statically links a bundled
 OpenSSL, avoiding system dependency issues. Provides TLS, hashing, encryption,
 X.509 certificates.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. HTTPS connections
 

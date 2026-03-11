@@ -1,6 +1,6 @@
 # Divergences from R
 
-This document tracks where newr intentionally diverges from GNU R behavior.
+This document tracks where miniR intentionally diverges from GNU R behavior.
 
 ## Planned
 

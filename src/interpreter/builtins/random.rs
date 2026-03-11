@@ -8,7 +8,7 @@ use rand_distr::Distribution;
 use crate::interpreter::coerce::{f64_to_i64, f64_to_u64, i64_to_f64};
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 /// Helper: extract a positive integer `n` from the first argument.
 fn extract_n(args: &[RValue]) -> Result<usize, RError> {

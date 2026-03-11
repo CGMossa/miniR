@@ -27,7 +27,7 @@ struct ParseError {
 
 Features: `fancy` (colored output), `fancy-no-backtrace` (no backtrace in fancy mode).
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Parser error reporting
 

@@ -1,12 +1,12 @@
 # Feature-Gate the IO Module
 
-Make the `io` builtin module optional via a Cargo feature flag, enabled by default. This allows embedding newr in sandboxed environments where filesystem access is prohibited.
+Make the `io` builtin module optional via a Cargo feature flag, enabled by default. This allows embedding miniR in sandboxed environments where filesystem access is prohibited.
 
 ## Motivation
 
 For security-sensitive embeddings (WASM, sandboxed plugins, educational tools), the interpreter should be usable without any filesystem access. Feature-gating IO means:
 
-- `newr` with `default-features = false` gives a pure computation engine
+- `miniR` with `default-features = false` gives a pure computation engine
 - No `read.table`, `write.table`, `readLines`, `writeLines`, `scan`, `file.info`, `file.exists`, `file.remove`, `file.copy`, `dir.create`, `Sys.glob`, `tempfile`, `tempdir`, `system`, `system2`
 - Math, string manipulation, data structures, apply-family, conditions all still work
 

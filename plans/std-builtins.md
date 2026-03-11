@@ -412,7 +412,7 @@ use `rand` crate or implement a simple RNG (xoshiro256, PCG) inline.
 
 ---
 
-## Phase 10 — `std::hash` → Hashing builtins (newr extension)
+## Phase 10 — `std::hash` → Hashing builtins (miniR extension)
 
 > `rustup doc std::hash` — Generic hashing support.
 
@@ -570,4 +570,4 @@ Per CLAUDE.md: "We will diverge from R behavior when R behavior is absurd."
 | `.Internal()` / `.Primitive()` / `.Call()` | GNU R internals, not applicable |
 | `tracemem()` / `retracemem()` | GNU R memory debugging |
 | `reg.finalizer()` | GC finalizers — Rust handles memory differently |
-| `Encoding()` / `enc2utf8()` | newr is UTF-8 only |
+| `Encoding()` / `enc2utf8()` | miniR is UTF-8 only |

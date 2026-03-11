@@ -7,7 +7,7 @@
 
 Provides `#[derive(Error)]` to automatically implement `Display` and `Error` for error enums. Removes boilerplate from error type definitions.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### Current RError
 

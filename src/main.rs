@@ -84,7 +84,7 @@ fn run_file(filename: &str) {
 fn run_repl() {
     println!(
         r#"
-newr version 0.1.0 -- "Fresh Start"
+miniR version 0.1.0 -- "Fresh Start"
 An R interpreter written in Rust.
 Type 'q()' to quit.
 "#

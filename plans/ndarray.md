@@ -15,7 +15,7 @@ let b = a.dot(&a);  // matrix multiply
 let c = &a + 1.0;   // broadcasting
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. R's array/matrix type
 

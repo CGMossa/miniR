@@ -15,7 +15,7 @@ Color::Yellow.bold().paint("warning");
 Style::new().italic().paint("note");
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### Colored error messages
 

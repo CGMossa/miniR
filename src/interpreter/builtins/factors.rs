@@ -4,7 +4,7 @@
 //! class "factor" (or c("ordered", "factor") if ordered).
 
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 /// Coerce an RValue to a character vector for level matching.
 pub(super) fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RError> {

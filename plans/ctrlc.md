@@ -17,7 +17,7 @@ ctrlc::set_handler(|| {
 
 Also provides `ctrlc::try_set_handler()` for fallible registration.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Graceful REPL interrupt
 

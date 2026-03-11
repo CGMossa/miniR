@@ -25,7 +25,7 @@ struct MyValue<'gc> {
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Replace Rc<RefCell<>> for RValue
 

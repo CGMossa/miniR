@@ -1,6 +1,6 @@
 # plans
 
-Design and implementation plans for newr.
+Design and implementation plans for miniR.
 
 - `dependencies.md` — crate versions and dependency decisions
 - `error-messages.md` — plan for improving all error messages across the project

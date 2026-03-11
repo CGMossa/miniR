@@ -23,7 +23,7 @@ for result in rdr.records() {
 Also: `Writer`, `ByteRecord` (zero-copy), `StringRecord`, serde integration
 for typed deserialization.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `read.csv()` / `read.table()`
 

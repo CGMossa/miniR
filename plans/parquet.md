@@ -38,7 +38,7 @@ parquet = { version = "58.0", default-features = false, features = [
 ] }
 ```
 
-### Recommended configuration for newr
+### Recommended configuration for miniR
 
 ```toml
 parquet = { version = "58.0", default-features = false, features = [
@@ -53,7 +53,7 @@ parquet = { version = "58.0", default-features = false, features = [
 
 **Why `arrow` feature?** Parquet without Arrow gives raw column chunks. With Arrow, you get `RecordBatch` → trivial conversion to R data frames. This is how R's `arrow::read_parquet()` works internally.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `read.parquet()` / `write.parquet()`
 
@@ -179,4 +179,4 @@ The `parquet` crate with `arrow` feature pulls in ~30-40 transitive crates (arro
 
 ## Priority
 
-Medium — Parquet support is a "wow factor" feature that immediately makes newr useful for real data science workflows. But it depends on having at least basic data frame support first (a list with class "data.frame" and column vectors). Implement after `data.frame()` constructor works.
+Medium — Parquet support is a "wow factor" feature that immediately makes miniR useful for real data science workflows. But it depends on having at least basic data frame support first (a list with class "data.frame" and column vectors). Implement after `data.frame()` constructor works.
