@@ -139,3 +139,20 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] rename newr to minir
 - [ ] plan an r package builder
 - [ ] add typst conversion of R documentation and produce the manual
+- [ ] Arrow backend for vector types — replace `Vec<Option<T>>` with validity bitmap + contiguous buffer (see plans/arrow-backend.md)
+- [ ] Per-module error types — replace centralized `RError` with module-specific errors using derive_more (see plans/module-error-types.md)
+- [ ] Feature-gate the IO module for sandboxed/WASM environments (see plans/io-feature-gate.md)
+
+## Developer Experience
+
+- [ ] Add tokei for file size tracking and refactoring detection (see plans/tokei-file-tracking.md)
+- [ ] Vendor patch system for modifying vendored dependencies (see plans/vendor-patches.md)
+
+## REPL
+
+- [ ] Implement reedline features: persistent history, validator, highlighting, hints, completions (see plans/reedline-features.md)
+
+## Quick Wins
+
+- [ ] 🔧 Nice error message for `..0` — R uses 1-based indexing for `...` args (see plans/dotdot-zero-error.md)
+- [ ] 🔧 Optimize `sort(unique())` with BTreeSet / add `sort_unique()` builtin (see plans/sort-unique-optimization.md)
