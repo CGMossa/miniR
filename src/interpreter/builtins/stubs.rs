@@ -3,8 +3,7 @@
 
 use newr_macros::noop_builtin;
 
-// Core language
-noop_builtin!("on.exit");
+// Core language (on.exit — pre_eval.rs)
 noop_builtin!("UseMethod", 1);
 
 // Data structures

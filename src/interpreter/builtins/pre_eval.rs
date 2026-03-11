@@ -91,8 +91,12 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                 let cond_classes = get_class(&condition);
                 for (handler_class, handler) in &handlers {
                     if cond_classes.iter().any(|c| c == handler_class) {
-                        return interp
-                            .call_function(handler, std::slice::from_ref(&condition), &[], env);
+                        return interp.call_function(
+                            handler,
+                            std::slice::from_ref(&condition),
+                            &[],
+                            env,
+                        );
                     }
                 }
                 // No matching handler — re-raise
@@ -233,6 +237,50 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
         interp.condition_handlers.borrow_mut().pop();
         result
     })
+}
+
+#[pre_eval_builtin(name = "on.exit")]
+fn pre_eval_on_exit(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    let expr = args.first().and_then(|a| a.value.as_ref()).cloned();
+
+    // Check add= argument (default FALSE — replace existing on.exit)
+    let add = with_interpreter(|interp| {
+        // Check named add= first
+        for arg in args.iter().skip(1) {
+            if arg.name.as_deref() == Some("add") {
+                if let Some(ref val_expr) = arg.value {
+                    let val = interp.eval_in(val_expr, env)?;
+                    return Ok(val
+                        .as_vector()
+                        .and_then(|v| v.as_logical_scalar())
+                        .unwrap_or(false));
+                }
+            }
+        }
+        // Check second positional arg
+        if let Some(arg) = args.get(1) {
+            if arg.name.is_none() {
+                if let Some(ref val_expr) = arg.value {
+                    let val = interp.eval_in(val_expr, env)?;
+                    return Ok(val
+                        .as_vector()
+                        .and_then(|v| v.as_logical_scalar())
+                        .unwrap_or(false));
+                }
+            }
+        }
+        Ok(false)
+    })?;
+
+    match expr {
+        Some(e) => env.push_on_exit(e, add),
+        None => {
+            // on.exit() with no args clears on.exit handlers
+            env.take_on_exit();
+        }
+    }
+
+    Ok(RValue::Null)
 }
 
 #[pre_eval_builtin(name = "quote", min_args = 1)]
