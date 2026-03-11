@@ -100,7 +100,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - When dependencies change (new crates added, `just vendor` run), audit the vendor/ directory for R-relevant crates
 - Write a `plans/` file for each vendored crate that could be integrated into the R interpreter
 - Update `analysis/vendor-crate-audit.md` with the full categorization (integrated, high/medium/low priority, infrastructure)
-- After adding a new dependency, run `cargo tree -i <dep>` to discover transitive dependencies that might be useful for the interpreter, and write plans for any relevant ones
+- After adding a new dependency, run `cargo tree -p <dep>` to discover its transitive dependencies that might be useful for the interpreter, and write plans for any relevant ones
 - Use `just vendor` to re-vendor — never run `cargo vendor` directly (the justfile preserves README.md and writes .cargo/config.toml)
 - The vendor directory uses an absolute path in `.cargo/config.toml` — this is required because subagents and worktrees run from different working directories
 
