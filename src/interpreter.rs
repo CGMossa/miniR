@@ -161,7 +161,9 @@ impl Interpreter {
             Expr::Integer(i) => Ok(RValue::vec(Vector::Integer(vec![Some(*i)].into()))),
             Expr::Double(f) => Ok(RValue::vec(Vector::Double(vec![Some(*f)].into()))),
             Expr::String(s) => Ok(RValue::vec(Vector::Character(vec![Some(s.clone())].into()))),
-            Expr::Complex(f) => Ok(RValue::vec(Vector::Double(vec![Some(*f)].into()))), // stub: treat as double
+            Expr::Complex(f) => Ok(RValue::vec(Vector::Complex(
+                vec![Some(num_complex::Complex64::new(0.0, *f))].into(),
+            ))),
             Expr::Symbol(name) => env.get(name).ok_or_else(|| RError::Name(name.clone())),
             Expr::Dots => {
                 // Return the ... list from the current environment
@@ -499,6 +501,39 @@ impl Interpreter {
             return Ok(RValue::vec(Vector::Integer(result.into())));
         }
 
+        // If either operand is complex, operate in complex space
+        let use_complex = matches!(lv, Vector::Complex(_)) || matches!(rv, Vector::Complex(_));
+
+        if use_complex {
+            let lc = lv.to_complex();
+            let rc = rv.to_complex();
+            let len = lc.len().max(rc.len());
+            if len == 0 {
+                return Ok(RValue::vec(Vector::Complex(vec![].into())));
+            }
+            if matches!(op, BinaryOp::Mod | BinaryOp::IntDiv) {
+                return Err(RError::Type("unimplemented complex operation".to_string()));
+            }
+            let result: Vec<Option<num_complex::Complex64>> = (0..len)
+                .map(|i| {
+                    let a = lc[i % lc.len()];
+                    let b = rc[i % rc.len()];
+                    match (a, b) {
+                        (Some(a), Some(b)) => Some(match op {
+                            BinaryOp::Add => a + b,
+                            BinaryOp::Sub => a - b,
+                            BinaryOp::Mul => a * b,
+                            BinaryOp::Div => a / b,
+                            BinaryOp::Pow => a.powc(b),
+                            _ => unreachable!(),
+                        }),
+                        _ => None,
+                    }
+                })
+                .collect();
+            return Ok(RValue::vec(Vector::Complex(result.into())));
+        }
+
         let ld = lv.to_doubles();
         let rd = rv.to_doubles();
         let len = ld.len().max(rd.len());
@@ -529,6 +564,33 @@ impl Interpreter {
     }
 
     fn eval_compare(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
+        // Complex comparison: only == and != are defined
+        if matches!(lv, Vector::Complex(_)) || matches!(rv, Vector::Complex(_)) {
+            if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+                return Err(RError::Type(
+                    "invalid comparison with complex values".to_string(),
+                ));
+            }
+            let lc = lv.to_complex();
+            let rc = rv.to_complex();
+            let len = lc.len().max(rc.len());
+            let result: Vec<Option<bool>> = (0..len)
+                .map(|i| {
+                    let a = lc[i % lc.len()];
+                    let b = rc[i % rc.len()];
+                    match (a, b) {
+                        (Some(a), Some(b)) => Some(match op {
+                            BinaryOp::Eq => a == b,
+                            BinaryOp::Ne => a != b,
+                            _ => unreachable!(),
+                        }),
+                        _ => None,
+                    }
+                })
+                .collect();
+            return Ok(RValue::vec(Vector::Logical(result.into())));
+        }
+
         // If either is character, compare as strings
         if matches!(lv, Vector::Character(_)) || matches!(rv, Vector::Character(_)) {
             let lc = lv.to_characters();
@@ -1337,6 +1399,7 @@ impl Interpreter {
             Vector::Double(vals) => index_vec!(vals, Double),
             Vector::Integer(vals) => index_vec!(vals, Integer),
             Vector::Logical(vals) => index_vec!(vals, Logical),
+            Vector::Complex(vals) => index_vec!(vals, Complex),
             Vector::Character(vals) => index_vec!(vals, Character),
         }
     }
@@ -1362,6 +1425,7 @@ impl Interpreter {
             Vector::Double(vals) => filter_vec!(vals, Double),
             Vector::Integer(vals) => filter_vec!(vals, Integer),
             Vector::Logical(vals) => filter_vec!(vals, Logical),
+            Vector::Complex(vals) => filter_vec!(vals, Complex),
             Vector::Character(vals) => filter_vec!(vals, Character),
         }
     }
@@ -1382,6 +1446,7 @@ impl Interpreter {
             Vector::Double(vals) => mask_vec!(vals, Double),
             Vector::Integer(vals) => mask_vec!(vals, Integer),
             Vector::Logical(vals) => mask_vec!(vals, Logical),
+            Vector::Complex(vals) => mask_vec!(vals, Complex),
             Vector::Character(vals) => mask_vec!(vals, Character),
         }
     }
@@ -1444,6 +1509,9 @@ impl Interpreter {
                         }
                         Vector::Logical(vals) => {
                             Ok(RValue::vec(Vector::Logical(vec![vals[idx]].into())))
+                        }
+                        Vector::Complex(vals) => {
+                            Ok(RValue::vec(Vector::Complex(vec![vals[idx]].into())))
                         }
                         Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
                             vec![vals[idx].clone()].into(),
@@ -1731,6 +1799,7 @@ impl Interpreter {
                         Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[i]].into())),
                         Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[i]].into())),
                         Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[i]].into())),
+                        Vector::Complex(vals) => RValue::vec(Vector::Complex(vec![vals[i]].into())),
                         Vector::Character(vals) => {
                             RValue::vec(Vector::Character(vec![vals[i].clone()].into()))
                         }
@@ -1790,6 +1859,7 @@ impl Interpreter {
                         Vector::Logical(_) => vec!["logical".to_string()],
                         Vector::Integer(_) => vec!["integer".to_string()],
                         Vector::Double(_) => vec!["numeric".to_string()],
+                        Vector::Complex(_) => vec!["complex".to_string()],
                         Vector::Character(_) => vec!["character".to_string()],
                     }
                 }
