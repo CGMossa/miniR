@@ -38,10 +38,10 @@ dgemm(m, n, k, alpha, &a, lda, &b, ldb, beta, &mut c, ldc);
 | Performance | 80-172% of OpenBLAS | Reference implementation |
 | Dependencies | Zero external | libgfortran, system BLAS |
 
-For newr, the pure-Rust approach aligns with our build philosophy (vendored deps,
+For miniR, the pure-Rust approach aligns with our build philosophy (vendored deps,
 `cargo build` just works).
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Matrix multiply (`%*%`) — DGEMM
 

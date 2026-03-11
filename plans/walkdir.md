@@ -17,7 +17,7 @@ for entry in WalkDir::new("src").max_depth(2).follow_links(true) {
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `list.files(recursive=TRUE)`
 

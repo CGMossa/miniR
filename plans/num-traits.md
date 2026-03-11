@@ -20,7 +20,7 @@ fn safe_cast<T: NumCast>(x: f64) -> Option<T> {
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Generic numeric operations
 

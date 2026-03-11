@@ -15,7 +15,7 @@ Key types:
 - `DVector<f64>` — dynamically-sized vector
 - Decompositions: `QR`, `LU`, `SVD`, `Cholesky`, `Eigen`, `Schur`
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Matrix operations
 

@@ -15,7 +15,7 @@ Key APIs:
 - `crossterm::terminal` — `size()`, `Clear`, `enable_raw_mode`, `EnterAlternateScreen`
 - `crossterm::event` — `read()`, `poll()`, `Event::Key`, `Event::Mouse`, `Event::Resize`
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. REPL — already in use via reedline
 

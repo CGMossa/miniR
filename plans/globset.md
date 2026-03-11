@@ -22,7 +22,7 @@ let set = builder.build()?;
 assert!(set.is_match("test.R"));
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `Sys.glob()` — file glob expansion
 

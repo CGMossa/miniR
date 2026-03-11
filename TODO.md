@@ -136,7 +136,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 ## Architecture
 
 - [x] `Language(Box<Expr>)` should have a dedicated `Language` newtype, so the enum variant becomes `Language(Language)` — use derive_more if needed
-- [ ] rename newr to minir
+- [x] rename newr to miniR
 - [ ] plan an r package builder
 - [ ] add typst conversion of R documentation and produce the manual
 - [ ] Arrow backend for vector types — replace `Vec<Option<T>>` with validity bitmap + contiguous buffer (see plans/arrow-backend.md)

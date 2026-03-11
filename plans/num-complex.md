@@ -16,7 +16,7 @@ println!("{}", z.norm());  // 5.0
 println!("{}", z.arg());   // 0.9272...
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. R's complex type
 

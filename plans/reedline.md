@@ -13,7 +13,7 @@ Line editor library from the Nushell project. Features:
 - Prompt customization
 - `+bashisms` feature: `!!`, `!$`, `!n` history expansion
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### Already in use
 

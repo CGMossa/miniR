@@ -12,14 +12,14 @@
 use simplelog::*;
 CombinedLogger::init(vec![
     TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-    WriteLogger::new(LevelFilter::Debug, Config::default(), File::create("newr.log").unwrap()),
+    WriteLogger::new(LevelFilter::Debug, Config::default(), File::create("miniR.log").unwrap()),
 ]).unwrap();
 
 log::info!("Starting interpreter");
 log::warn!("Deprecated function called: {}", name);
 ```
 
-## Where they fit in newr
+## Where they fit in miniR
 
 ### 1. Interpreter diagnostics
 
@@ -32,8 +32,8 @@ Internal logging for development and debugging:
 ### 2. `--verbose` / `--debug` CLI flags
 
 ```bash
-newr --verbose script.R    # show info! messages
-newr --debug script.R      # show debug! messages
+miniR --verbose script.R    # show info! messages
+miniR --debug script.R      # show debug! messages
 ```
 
 ### 3. R's `message()` / `warning()` / `stop()`

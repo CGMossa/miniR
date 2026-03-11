@@ -1,4 +1,4 @@
-# Preferred Dependencies for newr project
+# Preferred Dependencies for miniR project
 
 User-specified dependency versions to use when needed:
 

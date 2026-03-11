@@ -10,7 +10,7 @@ Implement all major reedline features demonstrated in `vendor/reedline/examples/
 
 ## Features to implement (priority order)
 
-1. **Persistent history** — `FileBackedHistory` stored in `~/.newr_history`. Most impactful quality-of-life feature. See `examples/history.rs`.
+1. **Persistent history** — `FileBackedHistory` stored in `~/.miniR_history`. Most impactful quality-of-life feature. See `examples/history.rs`.
 
 2. **Validator for multi-line input** — Replace the manual `is_likely_incomplete()` with reedline's `Validator` trait. Cleaner integration, and reedline handles the multi-line prompt automatically. See `examples/validator.rs`.
 
@@ -38,5 +38,5 @@ Implement all major reedline features demonstrated in `vendor/reedline/examples/
 
 - All reedline features are configured via builder methods on `Reedline::create()`
 - The `Completer` trait needs access to the interpreter's current environment — use `with_interpreter()` pattern
-- History file location: `~/.newr_history` (or `$NEWR_HISTFILE` if set)
+- History file location: `~/.miniR_history` (or `$NEWR_HISTFILE` if set)
 - Highlighting and completion should be implemented as separate modules in `src/repl/` (new directory)

@@ -19,7 +19,7 @@ Features:
 - Complete BLAS Level 1/2/3 + full LAPACK
 - 30+ years of optimization and correctness testing
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. BLAS backend for nalgebra
 

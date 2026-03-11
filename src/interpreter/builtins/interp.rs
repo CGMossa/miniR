@@ -6,7 +6,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::{with_interpreter, S3DispatchContext};
 use crate::parser::ast::{BinaryOp, UnaryOp};
-use newr_macros::interpreter_builtin;
+use minir_macros::interpreter_builtin;
 
 /// Extract `fail_fast` from named args and return the remaining named args.
 /// Default is `false` (collect all errors).

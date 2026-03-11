@@ -16,7 +16,7 @@ let s = serde_json::to_string_pretty(&v)?;
 `Value` enum: `Null`, `Bool(bool)`, `Number(Number)`, `String(String)`,
 `Array(Vec<Value>)`, `Object(Map<String, Value>)`.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `jsonlite::fromJSON()` / `jsonlite::toJSON()`
 
@@ -41,7 +41,7 @@ Mapping:
 
 ### 2. Configuration files
 
-Read newr config files (`.newr.json`, package metadata) in JSON format.
+Read miniR config files (`.miniR.json`, package metadata) in JSON format.
 
 ### 3. `httr` / HTTP response parsing
 

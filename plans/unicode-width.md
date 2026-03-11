@@ -12,7 +12,7 @@ Returns the number of terminal columns a character occupies:
 - Zero-width joiners, combining marks: width 0
 - Control characters: width 0 (or None)
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R functions
 

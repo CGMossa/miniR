@@ -1,6 +1,6 @@
 # Interpreter Roadmap
 
-A prioritized plan for bringing newr from "parser works" to "can run real R code."
+A prioritized plan for bringing miniR from "parser works" to "can run real R code."
 
 ## Current State (2026-03-08)
 

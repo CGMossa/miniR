@@ -22,7 +22,7 @@ fn demo(s: &mut m::S) {
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. `Environment` — prevent external mutation of internals
 

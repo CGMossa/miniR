@@ -1,7 +1,7 @@
 //! Noop stub builtins — not-yet-implemented functions that return their first
 //! argument (or NULL). Each is auto-registered via `noop_builtin!`.
 
-use newr_macros::noop_builtin;
+use minir_macros::noop_builtin;
 
 // Core language (on.exit — pre_eval.rs)
 noop_builtin!("UseMethod", 1);

@@ -7,7 +7,7 @@
 
 A non-cryptographic hash function optimized for small keys. FNV-1a is faster than the default `SipHash` (Rust's default `HashMap` hasher) for keys shorter than ~20 bytes.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### The opportunity
 

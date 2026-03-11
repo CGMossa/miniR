@@ -11,7 +11,7 @@ Implements Unicode Standard Annex #29: text segmentation. Provides iterators for
 - **Word boundaries** — natural word breaks
 - **Sentence boundaries** — sentence detection
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### The problem
 

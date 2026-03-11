@@ -15,7 +15,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::parser::ast::Arg;
 use linkme::distributed_slice;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
 
@@ -1189,7 +1189,7 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         (
             Some("engine".to_string()),
             RValue::vec(Vector::Character(
-                vec![Some("newr (Rust)".to_string())].into(),
+                vec![Some("miniR (Rust)".to_string())].into(),
             )),
         ),
     ])))

@@ -22,7 +22,7 @@ let n = Normal::new(0.0, 1.0)?;
 let sample: f64 = n.sample(&mut rng); // standard normal
 ```
 
-## Where they fit in newr
+## Where they fit in miniR
 
 ### 1. Core random functions
 

@@ -54,7 +54,7 @@ Also, add an argument that says `sorted=FALSE` which will return a sorted, dedup
 Option B — add `sort_unique()` as an explicit builtin. Don't try to be clever with AST pattern matching. Users who want the optimization can call it directly:
 
 ```r
-sort_unique(x)  # newr extension: faster than sort(unique(x))
+sort_unique(x)  # miniR extension: faster than sort(unique(x))
 ```
 
 Also optimize individually:
@@ -67,4 +67,4 @@ Option A and Option C should be considered as well.
 ## Scope
 
 - Add `sort_unique()` builtin using `BTreeSet` for numeric, character, and integer vectors
-- Document as a newr extension in the manual
+- Document as a miniR extension in the manual

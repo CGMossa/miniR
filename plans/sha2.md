@@ -7,7 +7,7 @@
 
 SHA-224, SHA-256, SHA-384, SHA-512 hash functions. The `digest` crate provides the `Digest` trait that sha2 implements.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R functions
 

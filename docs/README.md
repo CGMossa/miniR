@@ -1,5 +1,5 @@
 # docs
 
-newr project documentation.
+miniR project documentation.
 
-- `divergences.md` — tracks where newr intentionally diverges from GNU R behavior
+- `divergences.md` — tracks where miniR intentionally diverges from GNU R behavior

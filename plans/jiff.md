@@ -22,7 +22,7 @@ Parsing: `"2024-03-15T10:30:00-05:00[America/New_York]".parse::<Zoned>()`
 Formatting: `strftime`-compatible format strings
 Arithmetic: `date + Span::new().days(30)`, timezone-aware addition
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. R's Date class → `civil::Date`
 

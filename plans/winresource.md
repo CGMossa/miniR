@@ -13,15 +13,15 @@ the executable. Sets application icon, version info, and other Windows metadata.
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "windows" {
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/newr.ico");
-        res.set("ProductName", "newr");
+        res.set_icon("assets/miniR.ico");
+        res.set("ProductName", "miniR");
         res.set("FileDescription", "R Interpreter");
         res.compile().unwrap();
     }
 }
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Windows executable branding
 

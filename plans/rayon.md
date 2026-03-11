@@ -15,7 +15,7 @@ let sum: f64 = values.par_iter().map(|x| x * x).sum();
 Also: `par_sort()`, `par_extend()`, parallel `join()` for fork-join.
 Thread pool is global, work-stealing scheduler.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Vectorized math — parallel element-wise operations
 

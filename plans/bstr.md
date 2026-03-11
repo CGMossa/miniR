@@ -19,7 +19,7 @@ for word in s.words() { /* ... */ }
 
 Also: `BStr` (borrowed, like `&str` for bytes), regex support via `bstr::Regex`.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. R's string encoding model
 
@@ -27,7 +27,7 @@ R strings can be in multiple encodings: UTF-8, Latin-1, "bytes" (raw), or native
 encoding. R's `Encoding()` function returns `"UTF-8"`, `"latin1"`, `"bytes"`, or
 `"unknown"`.
 
-Currently newr uses Rust `String` (always UTF-8). This breaks when R code:
+Currently miniR uses Rust `String` (always UTF-8). This breaks when R code:
 
 - Reads a Latin-1 file without conversion
 - Uses `chartr()` or `iconv()` between encodings

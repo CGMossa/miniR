@@ -1,5 +1,5 @@
 [package]
-name = "newr-macros"
+name = "minir-macros"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

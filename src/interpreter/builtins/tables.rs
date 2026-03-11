@@ -2,7 +2,7 @@
 
 use crate::interpreter::coerce::f64_to_i64;
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 use super::factors::rvalue_to_char_vec;
 

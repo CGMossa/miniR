@@ -2,7 +2,7 @@
 //! and file system utilities (file.path, file.exists).
 
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 #[builtin]
 fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {

@@ -30,7 +30,7 @@ bail!(MyError("something went wrong".into()));
 ensure!(x > 0, MyError("x must be positive".into()));
 ```
 
-## Where it fits in newr (preferred over thiserror)
+## Where it fits in miniR (preferred over thiserror)
 
 ### Current RError
 

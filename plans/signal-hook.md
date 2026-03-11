@@ -7,7 +7,7 @@
 
 Register signal handlers (SIGINT, SIGTERM, SIGHUP, etc.) safely from Rust. Provides both low-level signal registration and high-level flag-based checking.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### The problem
 

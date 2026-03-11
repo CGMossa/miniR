@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 use regex::Regex;
 
 use crate::interpreter::value::deparse_expr;

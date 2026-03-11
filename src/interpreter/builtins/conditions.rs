@@ -2,7 +2,7 @@
 //! condition accessors, and restart invocation.
 
 use crate::interpreter::value::*;
-use newr_macros::builtin;
+use minir_macros::builtin;
 
 #[builtin]
 fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {

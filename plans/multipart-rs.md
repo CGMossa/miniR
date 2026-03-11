@@ -6,11 +6,11 @@
 
 Handles multipart/form-data encoding and decoding, used for HTTP file uploads.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. HTTP file uploads
 
-If newr implements `httr::POST()` with file upload support, multipart encoding
+If miniR implements `httr::POST()` with file upload support, multipart encoding
 is needed to construct the request body.
 
 ### 2. Limited R relevance

@@ -24,7 +24,7 @@ let ac = AhoCorasick::new(patterns)?;
 let matches: Vec<_> = ac.find_iter("I like apple and banana").collect();
 ```
 
-## Where they fit in newr
+## Where they fit in miniR
 
 ### 1. `grep()` / `grepl()` with `fixed=TRUE`
 

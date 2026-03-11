@@ -17,7 +17,7 @@ assert_eq!(printed, "1.234");
 API: `Buffer::new()`, `buffer.format(f64) -> &str`, `buffer.format(f32) -> &str`.
 Zero allocation after initial buffer construction. Reusable across calls.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Replace `format_r_double()` — the hot path
 

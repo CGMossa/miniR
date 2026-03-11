@@ -19,7 +19,7 @@ stdout.reset()?;
 writeln!(&mut stdout, "something went wrong")?;
 ```
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### 1. Error/warning/message display
 

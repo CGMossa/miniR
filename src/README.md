@@ -1,6 +1,6 @@
 # src
 
-The newr interpreter source code (Rust).
+The miniR interpreter source code (Rust).
 
 - `parser/r.pest` — PEG grammar for R (pest format)
 - `parser/ast.rs` — AST node types

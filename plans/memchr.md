@@ -14,7 +14,7 @@ Highly optimized routines for searching bytes in slices:
 
 Typically 2-10x faster than naive iteration for string searching.
 
-## Where it fits in newr
+## Where it fits in miniR
 
 ### R string functions that search
 
