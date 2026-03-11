@@ -469,6 +469,14 @@ pub fn format_vector(v: &Vector) -> String {
     result
 }
 
+/// The kind of R condition (error, warning, or message).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConditionKind {
+    Error,
+    Warning,
+    Message,
+}
+
 /// R runtime errors
 #[derive(Debug, Clone)]
 pub enum RError {
@@ -479,9 +487,38 @@ pub enum RError {
     #[allow(dead_code)]
     Parse(String),
     Other(String),
+    /// R condition signal — carries a condition object (list with class attribute)
+    Condition {
+        condition: RValue,
+        kind: ConditionKind,
+    },
     Return(RValue),
     Break,
     Next,
+}
+
+impl RError {
+    /// Extract the error message string from any RError variant.
+    #[allow(dead_code)]
+    pub fn message(&self) -> String {
+        match self {
+            RError::Condition { condition, .. } => {
+                if let RValue::List(list) = condition {
+                    for (name, val) in &list.values {
+                        if name.as_deref() == Some("message") {
+                            if let RValue::Vector(rv) = val {
+                                if let Some(s) = rv.as_character_scalar() {
+                                    return s;
+                                }
+                            }
+                        }
+                    }
+                }
+                format!("{}", self)
+            }
+            _ => format!("{}", self),
+        }
+    }
 }
 
 impl fmt::Display for RError {
@@ -493,10 +530,74 @@ impl fmt::Display for RError {
             RError::Index(msg) => write!(f, "Error in indexing: {}", msg),
             RError::Parse(msg) => write!(f, "Error in parse: {}", msg),
             RError::Other(msg) => write!(f, "Error: {}", msg),
+            RError::Condition { condition, .. } => {
+                if let RValue::List(list) = condition {
+                    for (name, val) in &list.values {
+                        if name.as_deref() == Some("message") {
+                            if let RValue::Vector(rv) = val {
+                                if let Some(s) = rv.as_character_scalar() {
+                                    return write!(f, "Error: {}", s);
+                                }
+                            }
+                        }
+                    }
+                }
+                write!(f, "Error: <condition>")
+            }
             RError::Return(_) => write!(f, "no function to return from"),
             RError::Break => write!(f, "no loop for break/next, jumping to top level"),
             RError::Next => write!(f, "no loop for break/next, jumping to top level"),
         }
+    }
+}
+
+/// Create an R condition object (a list with message, call, and class attributes).
+pub fn make_condition(message: &str, classes: &[&str]) -> RValue {
+    let mut list = RList::new(vec![
+        (
+            Some("message".to_string()),
+            RValue::vec(Vector::Character(vec![Some(message.to_string())].into())),
+        ),
+        (Some("call".to_string()), RValue::Null),
+    ]);
+    let class_vec: Vec<Option<String>> = classes.iter().map(|s| Some(s.to_string())).collect();
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(class_vec.into())),
+    );
+    RValue::List(list)
+}
+
+/// Create an R condition object with an explicit call value.
+pub fn make_condition_with_call(message: &str, call: RValue, classes: &[&str]) -> RValue {
+    let mut list = RList::new(vec![
+        (
+            Some("message".to_string()),
+            RValue::vec(Vector::Character(vec![Some(message.to_string())].into())),
+        ),
+        (Some("call".to_string()), call),
+    ]);
+    let class_vec: Vec<Option<String>> = classes.iter().map(|s| Some(s.to_string())).collect();
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(class_vec.into())),
+    );
+    RValue::List(list)
+}
+
+/// Get the class vector from an RValue (if it has a class attribute).
+pub fn get_class(val: &RValue) -> Vec<String> {
+    let attrs = match val {
+        RValue::Vector(rv) => rv.attrs.as_ref(),
+        RValue::List(list) => list.attrs.as_ref(),
+        _ => None,
+    };
+    match attrs.and_then(|a| a.get("class")) {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Character(v) => v.iter().filter_map(|s| s.clone()).collect(),
+            _ => vec![],
+        },
+        _ => vec![],
     }
 }
 

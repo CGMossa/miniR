@@ -10,46 +10,106 @@ use newr_macros::pre_eval_builtin;
 
 #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
 fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    use crate::interpreter::ConditionHandler;
+
     // First unnamed arg is the expression to evaluate
     let expr = args
         .iter()
         .find(|a| a.name.is_none())
         .and_then(|a| a.value.as_ref());
 
-    // Collect named handlers (error=, warning=, finally=)
-    let mut error_handler = None;
+    // Collect named handlers and finally expression
+    let mut handlers: Vec<(String, RValue)> = Vec::new();
     let mut finally_expr = None;
     with_interpreter(|interp| {
         for arg in args {
             match arg.name.as_deref() {
-                Some("error") => {
-                    if let Some(ref val_expr) = arg.value {
-                        error_handler = Some(interp.eval_in(val_expr, env)?);
-                    }
-                }
                 Some("finally") => {
                     finally_expr = arg.value.clone();
                 }
-                _ => {}
+                Some(class) => {
+                    if let Some(ref val_expr) = arg.value {
+                        let handler = interp.eval_in(val_expr, env)?;
+                        handlers.push((class.to_string(), handler));
+                    }
+                }
+                None => {} // the expression itself
             }
         }
         Ok(())
     })?;
 
-    let result = with_interpreter(|interp| match expr {
-        Some(e) => match interp.eval_in(e, env) {
+    // For non-error classes (warning, message, etc.), install withCallingHandlers-style
+    // handlers that convert them to unwinding RError::Condition so tryCatch can catch them.
+    let non_error_classes: Vec<String> = handlers
+        .iter()
+        .filter(|(c, _)| c != "error")
+        .map(|(c, _)| c.clone())
+        .collect();
+
+    let unwind_handlers: Vec<ConditionHandler> = non_error_classes
+        .iter()
+        .map(|class| ConditionHandler {
+            class: class.clone(),
+            handler: RValue::Function(RFunction::Builtin {
+                name: "tryCatch_unwinder".to_string(),
+                func: |args, _named| {
+                    // Re-raise the condition to unwind past tryCatch
+                    let condition = args.first().cloned().unwrap_or(RValue::Null);
+                    let cond_classes = get_class(&condition);
+                    let kind = if cond_classes.iter().any(|c| c == "warning") {
+                        ConditionKind::Warning
+                    } else if cond_classes.iter().any(|c| c == "message") {
+                        ConditionKind::Message
+                    } else {
+                        ConditionKind::Error
+                    };
+                    Err(RError::Condition { condition, kind })
+                },
+            }),
+            env: env.clone(),
+        })
+        .collect();
+
+    // Install non-error handlers if any, then evaluate
+    let result = with_interpreter(|interp| {
+        if !unwind_handlers.is_empty() {
+            interp.condition_handlers.borrow_mut().push(unwind_handlers);
+        }
+        let eval_result = match expr {
+            Some(e) => interp.eval_in(e, env),
+            None => Ok(RValue::Null),
+        };
+        if !non_error_classes.is_empty() {
+            interp.condition_handlers.borrow_mut().pop();
+        }
+
+        match eval_result {
             Ok(val) => Ok(val),
-            Err(err) => {
-                if let Some(handler) = error_handler.clone() {
-                    let err_msg = format!("{}", err);
-                    let err_val = RValue::vec(Vector::Character(vec![Some(err_msg)].into()));
-                    interp.call_function(&handler, &[err_val], &[], env)
+            Err(RError::Condition { condition, kind }) => {
+                // Match against handler classes
+                let cond_classes = get_class(&condition);
+                for (handler_class, handler) in &handlers {
+                    if cond_classes.iter().any(|c| c == handler_class) {
+                        return interp
+                            .call_function(handler, std::slice::from_ref(&condition), &[], env);
+                    }
+                }
+                // No matching handler — re-raise
+                Err(RError::Condition { condition, kind })
+            }
+            Err(other) => {
+                // Non-condition errors: check for "error" handler
+                if let Some((_, handler)) = handlers.iter().find(|(c, _)| c == "error") {
+                    let err_msg = format!("{}", other);
+                    let condition =
+                        make_condition(&err_msg, &["simpleError", "error", "condition"]);
+                    interp.call_function(handler, &[condition], &[], env)
                 } else {
-                    Err(err)
+                    Err(other)
                 }
             }
-        },
-        None => Ok(RValue::Null),
+        }
     });
 
     // Run finally block if present
@@ -76,6 +136,102 @@ fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
             }
         },
         None => Ok(RValue::Null),
+    })
+}
+
+#[pre_eval_builtin(name = "withCallingHandlers", min_args = 1)]
+fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    use crate::interpreter::ConditionHandler;
+
+    let expr = args
+        .iter()
+        .find(|a| a.name.is_none())
+        .and_then(|a| a.value.as_ref());
+
+    // Collect named handlers (class = handler_function)
+    let mut handler_set: Vec<ConditionHandler> = Vec::new();
+    with_interpreter(|interp| {
+        for arg in args {
+            if let Some(class) = &arg.name {
+                if let Some(ref val_expr) = arg.value {
+                    let handler = interp.eval_in(val_expr, env)?;
+                    handler_set.push(ConditionHandler {
+                        class: class.clone(),
+                        handler,
+                        env: env.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    })?;
+
+    // Push handler set onto the stack, evaluate, then pop
+    with_interpreter(|interp| {
+        interp.condition_handlers.borrow_mut().push(handler_set);
+        let result = match expr {
+            Some(e) => interp.eval_in(e, env),
+            None => Ok(RValue::Null),
+        };
+        interp.condition_handlers.borrow_mut().pop();
+        result
+    })
+}
+
+#[pre_eval_builtin(name = "suppressWarnings", min_args = 1)]
+fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    use crate::interpreter::ConditionHandler;
+
+    let expr = args
+        .first()
+        .and_then(|a| a.value.as_ref())
+        .ok_or_else(|| RError::Argument("argument is missing".to_string()))?;
+
+    // Create a handler that muffles warnings by signaling muffleWarning
+    let muffle_handler = RValue::Function(RFunction::Builtin {
+        name: "suppressWarnings_handler".to_string(),
+        func: |_args, _named| Err(RError::Other("muffleWarning".to_string())),
+    });
+
+    let handler_set = vec![ConditionHandler {
+        class: "warning".to_string(),
+        handler: muffle_handler,
+        env: env.clone(),
+    }];
+
+    with_interpreter(|interp| {
+        interp.condition_handlers.borrow_mut().push(handler_set);
+        let result = interp.eval_in(expr, env);
+        interp.condition_handlers.borrow_mut().pop();
+        result
+    })
+}
+
+#[pre_eval_builtin(name = "suppressMessages", min_args = 1)]
+fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    use crate::interpreter::ConditionHandler;
+
+    let expr = args
+        .first()
+        .and_then(|a| a.value.as_ref())
+        .ok_or_else(|| RError::Argument("argument is missing".to_string()))?;
+
+    let muffle_handler = RValue::Function(RFunction::Builtin {
+        name: "suppressMessages_handler".to_string(),
+        func: |_args, _named| Err(RError::Other("muffleMessage".to_string())),
+    });
+
+    let handler_set = vec![ConditionHandler {
+        class: "message".to_string(),
+        handler: muffle_handler,
+        env: env.clone(),
+    }];
+
+    with_interpreter(|interp| {
+        interp.condition_handlers.borrow_mut().push(handler_set);
+        let result = interp.eval_in(expr, env);
+        interp.condition_handlers.borrow_mut().pop();
+        result
     })
 }
 

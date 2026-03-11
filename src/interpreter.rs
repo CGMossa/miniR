@@ -57,9 +57,20 @@ pub(crate) struct S3DispatchContext {
     pub object: RValue,
 }
 
+/// A handler registered by withCallingHandlers().
+#[derive(Clone)]
+pub(crate) struct ConditionHandler {
+    pub class: String,
+    pub handler: RValue,
+    #[allow(dead_code)]
+    pub env: Environment,
+}
+
 pub struct Interpreter {
     pub global_env: Environment,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
+    /// Stack of handler sets from withCallingHandlers() calls.
+    pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
     #[cfg(feature = "random")]
     rng: RefCell<rand::rngs::StdRng>,
 }
@@ -74,9 +85,47 @@ impl Interpreter {
         Interpreter {
             global_env,
             s3_dispatch_stack: RefCell::new(Vec::new()),
+            condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
             rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
         }
+    }
+
+    /// Signal a condition to withCallingHandlers handlers (non-unwinding).
+    /// Returns Ok(true) if muffled, Ok(false) if not handled, or Err if a handler
+    /// raised an unwinding condition (e.g. tryCatch's unwind handler).
+    pub(crate) fn signal_condition(
+        &self,
+        condition: &RValue,
+        env: &Environment,
+    ) -> Result<bool, RError> {
+        let classes = value::get_class(condition);
+        // Clone handlers to release the borrow — handlers may trigger nested conditions
+        let handler_stack: Vec<Vec<ConditionHandler>> = self.condition_handlers.borrow().clone();
+        // Walk handlers top-down (most recently established first)
+        for handler_set in handler_stack.iter().rev() {
+            for handler in handler_set {
+                if classes.iter().any(|c| c == &handler.class) {
+                    // Call the handler — if it returns normally, continue signaling
+                    let result = self.call_function(
+                        &handler.handler,
+                        std::slice::from_ref(condition),
+                        &[],
+                        env,
+                    );
+                    match &result {
+                        Err(RError::Other(msg))
+                            if msg == "muffleWarning" || msg == "muffleMessage" =>
+                        {
+                            return Ok(true);
+                        }
+                        Err(e) => return Err(e.clone()),
+                        Ok(_) => {} // handler returned normally, continue signaling
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 
     #[cfg(feature = "random")]
