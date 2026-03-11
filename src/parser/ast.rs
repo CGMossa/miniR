@@ -25,7 +25,7 @@ pub enum Expr {
     /// ... (dots)
     Dots,
     /// ..1, ..2, etc.
-    DotDot(#[allow(dead_code)] u32),
+    DotDot(u32),
 
     /// Unary operation
     UnaryOp { op: UnaryOp, operand: Box<Expr> },
