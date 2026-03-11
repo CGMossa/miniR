@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod coerce;
 pub mod environment;
 pub mod value;
 
@@ -7,6 +8,7 @@ use std::cell::RefCell;
 use ndarray::{Array2, ShapeBuilder};
 
 use crate::parser::ast::*;
+use coerce::f64_to_i64;
 use environment::Environment;
 use value::*;
 
@@ -177,7 +179,7 @@ impl Interpreter {
                     .ok_or_else(|| RError::Other(format!("'..{}' used in incorrect context", n)))?;
                 match dots {
                     RValue::List(list) => {
-                        let idx = (*n as usize).saturating_sub(1);
+                        let idx = usize::try_from(i64::from(*n))?.saturating_sub(1);
                         list.values.get(idx).map(|(_, v)| v.clone()).ok_or_else(|| {
                             RError::Other(format!("the ... list does not contain {} elements", n))
                         })
@@ -674,11 +676,11 @@ impl Interpreter {
 
     fn eval_range(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
         let from = match left {
-            RValue::Vector(v) => v.as_double_scalar().unwrap_or(0.0) as i64,
+            RValue::Vector(v) => f64_to_i64(v.as_double_scalar().unwrap_or(0.0))?,
             _ => 0,
         };
         let to = match right {
-            RValue::Vector(v) => v.as_double_scalar().unwrap_or(0.0) as i64,
+            RValue::Vector(v) => f64_to_i64(v.as_double_scalar().unwrap_or(0.0))?,
             _ => 0,
         };
 
@@ -736,9 +738,10 @@ impl Interpreter {
             };
             let (nrow, ncol) = match dim_attr {
                 Some(RValue::Vector(rv)) => match &rv.inner {
-                    Vector::Integer(d) if d.len() >= 2 => {
-                        (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
-                    }
+                    Vector::Integer(d) if d.len() >= 2 => (
+                        usize::try_from(d[0].unwrap_or(0))?,
+                        usize::try_from(d[1].unwrap_or(0))?,
+                    ),
                     _ => (data.len(), 1), // treat as column vector
                 },
                 _ => (data.len(), 1), // treat as column vector
@@ -779,7 +782,7 @@ impl Interpreter {
         rv.set_attr(
             "dim".to_string(),
             RValue::vec(Vector::Integer(
-                vec![Some(rrows as i64), Some(rcols as i64)].into(),
+                vec![Some(i64::try_from(rrows)?), Some(i64::try_from(rcols)?)].into(),
             )),
         );
         Ok(RValue::Vector(rv))
@@ -1097,7 +1100,7 @@ impl Interpreter {
                         let indices = idx_vec.to_integers();
                         let mut result = Vec::new();
                         for i in indices.iter().flatten() {
-                            let i = *i as usize;
+                            let i = usize::try_from(*i).unwrap_or(0);
                             if i > 0 && i <= list.values.len() {
                                 result.push(list.values[i - 1].clone());
                             }
@@ -1139,8 +1142,8 @@ impl Interpreter {
         if dims.len() < 2 {
             return Err(RError::Index("incorrect number of dimensions".to_string()));
         }
-        let nrow = dims[0].unwrap_or(0) as usize;
-        let ncol = dims[1].unwrap_or(0) as usize;
+        let nrow = usize::try_from(dims[0].unwrap_or(0)).unwrap_or(0);
+        let ncol = usize::try_from(dims[1].unwrap_or(0)).unwrap_or(0);
 
         // Evaluate row indices (empty = all rows)
         let row_idx = if let Some(ref val_expr) = indices[0].value {
@@ -1163,7 +1166,7 @@ impl Interpreter {
             Some(RValue::Vector(rv)) => rv
                 .to_integers()
                 .iter()
-                .filter_map(|x| x.map(|i| (i - 1) as usize))
+                .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect(),
             _ => return Err(RError::Index("invalid row index".to_string())),
         };
@@ -1173,7 +1176,7 @@ impl Interpreter {
             Some(RValue::Vector(rv)) => rv
                 .to_integers()
                 .iter()
-                .filter_map(|x| x.map(|i| (i - 1) as usize))
+                .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect(),
             _ => return Err(RError::Index("invalid column index".to_string())),
         };
@@ -1199,7 +1202,11 @@ impl Interpreter {
             rv.set_attr(
                 "dim".to_string(),
                 RValue::vec(Vector::Integer(
-                    vec![Some(rows.len() as i64), Some(cols.len() as i64)].into(),
+                    vec![
+                        Some(i64::try_from(rows.len())?),
+                        Some(i64::try_from(cols.len())?),
+                    ]
+                    .into(),
                 )),
             );
         }
@@ -1229,7 +1236,7 @@ impl Interpreter {
                 let idx_val = self.eval_in(val_expr, env)?;
                 return match &idx_val {
                     RValue::Vector(iv) => {
-                        let i = iv.as_integer_scalar().unwrap_or(0) as usize;
+                        let i = usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
                         if i > 0 && i <= list.values.len() {
                             Ok(list.values[i - 1].1.clone())
                         } else {
@@ -1271,11 +1278,10 @@ impl Interpreter {
                 let idxs = rv.to_integers();
                 idxs.iter()
                     .filter_map(|i| {
-                        i.map(|i| {
-                            let i = (i - 1) as usize;
+                        i.and_then(|i| {
+                            let i = usize::try_from(i - 1).ok()?;
                             list.values.get(i).cloned()
                         })
-                        .flatten()
                     })
                     .collect()
             }
@@ -1309,7 +1315,8 @@ impl Interpreter {
                 "names".to_string(),
                 RValue::vec(Vector::Character(col_names.into())),
             );
-            let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+            let row_names: Vec<Option<i64>> =
+                (1..=i64::try_from(nrows).unwrap_or(0)).map(Some).collect();
             result.set_attr(
                 "row.names".to_string(),
                 RValue::vec(Vector::Integer(row_names.into())),
@@ -1326,7 +1333,7 @@ impl Interpreter {
                 lv.iter()
                     .enumerate()
                     .filter(|(_, v)| v.unwrap_or(false))
-                    .map(|(i, _)| Some(i as i64 + 1))
+                    .filter_map(|(i, _)| i64::try_from(i).ok().map(|i| Some(i + 1)))
                     .collect()
             }
             Some(RValue::Vector(rv)) => rv.to_integers(),
@@ -1364,7 +1371,8 @@ impl Interpreter {
             "names".to_string(),
             RValue::vec(Vector::Character(col_names.into())),
         );
-        let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+        let row_names: Vec<Option<i64>> =
+            (1..=i64::try_from(nrows).unwrap_or(0)).map(Some).collect();
         result.set_attr(
             "row.names".to_string(),
             RValue::vec(Vector::Integer(row_names.into())),
@@ -1383,7 +1391,7 @@ impl Interpreter {
                     .iter()
                     .map(|idx| {
                         idx.and_then(|i| {
-                            let i = i as usize;
+                            let i = usize::try_from(i).unwrap_or(0);
                             if i > 0 && i <= $vals.len() {
                                 $vals[i - 1].clone().into()
                             } else {
@@ -1407,7 +1415,7 @@ impl Interpreter {
     fn index_by_negative(&self, v: &Vector, indices: &[Option<i64>]) -> Result<RValue, RError> {
         let exclude: Vec<usize> = indices
             .iter()
-            .filter_map(|x| x.map(|i| (-i) as usize))
+            .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
             .collect();
 
         macro_rules! filter_vec {
@@ -1484,7 +1492,7 @@ impl Interpreter {
                     Ok(RValue::Null)
                 }
                 RValue::Vector(v) => {
-                    let i = v.as_integer_scalar().unwrap_or(0) as usize;
+                    let i = usize::try_from(v.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
                     if i > 0 && i <= list.values.len() {
                         Ok(list.values[i - 1].1.clone())
                     } else {
@@ -1495,7 +1503,9 @@ impl Interpreter {
             },
             RValue::Vector(v) => {
                 let i = match &idx_val {
-                    RValue::Vector(iv) => iv.as_integer_scalar().unwrap_or(0) as usize,
+                    RValue::Vector(iv) => {
+                        usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
+                    }
                     _ => 0,
                 };
                 if i > 0 && i <= v.len() {
@@ -1588,7 +1598,7 @@ impl Interpreter {
                 let mut doubles = v.to_doubles();
                 for (j, idx) in idx_ints.iter().enumerate() {
                     if let Some(i) = idx {
-                        let i = *i as usize;
+                        let i = usize::try_from(*i).unwrap_or(0);
                         if i > 0 {
                             // Extend if necessary
                             while doubles.len() < i {
@@ -1626,7 +1636,7 @@ impl Interpreter {
                         }
                     }
                     RValue::Vector(iv) => {
-                        let i = iv.as_integer_scalar().unwrap_or(0) as usize;
+                        let i = usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
                         if i > 0 && i <= list.values.len() {
                             list.values[i - 1].1 = val.clone();
                         }
@@ -1651,7 +1661,9 @@ impl Interpreter {
                     }
                     _ => {
                         let idx = match &idx_val {
-                            RValue::Vector(iv) => iv.as_integer_scalar().unwrap_or(0) as usize,
+                            RValue::Vector(iv) => {
+                                usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
+                            }
                             _ => 0,
                         };
                         let mut doubles = vec![None; idx];
@@ -1710,7 +1722,7 @@ impl Interpreter {
                         }
                     }
                     RValue::Vector(iv) => {
-                        let i = iv.as_integer_scalar().unwrap_or(0) as usize;
+                        let i = usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
                         if i > 0 {
                             while list.values.len() < i {
                                 list.values.push((None, RValue::Null));

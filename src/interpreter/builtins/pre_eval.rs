@@ -36,7 +36,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                 None => {} // the expression itself
             }
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     // For non-error classes (warning, message, etc.), install withCallingHandlers-style
@@ -167,7 +167,7 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
                 }
             }
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     // Push handler set onto the stack, evaluate, then pop
@@ -244,7 +244,7 @@ fn pre_eval_on_exit(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     let expr = args.first().and_then(|a| a.value.as_ref()).cloned();
 
     // Check add= argument (default FALSE — replace existing on.exit)
-    let add = with_interpreter(|interp| {
+    let add = with_interpreter(|interp| -> Result<bool, RError> {
         // Check named add= first
         for arg in args.iter().skip(1) {
             if arg.name.as_deref() == Some("add") {
@@ -360,7 +360,7 @@ fn pre_eval_evalq(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     };
 
     // Determine evaluation environment from second arg or named envir=
-    let eval_env = with_interpreter(|interp| {
+    let eval_env = with_interpreter(|interp| -> Result<Option<Environment>, RError> {
         // Check named envir= first
         for arg in args.iter().skip(1) {
             if arg.name.as_deref() == Some("envir") {

@@ -5,6 +5,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_distr::Distribution;
 
+use crate::interpreter::coerce::{f64_to_i64, f64_to_u64, i64_to_f64};
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
 use newr_macros::builtin;
@@ -21,7 +22,7 @@ fn extract_n(args: &[RValue]) -> Result<usize, RError> {
             "invalid argument: 'n' must be non-negative".to_string(),
         ));
     }
-    Ok(n as usize)
+    usize::try_from(n).map_err(|_| RError::Argument("invalid 'n' argument".to_string()))
 }
 
 /// Helper: extract a named f64 parameter from named args, falling back to positional.
@@ -56,8 +57,8 @@ fn builtin_set_seed(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
     let seed = args[0]
         .as_vector()
         .and_then(|v| v.as_double_scalar())
-        .ok_or_else(|| RError::Argument("invalid 'seed' argument".to_string()))?
-        as u64;
+        .ok_or_else(|| RError::Argument("invalid 'seed' argument".to_string()))
+        .and_then(f64_to_u64)?;
     with_interpreter(|interp| {
         *interp.rng().borrow_mut() = rand::rngs::StdRng::seed_from_u64(seed);
     });
@@ -192,16 +193,16 @@ fn builtin_rlnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2)]
 fn builtin_rbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = extract_n(args)?;
-    let size = extract_param(args, named, "size", 1, 1.0) as u64;
+    let size = f64_to_u64(extract_param(args, named, "size", 1, 1.0))?;
     let prob = extract_param(args, named, "prob", 2, 0.5);
     let dist = rand_distr::Binomial::new(size, prob)
         .map_err(|e| RError::Argument(format!("invalid distribution parameters: {e}")))?;
     let values: Vec<Option<i64>> = with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
         (0..n)
-            .map(|_| Some(dist.sample(&mut *rng) as i64))
-            .collect()
-    });
+            .map(|_| i64::try_from(dist.sample(&mut *rng)).map(Some))
+            .collect::<Result<_, _>>()
+    })?;
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
@@ -214,9 +215,9 @@ fn builtin_rpois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let values: Vec<Option<i64>> = with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
         (0..n)
-            .map(|_| Some(dist.sample(&mut *rng) as i64))
-            .collect()
-    });
+            .map(|_| f64_to_i64(dist.sample(&mut *rng)).map(Some))
+            .collect::<Result<_, _>>()
+    })?;
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
@@ -229,9 +230,9 @@ fn builtin_rgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let values: Vec<Option<i64>> = with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
         (0..n)
-            .map(|_| Some(dist.sample(&mut *rng) as i64))
-            .collect()
-    });
+            .map(|_| i64::try_from(dist.sample(&mut *rng)).map(Some))
+            .collect::<Result<_, _>>()
+    })?;
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
@@ -278,17 +279,17 @@ fn builtin_rf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 4)]
 fn builtin_rhyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let nn = extract_n(args)?;
-    let m = extract_param(args, named, "m", 1, 1.0) as u64; // white balls
-    let n = extract_param(args, named, "n", 2, 1.0) as u64; // black balls
-    let k = extract_param(args, named, "k", 3, 1.0) as u64; // draws
+    let m = f64_to_u64(extract_param(args, named, "m", 1, 1.0))?; // white balls
+    let n = f64_to_u64(extract_param(args, named, "n", 2, 1.0))?; // black balls
+    let k = f64_to_u64(extract_param(args, named, "k", 3, 1.0))?; // draws
     let dist = rand_distr::Hypergeometric::new(m + n, m, k)
         .map_err(|e| RError::Argument(format!("invalid distribution parameters: {e}")))?;
     let values: Vec<Option<i64>> = with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
         (0..nn)
-            .map(|_| Some(dist.sample(&mut *rng) as i64))
-            .collect()
-    });
+            .map(|_| i64::try_from(dist.sample(&mut *rng)).map(Some))
+            .collect::<Result<_, _>>()
+    })?;
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
@@ -316,8 +317,8 @@ fn builtin_sample(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                 ));
             }
         } else if let Some(d) = x_vec.inner.as_double_scalar() {
-            let n = d as i64;
-            if n >= 1 && (d - n as f64).abs() < 1e-10 {
+            let n = f64_to_i64(d)?;
+            if n >= 1 && (d - i64_to_f64(n)).abs() < 1e-10 {
                 (1..=n).collect()
             } else {
                 return Err(RError::Argument(
@@ -330,20 +331,22 @@ fn builtin_sample(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         }
     } else {
         // x is a vector of length > 1 — return indices
-        (1..=x_vec.len() as i64).collect()
+        (1..=i64::try_from(x_vec.len())?).collect()
     };
 
     let pop_len = population.len();
 
     // size defaults to length of population
-    let size = named
-        .iter()
-        .find(|(k, _)| k == "size")
-        .map(|(_, v)| v)
-        .or(args.get(1))
-        .and_then(|v| v.as_vector())
-        .and_then(|v| v.as_integer_scalar())
-        .unwrap_or(pop_len as i64) as usize;
+    let size = usize::try_from(
+        named
+            .iter()
+            .find(|(k, _)| k == "size")
+            .map(|(_, v)| v)
+            .or(args.get(1))
+            .and_then(|v| v.as_vector())
+            .and_then(|v| v.as_integer_scalar())
+            .map_or_else(|| i64::try_from(pop_len), Ok)?,
+    )?;
 
     // replace defaults to FALSE
     let replace = named

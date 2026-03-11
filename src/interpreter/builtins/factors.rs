@@ -102,10 +102,14 @@ fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let codes: Vec<Option<i64>> = char_vals
         .iter()
         .map(|v| match v {
-            Some(s) => levels.iter().position(|l| l == s).map(|i| (i + 1) as i64),
-            None => None,
+            Some(s) => levels
+                .iter()
+                .position(|l| l == s)
+                .map(|i| i64::try_from(i + 1))
+                .transpose(),
+            None => Ok(None),
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut rv = RVector::from(Vector::Integer(codes.into()));
     rv.set_attr(
@@ -145,7 +149,7 @@ fn builtin_nlevels(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     match args.first() {
         Some(RValue::Vector(rv)) => match rv.get_attr("levels") {
             Some(RValue::Vector(lv)) => Ok(RValue::vec(Vector::Integer(
-                vec![Some(lv.inner.len() as i64)].into(),
+                vec![Some(i64::try_from(lv.inner.len())?)].into(),
             ))),
             _ => Ok(RValue::vec(Vector::Integer(vec![Some(0i64)].into()))),
         },

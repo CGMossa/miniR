@@ -157,7 +157,7 @@ pub fn register_builtins(env: &Environment) {
         RValue::List(RList::new(vec![
             (
                 Some("integer.max".to_string()),
-                RValue::vec(Vector::Integer(vec![Some(i32::MAX as i64)].into())),
+                RValue::vec(Vector::Integer(vec![Some(i64::from(i32::MAX))].into())),
             ),
             (
                 Some("double.eps".to_string()),
@@ -447,7 +447,9 @@ fn builtin_paste0(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 1)]
 fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let len = args.first().map(|v| v.length()).unwrap_or(0);
-    Ok(RValue::vec(Vector::Integer(vec![Some(len as i64)].into())))
+    Ok(RValue::vec(Vector::Integer(
+        vec![Some(i64::try_from(len)?)].into(),
+    )))
 }
 
 #[builtin(min_args = 1)]
@@ -459,7 +461,7 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
             };
             let result: Vec<Option<i64>> = vals
                 .iter()
-                .map(|s| s.as_ref().map(|s| s.len() as i64))
+                .map(|s| s.as_ref().map(|s| i64::try_from(s.len()).unwrap_or(0)))
                 .collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
@@ -932,7 +934,8 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     let length = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .unwrap_or(0);
+    let length = usize::try_from(length).unwrap_or(0);
     match mode.as_str() {
         "numeric" | "double" => Ok(RValue::vec(Vector::Double(vec![Some(0.0); length].into()))),
         "integer" => Ok(RValue::vec(Vector::Integer(vec![Some(0); length].into()))),
@@ -1037,7 +1040,7 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 table
                     .iter()
                     .position(|t| t.as_ref() == Some(xi))
-                    .map(|p| p as i64 + 1)
+                    .map(|p| i64::try_from(p).map(|v| v + 1).unwrap_or(0))
             })
         })
         .collect();
@@ -1062,7 +1065,7 @@ fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .unwrap_or_default();
             for (i, idx) in indices.iter().enumerate() {
                 if let Some(idx) = idx {
-                    let idx = *idx as usize - 1;
+                    let idx = usize::try_from(*idx)? - 1;
                     if idx < doubles.len() {
                         doubles[idx] = values
                             .get(i % values.len())
@@ -1342,7 +1345,9 @@ fn builtin_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .map(usize::try_from)
+        .transpose()?
+        .unwrap_or(0);
     Ok(RValue::vec(Vector::Double(vec![Some(0.0); n].into())))
 }
 
@@ -1351,7 +1356,9 @@ fn builtin_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .map(usize::try_from)
+        .transpose()?
+        .unwrap_or(0);
     Ok(RValue::vec(Vector::Integer(vec![Some(0); n].into())))
 }
 
@@ -1360,7 +1367,9 @@ fn builtin_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .map(usize::try_from)
+        .transpose()?
+        .unwrap_or(0);
     Ok(RValue::vec(Vector::Logical(vec![Some(false); n].into())))
 }
 
@@ -1369,7 +1378,9 @@ fn builtin_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .map(usize::try_from)
+        .transpose()?
+        .unwrap_or(0);
     Ok(RValue::vec(Vector::Character(
         vec![Some(String::new()); n].into(),
     )))
@@ -1408,13 +1419,13 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let data_len = data_vec.len();
 
     let (nrow, ncol) = match (nrow_arg, ncol_arg) {
-        (Some(r), Some(c)) => (r as usize, c as usize),
+        (Some(r), Some(c)) => (usize::try_from(r)?, usize::try_from(c)?),
         (Some(r), None) => {
-            let r = r as usize;
+            let r = usize::try_from(r)?;
             (r, if r > 0 { data_len.div_ceil(r) } else { 0 })
         }
         (None, Some(c)) => {
-            let c = c as usize;
+            let c = usize::try_from(c)?;
             (if c > 0 { data_len.div_ceil(c) } else { 0 }, c)
         }
         (None, None) => (data_len, 1),
@@ -1445,7 +1456,7 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(nrow as i64), Some(ncol as i64)].into(),
+            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
         )),
     );
     Ok(RValue::Vector(rv))
@@ -1503,7 +1514,7 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             }
             if let Some(rn) = l.get_attr("row.names") {
                 return Ok(RValue::vec(Vector::Integer(
-                    vec![Some(rn.length() as i64)].into(),
+                    vec![Some(i64::try_from(rn.length())?)].into(),
                 )));
             }
             Ok(RValue::Null)
@@ -1531,7 +1542,7 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             }
             if has_class(args.first().unwrap(), "data.frame") {
                 return Ok(RValue::vec(Vector::Integer(
-                    vec![Some(l.values.len() as i64)].into(),
+                    vec![Some(i64::try_from(l.values.len())?)].into(),
                 )));
             }
             Ok(RValue::Null)
@@ -1550,7 +1561,7 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 }
             }
             Ok(RValue::vec(Vector::Integer(
-                vec![Some(rv.len() as i64)].into(),
+                vec![Some(i64::try_from(rv.len())?)].into(),
             )))
         }
         Some(RValue::List(l)) => {
@@ -1563,14 +1574,16 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             if has_class(args.first().unwrap(), "data.frame") {
                 if let Some(rn) = l.get_attr("row.names") {
                     return Ok(RValue::vec(Vector::Integer(
-                        vec![Some(rn.length() as i64)].into(),
+                        vec![Some(i64::try_from(rn.length())?)].into(),
                     )));
                 }
                 let n = l.values.first().map(|(_, v)| v.length()).unwrap_or(0);
-                return Ok(RValue::vec(Vector::Integer(vec![Some(n as i64)].into())));
+                return Ok(RValue::vec(Vector::Integer(
+                    vec![Some(i64::try_from(n)?)].into(),
+                )));
             }
             Ok(RValue::vec(Vector::Integer(
-                vec![Some(l.values.len() as i64)].into(),
+                vec![Some(i64::try_from(l.values.len())?)].into(),
             )))
         }
         Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
@@ -1597,7 +1610,7 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             }
             if has_class(args.first().unwrap(), "data.frame") {
                 return Ok(RValue::vec(Vector::Integer(
-                    vec![Some(l.values.len() as i64)].into(),
+                    vec![Some(i64::try_from(l.values.len())?)].into(),
                 )));
             }
             Ok(RValue::vec(Vector::Integer(vec![Some(1)].into())))
@@ -1612,7 +1625,10 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
     match args.first() {
         Some(RValue::Vector(rv)) => {
             let dims = match get_dim_ints(rv.get_attr("dim")) {
-                Some(d) if d.len() >= 2 => (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize),
+                Some(d) if d.len() >= 2 => (
+                    usize::try_from(d[0].unwrap_or(0))?,
+                    usize::try_from(d[1].unwrap_or(0))?,
+                ),
                 _ => return Ok(args[0].clone()),
             };
             let (nrow, ncol) = dims;
@@ -1638,7 +1654,7 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
             result.set_attr(
                 "dim".to_string(),
                 RValue::vec(Vector::Integer(
-                    vec![Some(ncol as i64), Some(nrow as i64)].into(),
+                    vec![Some(i64::try_from(ncol)?), Some(i64::try_from(nrow)?)].into(),
                 )),
             );
             Ok(RValue::Vector(result))
@@ -1737,7 +1753,9 @@ fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                     ))
                 }
             };
-            ints.iter().map(|x| x.unwrap_or(0) as usize).collect()
+            ints.iter()
+                .map(|x| usize::try_from(x.unwrap_or(0)))
+                .collect::<Result<Vec<_>, _>>()?
         }
         None => vec![data_vec.len()],
     };
@@ -1777,8 +1795,8 @@ fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         "dim".to_string(),
         RValue::vec(Vector::Integer(
             dims.iter()
-                .map(|&d| Some(d as i64))
-                .collect::<Vec<_>>()
+                .map(|&d| i64::try_from(d).map(Some))
+                .collect::<Result<Vec<_>, _>>()?
                 .into(),
         )),
     );
@@ -1807,8 +1825,8 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 let data = rv.to_doubles();
                 if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
                     if dims.len() >= 2 {
-                        let nr = dims[0].unwrap_or(0) as usize;
-                        let nc = dims[1].unwrap_or(0) as usize;
+                        let nr = usize::try_from(dims[0].unwrap_or(0))?;
+                        let nc = usize::try_from(dims[1].unwrap_or(0))?;
                         inputs.push((data, nr, nc));
                         continue;
                     }
@@ -1871,7 +1889,11 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(total_nrow as i64), Some(max_ncol as i64)].into(),
+            vec![
+                Some(i64::try_from(total_nrow)?),
+                Some(i64::try_from(max_ncol)?),
+            ]
+            .into(),
         )),
     );
     Ok(RValue::Vector(rv))
@@ -1891,8 +1913,8 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 let data = rv.to_doubles();
                 if let Some(dims) = get_dim_ints(rv.get_attr("dim")) {
                     if dims.len() >= 2 {
-                        let nr = dims[0].unwrap_or(0) as usize;
-                        let nc = dims[1].unwrap_or(0) as usize;
+                        let nr = usize::try_from(dims[0].unwrap_or(0))?;
+                        let nc = usize::try_from(dims[1].unwrap_or(0))?;
                         inputs.push((data, nr, nc));
                         continue;
                     }
@@ -1955,7 +1977,11 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(max_nrow as i64), Some(total_ncol as i64)].into(),
+            vec![
+                Some(i64::try_from(max_nrow)?),
+                Some(i64::try_from(total_ncol)?),
+            ]
+            .into(),
         )),
     );
     Ok(RValue::Vector(rv))
@@ -2226,7 +2252,7 @@ fn builtin_data_frame(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         "names".to_string(),
         RValue::vec(Vector::Character(col_names.into())),
     );
-    let row_names: Vec<Option<i64>> = (1..=max_len as i64).map(Some).collect();
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(max_len)?).map(Some).collect();
     list.set_attr(
         "row.names".to_string(),
         RValue::vec(Vector::Integer(row_names.into())),

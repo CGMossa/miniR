@@ -1,5 +1,6 @@
 //! Table and tabulate builtins — contingency tables and integer bin counting.
 
+use crate::interpreter::coerce::f64_to_i64;
 use crate::interpreter::value::*;
 use newr_macros::builtin;
 
@@ -11,7 +12,10 @@ fn builtin_tabulate(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     let bins: Vec<Option<i64>> = match &args[0] {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Integer(v) => v.to_vec(),
-            Vector::Double(v) => v.iter().map(|d| d.map(|f| f as i64)).collect(),
+            Vector::Double(v) => v
+                .iter()
+                .map(|d| d.map(f64_to_i64).transpose())
+                .collect::<Result<Vec<_>, _>>()?,
             _ => {
                 return Err(RError::Type(
                     "tabulate() requires an integer or double vector".to_string(),
@@ -27,15 +31,21 @@ fn builtin_tabulate(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 
     let max_bin = bins.iter().filter_map(|b| *b).max().unwrap_or(0);
     let nbins = match args.get(1) {
-        Some(RValue::Vector(rv)) => rv.inner.as_integer_scalar().unwrap_or(max_bin).max(0) as usize,
-        _ => max_bin.max(0) as usize,
+        Some(RValue::Vector(rv)) => {
+            usize::try_from(rv.inner.as_integer_scalar().unwrap_or(max_bin).max(0))?
+        }
+        _ => usize::try_from(max_bin.max(0))?,
     };
 
     let mut counts = vec![0i64; nbins];
     for v in bins.iter().flatten() {
         let idx = *v - 1;
-        if idx >= 0 && (idx as usize) < nbins {
-            counts[idx as usize] += 1;
+        if idx >= 0 {
+            if let Ok(uidx) = usize::try_from(idx) {
+                if uidx < nbins {
+                    counts[uidx] += 1;
+                }
+            }
         }
     }
 
