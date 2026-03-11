@@ -13,7 +13,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 ## Builtin Stubs — Core Language
 
 - [ ] `missing(x)` — registered but always returns FALSE (see plans/call-stack.md)
-- [ ] `on.exit(expr)` — register cleanup on function exit (see plans/call-stack.md)
+- [x] 🔧 `on.exit(expr)` — register cleanup on function exit
 - [x] 🔧 `Recall(...)` — recursive self-call (informative error until call stack exists)
 - [ ] `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.function()` / `sys.on.exit()` — call stack introspection (see plans/call-stack.md)
 - [x] 🔧 `args(fn)` — formal arguments of function
