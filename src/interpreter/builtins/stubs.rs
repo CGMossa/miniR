@@ -38,7 +38,6 @@ noop_builtin!("rawShift", 2);
 
 // Regex
 noop_builtin!("reg.finalizer", 2);
-noop_builtin!("Sys.glob", 1);
 
 // Connections
 noop_builtin!("url", 1);

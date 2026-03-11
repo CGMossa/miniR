@@ -361,6 +361,35 @@ fn builtin_tempfile(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::vec(Vector::Character(vec![Some(path)].into())))
 }
 
+// === Glob ===
+
+#[builtin(name = "Sys.glob", min_args = 1)]
+fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let patterns: Vec<String> = args
+        .iter()
+        .filter_map(|v| v.as_vector()?.as_character_scalar())
+        .collect();
+
+    let mut results: Vec<Option<String>> = Vec::new();
+    for pattern in &patterns {
+        match glob::glob(pattern) {
+            Ok(paths) => {
+                for path in paths.flatten() {
+                    results.push(Some(path.to_string_lossy().to_string()));
+                }
+            }
+            Err(e) => {
+                return Err(RError::Other(format!(
+                    "invalid glob pattern '{}': {}",
+                    pattern, e
+                )));
+            }
+        }
+    }
+
+    Ok(RValue::vec(Vector::Character(results.into())))
+}
+
 // === Path operations ===
 
 #[builtin(name = "normalizePath", min_args = 1)]
