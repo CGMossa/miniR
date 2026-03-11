@@ -163,8 +163,29 @@ impl Interpreter {
             Expr::String(s) => Ok(RValue::vec(Vector::Character(vec![Some(s.clone())].into()))),
             Expr::Complex(f) => Ok(RValue::vec(Vector::Double(vec![Some(*f)].into()))), // stub: treat as double
             Expr::Symbol(name) => env.get(name).ok_or_else(|| RError::Name(name.clone())),
-            Expr::Dots => Ok(RValue::Null),
-            Expr::DotDot(_) => Ok(RValue::Null), // stub for ..1, ..2 etc.
+            Expr::Dots => {
+                // Return the ... list from the current environment
+                env.get("...")
+                    .ok_or_else(|| RError::Other("'...' used in incorrect context".to_string()))
+            }
+            Expr::DotDot(n) => {
+                // ..1, ..2 etc. — 1-indexed access into ...
+                let dots = env
+                    .get("...")
+                    .ok_or_else(|| RError::Other(format!("'..{}' used in incorrect context", n)))?;
+                match dots {
+                    RValue::List(list) => {
+                        let idx = (*n as usize).saturating_sub(1);
+                        list.values.get(idx).map(|(_, v)| v.clone()).ok_or_else(|| {
+                            RError::Other(format!("the ... list does not contain {} elements", n))
+                        })
+                    }
+                    _ => Err(RError::Other(format!(
+                        "'..{}' used in incorrect context",
+                        n
+                    ))),
+                }
+            }
 
             Expr::UnaryOp { op, operand } => {
                 let val = self.eval_in(operand, env)?;
@@ -839,7 +860,20 @@ impl Interpreter {
                     named.push((name.clone(), RValue::Null));
                 }
             } else if let Some(ref val_expr) = arg.value {
-                positional.push(self.eval_in(val_expr, env)?);
+                // Expand ... into individual positional/named args
+                if matches!(val_expr, Expr::Dots) {
+                    if let Some(RValue::List(list)) = env.get("...") {
+                        for (opt_name, val) in &list.values {
+                            if let Some(n) = opt_name {
+                                named.push((n.clone(), val.clone()));
+                            } else {
+                                positional.push(val.clone());
+                            }
+                        }
+                    }
+                } else {
+                    positional.push(self.eval_in(val_expr, env)?);
+                }
             }
         }
 
@@ -877,14 +911,23 @@ impl Interpreter {
 
                 // Bind parameters
                 let mut pos_idx = 0;
-                let mut dots_vals: Vec<RValue> = Vec::new();
+                let mut dots_vals: Vec<(Option<String>, RValue)> = Vec::new();
+                let mut has_dots = false;
+                let param_names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
 
                 for param in params {
                     if param.is_dots {
+                        has_dots = true;
                         // Collect remaining positional args into ...
                         while pos_idx < positional.len() {
-                            dots_vals.push(positional[pos_idx].clone());
+                            dots_vals.push((None, positional[pos_idx].clone()));
                             pos_idx += 1;
+                        }
+                        // Collect unmatched named args into ...
+                        for (n, v) in named {
+                            if !param_names.contains(&n.as_str()) {
+                                dots_vals.push((Some(n.clone()), v.clone()));
+                            }
                         }
                         continue;
                     }
@@ -900,6 +943,11 @@ impl Interpreter {
                         call_env.set(param.name.clone(), val);
                     }
                     // else: missing argument, will error when accessed
+                }
+
+                // Bind ... as a list in the call environment
+                if has_dots {
+                    call_env.set("...".to_string(), RValue::List(RList::new(dots_vals)));
                 }
 
                 let result = match self.eval_in(body, &call_env) {
