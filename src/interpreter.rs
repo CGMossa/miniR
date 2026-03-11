@@ -73,6 +73,10 @@ pub struct Interpreter {
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
     #[cfg(feature = "random")]
     rng: RefCell<rand::rngs::StdRng>,
+    /// Session-scoped temporary directory, auto-cleaned on drop.
+    pub(crate) temp_dir: temp_dir::TempDir,
+    /// Counter for unique tempfile names within the session.
+    pub(crate) temp_counter: std::cell::Cell<u64>,
 }
 
 impl Interpreter {
@@ -88,6 +92,8 @@ impl Interpreter {
             condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
             rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
+            temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
+            temp_counter: std::cell::Cell::new(0),
         }
     }
 
