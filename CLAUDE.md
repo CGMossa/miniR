@@ -41,7 +41,8 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `TRUE` and `FALSE` are keywords (not reassignable)
 - `**` is a synonym for `^` (power)
 - Function lookup in call position skips non-function bindings (R's findFun behavior)
-- Formula (`~`) and complex numbers are parsed but stubbed in the interpreter
+- Formula (`~`) is parsed but stubbed in the interpreter
+- Complex numbers are fully supported via `num-complex` (Vector::Complex, arithmetic, Re/Im/Mod/Arg/Conj)
 - Dependencies are vendored (`cargo vendor`) for LLM help and clarity
 - Make as many dependencies optional as possible, and let the default feature include all additive features
 
@@ -67,7 +68,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 - Commit early and often — don't batch unrelated changes
 - Each commit should be one logical change (one feature, one fix, one plan doc)
-- Never mix justfile changes, builtins, plan docs, or type system changes in a single commit
+- Never mix `justfile` changes, builtins, plan docs, or type system changes in a single commit
 - Write short imperative commit messages focused on the "why"
 - Always end with `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
 
@@ -87,6 +88,9 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 - Before committing, always run: `cargo fmt`, `cargo clippy` (zero warnings), and `cargo test`
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
+- **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
+- **Prefer `From`/`TryFrom` over `as` casts** — use `TryFrom` and `From` trait conversions instead of `as`-casts; propagate the error rather than silently truncating or wrapping
+- **Collect all errors, not just the first** — in operations that can fail at multiple points (e.g. vectorized ops, argument validation), collect all errors and propagate them together rather than bailing on the first one
 
 ## Reviews
 
