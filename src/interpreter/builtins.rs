@@ -1,6 +1,8 @@
 mod interp;
 mod math;
 mod pre_eval;
+#[cfg(feature = "random")]
+mod random;
 mod strings;
 mod stubs;
 mod system;

@@ -1,11 +1,7 @@
 use ndarray::{Array2, ShapeBuilder};
 
 use crate::interpreter::value::*;
-use newr_macros::{builtin, noop_builtin};
-
-noop_builtin!("runif", 1);
-noop_builtin!("rnorm", 1);
-noop_builtin!("rbinom", 2);
+use newr_macros::builtin;
 
 // === Math functions ===
 
@@ -1136,19 +1132,6 @@ fn builtin_diff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         }
         _ => Err(RError::Argument("invalid argument".to_string())),
     }
-}
-
-#[builtin(min_args = 1)]
-fn builtin_sample(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(v.clone())),
-        _ => Ok(RValue::Null),
-    }
-}
-
-#[builtin(min_args = 1)]
-fn builtin_set_seed(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
 }
 
 #[builtin(name = "rep_len", min_args = 2)]

@@ -54,11 +54,23 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Random Numbers
 
-- [ ] `runif(n, min, max)` — uniform random (see plans/rng-state.md)
-- [ ] `rnorm(n, mean, sd)` — normal random (see plans/rng-state.md)
-- [ ] `rbinom(n, size, prob)` — binomial random (see plans/rng-state.md)
-- [ ] `set.seed(seed)` — registered but returns NULL (see plans/rng-state.md)
-- [ ] `sample(x, size, replace, prob)` — random sampling (see plans/rng-state.md)
+- [x] 🔧 `runif(n, min, max)` — uniform random
+- [x] 🔧 `rnorm(n, mean, sd)` — normal random
+- [x] 🔧 `rbinom(n, size, prob)` — binomial random
+- [x] 🔧 `rpois(n, lambda)` — Poisson random
+- [x] 🔧 `rexp(n, rate)` — exponential random
+- [x] 🔧 `rgamma(n, shape, rate)` — gamma random
+- [x] 🔧 `rbeta(n, shape1, shape2)` — beta random
+- [x] 🔧 `rcauchy(n, location, scale)` — Cauchy random
+- [x] 🔧 `rchisq(n, df)` — chi-squared random
+- [x] 🔧 `rt(n, df)` — Student's t random
+- [x] 🔧 `rf(n, df1, df2)` — F random
+- [x] 🔧 `rgeom(n, prob)` — geometric random
+- [x] 🔧 `rhyper(nn, m, n, k)` — hypergeometric random
+- [x] 🔧 `rweibull(n, shape, scale)` — Weibull random
+- [x] 🔧 `rlnorm(n, meanlog, sdlog)` — log-normal random
+- [x] 🔧 `set.seed(seed)` — seed RNG for reproducibility
+- [x] 🔧 `sample(x, size, replace, prob)` — random sampling
 
 ## Builtin Stubs — String & Regex
 
