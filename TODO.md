@@ -6,8 +6,8 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Interpreter Stubs (src/interpreter/mod.rs)
 
-- [ ] Complex numbers — parsed but treated as doubles (see plans/num-complex.md)
-- [ ] `..1`, `..2` etc. — parsed but return NULL
+- [x] 🔧 Complex numbers — full support via num-complex (Vector::Complex, arithmetic, Re/Im/Mod/Arg/Conj)
+- [x] 🔧 `..1`, `..2` etc. — element access into `...` list
 - [ ] Formula (`~`) — parsed, binary and unary both return NULL
 
 ## Builtin Stubs — Core Language
@@ -50,7 +50,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] `eigen(x)` — eigenvalues (see plans/nalgebra.md)
 - [ ] `det(x)` — determinant (see plans/nalgebra.md)
 - [ ] `chol(x)` — Cholesky decomposition (see plans/nalgebra.md)
-- [ ] `complex(...)` — create complex number (see plans/num-complex.md)
+- [x] 🔧 `complex(...)` — create complex number via num-complex
 
 ## Builtin Stubs — Random Numbers
 
@@ -96,14 +96,14 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] `load(file)` / `save(..., file)` — workspace I/O (see plans/serde.md)
 - [x] 🔧 `scan(file, ...)` — read data
 - [x] 🔧 `file.info(path)` — file metadata
-- [ ] `tempfile()` / `tempdir()` — rewrite with temp-dir crate for session-scoped cleanup (see plans/temp-dir.md)
+- [x] 🔧 `tempfile()` / `tempdir()` — session-scoped with auto-cleanup via temp-dir crate
 - [ ] `url(...)` / `open(con)` / `close(con)` / `connection(...)` — connections
 - [x] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
 - [ ] `read.parquet(file)` / `write.parquet(df, file)` — Parquet columnar I/O (see plans/parquet.md)
 
 ## Builtin Stubs — System
 
-- [ ] `Sys.glob(paths)` — glob expansion (see plans/globset.md)
+- [x] 🔧 `Sys.glob(paths)` — glob expansion via glob crate
 - [ ] `install.packages(pkgs)` / `installed.packages()` — package management
 - [ ] `require(pkg)` / `library(pkg)` / `loadNamespace(pkg)` / `requireNamespace(pkg)` — package loading (stub prints warning)
 
