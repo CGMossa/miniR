@@ -8,6 +8,24 @@ use crate::interpreter::{with_interpreter, S3DispatchContext};
 use crate::parser::ast::{BinaryOp, UnaryOp};
 use newr_macros::interpreter_builtin;
 
+/// Extract `fail_fast` from named args and return the remaining named args.
+/// Default is `false` (collect all errors).
+fn extract_fail_fast(named: &[(String, RValue)]) -> (bool, Vec<(String, RValue)>) {
+    let mut fail_fast = false;
+    let mut remaining = Vec::with_capacity(named.len());
+    for (name, val) in named {
+        if name == "fail_fast" {
+            fail_fast = val
+                .as_vector()
+                .and_then(|v| v.as_logical_scalar())
+                .unwrap_or(false);
+        } else {
+            remaining.push((name.clone(), val.clone()));
+        }
+    }
+    (fail_fast, remaining)
+}
+
 /// Resolve a function specification: accepts an RValue::Function directly,
 /// or a string naming a function to look up in the environment.
 /// Equivalent to R's match.fun().
@@ -62,7 +80,7 @@ fn interp_vapply(
 
 fn eval_apply(
     positional: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     simplify: bool,
     env: &Environment,
 ) -> Result<RValue, RError> {
@@ -71,6 +89,7 @@ fn eval_apply(
             "need at least 2 arguments for apply".to_string(),
         ));
     }
+    let (fail_fast, _extra_named) = extract_fail_fast(named);
     let x = &positional[0];
     let f = match_fun(&positional[1], env)?;
 
@@ -104,8 +123,15 @@ fn eval_apply(
     with_interpreter(|interp| {
         let mut results: Vec<RValue> = Vec::new();
         for item in &items {
-            let result = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
-            results.push(result);
+            if fail_fast {
+                let result = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
+                results.push(result);
+            } else {
+                match interp.call_function(&f, std::slice::from_ref(item), &[], env) {
+                    Ok(result) => results.push(result),
+                    Err(_) => results.push(RValue::Null),
+                }
+            }
         }
 
         if simplify {
@@ -209,6 +235,7 @@ fn interp_reduce(
             "Reduce requires at least 2 arguments".to_string(),
         ));
     }
+    let (_fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
     let init = positional
@@ -237,6 +264,8 @@ fn interp_reduce(
         vec![]
     };
 
+    // Reduce is inherently sequential — each step depends on the previous.
+    // fail_fast has no meaningful "collect errors" behavior here; errors always propagate.
     with_interpreter(|interp| {
         for item in items.iter().skip(start) {
             acc = interp.call_function(&f, &[acc, item.clone()], &[], env)?;
@@ -258,12 +287,13 @@ fn interp_reduce(
 #[interpreter_builtin(name = "Filter", min_args = 2)]
 fn interp_filter(
     positional: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::Argument("Filter requires 2 arguments".to_string()));
     }
+    let (fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
 
@@ -272,13 +302,25 @@ fn interp_filter(
     let mut results = Vec::new();
     with_interpreter(|interp| {
         for item in &items {
-            let keep = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
-            if keep
-                .as_vector()
-                .and_then(|v| v.as_logical_scalar())
-                .unwrap_or(false)
+            if fail_fast {
+                let keep = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
+                if keep
+                    .as_vector()
+                    .and_then(|v| v.as_logical_scalar())
+                    .unwrap_or(false)
+                {
+                    results.push(item.clone());
+                }
+            } else if let Ok(keep) = interp.call_function(&f, std::slice::from_ref(item), &[], env)
             {
-                results.push(item.clone());
+                if keep
+                    .as_vector()
+                    .and_then(|v| v.as_logical_scalar())
+                    .unwrap_or(false)
+                {
+                    results.push(item.clone());
+                }
+                // Errors are silently skipped (element excluded from results)
             }
         }
         Ok::<(), RError>(())
@@ -303,7 +345,7 @@ fn interp_filter(
 #[interpreter_builtin(name = "Map", min_args = 2)]
 fn interp_map(
     positional: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
@@ -311,6 +353,7 @@ fn interp_map(
             "Map requires at least 2 arguments".to_string(),
         ));
     }
+    let (fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
 
     let seqs: Vec<Vec<RValue>> = positional[1..].iter().map(rvalue_to_items).collect();
@@ -330,7 +373,13 @@ fn interp_map(
                     }
                 })
                 .collect();
-            let result = interp.call_function(&f, &call_args, &[], env)?;
+            let result = if fail_fast {
+                interp.call_function(&f, &call_args, &[], env)?
+            } else {
+                interp
+                    .call_function(&f, &call_args, &[], env)
+                    .unwrap_or(RValue::Null)
+            };
             results.push((None, result));
         }
         Ok::<(), RError>(())
@@ -945,6 +994,7 @@ fn interp_apply(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
+    let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
         .first()
         .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
@@ -1004,13 +1054,19 @@ fn interp_apply(
             let mut results: Vec<RValue> = Vec::with_capacity(nrow);
             with_interpreter(|interp| {
                 for i in 0..nrow {
-                    // Extract row i: column-major, so element [i,j] is at index i + j*nrow
                     let row: Vec<Option<f64>> = (0..ncol).map(|j| data[i + j * nrow]).collect();
                     let row_val = RValue::vec(Vector::Double(row.into()));
                     let mut call_args = vec![row_val];
                     call_args.extend(extra_args.iter().cloned());
-                    let result = interp.call_function(&fun, &call_args, named, env)?;
-                    results.push(result);
+                    if fail_fast {
+                        let result = interp.call_function(&fun, &call_args, &extra_named, env)?;
+                        results.push(result);
+                    } else {
+                        match interp.call_function(&fun, &call_args, &extra_named, env) {
+                            Ok(result) => results.push(result),
+                            Err(_) => results.push(RValue::Null),
+                        }
+                    }
                 }
                 Ok::<(), RError>(())
             })?;
@@ -1021,13 +1077,19 @@ fn interp_apply(
             let mut results: Vec<RValue> = Vec::with_capacity(ncol);
             with_interpreter(|interp| {
                 for j in 0..ncol {
-                    // Extract column j: column-major, elements at j*nrow..(j+1)*nrow
                     let col: Vec<Option<f64>> = (0..nrow).map(|i| data[i + j * nrow]).collect();
                     let col_val = RValue::vec(Vector::Double(col.into()));
                     let mut call_args = vec![col_val];
                     call_args.extend(extra_args.iter().cloned());
-                    let result = interp.call_function(&fun, &call_args, named, env)?;
-                    results.push(result);
+                    if fail_fast {
+                        let result = interp.call_function(&fun, &call_args, &extra_named, env)?;
+                        results.push(result);
+                    } else {
+                        match interp.call_function(&fun, &call_args, &extra_named, env) {
+                            Ok(result) => results.push(result),
+                            Err(_) => results.push(RValue::Null),
+                        }
+                    }
                 }
                 Ok::<(), RError>(())
             })?;
@@ -1141,6 +1203,7 @@ fn interp_mapply(
     env: &Environment,
 ) -> Result<RValue, RError> {
     // mapply(FUN, ..., MoreArgs = NULL, SIMPLIFY = TRUE, USE.NAMES = TRUE)
+    let (fail_fast, extra_named) = extract_fail_fast(named);
     let fun = match_fun(
         positional
             .first()
@@ -1148,7 +1211,7 @@ fn interp_mapply(
         env,
     )?;
 
-    let simplify = named
+    let simplify = extra_named
         .iter()
         .find(|(n, _)| n == "SIMPLIFY")
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
@@ -1178,7 +1241,13 @@ fn interp_mapply(
                     }
                 })
                 .collect();
-            let result = interp.call_function(&fun, &call_args, &[], env)?;
+            let result = if fail_fast {
+                interp.call_function(&fun, &call_args, &[], env)?
+            } else {
+                interp
+                    .call_function(&fun, &call_args, &[], env)
+                    .unwrap_or(RValue::Null)
+            };
             results.push(result);
         }
         Ok::<(), RError>(())
@@ -1248,6 +1317,7 @@ fn interp_tapply(
     env: &Environment,
 ) -> Result<RValue, RError> {
     // tapply(X, INDEX, FUN)
+    let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
         .first()
         .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
@@ -1306,10 +1376,16 @@ fn interp_tapply(
     with_interpreter(|interp| {
         for name in &group_names {
             let group = groups.remove(name).unwrap_or_default();
-            // Combine group items into a single vector
             let group_vec = combine_items_to_vector(&group);
-            let result = interp.call_function(&fun, &[group_vec], named, env)?;
-            result_entries.push((Some(name.clone()), result));
+            if fail_fast {
+                let result = interp.call_function(&fun, &[group_vec], &extra_named, env)?;
+                result_entries.push((Some(name.clone()), result));
+            } else {
+                match interp.call_function(&fun, &[group_vec], &extra_named, env) {
+                    Ok(result) => result_entries.push((Some(name.clone()), result)),
+                    Err(_) => result_entries.push((Some(name.clone()), RValue::Null)),
+                }
+            }
         }
         Ok::<(), RError>(())
     })?;
@@ -1483,6 +1559,7 @@ fn interp_by(
     env: &Environment,
 ) -> Result<RValue, RError> {
     // by(data, INDICES, FUN) — similar to tapply but for data-frame-like objects.
+    let (fail_fast, extra_named) = extract_fail_fast(named);
     // For vectors, delegate to tapply-like behavior.
     // For lists/data frames, split rows by INDICES and apply FUN to each subset.
     let data = positional
@@ -1543,8 +1620,15 @@ fn interp_by(
             for name in &group_names {
                 let group = groups.remove(name).unwrap_or_default();
                 let group_vec = combine_items_to_vector(&group);
-                let result = interp.call_function(&fun, &[group_vec], named, env)?;
-                result_entries.push((Some(name.clone()), result));
+                if fail_fast {
+                    let result = interp.call_function(&fun, &[group_vec], &extra_named, env)?;
+                    result_entries.push((Some(name.clone()), result));
+                } else {
+                    match interp.call_function(&fun, &[group_vec], &extra_named, env) {
+                        Ok(result) => result_entries.push((Some(name.clone()), result)),
+                        Err(_) => result_entries.push((Some(name.clone()), RValue::Null)),
+                    }
+                }
             }
             Ok::<(), RError>(())
         })?;
@@ -1630,8 +1714,15 @@ fn interp_by(
                 }
 
                 let subset_val = RValue::List(subset_list);
-                let result = interp.call_function(&fun, &[subset_val], named, env)?;
-                result_entries.push((Some(name.clone()), result));
+                if fail_fast {
+                    let result = interp.call_function(&fun, &[subset_val], &extra_named, env)?;
+                    result_entries.push((Some(name.clone()), result));
+                } else {
+                    match interp.call_function(&fun, &[subset_val], &extra_named, env) {
+                        Ok(result) => result_entries.push((Some(name.clone()), result)),
+                        Err(_) => result_entries.push((Some(name.clone()), RValue::Null)),
+                    }
+                }
             }
             Ok::<(), RError>(())
         })?;
