@@ -83,10 +83,11 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — Error Handling
 
-- [ ] `withCallingHandlers(expr, ...)` — condition handlers (see plans/conditions.md)
-- [ ] `conditionMessage(c)` / `conditionCall(c)` — condition accessors (see plans/conditions.md)
-- [ ] `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` — condition constructors (see plans/conditions.md)
-- [ ] `suppressWarnings(expr)` / `suppressMessages(expr)` — suppress conditions (see plans/conditions.md)
+- [x] 🔧 `withCallingHandlers(expr, ...)` — condition handlers (see plans/conditions.md)
+- [x] 🔧 `conditionMessage(c)` / `conditionCall(c)` — condition accessors (see plans/conditions.md)
+- [x] 🔧 `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` / `simpleCondition(msg)` — condition constructors (see plans/conditions.md)
+- [x] 🔧 `suppressWarnings(expr)` / `suppressMessages(expr)` — suppress conditions (see plans/conditions.md)
+- [x] 🔧 `invokeRestart(name)` — invoke a restart (muffleWarning, muffleMessage)
 - [x] 🔧 `withVisible(expr)` — evaluate with visibility flag
 
 ## Builtin Stubs — File I/O
