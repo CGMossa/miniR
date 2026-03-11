@@ -16,8 +16,7 @@ noop_builtin!("eigen", 1);
 noop_builtin!("det", 1);
 noop_builtin!("chol", 1);
 
-// Types
-noop_builtin!("complex");
+// Types (complex — math.rs)
 noop_builtin!("raw");
 
 // Factors & tables (factor, levels, nlevels, table, tabulate — builtins.rs)

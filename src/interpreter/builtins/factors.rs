@@ -13,6 +13,7 @@ pub(super) fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RErr
             Vector::Character(c) => Ok(c.to_vec()),
             Vector::Integer(v) => Ok(v.iter().map(|i| i.map(|n| n.to_string())).collect()),
             Vector::Double(v) => Ok(v.iter().map(|d| d.map(|n| n.to_string())).collect()),
+            Vector::Complex(v) => Ok(v.iter().map(|c| c.map(format_r_complex)).collect()),
             Vector::Logical(v) => Ok(v
                 .iter()
                 .map(|b| {

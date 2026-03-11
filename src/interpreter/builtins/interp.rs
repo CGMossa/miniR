@@ -84,6 +84,10 @@ fn eval_apply(
                 .iter()
                 .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
                 .collect(),
+            Vector::Complex(vals) => vals
+                .iter()
+                .map(|x| RValue::vec(Vector::Complex(vec![*x].into())))
+                .collect(),
             Vector::Character(vals) => vals
                 .iter()
                 .map(|x| RValue::vec(Vector::Character(vec![x.clone()].into())))
@@ -665,6 +669,10 @@ fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
             Vector::Integer(vals) => vals
                 .iter()
                 .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
+                .collect(),
+            Vector::Complex(vals) => vals
+                .iter()
+                .map(|x| RValue::vec(Vector::Complex(vec![*x].into())))
                 .collect(),
             Vector::Character(vals) => vals
                 .iter()

@@ -635,6 +635,7 @@ dependencies = [
  "linkme",
  "ndarray",
  "newr-macros",
+ "num-complex",
  "pest",
  "pest_derive",
  "rand",

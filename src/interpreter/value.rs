@@ -1,9 +1,11 @@
 pub mod character;
+pub mod complex;
 pub mod double;
 pub mod integer;
 pub mod logical;
 
 pub use character::Character;
+pub use complex::ComplexVec;
 pub use double::Double;
 pub use integer::Integer;
 pub use logical::Logical;
@@ -156,6 +158,7 @@ pub enum Vector {
     Logical(Logical),
     Integer(Integer),
     Double(Double),
+    Complex(ComplexVec),
     Character(Character),
 }
 
@@ -165,6 +168,7 @@ impl Vector {
             Vector::Logical(v) => v.len(),
             Vector::Integer(v) => v.len(),
             Vector::Double(v) => v.len(),
+            Vector::Complex(v) => v.len(),
             Vector::Character(v) => v.len(),
         }
     }
@@ -180,6 +184,11 @@ impl Vector {
             Vector::Logical(v) => v.first().copied().flatten(),
             Vector::Integer(v) => v.first().copied().flatten().map(|i| i != 0),
             Vector::Double(v) => v.first().copied().flatten().map(|f| f != 0.0),
+            Vector::Complex(v) => v
+                .first()
+                .copied()
+                .flatten()
+                .map(|c| c.re != 0.0 || c.im != 0.0),
             Vector::Character(_) => None,
         }
     }
@@ -194,6 +203,7 @@ impl Vector {
                 .copied()
                 .flatten()
                 .map(|b| if b { 1.0 } else { 0.0 }),
+            Vector::Complex(_) => None, // complex cannot coerce to double without losing info
             Vector::Character(v) => v.first().cloned().flatten().and_then(|s| s.parse().ok()),
         }
     }
@@ -204,6 +214,7 @@ impl Vector {
             Vector::Integer(v) => v.first().copied().flatten(),
             Vector::Double(v) => v.first().copied().flatten().map(|f| f as i64),
             Vector::Logical(v) => v.first().copied().flatten().map(|b| if b { 1 } else { 0 }),
+            Vector::Complex(_) => None,
             Vector::Character(v) => v.first().cloned().flatten().and_then(|s| s.parse().ok()),
         }
     }
@@ -221,6 +232,7 @@ impl Vector {
                     "FALSE".to_string()
                 }
             }),
+            Vector::Complex(v) => v.first().copied().flatten().map(format_r_complex),
         }
     }
 
@@ -233,6 +245,7 @@ impl Vector {
                 .iter()
                 .map(|x| x.map(|b| if b { 1.0 } else { 0.0 }))
                 .collect(),
+            Vector::Complex(v) => v.iter().map(|x| x.map(|c| c.re)).collect(),
             Vector::Character(v) => v
                 .iter()
                 .map(|x| x.as_ref().and_then(|s| s.parse().ok()))
@@ -246,6 +259,7 @@ impl Vector {
             Vector::Integer(v) => v.0.clone(),
             Vector::Double(v) => v.iter().map(|x| x.map(|f| f as i64)).collect(),
             Vector::Logical(v) => v.iter().map(|x| x.map(|b| if b { 1 } else { 0 })).collect(),
+            Vector::Complex(v) => v.iter().map(|x| x.map(|c| c.re as i64)).collect(),
             Vector::Character(v) => v
                 .iter()
                 .map(|x| x.as_ref().and_then(|s| s.parse().ok()))
@@ -271,6 +285,7 @@ impl Vector {
                     })
                 })
                 .collect(),
+            Vector::Complex(v) => v.iter().map(|x| x.map(format_r_complex)).collect(),
         }
     }
 
@@ -280,7 +295,38 @@ impl Vector {
             Vector::Logical(v) => v.0.clone(),
             Vector::Integer(v) => v.iter().map(|x| x.map(|i| i != 0)).collect(),
             Vector::Double(v) => v.iter().map(|x| x.map(|f| f != 0.0)).collect(),
+            Vector::Complex(v) => v
+                .iter()
+                .map(|x| x.map(|c| c.re != 0.0 || c.im != 0.0))
+                .collect(),
             Vector::Character(_) => vec![None; self.len()],
+        }
+    }
+
+    /// Convert entire vector to complex
+    pub fn to_complex(&self) -> Vec<Option<num_complex::Complex64>> {
+        match self {
+            Vector::Complex(v) => v.0.clone(),
+            Vector::Double(v) => v
+                .iter()
+                .map(|x| x.map(|f| num_complex::Complex64::new(f, 0.0)))
+                .collect(),
+            Vector::Integer(v) => v
+                .iter()
+                .map(|x| x.map(|i| num_complex::Complex64::new(i as f64, 0.0)))
+                .collect(),
+            Vector::Logical(v) => v
+                .iter()
+                .map(|x| x.map(|b| num_complex::Complex64::new(if b { 1.0 } else { 0.0 }, 0.0)))
+                .collect(),
+            Vector::Character(v) => v
+                .iter()
+                .map(|x| {
+                    x.as_ref()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .map(|f| num_complex::Complex64::new(f, 0.0))
+                })
+                .collect(),
         }
     }
 
@@ -289,6 +335,7 @@ impl Vector {
             Vector::Logical(_) => "logical",
             Vector::Integer(_) => "integer",
             Vector::Double(_) => "double",
+            Vector::Complex(_) => "complex",
             Vector::Character(_) => "character",
         }
     }
@@ -307,6 +354,15 @@ pub fn format_r_double(f: f64) -> String {
         format!("{}", f as i64)
     } else {
         format!("{}", f)
+    }
+}
+
+pub fn format_r_complex(c: num_complex::Complex64) -> String {
+    let re = format_r_double(c.re);
+    if c.im >= 0.0 || c.im.is_nan() {
+        format!("{}+{}i", re, format_r_double(c.im))
+    } else {
+        format!("{}{}i", re, format_r_double(c.im))
     }
 }
 
@@ -394,6 +450,7 @@ pub fn format_vector(v: &Vector) -> String {
             Vector::Logical(_) => "logical(0)".to_string(),
             Vector::Integer(_) => "integer(0)".to_string(),
             Vector::Double(_) => "numeric(0)".to_string(),
+            Vector::Complex(_) => "complex(0)".to_string(),
             Vector::Character(_) => "character(0)".to_string(),
         };
     }
@@ -418,6 +475,13 @@ pub fn format_vector(v: &Vector) -> String {
             .iter()
             .map(|x| match x {
                 Some(f) => format_r_double(*f),
+                None => "NA".to_string(),
+            })
+            .collect(),
+        Vector::Complex(vals) => vals
+            .iter()
+            .map(|x| match x {
+                Some(c) => format_r_complex(*c),
                 None => "NA".to_string(),
             })
             .collect(),

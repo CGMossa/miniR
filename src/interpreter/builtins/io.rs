@@ -605,6 +605,10 @@ fn format_cell(val: &RValue, idx: usize, quote: bool) -> String {
             Vector::Logical(v) => v.get(idx).and_then(|x| *x).map_or("NA".to_string(), |b| {
                 if b { "TRUE" } else { "FALSE" }.to_string()
             }),
+            Vector::Complex(v) => v
+                .get(idx)
+                .and_then(|x| *x)
+                .map_or("NA".to_string(), format_r_complex),
             Vector::Character(v) => {
                 v.get(idx)
                     .and_then(|x| x.as_ref())

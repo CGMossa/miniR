@@ -242,14 +242,16 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         return Ok(RValue::List(RList::new(result)));
     }
 
-    // Determine highest type
+    // Determine highest type (logical < integer < double < complex < character)
     let mut has_char = false;
+    let mut has_complex = false;
     let mut has_double = false;
     let mut has_int = false;
 
     for val in &all_values {
         match val {
             RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => has_char = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Complex(_)) => has_complex = true,
             RValue::Vector(rv) if matches!(rv.inner, Vector::Double(_)) => has_double = true,
             RValue::Vector(rv) if matches!(rv.inner, Vector::Integer(_)) => has_int = true,
             RValue::Null => {}
@@ -267,6 +269,16 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             }
         }
         Ok(RValue::vec(Vector::Character(result.into())))
+    } else if has_complex {
+        let mut result = Vec::new();
+        for val in &all_values {
+            match val {
+                RValue::Vector(v) => result.extend(v.inner.to_complex()),
+                RValue::Null => {}
+                _ => {}
+            }
+        }
+        Ok(RValue::vec(Vector::Complex(result.into())))
     } else if has_double {
         let mut result = Vec::new();
         for val in &all_values {
@@ -340,6 +352,10 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                             Some(false) => "FALSE".to_string(),
                             None => "NA".to_string(),
                         })
+                        .collect(),
+                    Vector::Complex(vals) => vals
+                        .iter()
+                        .map(|x| x.map(format_r_complex).unwrap_or_else(|| "NA".to_string()))
                         .collect(),
                 };
                 elems.join(&sep)
@@ -480,6 +496,7 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
                     .iter()
                     .map(|x| Some(x.is_none() || x.map(|f| f.is_nan()).unwrap_or(false)))
                     .collect(),
+                Vector::Complex(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
                 Vector::Character(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
             };
             Ok(RValue::vec(Vector::Logical(result.into())))
@@ -686,6 +703,7 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             Vector::Logical(_) => "logical",
             Vector::Integer(_) => "integer",
             Vector::Double(_) => "numeric",
+            Vector::Complex(_) => "complex",
             Vector::Character(_) => "character",
         },
         Some(RValue::List(_)) => "list",
@@ -704,6 +722,7 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Logical(_) => "logical",
             Vector::Integer(_) | Vector::Double(_) => "numeric",
+            Vector::Complex(_) => "complex",
             Vector::Character(_) => "character",
         },
         Some(RValue::List(_)) => "list",
@@ -749,6 +768,15 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                             .map(|x| match x {
                                 Some(true) => "TRUE".to_string(),
                                 Some(false) => "FALSE".to_string(),
+                                None => "NA".to_string(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        Vector::Complex(vals) => vals
+                            .iter()
+                            .take(10)
+                            .map(|x| match x {
+                                Some(c) => format_r_complex(*c),
                                 None => "NA".to_string(),
                             })
                             .collect::<Vec<_>>()
@@ -938,6 +966,10 @@ fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 Vector::Logical(vals) => vals
                     .iter()
                     .map(|x| (None, RValue::vec(Vector::Logical(vec![*x].into()))))
+                    .collect(),
+                Vector::Complex(vals) => vals
+                    .iter()
+                    .map(|x| (None, RValue::vec(Vector::Complex(vec![*x].into()))))
                     .collect(),
                 Vector::Character(vals) => vals
                     .iter()
@@ -2060,6 +2092,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                     Vector::Logical(_) => vec!["logical".to_string()],
                     Vector::Integer(_) => vec!["integer".to_string()],
                     Vector::Double(_) => vec!["numeric".to_string()],
+                    Vector::Complex(_) => vec!["complex".to_string()],
                     Vector::Character(_) => vec!["character".to_string()],
                 }
             }

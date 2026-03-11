@@ -799,6 +799,14 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                     .collect::<Vec<_>>()
                     .into(),
             ))),
+            Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(
+                vals.iter()
+                    .cycle()
+                    .take(vals.len() * times)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into(),
+            ))),
             Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
                 vals.iter()
                     .cycle()
@@ -831,6 +839,11 @@ fn builtin_rev(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                     let mut v = vals.clone();
                     v.reverse();
                     Vector::Logical(v)
+                }
+                Vector::Complex(vals) => {
+                    let mut v = vals.clone();
+                    v.reverse();
+                    Vector::Complex(v)
                 }
                 Vector::Character(vals) => {
                     let mut v = vals.clone();
@@ -941,6 +954,18 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                         }
                     }
                     Vector::Character(result.into())
+                }
+                Vector::Complex(vals) => {
+                    let mut seen = Vec::new();
+                    let mut result = Vec::new();
+                    for x in vals.iter() {
+                        let key = format!("{:?}", x);
+                        if !seen.contains(&key) {
+                            seen.push(key);
+                            result.push(*x);
+                        }
+                    }
+                    Vector::Complex(result.into())
                 }
                 Vector::Logical(vals) => {
                     let mut seen = Vec::new();
@@ -1057,6 +1082,7 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 Vector::Double(vals) => Vector::Double(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Integer(vals) => Vector::Integer(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec().into()),
+                Vector::Complex(vals) => Vector::Complex(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Character(vals) => {
                     Vector::Character(vals[..n.min(vals.len())].to_vec().into())
                 }
@@ -1084,6 +1110,7 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 Vector::Double(vals) => Vector::Double(vals[start..].to_vec().into()),
                 Vector::Integer(vals) => Vector::Integer(vals[start..].to_vec().into()),
                 Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec().into()),
+                Vector::Complex(vals) => Vector::Complex(vals[start..].to_vec().into()),
                 Vector::Character(vals) => Vector::Character(vals[start..].to_vec().into()),
             };
             Ok(RValue::vec(result))
@@ -1173,6 +1200,14 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                         .collect::<Vec<_>>()
                         .into(),
                 ))),
+                Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(
+                    vals.iter()
+                        .cycle()
+                        .take(length_out)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into(),
+                ))),
                 Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
                     vals.iter()
                         .cycle()
@@ -1215,6 +1250,14 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     .into(),
             ))),
             Vector::Logical(vals) => Ok(RValue::vec(Vector::Logical(
+                vals.iter()
+                    .cycle()
+                    .take(vals.len() * times)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into(),
+            ))),
+            Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(
                 vals.iter()
                     .cycle()
                     .take(vals.len() * times)
@@ -1539,5 +1582,175 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         )),
     );
     Ok(RValue::Vector(rv))
+}
+// endregion
+
+// region: Complex number builtins
+
+#[builtin(name = "complex")]
+fn builtin_complex(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let real = named
+        .iter()
+        .find(|(n, _)| n == "real")
+        .and_then(|(_, v)| v.as_vector())
+        .map(|v| v.to_doubles())
+        .unwrap_or_default();
+
+    let imaginary = named
+        .iter()
+        .find(|(n, _)| n == "imaginary")
+        .and_then(|(_, v)| v.as_vector())
+        .map(|v| v.to_doubles())
+        .unwrap_or_default();
+
+    let length_out = named
+        .iter()
+        .find(|(n, _)| n == "length.out")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(0.max(real.len().max(imaginary.len()) as i64)) as usize;
+
+    let result: Vec<Option<num_complex::Complex64>> = (0..length_out)
+        .map(|i| {
+            let re = real
+                .get(i % real.len().max(1))
+                .copied()
+                .flatten()
+                .unwrap_or(0.0);
+            let im = imaginary
+                .get(i % imaginary.len().max(1))
+                .copied()
+                .flatten()
+                .unwrap_or(0.0);
+            Some(num_complex::Complex64::new(re, im))
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Complex(result.into())))
+}
+
+#[builtin(name = "Re", min_args = 1)]
+fn builtin_re(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("non-numeric argument to Re".to_string()))?;
+    match v {
+        Vector::Complex(vals) => {
+            let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.re)).collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+        _ => {
+            // For non-complex, Re is identity (the real part of a real number is itself)
+            Ok(RValue::vec(Vector::Double(v.to_doubles().into())))
+        }
+    }
+}
+
+#[builtin(name = "Im", min_args = 1)]
+fn builtin_im(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("non-numeric argument to Im".to_string()))?;
+    match v {
+        Vector::Complex(vals) => {
+            let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.im)).collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+        _ => {
+            // For non-complex, Im is 0
+            let result: Vec<Option<f64>> = vec![Some(0.0); v.len()];
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+    }
+}
+
+#[builtin(name = "Mod", min_args = 1)]
+fn builtin_mod_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("non-numeric argument to Mod".to_string()))?;
+    match v {
+        Vector::Complex(vals) => {
+            let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.norm())).collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+        _ => {
+            // For non-complex, Mod is abs
+            let result: Vec<Option<f64>> = v.to_doubles().iter().map(|x| x.map(f64::abs)).collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+    }
+}
+
+#[builtin(name = "Arg", min_args = 1)]
+fn builtin_arg(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("non-numeric argument to Arg".to_string()))?;
+    match v {
+        Vector::Complex(vals) => {
+            let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.arg())).collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+        _ => {
+            // For non-negative reals Arg is 0, for negative reals it's pi
+            let result: Vec<Option<f64>> = v
+                .to_doubles()
+                .iter()
+                .map(|x| x.map(|f| if f >= 0.0 { 0.0 } else { std::f64::consts::PI }))
+                .collect();
+            Ok(RValue::vec(Vector::Double(result.into())))
+        }
+    }
+}
+
+#[builtin(name = "Conj", min_args = 1)]
+fn builtin_conj(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("non-numeric argument to Conj".to_string()))?;
+    match v {
+        Vector::Complex(vals) => {
+            let result: Vec<Option<num_complex::Complex64>> =
+                vals.iter().map(|x| x.map(|c| c.conj())).collect();
+            Ok(RValue::vec(Vector::Complex(result.into())))
+        }
+        _ => {
+            // For non-complex, Conj is identity
+            Ok(args[0].clone())
+        }
+    }
+}
+
+#[builtin(name = "is.complex", min_args = 1)]
+fn builtin_is_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let result = matches!(
+        args.first(),
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Complex(_))
+    );
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
+}
+
+#[builtin(name = "as.complex", min_args = 1)]
+fn builtin_as_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let v = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| RError::Type("cannot coerce to complex".to_string()))?;
+    match v {
+        Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(vals.clone()))),
+        _ => {
+            let result: Vec<Option<num_complex::Complex64>> = v
+                .to_doubles()
+                .iter()
+                .map(|x| x.map(|f| num_complex::Complex64::new(f, 0.0)))
+                .collect();
+            Ok(RValue::vec(Vector::Complex(result.into())))
+        }
+    }
 }
 // endregion
