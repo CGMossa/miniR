@@ -11,13 +11,41 @@ lint:
     cargo clippy -- -D warnings
     npx --yes markdownlint-cli2 '**/*.md' '#vendor' '#cran' '#target'
 
-# Re-vendor crates (cargo vendor resolves from crates.io, bypassing source replacement)
+# Re-vendor crates, skipping if Cargo.toml/Cargo.lock files haven't changed
 vendor:
     #!/usr/bin/env bash
     set -euo pipefail
+    HASH_FILE="{{root}}/vendor/.cargo-lock-hash"
+    # Hash all Cargo.toml and Cargo.lock files (excluding vendor/)
+    CURRENT_HASH=$(find "{{root}}" -path "{{root}}/vendor" -prune -o \
+        -path "{{root}}/cran" -prune -o \
+        -path "{{root}}/target" -prune -o \
+        \( -name 'Cargo.toml' -o -name 'Cargo.lock' \) -print \
+        | sort | xargs cat | md5)
+    if [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" = "$CURRENT_HASH" ]; then
+        echo "vendor/ is up to date (no Cargo.toml/Cargo.lock changes)"
+        exit 0
+    fi
     cargo vendor "{{root}}/vendor"
     printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "{{root}}/vendor"\n' > "{{root}}/.cargo/config.toml"
     printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
+    echo "$CURRENT_HASH" > "$HASH_FILE"
+
+# Re-vendor crates unconditionally (ignores hash check)
+vendor-force:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    HASH_FILE="{{root}}/vendor/.cargo-lock-hash"
+    cargo vendor "{{root}}/vendor"
+    printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "{{root}}/vendor"\n' > "{{root}}/.cargo/config.toml"
+    printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
+    # Update hash after forced vendor
+    CURRENT_HASH=$(find "{{root}}" -path "{{root}}/vendor" -prune -o \
+        -path "{{root}}/cran" -prune -o \
+        -path "{{root}}/target" -prune -o \
+        \( -name 'Cargo.toml' -o -name 'Cargo.lock' \) -print \
+        | sort | xargs cat | md5)
+    echo "$CURRENT_HASH" > "$HASH_FILE"
 
 # Update Cargo.lock from crates.io, bypassing vendor source replacement
 update *args:
