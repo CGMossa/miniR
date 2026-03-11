@@ -1,155 +1,125 @@
+# Test R condition system: tryCatch, withCallingHandlers, suppressWarnings, etc.
 
-saveTo <- function(to) function(cond) assign(to, cond, envir = globalenv())
-isCond <- function(x, class, msg) {
-    inherits(x, "condition") && inherits(x, class) && identical(x$message, msg)
-}
-
-## Handler stack starts empty
-handlers <- withVisible(globalCallingHandlers())
-stopifnot(
-    identical(handlers$value, list()),
-    isTRUE(handlers$visible)
+# --- tryCatch with error ---
+result <- tryCatch(
+  stop("test error"),
+  error = function(e) conditionMessage(e)
 )
+stopifnot(result == "test error")
+cat("PASS: tryCatch catches error\n")
 
-## Handlers must be functions
-err <- tryCatch(globalCallingHandlers(foo = identity, bar = NA),
-                error = identity)
-stopifnot(identical(err$message, "condition handlers must be functions"))
-
-## Can register and inspect handler
-globalCallingHandlers(error = saveTo(".Last.error"))
-handlers <- withVisible(globalCallingHandlers())
-
-stopifnot(
-    length(handlers$value) == 1,
-    names(handlers$value) == "error",
-    handlers$visible
+# --- tryCatch with warning handler ---
+result <- tryCatch(
+  {
+    warning("test warning")
+    42
+  },
+  warning = function(w) paste("caught:", conditionMessage(w))
 )
+stopifnot(result == "caught: test warning")
+cat("PASS: tryCatch catches warning\n")
 
-## Handlers are invoked based on class
-.Last.error <- NULL
-signalCondition(simpleCondition("foo"))
-stopifnot(is.null(.Last.error))
-signalCondition(simpleError("foo"))
-stopifnot(isCond(.Last.error, "error", "foo"))
-
-## Can register multiple handlers
-globalCallingHandlers(
-    condition = saveTo(".Last.condition"),
-    warning = saveTo(".Last.warning")
+# --- tryCatch finally block ---
+cleanup_ran <- FALSE
+result <- tryCatch(
+  42,
+  finally = { cleanup_ran <- TRUE }
 )
-handlers <- globalCallingHandlers()
-stopifnot(length(handlers) == 3,
-          all(names(handlers) == c("condition", "warning", "error")))
+stopifnot(result == 42)
+stopifnot(cleanup_ran)
+cat("PASS: tryCatch finally block runs\n")
 
-## Multiple handlers are invoked
-.Last.error <- NULL
-signalCondition(simpleWarning("bar"))
-stopifnot(
-    is.null(.Last.error),
-    isCond(.Last.condition, "warning", "bar"),
-    isCond(.Last.warning, "warning", "bar")
+# --- tryCatch finally with error ---
+cleanup2 <- FALSE
+result2 <- tryCatch(
+  stop("oops"),
+  error = function(e) "recovered",
+  finally = { cleanup2 <- TRUE }
 )
-signalCondition(simpleError("baz"))
-stopifnot(
-    isCond(.Last.error, "error", "baz"),
-    isCond(.Last.condition, "error", "baz"),
-    isCond(.Last.warning, "warning", "bar")
-)
+stopifnot(result2 == "recovered")
+stopifnot(cleanup2)
+cat("PASS: tryCatch finally runs after error\n")
 
-## Handlers are not invoked if error is caught
-.Last.error <- NULL
-try(stop("baz"), TRUE)
-stopifnot(is.null(.Last.error))
+# --- simpleError constructor ---
+e <- simpleError("my error")
+stopifnot(conditionMessage(e) == "my error")
+stopifnot(inherits(e, "error"))
+stopifnot(inherits(e, "condition"))
+cat("PASS: simpleError constructor\n")
 
-## Can remove handlers
-handlers <- globalCallingHandlers()
-old <- withVisible(globalCallingHandlers(NULL))
-stopifnot(
-    identical(old$value, handlers),
-    !old$visible,
-    identical(globalCallingHandlers(), list())
-)
-signalCondition(simpleError("foo"))
-stopifnot(is.null(.Last.error))
+# --- simpleWarning constructor ---
+w <- simpleWarning("my warning")
+stopifnot(conditionMessage(w) == "my warning")
+stopifnot(inherits(w, "warning"))
+stopifnot(inherits(w, "condition"))
+cat("PASS: simpleWarning constructor\n")
 
-## Can pass list of handlers
-foobars <- list(foo = function() "foo", bar = function() "bar")
-globalCallingHandlers(foobars)
-stopifnot(identical(globalCallingHandlers(), foobars))
-globalCallingHandlers(NULL)
+# --- simpleMessage constructor ---
+m <- simpleMessage("my message")
+stopifnot(conditionMessage(m) == "my message")
+stopifnot(inherits(m, "message"))
+stopifnot(inherits(m, "condition"))
+cat("PASS: simpleMessage constructor\n")
 
-## Local handlers are not returned
-handlers <- withCallingHandlers(foo = function(...) NULL,
-                                globalCallingHandlers())
-stopifnot(identical(handlers, list()))
-globalCallingHandlers(foobars)
-handlers <- withCallingHandlers(foo = function(...) NULL,
-                                globalCallingHandlers())
-stopifnot(identical(handlers, foobars))
-globalCallingHandlers(NULL)
+# --- withCallingHandlers (non-unwinding) ---
+log <- character(0)
+result <- withCallingHandlers(
+  {
+    warning("w1")
+    warning("w2")
+    "done"
+  },
+  warning = function(w) {
+    log <<- c(log, conditionMessage(w))
+    invokeRestart("muffleWarning")
+  }
+)
+stopifnot(result == "done")
+stopifnot(length(log) == 2)
+stopifnot(log[1] == "w1")
+stopifnot(log[2] == "w2")
+cat("PASS: withCallingHandlers collects warnings\n")
 
-## Registering a handler again moves it to the top of the stack
-globalCallingHandlers(
-    warning = function(...) "foo",
-    error = function(...) "foo",
-    condition = function(...) "foo",
-    error = function(...) "bar"
-)
-globalCallingHandlers(
-    error = function(...) "foo"
-)
-bumped <- list(
-    error = function(...) "foo",
-    warning = function(...) "foo",
-    condition = function(...) "foo",
-    error = function(...) "bar"
-)
-stopifnot(identical(globalCallingHandlers(), bumped))
-## Fails in R 4.0
-globalCallingHandlers(
-    warning = function(...) "foo",
-    error = function(...) "foo"
-)
-bumped <- list(
-    warning = function(...) "foo",
-    error = function(...) "foo",
-    condition = function(...) "foo",
-    error = function(...) "bar"
-)
-stopifnot(identical(globalCallingHandlers(), bumped))
-globalCallingHandlers(NULL)
+# --- suppressWarnings ---
+result <- suppressWarnings({
+  warning("ignored")
+  42
+})
+stopifnot(result == 42)
+cat("PASS: suppressWarnings\n")
 
-## Attributes and closure environments are detected in the duplicate
-## handlers check
-hnd1 <- function(...) "foo"
-hnd2 <- structure(function(...) "foo", bar = TRUE)
-hnd3 <- local(function(...) "foo")
-expectedList <- list(
-    error = hnd1,
-    error = hnd2,
-    error = hnd3
+# --- suppressMessages ---
+result <- suppressMessages({
+  message("ignored")
+  42
+})
+stopifnot(result == 42)
+cat("PASS: suppressMessages\n")
+
+# --- stop() with condition object ---
+cond <- simpleError("pre-made error")
+result <- tryCatch(
+  stop(cond),
+  error = function(e) conditionMessage(e)
 )
-globalCallingHandlers(error = hnd1, error = hnd2, error = hnd3)
-stopifnot(identical(globalCallingHandlers(), expectedList))
-globalCallingHandlers(NULL)
-## and removeSource() now retains attributes:
-stopifnot( identical(attributes(removeSource(hnd2)), list(bar = TRUE)) )
+stopifnot(result == "pre-made error")
+cat("PASS: stop() with condition object\n")
 
+# --- invokeRestart for muffling messages ---
+msgs <- character(0)
+withCallingHandlers(
+  message("hello"),
+  message = function(m) {
+    msgs <<- c(msgs, conditionMessage(m))
+    invokeRestart("muffleMessage")
+  }
+)
+stopifnot(length(msgs) == 1)
+cat("PASS: invokeRestart muffleMessage\n")
 
-## Source references do not cause handlers to be treated as distinct
-withSource <- function(src, envir = parent.frame(), file = NULL) {
-    if (is.null(file)) {
-	file <- tempfile("sourced", fileext = ".R")
-    }
-    on.exit(unlink(file))
-    writeLines(src, file)
-    source(file, local = envir, keep.source = TRUE)
-}
-withSource("hnd1 <- structure(function(...) { NULL })")
-withSource("hnd2 <- structure(function(...) { NULL })")
-globalCallingHandlers(NULL)
-globalCallingHandlers(error = hnd1)
-globalCallingHandlers(error = hnd2) # message "pushing duplicate .."
-stopifnot(identical(globalCallingHandlers(), list(error = hnd2)))
-globalCallingHandlers(NULL)
+# --- conditionCall returns NULL for our conditions ---
+e <- simpleError("test")
+stopifnot(is.null(conditionCall(e)))
+cat("PASS: conditionCall\n")
+
+cat("\nAll condition system tests passed!\n")

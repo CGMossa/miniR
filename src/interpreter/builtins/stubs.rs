@@ -25,14 +25,7 @@ noop_builtin!("raw");
 
 // Function tools (Recall — stub with informative error, see builtins.rs)
 
-// Error handling
-noop_builtin!("withCallingHandlers", 1);
-noop_builtin!("conditionMessage", 1);
-noop_builtin!("conditionCall", 1);
-noop_builtin!("simpleCondition", 1);
-noop_builtin!("simpleError", 1);
-noop_builtin!("simpleWarning", 1);
-noop_builtin!("simpleMessage", 1);
+// Error handling (withCallingHandlers — pre_eval.rs; condition constructors — builtins.rs)
 
 // File I/O (scan — builtins.rs)
 // Package management
