@@ -107,3 +107,4 @@ Error messages should be *better* than GNU R's — more informative, more specif
 ## Tool Rules
 
 - Do NOT tail or truncate `cargo vendor` output — let it run fully so the config snippet is visible
+- Never pipe cargo command output through `head` or `tail` — store the full log in a temp file, then read the relevant portion. If more issues surface later, you can go back to the logfile instead of re-running the command
