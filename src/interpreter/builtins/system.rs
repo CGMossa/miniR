@@ -322,10 +322,10 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
 #[builtin]
 fn builtin_tempdir(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let dir = std::env::temp_dir();
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(dir.to_string_lossy().to_string())].into(),
-    )))
+    let path = crate::interpreter::with_interpreter(|interp| {
+        interp.temp_dir.path().to_string_lossy().to_string()
+    });
+    Ok(RValue::vec(Vector::Character(vec![Some(path)].into())))
 }
 
 #[builtin]
@@ -336,30 +336,29 @@ fn builtin_tempfile(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_else(|| "file".to_string());
 
-    let tmpdir = args
-        .get(1)
-        .or_else(|| named.iter().find(|(n, _)| n == "tmpdir").map(|(_, v)| v))
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().to_string());
-
     let fileext = args
         .get(2)
         .or_else(|| named.iter().find(|(n, _)| n == "fileext").map(|(_, v)| v))
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
 
-    // Generate a random hex string for uniqueness
-    let random: u64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
-        ^ (std::process::id() as u64);
-    let hex = format!("{:x}", random);
+    let path = crate::interpreter::with_interpreter(|interp| {
+        // Allow tmpdir override, but default to session temp dir
+        let tmpdir = args
+            .get(1)
+            .or_else(|| named.iter().find(|(n, _)| n == "tmpdir").map(|(_, v)| v))
+            .and_then(|v| v.as_vector()?.as_character_scalar())
+            .unwrap_or_else(|| interp.temp_dir.path().to_string_lossy().to_string());
 
-    let path = Path::new(&tmpdir).join(format!("{}{}{}", pattern, hex, fileext));
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(path.to_string_lossy().to_string())].into(),
-    )))
+        let n = interp.temp_counter.get();
+        interp.temp_counter.set(n + 1);
+
+        Path::new(&tmpdir)
+            .join(format!("{}{}{}", pattern, n, fileext))
+            .to_string_lossy()
+            .to_string()
+    });
+    Ok(RValue::vec(Vector::Character(vec![Some(path)].into())))
 }
 
 // === Path operations ===
