@@ -60,6 +60,8 @@ pub(crate) struct S3DispatchContext {
 pub struct Interpreter {
     pub global_env: Environment,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
+    #[cfg(feature = "random")]
+    rng: RefCell<rand::rngs::StdRng>,
 }
 
 impl Interpreter {
@@ -72,7 +74,14 @@ impl Interpreter {
         Interpreter {
             global_env,
             s3_dispatch_stack: RefCell::new(Vec::new()),
+            #[cfg(feature = "random")]
+            rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
         }
+    }
+
+    #[cfg(feature = "random")]
+    pub fn rng(&self) -> &RefCell<rand::rngs::StdRng> {
+        &self.rng
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RError> {
@@ -1189,7 +1198,11 @@ impl Interpreter {
         Ok(RValue::List(result))
     }
 
-    fn index_by_integer(&self, v: &Vector, indices: &[Option<i64>]) -> Result<RValue, RError> {
+    pub(crate) fn index_by_integer(
+        &self,
+        v: &Vector,
+        indices: &[Option<i64>],
+    ) -> Result<RValue, RError> {
         macro_rules! index_vec {
             ($vals:expr, $variant:ident) => {{
                 let result: Vec<_> = indices
