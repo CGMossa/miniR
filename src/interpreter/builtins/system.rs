@@ -2,6 +2,7 @@
 //!
 //! Each function is auto-registered via `#[builtin]` + linkme.
 
+use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
 use newr_macros::builtin;
 use std::fs;
@@ -94,7 +95,7 @@ fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
-            fs::metadata(&path).ok().map(|m| m.len() as f64)
+            fs::metadata(&path).ok().map(|m| u64_to_f64(m.len()))
         })
         .collect();
     Ok(RValue::vec(Vector::Double(results.into())))
@@ -154,13 +155,14 @@ fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     for path in &paths {
         match fs::metadata(path) {
             Ok(meta) => {
-                sizes.push(Some(meta.len() as f64));
+                sizes.push(Some(u64_to_f64(meta.len())));
                 isdirs.push(Some(meta.is_dir()));
 
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    modes.push(Some((meta.permissions().mode() & 0o777) as i64));
+                    let mode_u32 = meta.permissions().mode() & 0o777;
+                    modes.push(Some(i64::from(mode_u32)));
                 }
                 #[cfg(not(unix))]
                 {
@@ -442,7 +444,7 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
         .status()
         .map_err(|e| RError::Other(format!("cannot execute command '{}': {}", command, e)))?;
 
-    let code = output.code().unwrap_or(-1) as i64;
+    let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
 }
 
@@ -470,7 +472,7 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
             ))
         })?;
 
-    let code = output.code().unwrap_or(-1) as i64;
+    let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
 }
 

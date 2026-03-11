@@ -56,7 +56,7 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     } else {
         content
             .lines()
-            .take(n as usize)
+            .take(usize::try_from(n)?)
             .map(|l| Some(l.to_string()))
             .collect()
     };
@@ -203,7 +203,7 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
             col_names.into_iter().map(Some).collect::<Vec<_>>().into(),
         )),
     );
-    let row_names: Vec<Option<i64>> = (1..=nrows as i64).map(Some).collect();
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(nrows)?).map(Some).collect();
     list.set_attr(
         "row.names".to_string(),
         RValue::vec(Vector::Integer(row_names.into())),
@@ -544,8 +544,8 @@ fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
                 Some(RValue::Vector(dim_rv)) => {
                     if let Vector::Integer(d) = &dim_rv.inner {
                         if d.len() >= 2 {
-                            let nrow = d[0].unwrap_or(0) as usize;
-                            let ncol = d[1].unwrap_or(0) as usize;
+                            let nrow = usize::try_from(d[0].unwrap_or(0))?;
+                            let ncol = usize::try_from(d[1].unwrap_or(0))?;
                             for r in 0..nrow {
                                 let cells: Vec<String> = (0..ncol)
                                     .map(|c| {

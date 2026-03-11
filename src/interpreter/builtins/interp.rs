@@ -281,7 +281,7 @@ fn interp_filter(
                 results.push(item.clone());
             }
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     match x {
@@ -333,7 +333,7 @@ fn interp_map(
             let result = interp.call_function(&f, &call_args, &[], env)?;
             results.push((None, result));
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     Ok(RValue::List(RList::new(results)))
@@ -384,7 +384,7 @@ fn interp_switch(
                     alts.push(v);
                 }
                 Ok(alts
-                    .get((i - 1) as usize)
+                    .get(usize::try_from(i - 1)?)
                     .map(|v| (*v).clone())
                     .unwrap_or(RValue::Null))
             }
@@ -983,8 +983,8 @@ fn interp_apply(
                         .to_string(),
                 ));
             }
-            let nr = dims[0].unwrap_or(0) as usize;
-            let nc = dims[1].unwrap_or(0) as usize;
+            let nr = usize::try_from(dims[0].unwrap_or(0))?;
+            let nc = usize::try_from(dims[1].unwrap_or(0))?;
             (nr, nc, rv.to_doubles())
         }
         _ => {
@@ -1012,7 +1012,7 @@ fn interp_apply(
                     let result = interp.call_function(&fun, &call_args, named, env)?;
                     results.push(result);
                 }
-                Ok(())
+                Ok::<(), RError>(())
             })?;
             simplify_apply_results(results)
         }
@@ -1029,7 +1029,7 @@ fn interp_apply(
                     let result = interp.call_function(&fun, &call_args, named, env)?;
                     results.push(result);
                 }
-                Ok(())
+                Ok::<(), RError>(())
             })?;
             simplify_apply_results(results)
         }
@@ -1123,7 +1123,7 @@ fn simplify_apply_results(results: Vec<RValue>) -> Result<RValue, RError> {
         rv.set_attr(
             "dim".to_string(),
             RValue::vec(Vector::Integer(
-                vec![Some(nrow as i64), Some(ncol as i64)].into(),
+                vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
             )),
         );
         return Ok(RValue::Vector(rv));
@@ -1181,7 +1181,7 @@ fn interp_mapply(
             let result = interp.call_function(&fun, &call_args, &[], env)?;
             results.push(result);
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     if simplify {
@@ -1311,7 +1311,7 @@ fn interp_tapply(
             let result = interp.call_function(&fun, &[group_vec], named, env)?;
             result_entries.push((Some(name.clone()), result));
         }
-        Ok(())
+        Ok::<(), RError>(())
     })?;
 
     // Try to simplify to a named vector if all results are scalar
@@ -1546,7 +1546,7 @@ fn interp_by(
                 let result = interp.call_function(&fun, &[group_vec], named, env)?;
                 result_entries.push((Some(name.clone()), result));
             }
-            Ok(())
+            Ok::<(), RError>(())
         })?;
 
         return Ok(RValue::List(RList::new(result_entries)));
@@ -1619,7 +1619,7 @@ fn interp_by(
                 }
                 // Set row.names for the subset
                 let row_names: Vec<Option<i64>> =
-                    (1..=row_indices.len() as i64).map(Some).collect();
+                    (1..=i64::try_from(row_indices.len())?).map(Some).collect();
                 subset_list.set_attr(
                     "row.names".to_string(),
                     RValue::vec(Vector::Integer(row_names.into())),
@@ -1633,7 +1633,7 @@ fn interp_by(
                 let result = interp.call_function(&fun, &[subset_val], named, env)?;
                 result_entries.push((Some(name.clone()), result));
             }
-            Ok(())
+            Ok::<(), RError>(())
         })?;
 
         return Ok(RValue::List(RList::new(result_entries)));

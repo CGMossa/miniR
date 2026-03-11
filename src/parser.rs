@@ -1410,7 +1410,8 @@ fn parse_number(pair: Pair<Rule>) -> Expr {
             return Expr::Integer(val);
         }
         if let Ok(val) = num_str.parse::<f64>() {
-            return Expr::Integer(val as i64);
+            // Intentional truncation: R `as.integer()` semantics for e.g. 1e5L
+            return Expr::Integer(crate::interpreter::coerce::f64_to_i64(val).unwrap_or(0));
         }
     }
     // Hex (without L)
@@ -1430,7 +1431,8 @@ fn parse_hex_int(num_str: &str) -> Expr {
     // Check for hex float with '.' or 'p'
     if hex_part.contains('.') || hex_part.contains('p') || hex_part.contains('P') {
         let val = parse_hex_float_value(num_str);
-        return Expr::Integer(val as i64);
+        // Intentional truncation: hex float → integer literal (e.g. 0x1.0p4L)
+        return Expr::Integer(crate::interpreter::coerce::f64_to_i64(val).unwrap_or(0));
     }
     let val = i64::from_str_radix(hex_part, 16).unwrap_or(0);
     Expr::Integer(val)
@@ -1461,11 +1463,15 @@ fn parse_hex_float_value(s: &str) -> f64 {
                 0.0
             } else {
                 let frac_int = u64::from_str_radix(frac_part, 16).unwrap_or(0);
-                frac_int as f64 / 16f64.powi(frac_part.len() as i32)
+                // u64 → f64 may lose precision for values > 2^53, acceptable for hex literals
+                let frac_digits = i32::try_from(frac_part.len()).unwrap_or(0);
+                crate::interpreter::coerce::u64_to_f64(frac_int) / 16f64.powi(frac_digits)
             };
-            int_val as f64 + frac_val
+            crate::interpreter::coerce::u64_to_f64(int_val) + frac_val
         } else {
-            u64::from_str_radix(mantissa_str, 16).unwrap_or(0) as f64
+            crate::interpreter::coerce::u64_to_f64(
+                u64::from_str_radix(mantissa_str, 16).unwrap_or(0),
+            )
         };
 
         let exp: i32 = exp_str.parse().unwrap_or(0);
@@ -1483,11 +1489,12 @@ fn parse_hex_float_value(s: &str) -> f64 {
             0.0
         } else {
             let frac_int = u64::from_str_radix(frac_part, 16).unwrap_or(0);
-            frac_int as f64 / 16f64.powi(frac_part.len() as i32)
+            let frac_digits = i32::try_from(frac_part.len()).unwrap_or(0);
+            crate::interpreter::coerce::u64_to_f64(frac_int) / 16f64.powi(frac_digits)
         };
-        int_val as f64 + frac_val
+        crate::interpreter::coerce::u64_to_f64(int_val) + frac_val
     } else {
-        i64::from_str_radix(hex_part, 16).unwrap_or(0) as f64
+        crate::interpreter::coerce::i64_to_f64(i64::from_str_radix(hex_part, 16).unwrap_or(0))
     }
 }
 

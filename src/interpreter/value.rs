@@ -12,10 +12,12 @@ pub use logical::Logical;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::num::TryFromIntError;
 use std::ops::{Deref, DerefMut};
 
 use derive_more::{Deref, DerefMut};
 
+use crate::interpreter::coerce;
 use crate::interpreter::environment::Environment;
 use crate::parser::ast::{Expr, Param};
 
@@ -197,7 +199,7 @@ impl Vector {
     pub fn as_double_scalar(&self) -> Option<f64> {
         match self {
             Vector::Double(v) => v.first().copied().flatten(),
-            Vector::Integer(v) => v.first().copied().flatten().map(|i| i as f64),
+            Vector::Integer(v) => v.first().copied().flatten().map(coerce::i64_to_f64),
             Vector::Logical(v) => v
                 .first()
                 .copied()
@@ -212,7 +214,11 @@ impl Vector {
     pub fn as_integer_scalar(&self) -> Option<i64> {
         match self {
             Vector::Integer(v) => v.first().copied().flatten(),
-            Vector::Double(v) => v.first().copied().flatten().map(|f| f as i64),
+            Vector::Double(v) => v
+                .first()
+                .copied()
+                .flatten()
+                .and_then(|f| coerce::f64_to_i64(f).ok()),
             Vector::Logical(v) => v.first().copied().flatten().map(|b| if b { 1 } else { 0 }),
             Vector::Complex(_) => None,
             Vector::Character(v) => v.first().cloned().flatten().and_then(|s| s.parse().ok()),
@@ -240,7 +246,7 @@ impl Vector {
     pub fn to_doubles(&self) -> Vec<Option<f64>> {
         match self {
             Vector::Double(v) => v.0.clone(),
-            Vector::Integer(v) => v.iter().map(|x| x.map(|i| i as f64)).collect(),
+            Vector::Integer(v) => v.iter().map(|x| x.map(coerce::i64_to_f64)).collect(),
             Vector::Logical(v) => v
                 .iter()
                 .map(|x| x.map(|b| if b { 1.0 } else { 0.0 }))
@@ -257,9 +263,15 @@ impl Vector {
     pub fn to_integers(&self) -> Vec<Option<i64>> {
         match self {
             Vector::Integer(v) => v.0.clone(),
-            Vector::Double(v) => v.iter().map(|x| x.map(|f| f as i64)).collect(),
+            Vector::Double(v) => v
+                .iter()
+                .map(|x| x.and_then(|f| coerce::f64_to_i64(f).ok()))
+                .collect(),
             Vector::Logical(v) => v.iter().map(|x| x.map(|b| if b { 1 } else { 0 })).collect(),
-            Vector::Complex(v) => v.iter().map(|x| x.map(|c| c.re as i64)).collect(),
+            Vector::Complex(v) => v
+                .iter()
+                .map(|x| x.and_then(|c| coerce::f64_to_i64(c.re).ok()))
+                .collect(),
             Vector::Character(v) => v
                 .iter()
                 .map(|x| x.as_ref().and_then(|s| s.parse().ok()))
@@ -313,7 +325,7 @@ impl Vector {
                 .collect(),
             Vector::Integer(v) => v
                 .iter()
-                .map(|x| x.map(|i| num_complex::Complex64::new(i as f64, 0.0)))
+                .map(|x| x.map(|i| num_complex::Complex64::new(coerce::i64_to_f64(i), 0.0)))
                 .collect(),
             Vector::Logical(v) => v
                 .iter()
@@ -351,7 +363,8 @@ pub fn format_r_double(f: f64) -> String {
             "-Inf".to_string()
         }
     } else if f == f.floor() && f.abs() < 1e15 {
-        format!("{}", f as i64)
+        // Safe: we checked f is finite, integer-valued, and within range
+        format!("{}", coerce::f64_to_i64(f).unwrap_or(0))
     } else {
         format!("{}", f)
     }
@@ -559,6 +572,12 @@ pub enum RError {
     Return(RValue),
     Break,
     Next,
+}
+
+impl From<TryFromIntError> for RError {
+    fn from(e: TryFromIntError) -> Self {
+        RError::Type(format!("integer conversion out of range: {e}"))
+    }
 }
 
 impl RError {

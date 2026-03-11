@@ -61,14 +61,17 @@ fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    let start = args
-        .get(1)
-        .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(1) as usize;
-    let stop = args
-        .get(2)
-        .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(s.len() as i64) as usize;
+    let start = usize::try_from(
+        args.get(1)
+            .and_then(|v| v.as_vector()?.as_integer_scalar())
+            .unwrap_or(1),
+    )?;
+    let default_stop = i64::try_from(s.len())?;
+    let stop = usize::try_from(
+        args.get(2)
+            .and_then(|v| v.as_vector()?.as_integer_scalar())
+            .unwrap_or(default_stop),
+    )?;
     let start = start.saturating_sub(1); // R is 1-indexed
     let result = if start < s.len() {
         s[start..stop.min(s.len())].to_string()
@@ -249,13 +252,13 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
             } else {
-                let result: Vec<Option<i64>> = vals
+                let result: Result<Vec<Option<i64>>, RError> = vals
                     .iter()
                     .enumerate()
                     .filter(|(_, s)| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
-                    .map(|(i, _)| Some(i as i64 + 1))
+                    .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
                     .collect();
-                Ok(RValue::vec(Vector::Integer(result.into())))
+                Ok(RValue::vec(Vector::Integer(result?.into())))
             }
         }
         _ => Err(RError::Argument("argument is not character".to_string())),
@@ -280,8 +283,8 @@ fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
             for s in vals.iter() {
                 match s.as_ref().and_then(|s| re.find(s)) {
                     Some(m) => {
-                        positions.push(Some(m.start() as i64 + 1)); // R is 1-indexed
-                        lengths.push(Some(m.len() as i64));
+                        positions.push(Some(i64::try_from(m.start())? + 1)); // R is 1-indexed
+                        lengths.push(Some(i64::try_from(m.len())?));
                     }
                     None => {
                         positions.push(Some(-1));
@@ -321,10 +324,18 @@ fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
                         if matches.is_empty() {
                             (vec![Some(-1)], vec![Some(-1)])
                         } else {
-                            matches
+                            let (positions, lengths): (Vec<_>, Vec<_>) = matches
                                 .iter()
-                                .map(|m| (Some(m.start() as i64 + 1), Some(m.len() as i64)))
-                                .unzip()
+                                .map(|m| -> Result<_, RError> {
+                                    Ok((
+                                        Some(i64::try_from(m.start())? + 1),
+                                        Some(i64::try_from(m.len())?),
+                                    ))
+                                })
+                                .collect::<Result<Vec<_>, _>>()?
+                                .into_iter()
+                                .unzip();
+                            (positions, lengths)
                         }
                     }
                     None => (vec![Some(-1)], vec![Some(-1)]),
@@ -374,8 +385,8 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                 let l = lengths.get(i).copied().flatten().unwrap_or(-1);
                 if p > 0 && l > 0 {
                     if let Some(Some(s)) = x.get(i) {
-                        let start = (p - 1) as usize;
-                        let end = start + l as usize;
+                        let start = usize::try_from(p - 1)?;
+                        let end = start + usize::try_from(l)?;
                         if end <= s.len() {
                             result.push(Some(s[start..end].to_string()));
                         } else {
@@ -421,8 +432,8 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                     let l = lengths.get(j).copied().flatten().unwrap_or(-1);
                     if p > 0 && l > 0 {
                         if let Some(s) = s {
-                            let start = (p - 1) as usize;
-                            let end = start + l as usize;
+                            let start = usize::try_from(p - 1)?;
+                            let end = start + usize::try_from(l)?;
                             if end <= s.len() {
                                 matches.push(Some(s[start..end].to_string()));
                             }
@@ -730,7 +741,7 @@ fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let mut result = String::new();
     for val in &ints {
         match val {
-            Some(code) if *code >= 0 => match char::from_u32(*code as u32) {
+            Some(code) if *code >= 0 => match char::from_u32(u32::try_from(*code)?) {
                 Some(c) => result.push(c),
                 None => {
                     return Err(RError::Argument(format!(
@@ -757,7 +768,7 @@ fn builtin_utf8_to_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
-    let result: Vec<Option<i64>> = s.chars().map(|c| Some(c as u32 as i64)).collect();
+    let result: Vec<Option<i64>> = s.chars().map(|c| Some(i64::from(u32::from(c)))).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
@@ -767,7 +778,7 @@ fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
-    let result: Vec<Option<i64>> = s.bytes().map(|b| Some(b as i64)).collect();
+    let result: Vec<Option<i64>> = s.bytes().map(|b| Some(i64::from(b))).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
@@ -784,7 +795,7 @@ fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let mut bytes = Vec::new();
     for val in &ints {
         match val {
-            Some(b) if (0..=255).contains(b) => bytes.push(*b as u8),
+            Some(b) if (0..=255).contains(b) => bytes.push(u8::try_from(*b)?),
             Some(b) => {
                 return Err(RError::Argument(format!(
                     "out of range for raw byte: {}",
@@ -847,8 +858,8 @@ fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
                         for i in 0..caps.len() {
                             match caps.get(i) {
                                 Some(m) => {
-                                    positions.push(Some(m.start() as i64 + 1));
-                                    lengths.push(Some(m.len() as i64));
+                                    positions.push(Some(i64::try_from(m.start())? + 1));
+                                    lengths.push(Some(i64::try_from(m.len())?));
                                 }
                                 None => {
                                     positions.push(Some(-1));
@@ -901,7 +912,8 @@ fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .find(|(n, _)| n == "base")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_integer_scalar()))
-        .unwrap_or(10) as u32;
+        .unwrap_or(10);
+    let base = u32::try_from(base)?;
     match i64::from_str_radix(x.trim(), base) {
         Ok(n) => Ok(RValue::vec(Vector::Integer(vec![Some(n)].into()))),
         Err(_) => Ok(RValue::vec(Vector::Integer(vec![None].into()))),

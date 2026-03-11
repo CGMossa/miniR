@@ -1,5 +1,6 @@
 use ndarray::{Array2, ShapeBuilder};
 
+use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
 use newr_macros::builtin;
 
@@ -68,7 +69,7 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .or_else(|| args.get(1)?.as_vector()?.as_integer_scalar())
         .unwrap_or(0);
-    let factor = 10f64.powi(digits as i32);
+    let factor = 10f64.powi(i32::try_from(digits)?);
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result: Vec<Option<f64>> = v
@@ -89,7 +90,8 @@ fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .find(|(n, _)| n == "digits")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .or_else(|| args.get(1)?.as_vector()?.as_integer_scalar())
-        .unwrap_or(6) as i32;
+        .unwrap_or(6);
+    let digits = i32::try_from(digits)?;
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result: Vec<Option<f64>> = v
@@ -100,7 +102,7 @@ fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                         if f == 0.0 || !f.is_finite() {
                             return f;
                         }
-                        let d = f.abs().log10().ceil() as i32;
+                        let d = f64_to_i32(f.abs().log10().ceil()).unwrap_or(0);
                         let factor = 10f64.powi(digits - d);
                         (f * factor).round() / factor
                     })
@@ -230,6 +232,34 @@ fn builtin_cumany(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 // === Bitwise operations ===
 
+fn bitwise_binary_op_fallible(
+    args: &[RValue],
+    op: impl Fn(i64, i64) -> Result<i64, RError>,
+) -> Result<RValue, RError> {
+    let a_ints = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+    let b_ints = args
+        .get(1)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+    let max_len = a_ints.len().max(b_ints.len());
+    let result: Result<Vec<Option<i64>>, RError> = (0..max_len)
+        .map(|i| {
+            let a = a_ints[i % a_ints.len()];
+            let b = b_ints[i % b_ints.len()];
+            match (a, b) {
+                (Some(x), Some(y)) => Ok(Some(op(x, y)?)),
+                _ => Ok(None),
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result?.into())))
+}
+
 fn bitwise_binary_op(args: &[RValue], op: fn(i64, i64) -> i64) -> Result<RValue, RError> {
     let a_ints = args
         .first()
@@ -283,12 +313,12 @@ fn builtin_bitw_not(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 
 #[builtin(name = "bitwShiftL", min_args = 2)]
 fn builtin_bitw_shift_l(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    bitwise_binary_op(args, |a, n| a << (n as u32))
+    bitwise_binary_op_fallible(args, |a, n| Ok(a << u32::try_from(n)?))
 }
 
 #[builtin(name = "bitwShiftR", min_args = 2)]
 fn builtin_bitw_shift_r(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    bitwise_binary_op(args, |a, n| a >> (n as u32))
+    bitwise_binary_op_fallible(args, |a, n| Ok(a >> u32::try_from(n)?))
 }
 
 // === Triangular matrix extraction ===
@@ -319,9 +349,10 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
     let (nrow, ncol) = match args.first() {
         Some(RValue::Vector(rv)) => match rv.get_attr("dim") {
             Some(RValue::Vector(dim_rv)) => match &dim_rv.inner {
-                Vector::Integer(d) if d.len() >= 2 => {
-                    (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
-                }
+                Vector::Integer(d) if d.len() >= 2 => (
+                    usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
+                    usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+                ),
                 _ => return Err(RError::Argument("argument is not a matrix".to_string())),
             },
             _ => return Err(RError::Argument("argument is not a matrix".to_string())),
@@ -351,7 +382,7 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(nrow as i64), Some(ncol as i64)].into(),
+            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
         )),
     );
     Ok(RValue::Vector(rv))
@@ -367,8 +398,8 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
                 if let Vector::Integer(d) = &dim_rv.inner {
                     if d.len() >= 2 {
-                        let nrow = d[0].unwrap_or(0) as usize;
-                        let ncol = d[1].unwrap_or(0) as usize;
+                        let nrow = usize::try_from(d[0].unwrap_or(0)).unwrap_or(0);
+                        let ncol = usize::try_from(d[1].unwrap_or(0)).unwrap_or(0);
                         let data = rv.to_doubles();
                         let n = nrow.min(ncol);
                         let result: Vec<Option<f64>> = (0..n)
@@ -389,7 +420,7 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             let len = rv.len();
             if len == 1 {
                 // Scalar integer n: create n x n identity matrix
-                let n = rv.as_integer_scalar().unwrap_or(1) as usize;
+                let n = usize::try_from(rv.as_integer_scalar().unwrap_or(1)).unwrap_or(0);
                 let mut result = vec![Some(0.0); n * n];
                 for i in 0..n {
                     result[i * n + i] = Some(1.0);
@@ -397,7 +428,9 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 let mut out = RVector::from(Vector::Double(result.into()));
                 out.set_attr(
                     "dim".to_string(),
-                    RValue::vec(Vector::Integer(vec![Some(n as i64), Some(n as i64)].into())),
+                    RValue::vec(Vector::Integer(
+                        vec![Some(i64::try_from(n)?), Some(i64::try_from(n)?)].into(),
+                    )),
                 );
                 Ok(RValue::Vector(out))
             } else {
@@ -411,7 +444,9 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 let mut out = RVector::from(Vector::Double(result.into()));
                 out.set_attr(
                     "dim".to_string(),
-                    RValue::vec(Vector::Integer(vec![Some(n as i64), Some(n as i64)].into())),
+                    RValue::vec(Vector::Integer(
+                        vec![Some(i64::try_from(n)?), Some(i64::try_from(n)?)].into(),
+                    )),
                 );
                 Ok(RValue::Vector(out))
             }
@@ -538,7 +573,7 @@ fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 return Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())));
             }
             Ok(RValue::vec(Vector::Double(
-                vec![Some(sum / count as f64)].into(),
+                vec![Some(sum / usize_to_f64(count))].into(),
             )))
         }
         _ => Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into()))),
@@ -571,7 +606,7 @@ fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     match args.first() {
         Some(RValue::Vector(v)) => {
             let vals: Vec<f64> = v.to_doubles().into_iter().flatten().collect();
-            let n = vals.len() as f64;
+            let n = usize_to_f64(vals.len());
             if n < 2.0 {
                 return Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())));
             }
@@ -712,15 +747,17 @@ fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .and_then(|v| v.as_vector()?.as_integer_scalar());
 
     if let Some(len) = length_out {
-        let len = len as usize;
+        let len = usize::try_from(len)?;
         if len == 0 {
             return Ok(RValue::vec(Vector::Double(vec![].into())));
         }
         if len == 1 {
             return Ok(RValue::vec(Vector::Double(vec![Some(from)].into())));
         }
-        let step = (to - from) / (len - 1) as f64;
-        let result: Vec<Option<f64>> = (0..len).map(|i| Some(from + step * i as f64)).collect();
+        let step = (to - from) / usize_to_f64(len - 1);
+        let result: Vec<Option<f64>> = (0..len)
+            .map(|i| Some(from + step * usize_to_f64(i)))
+            .collect();
         return Ok(RValue::vec(Vector::Double(result.into())));
     }
 
@@ -760,7 +797,8 @@ fn builtin_seq_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 #[builtin(name = "seq_along", min_args = 1)]
 fn builtin_seq_along(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args.first().map(|v| v.length()).unwrap_or(0);
-    let result: Vec<Option<i64>> = (1..=n as i64).map(Some).collect();
+    let n_i64 = i64::try_from(n)?;
+    let result: Vec<Option<i64>> = (1..=n_i64).map(Some).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
@@ -771,7 +809,8 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .find(|(n, _)| n == "times")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .or_else(|| args.get(1)?.as_vector()?.as_integer_scalar())
-        .unwrap_or(1) as usize;
+        .unwrap_or(1);
+    let times = usize::try_from(times)?;
 
     match args.first() {
         Some(RValue::Vector(v)) => match &v.inner {
@@ -909,7 +948,10 @@ fn builtin_order(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 let vb = doubles[b].unwrap_or(f64::NAN);
                 va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
             });
-            let result: Vec<Option<i64>> = indices.iter().map(|&i| Some(i as i64 + 1)).collect();
+            let result: Vec<Option<i64>> = indices
+                .iter()
+                .map(|&i| Some(i64::try_from(i).unwrap_or(0) + 1))
+                .collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
         _ => Ok(RValue::Null),
@@ -997,7 +1039,7 @@ fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                 .enumerate()
                 .filter_map(|(i, v)| {
                     if *v == Some(true) {
-                        Some(Some(i as i64 + 1))
+                        Some(Some(i64::try_from(i).unwrap_or(0) + 1))
                     } else {
                         None
                     }
@@ -1025,7 +1067,7 @@ fn builtin_which_min(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 }
             }
             Ok(RValue::vec(Vector::Integer(
-                vec![min_idx.map(|i| i as i64 + 1)].into(),
+                vec![min_idx.map(|i| i64::try_from(i).unwrap_or(0) + 1)].into(),
             )))
         }
         _ => Ok(RValue::vec(Vector::Integer(vec![].into()))),
@@ -1048,7 +1090,7 @@ fn builtin_which_max(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 }
             }
             Ok(RValue::vec(Vector::Integer(
-                vec![max_idx.map(|i| i as i64 + 1)].into(),
+                vec![max_idx.map(|i| i64::try_from(i).unwrap_or(0) + 1)].into(),
             )))
         }
         _ => Ok(RValue::vec(Vector::Integer(vec![].into()))),
@@ -1075,7 +1117,8 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .map(|(_, v)| v)
         .or(args.get(1))
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(6) as usize;
+        .unwrap_or(6);
+    let n = usize::try_from(n).unwrap_or(0);
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
@@ -1101,7 +1144,8 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .map(|(_, v)| v)
         .or(args.get(1))
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(6) as usize;
+        .unwrap_or(6);
+    let n = usize::try_from(n).unwrap_or(0);
     match args.first() {
         Some(RValue::Vector(v)) => {
             let len = v.len();
@@ -1169,7 +1213,8 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let length_out = args[1]
         .as_vector()
         .and_then(|v| v.as_integer_scalar())
-        .unwrap_or(0) as usize;
+        .unwrap_or(0);
+    let length_out = usize::try_from(length_out).unwrap_or(0);
     match &args[0] {
         RValue::Vector(v) => {
             if v.is_empty() {
@@ -1230,7 +1275,8 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let times = args[1]
         .as_vector()
         .and_then(|v| v.as_integer_scalar())
-        .unwrap_or(1) as usize;
+        .unwrap_or(1);
+    let times = usize::try_from(times)?;
     match &args[0] {
         RValue::Vector(v) => match &v.inner {
             Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
@@ -1290,9 +1336,10 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     };
     let (nrow, ncol) = match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Integer(d) if d.len() >= 2 => {
-                (d[0].unwrap_or(0) as usize, d[1].unwrap_or(0) as usize)
-            }
+            Vector::Integer(d) if d.len() >= 2 => (
+                usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+            ),
             _ => (data.len(), 1),
         },
         _ => (data.len(), 1),
@@ -1315,7 +1362,11 @@ fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(nrow as i64), Some(ncol as i64)].into(),
+            vec![
+                Some(i64::try_from(nrow).unwrap_or(0)),
+                Some(i64::try_from(ncol).unwrap_or(0)),
+            ]
+            .into(),
         )),
     );
     RValue::Vector(rv)
@@ -1578,7 +1629,7 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     rv.set_attr(
         "dim".to_string(),
         RValue::vec(Vector::Integer(
-            vec![Some(nx as i64), Some(ny as i64)].into(),
+            vec![Some(i64::try_from(nx)?), Some(i64::try_from(ny)?)].into(),
         )),
     );
     Ok(RValue::Vector(rv))
@@ -1603,11 +1654,14 @@ fn builtin_complex(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .map(|v| v.to_doubles())
         .unwrap_or_default();
 
-    let length_out = named
+    let length_out = match named
         .iter()
         .find(|(n, _)| n == "length.out")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(0.max(real.len().max(imaginary.len()) as i64)) as usize;
+    {
+        Some(n) => usize::try_from(n)?,
+        None => real.len().max(imaginary.len()),
+    };
 
     let result: Vec<Option<num_complex::Complex64>> = (0..length_out)
         .map(|i| {
