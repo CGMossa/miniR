@@ -896,11 +896,20 @@ impl Interpreter {
                     // else: missing argument, will error when accessed
                 }
 
-                match self.eval_in(body, &call_env) {
+                let result = match self.eval_in(body, &call_env) {
                     Ok(val) => Ok(val),
                     Err(RError::Return(val)) => Ok(val),
                     Err(e) => Err(e),
+                };
+
+                // Run on.exit handlers regardless of success/failure
+                let on_exit_exprs = call_env.take_on_exit();
+                for expr in &on_exit_exprs {
+                    // on.exit handlers run but don't alter the return value
+                    let _ = self.eval_in(expr, &call_env);
                 }
+
+                result
             }
             _ => Err(RError::Type("attempt to apply non-function".to_string())),
         }

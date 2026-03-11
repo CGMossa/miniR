@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::interpreter::value::RValue;
+use crate::parser::ast::Expr;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
@@ -15,6 +16,8 @@ struct EnvInner {
     parent: Option<Environment>,
     #[allow(dead_code)]
     name: Option<String>,
+    /// Expressions registered via on.exit() to run when this frame exits.
+    on_exit: Vec<Expr>,
 }
 
 impl Environment {
@@ -24,6 +27,7 @@ impl Environment {
                 bindings: HashMap::new(),
                 parent: None,
                 name: Some("R_GlobalEnv".to_string()),
+                on_exit: Vec::new(),
             })),
         }
     }
@@ -34,6 +38,7 @@ impl Environment {
                 bindings: HashMap::new(),
                 parent: Some(parent.clone()),
                 name: None,
+                on_exit: Vec::new(),
             })),
         }
     }
@@ -79,12 +84,29 @@ impl Environment {
         self.inner.borrow_mut().bindings.remove(name).is_some()
     }
 
+    /// Register an expression to run when this frame exits (on.exit).
+    /// If `add` is false (default), replaces existing on.exit expressions.
+    pub fn push_on_exit(&self, expr: Expr, add: bool) {
+        let mut inner = self.inner.borrow_mut();
+        if add {
+            inner.on_exit.push(expr);
+        } else {
+            inner.on_exit = vec![expr];
+        }
+    }
+
+    /// Take all on.exit expressions (empties the list).
+    pub fn take_on_exit(&self) -> Vec<Expr> {
+        std::mem::take(&mut self.inner.borrow_mut().on_exit)
+    }
+
     pub fn new_empty() -> Self {
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {
                 bindings: HashMap::new(),
                 parent: None,
                 name: Some("R_EmptyEnv".to_string()),
+                on_exit: Vec::new(),
             })),
         }
     }
