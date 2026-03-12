@@ -853,6 +853,39 @@ fn updated_dimnames_component(current: Option<&RValue>, index: usize, value: &RV
     }
 }
 
+struct BindInput {
+    data: Vec<Option<f64>>,
+    nrow: usize,
+    ncol: usize,
+    row_names: Option<Vec<Option<String>>>,
+    col_names: Option<Vec<Option<String>>>,
+}
+
+fn dimnames_component(dimnames: Option<&RValue>, index: usize) -> Option<Vec<Option<String>>> {
+    let Some(RValue::List(list)) = dimnames else {
+        return None;
+    };
+    list.values
+        .get(index)
+        .and_then(|(_, value)| coerce_name_values(value))
+}
+
+fn bind_dimnames_value(
+    row_names: Vec<Option<String>>,
+    col_names: Vec<Option<String>>,
+) -> Option<RValue> {
+    let has_row_names = row_names.iter().any(|name| name.is_some());
+    let has_col_names = col_names.iter().any(|name| name.is_some());
+    if !has_row_names && !has_col_names {
+        return None;
+    }
+
+    Some(RValue::List(RList::new(vec![
+        (None, character_name_vector(row_names)),
+        (None, character_name_vector(col_names)),
+    ])))
+}
+
 #[builtin(name = "row.names", names = ["rownames"], min_args = 1)]
 fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2236,8 +2269,7 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         return Ok(RValue::Null);
     }
 
-    // Collect all inputs as (data, nrow, ncol)
-    let mut inputs: Vec<(Vec<Option<f64>>, usize, usize)> = Vec::new();
+    let mut inputs = Vec::new();
     for arg in args {
         match arg {
             RValue::Vector(rv) => {
@@ -2246,13 +2278,25 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                     if dims.len() >= 2 {
                         let nr = usize::try_from(dims[0].unwrap_or(0))?;
                         let nc = usize::try_from(dims[1].unwrap_or(0))?;
-                        inputs.push((data, nr, nc));
+                        inputs.push(BindInput {
+                            data,
+                            nrow: nr,
+                            ncol: nc,
+                            row_names: dimnames_component(rv.get_attr("dimnames"), 0),
+                            col_names: dimnames_component(rv.get_attr("dimnames"), 1),
+                        });
                         continue;
                     }
                 }
                 // Plain vector becomes a 1-row matrix
                 let len = data.len();
-                inputs.push((data, 1, len));
+                inputs.push(BindInput {
+                    data,
+                    nrow: 1,
+                    ncol: len,
+                    row_names: None,
+                    col_names: rv.get_attr("names").and_then(coerce_name_values),
+                });
             }
             RValue::Null => continue,
             _ => {
@@ -2269,14 +2313,14 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 
     // All inputs must have the same number of columns (after recycling)
-    let max_ncol = inputs.iter().map(|(_, _, nc)| *nc).max().unwrap_or(0);
+    let max_ncol = inputs.iter().map(|input| input.ncol).max().unwrap_or(0);
     if max_ncol == 0 {
         return Ok(RValue::Null);
     }
 
     // Check column compatibility
-    for (_, _, nc) in &inputs {
-        if *nc != max_ncol && max_ncol % nc != 0 && nc % max_ncol != 0 {
+    for input in &inputs {
+        if input.ncol != max_ncol && max_ncol % input.ncol != 0 && input.ncol % max_ncol != 0 {
             return Err(RError::new(
                 RErrorKind::Argument,
                 "number of columns of arguments do not match".to_string(),
@@ -2285,19 +2329,53 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 
     // Total rows
-    let total_nrow: usize = inputs.iter().map(|(_, nr, _)| *nr).sum();
+    let total_nrow: usize = inputs.iter().map(|input| input.nrow).sum();
 
     // Build result column-major: for each column j, concatenate rows from all inputs
     let mut result = Vec::with_capacity(total_nrow * max_ncol);
     for j in 0..max_ncol {
-        for (data, nr, nc) in &inputs {
-            let actual_j = j % nc;
-            for i in 0..*nr {
+        for input in &inputs {
+            let actual_j = j % input.ncol;
+            for i in 0..input.nrow {
                 // Column-major index: col * nrow + row
-                let idx = actual_j * nr + i;
-                result.push(if idx < data.len() { data[idx] } else { None });
+                let idx = actual_j * input.nrow + i;
+                result.push(if idx < input.data.len() {
+                    input.data[idx]
+                } else {
+                    None
+                });
             }
         }
+    }
+
+    let mut row_names = Vec::new();
+    let has_any_row_names = inputs.iter().any(|input| input.row_names.is_some());
+    if has_any_row_names {
+        for input in &inputs {
+            if let Some(names) = &input.row_names {
+                row_names.extend(
+                    (0..input.nrow)
+                        .map(|idx| names.get(idx).cloned().unwrap_or(None))
+                        .collect::<Vec<_>>(),
+                );
+            } else {
+                row_names.extend(std::iter::repeat_n(None, input.nrow));
+            }
+        }
+    }
+
+    let mut col_names = Vec::new();
+    if let Some(source_names) = inputs.iter().find_map(|input| input.col_names.clone()) {
+        col_names.extend(
+            (0..max_ncol)
+                .map(|idx| {
+                    source_names
+                        .get(idx % source_names.len())
+                        .cloned()
+                        .unwrap_or(None)
+                })
+                .collect::<Vec<_>>(),
+        );
     }
 
     let mut rv = RVector::from(Vector::Double(result.into()));
@@ -2317,6 +2395,9 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             .into(),
         )),
     );
+    if let Some(dimnames) = bind_dimnames_value(row_names, col_names) {
+        rv.set_attr("dimnames".to_string(), dimnames);
+    }
     Ok(RValue::Vector(rv))
 }
 
@@ -2326,8 +2407,7 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         return Ok(RValue::Null);
     }
 
-    // Collect all inputs as (data, nrow, ncol)
-    let mut inputs: Vec<(Vec<Option<f64>>, usize, usize)> = Vec::new();
+    let mut inputs = Vec::new();
     for arg in args {
         match arg {
             RValue::Vector(rv) => {
@@ -2336,13 +2416,25 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                     if dims.len() >= 2 {
                         let nr = usize::try_from(dims[0].unwrap_or(0))?;
                         let nc = usize::try_from(dims[1].unwrap_or(0))?;
-                        inputs.push((data, nr, nc));
+                        inputs.push(BindInput {
+                            data,
+                            nrow: nr,
+                            ncol: nc,
+                            row_names: dimnames_component(rv.get_attr("dimnames"), 0),
+                            col_names: dimnames_component(rv.get_attr("dimnames"), 1),
+                        });
                         continue;
                     }
                 }
                 // Plain vector becomes a 1-column matrix
                 let len = data.len();
-                inputs.push((data, len, 1));
+                inputs.push(BindInput {
+                    data,
+                    nrow: len,
+                    ncol: 1,
+                    row_names: rv.get_attr("names").and_then(coerce_name_values),
+                    col_names: None,
+                });
             }
             RValue::Null => continue,
             _ => {
@@ -2359,14 +2451,14 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 
     // All inputs must have the same number of rows (after recycling)
-    let max_nrow = inputs.iter().map(|(_, nr, _)| *nr).max().unwrap_or(0);
+    let max_nrow = inputs.iter().map(|input| input.nrow).max().unwrap_or(0);
     if max_nrow == 0 {
         return Ok(RValue::Null);
     }
 
     // Check row compatibility
-    for (_, nr, _) in &inputs {
-        if *nr != max_nrow && max_nrow % nr != 0 && nr % max_nrow != 0 {
+    for input in &inputs {
+        if input.nrow != max_nrow && max_nrow % input.nrow != 0 && input.nrow % max_nrow != 0 {
             return Err(RError::new(
                 RErrorKind::Argument,
                 "number of rows of arguments do not match".to_string(),
@@ -2375,17 +2467,51 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 
     // Total columns
-    let total_ncol: usize = inputs.iter().map(|(_, _, nc)| *nc).sum();
+    let total_ncol: usize = inputs.iter().map(|input| input.ncol).sum();
 
     // Build result column-major: for each input, append its columns (recycling rows)
     let mut result = Vec::with_capacity(max_nrow * total_ncol);
-    for (data, nr, nc) in &inputs {
-        for j in 0..*nc {
+    for input in &inputs {
+        for j in 0..input.ncol {
             for i in 0..max_nrow {
                 // Recycle: wrap row index within the input's actual nrow
-                let actual_i = i % nr;
-                let idx = j * nr + actual_i;
-                result.push(if idx < data.len() { data[idx] } else { None });
+                let actual_i = i % input.nrow;
+                let idx = j * input.nrow + actual_i;
+                result.push(if idx < input.data.len() {
+                    input.data[idx]
+                } else {
+                    None
+                });
+            }
+        }
+    }
+
+    let row_names =
+        if let Some(source_names) = inputs.iter().find_map(|input| input.row_names.clone()) {
+            (0..max_nrow)
+                .map(|idx| {
+                    source_names
+                        .get(idx % source_names.len())
+                        .cloned()
+                        .unwrap_or(None)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+    let has_any_col_names = inputs.iter().any(|input| input.col_names.is_some());
+    let mut col_names = Vec::new();
+    if has_any_col_names {
+        for input in &inputs {
+            if let Some(names) = &input.col_names {
+                col_names.extend(
+                    (0..input.ncol)
+                        .map(|idx| names.get(idx).cloned().unwrap_or(None))
+                        .collect::<Vec<_>>(),
+                );
+            } else {
+                col_names.extend(std::iter::repeat_n(None, input.ncol));
             }
         }
     }
@@ -2407,6 +2533,9 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             .into(),
         )),
     );
+    if let Some(dimnames) = bind_dimnames_value(row_names, col_names) {
+        rv.set_attr("dimnames".to_string(), dimnames);
+    }
     Ok(RValue::Vector(rv))
 }
 
