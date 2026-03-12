@@ -2077,6 +2077,7 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             rv.attrs.as_mut().map(|a| a.remove("names"));
+            rv.attrs.as_mut().map(|a| a.remove("dimnames"));
             Ok(RValue::Vector(rv))
         }
         Some(RValue::List(l)) => {
@@ -2085,6 +2086,7 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 entry.0 = None;
             }
             l.attrs.as_mut().map(|a| a.remove("names"));
+            l.attrs.as_mut().map(|a| a.remove("dimnames"));
             Ok(RValue::List(l))
         }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
