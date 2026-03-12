@@ -636,6 +636,7 @@ dependencies = [
  "linkme",
  "minir-macros",
  "ndarray",
+ "nu-ansi-term",
  "num-complex",
  "pest",
  "pest_derive",

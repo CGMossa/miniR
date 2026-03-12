@@ -379,10 +379,7 @@ impl Vector {
                 .iter()
                 .map(|x| x.map(|f| (f as i64 & 0xff) as u8).unwrap_or(0))
                 .collect(),
-            Vector::Logical(v) => v
-                .iter()
-                .map(|x| x.map(u8::from).unwrap_or(0))
-                .collect(),
+            Vector::Logical(v) => v.iter().map(|x| x.map(u8::from).unwrap_or(0)).collect(),
             Vector::Complex(v) => v
                 .iter()
                 .map(|x| x.map(|c| (c.re as i64 & 0xff) as u8).unwrap_or(0))

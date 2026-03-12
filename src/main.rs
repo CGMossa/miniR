@@ -1,14 +1,20 @@
 mod interpreter;
 mod parser;
+mod repl;
 
 use std::env;
 use std::fs;
 
-use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
+use nu_ansi_term::{Color, Style};
+use reedline::{
+    default_emacs_keybindings, ColumnarMenu, DefaultHinter, EditCommand, Emacs, FileBackedHistory,
+    KeyCode, KeyModifiers, MenuBuilder, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+};
 
 use interpreter::with_interpreter;
 use parser::ast::Expr;
-use parser::{parse_program, ParseError};
+use parser::parse_program;
+use repl::{RCompleter, RHighlighter, RPrompt, RValidator};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -90,62 +96,79 @@ Type 'q()' to quit.
 "#
     );
 
-    let mut line_editor = Reedline::create();
-    let mut buffer = String::new();
+    // Persistent history (~/.miniR_history, last 1000 entries)
+    let history_path = env::var("MINIR_HISTFILE")
+        .or_else(|_| env::var("HOME").map(|h| format!("{h}/.miniR_history")))
+        .unwrap_or_else(|_| ".miniR_history".to_string())
+        .into();
+    let history = Box::new(
+        FileBackedHistory::with_file(1000, history_path).expect("Error configuring history file"),
+    );
+
+    // Fish-style history hints (gray italic)
+    let hinter =
+        Box::new(DefaultHinter::default().with_style(Style::new().italic().fg(Color::DarkGray)));
+
+    // Tab completion with columnar menu
+    let completer = Box::new(RCompleter::new());
+    let completion_menu = Box::new(
+        ColumnarMenu::default()
+            .with_name("completion_menu")
+            .with_columns(4)
+            .with_column_padding(2),
+    );
+
+    // Emacs keybindings + Tab for completion menu
+    let mut keybindings = default_emacs_keybindings();
+    keybindings.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::UntilFound(vec![
+            ReedlineEvent::Menu("completion_menu".to_string()),
+            ReedlineEvent::MenuNext,
+        ]),
+    );
+    keybindings.add_binding(
+        KeyModifiers::ALT,
+        KeyCode::Enter,
+        ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
+    );
+    let edit_mode = Box::new(Emacs::new(keybindings));
+
+    let mut line_editor = Reedline::create()
+        .with_history(history)
+        .with_hinter(hinter)
+        .with_highlighter(Box::new(RHighlighter))
+        .with_validator(Box::new(RValidator))
+        .with_completer(completer)
+        .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+        .with_edit_mode(edit_mode);
+
+    let prompt = RPrompt;
 
     loop {
-        let current_prompt = if buffer.is_empty() {
-            DefaultPrompt::new(
-                DefaultPromptSegment::Basic("> ".to_string()),
-                DefaultPromptSegment::Empty,
-            )
-        } else {
-            DefaultPrompt::new(
-                DefaultPromptSegment::Basic("+ ".to_string()),
-                DefaultPromptSegment::Empty,
-            )
-        };
-
-        match line_editor.read_line(&current_prompt) {
-            Ok(Signal::Success(line)) => {
-                if buffer.is_empty() {
-                    buffer = line;
-                } else {
-                    buffer.push('\n');
-                    buffer.push_str(&line);
-                }
-
+        match line_editor.read_line(&prompt) {
+            Ok(Signal::Success(buffer)) => {
+                // The validator already ensures we only get complete expressions
                 match parse_program(&buffer) {
-                    Ok(ast) => {
-                        match with_interpreter(|interp| interp.eval(&ast)) {
-                            Ok(val) => {
-                                if !val.is_null() && !is_invisible_result(&ast) {
-                                    println!("{}", val);
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("{}", e);
+                    Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
+                        Ok(val) => {
+                            if !val.is_null() && !is_invisible_result(&ast) {
+                                println!("{}", val);
                             }
                         }
-                        buffer.clear();
-                    }
+                        Err(e) => {
+                            eprintln!("{}", e);
+                        }
+                    },
                     Err(e) => {
-                        if is_likely_incomplete(&buffer, &e) {
-                            continue;
-                        }
                         eprintln!("{}", e);
-                        buffer.clear();
                     }
                 }
             }
             Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
-                if !buffer.is_empty() {
-                    buffer.clear();
-                    println!();
-                } else {
-                    println!();
-                    break;
-                }
+                println!();
+                break;
             }
             Err(e) => {
                 eprintln!("Error: {}", e);
@@ -168,78 +191,4 @@ fn is_invisible_result(ast: &Expr) -> bool {
         Expr::Block(exprs) => exprs.last().is_some_and(is_invisible_result),
         _ => false,
     }
-}
-
-fn is_likely_incomplete(input: &str, _error: &ParseError) -> bool {
-    let mut open_parens = 0i32;
-    let mut open_braces = 0i32;
-    let mut open_brackets = 0i32;
-    let mut in_string = false;
-    let mut string_char = ' ';
-    let mut prev_char = ' ';
-    let mut in_comment = false;
-
-    for c in input.chars() {
-        if in_comment {
-            if c == '\n' {
-                in_comment = false;
-            }
-            prev_char = c;
-            continue;
-        }
-        if in_string {
-            if c == string_char && prev_char != '\\' {
-                in_string = false;
-            }
-        } else {
-            match c {
-                '#' => in_comment = true,
-                '"' | '\'' => {
-                    in_string = true;
-                    string_char = c;
-                }
-                '(' => open_parens += 1,
-                ')' => open_parens -= 1,
-                '{' => open_braces += 1,
-                '}' => open_braces -= 1,
-                '[' => open_brackets += 1,
-                ']' => open_brackets -= 1,
-                _ => {}
-            }
-        }
-        prev_char = c;
-    }
-
-    if open_parens > 0 || open_braces > 0 || open_brackets > 0 || in_string {
-        return true;
-    }
-
-    // Trailing binary operator means the expression continues
-    let trimmed = input.trim_end();
-    let trailing = trimmed
-        .rfind(|c: char| !c.is_whitespace())
-        .map(|i| &trimmed[i..])
-        .unwrap_or("");
-    if trailing.ends_with('+')
-        || trailing.ends_with('*')
-        || trailing.ends_with('/')
-        || trailing.ends_with(',')
-        || trailing.ends_with('|')
-        || trailing.ends_with('&')
-        || trailing.ends_with('~')
-        || trailing.ends_with("<-")
-        || trailing.ends_with("<<-")
-        || trailing.ends_with("|>")
-        || trailing.ends_with("||")
-        || trailing.ends_with("&&")
-    {
-        return true;
-    }
-
-    // Trailing '-' that isn't part of '->' or '->>'
-    if trailing.ends_with('-') && !trailing.ends_with("->") {
-        return true;
-    }
-
-    false
 }
