@@ -7,6 +7,13 @@ set -euo pipefail
 DIR="${1:?Usage: parse-test.sh <dir> [--verbose]}"
 VERBOSE="${2:-}"
 BINARY="./target/release/r"
+TIMEOUT_BIN=""
+
+if command -v timeout >/dev/null 2>&1; then
+    TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+    TIMEOUT_BIN="gtimeout"
+fi
 
 # Build release for speed
 cargo build --release --quiet 2>/dev/null
@@ -21,14 +28,18 @@ CRASH_FILES=()
 for f in $(find "$DIR" -name '*.R' -type f | sort); do
     TOTAL=$((TOTAL + 1))
     # Run with timeout, capture stderr
-    output=$(timeout 5 "$BINARY" "$f" 2>&1 || true)
+    if [ -n "$TIMEOUT_BIN" ]; then
+        output=$("$TIMEOUT_BIN" 5 "$BINARY" "$f" 2>&1 || true)
+    else
+        output=$("$BINARY" "$f" 2>&1 || true)
+    fi
 
-    if echo "$output" | grep -q "^Parse error:"; then
+    if echo "$output" | grep -q "^Error in parse:"; then
         FAIL=$((FAIL + 1))
         FAIL_FILES+=("$f")
         if [ "$VERBOSE" = "--verbose" ]; then
             # Extract first line of parse error
-            errmsg=$(echo "$output" | grep "^Parse error:" | head -1)
+            errmsg=$(echo "$output" | grep "^Error in parse:" | head -1)
             echo "FAIL  $f"
             echo "      $errmsg"
         fi
