@@ -4,9 +4,68 @@
 
 use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
+use derive_more::{Display, Error};
 use minir_macros::builtin;
 use std::fs;
 use std::path::Path;
+
+// region: SystemError
+
+/// Structured error type for system/file operations.
+#[derive(Debug, Display, Error)]
+#[allow(dead_code)]
+pub enum SystemError {
+    #[display("cannot copy '{}' to '{}': {}", from, to, source)]
+    Copy {
+        from: String,
+        to: String,
+        source: std::io::Error,
+    },
+    #[display("cannot rename '{}' to '{}': {}", from, to, source)]
+    Rename {
+        from: String,
+        to: String,
+        source: std::io::Error,
+    },
+    #[display("cannot remove '{}': {}", path, source)]
+    Remove {
+        path: String,
+        source: std::io::Error,
+    },
+    #[display("cannot create directory '{}': {}", path, source)]
+    CreateDir {
+        path: String,
+        source: std::io::Error,
+    },
+    #[display("cannot read directory '{}': {}", path, source)]
+    ReadDir {
+        path: String,
+        source: std::io::Error,
+    },
+    #[display("cannot execute command '{}': {}", command, source)]
+    Command {
+        command: String,
+        source: std::io::Error,
+    },
+    #[display("cannot get current directory: {}", source)]
+    GetCwd {
+        #[error(source)]
+        source: std::io::Error,
+    },
+    #[display("cannot set current directory '{}': {}", path, source)]
+    SetCwd {
+        path: String,
+        source: std::io::Error,
+    },
+}
+
+impl From<SystemError> for RError {
+    fn from(e: SystemError) -> Self {
+        RError::from_source(RErrorKind::Other, e)
+    }
+}
+
+// endregion
 
 // === File operations ===
 
@@ -33,10 +92,7 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
     match fs::copy(&from, &to) {
         Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::other(format!(
-            "cannot copy '{}' to '{}': {}",
-            from, to, e
-        ))),
+        Err(source) => Err(SystemError::Copy { from, to, source }.into()),
     }
 }
 
@@ -99,10 +155,7 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 
     match fs::rename(&from, &to) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::other(format!(
-            "cannot rename '{}' to '{}': {}",
-            from, to, e
-        ))),
+        Err(source) => Err(SystemError::Rename { from, to, source }.into()),
     }
 }
 
@@ -281,10 +334,7 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     // miniR diverges from R: recursive by default
     match fs::create_dir_all(&path) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::other(format!(
-            "cannot create directory '{}': {}",
-            path, e
-        ))),
+        Err(source) => Err(SystemError::CreateDir { path, source }.into()),
     }
 }
 
@@ -325,11 +375,9 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         None => None,
     };
 
-    let entries = fs::read_dir(&path).map_err(|e| {
-        RError::other(format!(
-            "cannot open directory '{}': {}. Does the directory exist?",
-            path, e
-        ))
+    let entries = fs::read_dir(&path).map_err(|source| SystemError::ReadDir {
+        path: path.clone(),
+        source,
     })?;
 
     let mut files: Vec<String> = entries
@@ -488,7 +536,10 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
         .arg("-c")
         .arg(&command)
         .status()
-        .map_err(|e| RError::other(format!("cannot execute command '{}': {}", command, e)))?;
+        .map_err(|source| SystemError::Command {
+            command: command.clone(),
+            source,
+        })?;
 
     let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
@@ -516,11 +567,9 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     let output = std::process::Command::new(&command)
         .args(&cmd_args)
         .status()
-        .map_err(|e| {
-            RError::other(format!(
-                "cannot execute '{}': {}. Is the program installed and in PATH?",
-                command, e
-            ))
+        .map_err(|source| SystemError::Command {
+            command: command.clone(),
+            source,
         })?;
 
     let code = i64::from(output.code().unwrap_or(-1));
@@ -584,11 +633,9 @@ fn builtin_setwd(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    std::env::set_current_dir(&dir).map_err(|e| {
-        RError::other(format!(
-            "cannot change working directory to '{}': {}. Does the directory exist?",
-            dir, e
-        ))
+    std::env::set_current_dir(&dir).map_err(|source| SystemError::SetCwd {
+        path: dir.clone(),
+        source,
     })?;
 
     Ok(RValue::vec(Vector::Character(vec![Some(old_wd)].into())))
