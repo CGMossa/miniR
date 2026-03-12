@@ -157,7 +157,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## REPL
 
-- [ ] Implement reedline features: persistent history, validator, highlighting, hints, completions (see plans/reedline-features.md)
+- [x] Implement reedline features: persistent history, validator, highlighting, hints, completions (see plans/reedline-features.md)
 
 ## Quick Wins
 
