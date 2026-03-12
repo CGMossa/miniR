@@ -158,6 +158,7 @@ pub enum RFunction {
 /// Atomic vector types in R
 #[derive(Debug, Clone)]
 pub enum Vector {
+    Raw(Vec<u8>),
     Logical(Logical),
     Integer(Integer),
     Double(Double),
@@ -168,6 +169,7 @@ pub enum Vector {
 impl Vector {
     pub fn len(&self) -> usize {
         match self {
+            Vector::Raw(v) => v.len(),
             Vector::Logical(v) => v.len(),
             Vector::Integer(v) => v.len(),
             Vector::Double(v) => v.len(),
@@ -192,7 +194,7 @@ impl Vector {
                 .copied()
                 .flatten()
                 .map(|c| c.re != 0.0 || c.im != 0.0),
-            Vector::Character(_) => None,
+            Vector::Raw(_) | Vector::Character(_) => None,
         }
     }
 
@@ -206,6 +208,7 @@ impl Vector {
                 .copied()
                 .flatten()
                 .map(|b| if b { 1.0 } else { 0.0 }),
+            Vector::Raw(v) => v.first().map(|&b| f64::from(b)),
             Vector::Complex(_) => None, // complex cannot coerce to double without losing info
             Vector::Character(v) => v.first().cloned().flatten().and_then(|s| s.parse().ok()),
         }
@@ -221,6 +224,7 @@ impl Vector {
                 .flatten()
                 .and_then(|f| coerce::f64_to_i64(f).ok()),
             Vector::Logical(v) => v.first().copied().flatten().map(|b| if b { 1 } else { 0 }),
+            Vector::Raw(v) => v.first().map(|&b| i64::from(b)),
             Vector::Complex(_) => None,
             Vector::Character(v) => v.first().cloned().flatten().and_then(|s| s.parse().ok()),
         }
@@ -240,6 +244,7 @@ impl Vector {
                 }
             }),
             Vector::Complex(v) => v.first().copied().flatten().map(format_r_complex),
+            Vector::Raw(v) => v.first().map(|b| format!("{:02x}", b)),
         }
     }
 
@@ -252,6 +257,7 @@ impl Vector {
                 .iter()
                 .map(|x| x.map(|b| if b { 1.0 } else { 0.0 }))
                 .collect(),
+            Vector::Raw(v) => v.iter().map(|&b| Some(f64::from(b))).collect(),
             Vector::Complex(v) => v.iter().map(|x| x.map(|c| c.re)).collect(),
             Vector::Character(v) => v
                 .iter()
@@ -269,6 +275,7 @@ impl Vector {
                 .map(|x| x.and_then(|f| coerce::f64_to_i64(f).ok()))
                 .collect(),
             Vector::Logical(v) => v.iter().map(|x| x.map(|b| if b { 1 } else { 0 })).collect(),
+            Vector::Raw(v) => v.iter().map(|&b| Some(i64::from(b))).collect(),
             Vector::Complex(v) => v
                 .iter()
                 .map(|x| x.and_then(|c| coerce::f64_to_i64(c.re).ok()))
@@ -298,6 +305,7 @@ impl Vector {
                     })
                 })
                 .collect(),
+            Vector::Raw(v) => v.iter().map(|b| Some(format!("{:02x}", b))).collect(),
             Vector::Complex(v) => v.iter().map(|x| x.map(format_r_complex)).collect(),
         }
     }
@@ -308,6 +316,7 @@ impl Vector {
             Vector::Logical(v) => v.0.clone(),
             Vector::Integer(v) => v.iter().map(|x| x.map(|i| i != 0)).collect(),
             Vector::Double(v) => v.iter().map(|x| x.map(|f| f != 0.0)).collect(),
+            Vector::Raw(v) => v.iter().map(|&b| Some(b != 0)).collect(),
             Vector::Complex(v) => v
                 .iter()
                 .map(|x| x.map(|c| c.re != 0.0 || c.im != 0.0))
@@ -332,6 +341,10 @@ impl Vector {
                 .iter()
                 .map(|x| x.map(|b| num_complex::Complex64::new(if b { 1.0 } else { 0.0 }, 0.0)))
                 .collect(),
+            Vector::Raw(v) => v
+                .iter()
+                .map(|&b| Some(num_complex::Complex64::new(f64::from(b), 0.0)))
+                .collect(),
             Vector::Character(v) => v
                 .iter()
                 .map(|x| {
@@ -345,11 +358,36 @@ impl Vector {
 
     pub fn type_name(&self) -> &'static str {
         match self {
+            Vector::Raw(_) => "raw",
             Vector::Logical(_) => "logical",
             Vector::Integer(_) => "integer",
             Vector::Double(_) => "double",
             Vector::Complex(_) => "complex",
             Vector::Character(_) => "character",
+        }
+    }
+
+    /// Convert entire vector to raw bytes (truncating to 0-255)
+    pub fn to_raw(&self) -> Vec<u8> {
+        match self {
+            Vector::Raw(v) => v.clone(),
+            Vector::Integer(v) => v
+                .iter()
+                .map(|x| x.map(|i| (i & 0xff) as u8).unwrap_or(0))
+                .collect(),
+            Vector::Double(v) => v
+                .iter()
+                .map(|x| x.map(|f| (f as i64 & 0xff) as u8).unwrap_or(0))
+                .collect(),
+            Vector::Logical(v) => v
+                .iter()
+                .map(|x| x.map(u8::from).unwrap_or(0))
+                .collect(),
+            Vector::Complex(v) => v
+                .iter()
+                .map(|x| x.map(|c| (c.re as i64 & 0xff) as u8).unwrap_or(0))
+                .collect(),
+            Vector::Character(_) => vec![0; self.len()],
         }
     }
 }
@@ -464,6 +502,7 @@ pub fn format_vector(v: &Vector) -> String {
     let len = v.len();
     if len == 0 {
         return match v {
+            Vector::Raw(_) => "raw(0)".to_string(),
             Vector::Logical(_) => "logical(0)".to_string(),
             Vector::Integer(_) => "integer(0)".to_string(),
             Vector::Double(_) => "numeric(0)".to_string(),
@@ -473,6 +512,7 @@ pub fn format_vector(v: &Vector) -> String {
     }
 
     let elements: Vec<String> = match v {
+        Vector::Raw(vals) => vals.iter().map(|b| format!("{:02x}", b)).collect(),
         Vector::Logical(vals) => vals
             .iter()
             .map(|x| match x {

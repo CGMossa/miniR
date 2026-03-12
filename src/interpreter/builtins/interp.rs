@@ -100,6 +100,10 @@ fn eval_apply(
 
     let items: Vec<RValue> = match x {
         RValue::Vector(v) => match &v.inner {
+            Vector::Raw(vals) => vals
+                .iter()
+                .map(|&x| RValue::vec(Vector::Raw(vec![x])))
+                .collect(),
             Vector::Double(vals) => vals
                 .iter()
                 .map(|x| RValue::vec(Vector::Double(vec![*x].into())))
@@ -726,6 +730,10 @@ fn interp_op_not(
 fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
     match x {
         RValue::Vector(v) => match &v.inner {
+            Vector::Raw(vals) => vals
+                .iter()
+                .map(|&x| RValue::vec(Vector::Raw(vec![x])))
+                .collect(),
             Vector::Double(vals) => vals
                 .iter()
                 .map(|x| RValue::vec(Vector::Double(vec![*x].into())))

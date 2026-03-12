@@ -346,28 +346,39 @@ impl Interpreter {
                         _ => {
                             return Err(RError::new(
                                 RErrorKind::Type,
-                                "invalid argument to unary operator".to_string(),
+                                "invalid argument to unary operator",
                             )
                             .into())
                         }
                     };
                     Ok(RValue::vec(result))
                 }
-                _ => Err(RError::new(
+                _ => {
+                    Err(RError::new(RErrorKind::Type, "invalid argument to unary operator").into())
+                }
+            },
+            UnaryOp::Pos => match val {
+                RValue::Vector(v) if matches!(v.inner, Vector::Raw(_)) => Err(RError::new(
                     RErrorKind::Type,
-                    "invalid argument to unary operator".to_string(),
+                    "non-numeric argument to unary operator",
                 )
                 .into()),
+                _ => Ok(val.clone()),
             },
-            UnaryOp::Pos => Ok(val.clone()),
             UnaryOp::Not => match val {
+                // Bitwise NOT for raw vectors
+                RValue::Vector(v) if matches!(v.inner, Vector::Raw(_)) => {
+                    let bytes = v.inner.to_raw();
+                    let result: Vec<u8> = bytes.iter().map(|b| !b).collect();
+                    Ok(RValue::vec(Vector::Raw(result)))
+                }
                 RValue::Vector(v) => {
                     let logicals = v.to_logicals();
                     let result: Vec<Option<bool>> =
                         logicals.iter().map(|x| x.map(|b| !b)).collect();
                     Ok(RValue::vec(Vector::Logical(result.into())))
                 }
-                _ => Err(RError::new(RErrorKind::Type, "invalid argument type".to_string()).into()),
+                _ => Err(RError::new(RErrorKind::Type, "invalid argument type").into()),
             },
             UnaryOp::Formula => Ok(RValue::Null), // stub for unary ~
         }
@@ -416,14 +427,23 @@ impl Interpreter {
             BinaryOp::Special(SpecialOp::MatMul) => self.eval_matmul(left, right),
             BinaryOp::Special(_) => Ok(RValue::Null),
 
-            // Arithmetic (vectorized with recycling)
+            // Arithmetic (vectorized with recycling) — raw vectors cannot participate
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mul
             | BinaryOp::Div
             | BinaryOp::Pow
             | BinaryOp::Mod
-            | BinaryOp::IntDiv => self.eval_arith(op, lv, rv),
+            | BinaryOp::IntDiv => {
+                if matches!(lv.inner, Vector::Raw(_)) || matches!(rv.inner, Vector::Raw(_)) {
+                    return Err(RError::new(
+                        RErrorKind::Type,
+                        "non-numeric argument to binary operator",
+                    )
+                    .into());
+                }
+                self.eval_arith(op, &lv.inner, &rv.inner)
+            }
 
             // Comparison (vectorized)
             BinaryOp::Eq
@@ -433,8 +453,13 @@ impl Interpreter {
             | BinaryOp::Le
             | BinaryOp::Ge => self.eval_compare(op, lv, rv),
 
-            // Logical (vectorized)
-            BinaryOp::And | BinaryOp::Or => self.eval_logical_vec(op, lv, rv),
+            // Logical — for raw vectors, & and | are bitwise
+            BinaryOp::And | BinaryOp::Or => {
+                if matches!(lv.inner, Vector::Raw(_)) || matches!(rv.inner, Vector::Raw(_)) {
+                    return self.eval_raw_bitwise(op, &lv.inner, &rv.inner);
+                }
+                self.eval_logical_vec(op, &lv.inner, &rv.inner)
+            }
 
             // Scalar logical
             BinaryOp::AndScalar => {
@@ -586,6 +611,32 @@ impl Interpreter {
     }
 
     fn eval_compare(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
+        // Raw comparison: compares byte values
+        if matches!(lv, Vector::Raw(_)) || matches!(rv, Vector::Raw(_)) {
+            let lb = lv.to_raw();
+            let rb = rv.to_raw();
+            let len = lb.len().max(rb.len());
+            if len == 0 {
+                return Ok(RValue::vec(Vector::Logical(vec![].into())));
+            }
+            let result: Vec<Option<bool>> = (0..len)
+                .map(|i| {
+                    let a = lb[i % lb.len()];
+                    let b = rb[i % rb.len()];
+                    Some(match op {
+                        BinaryOp::Eq => a == b,
+                        BinaryOp::Ne => a != b,
+                        BinaryOp::Lt => a < b,
+                        BinaryOp::Gt => a > b,
+                        BinaryOp::Le => a <= b,
+                        BinaryOp::Ge => a >= b,
+                        _ => unreachable!(),
+                    })
+                })
+                .collect();
+            return Ok(RValue::vec(Vector::Logical(result.into())));
+        }
+
         // Complex comparison: only == and != are defined
         if matches!(lv, Vector::Complex(_)) || matches!(rv, Vector::Complex(_)) {
             if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
@@ -694,6 +745,28 @@ impl Interpreter {
             })
             .collect();
         Ok(RValue::vec(Vector::Logical(result.into())))
+    }
+
+    /// Bitwise &/| for raw vectors — returns raw
+    fn eval_raw_bitwise(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
+        let lb = lv.to_raw();
+        let rb = rv.to_raw();
+        let len = lb.len().max(rb.len());
+        if len == 0 {
+            return Ok(RValue::vec(Vector::Raw(vec![])));
+        }
+        let result: Vec<u8> = (0..len)
+            .map(|i| {
+                let a = lb[i % lb.len()];
+                let b = rb[i % rb.len()];
+                match op {
+                    BinaryOp::And => a & b,
+                    BinaryOp::Or => a | b,
+                    _ => unreachable!(),
+                }
+            })
+            .collect();
+        Ok(RValue::vec(Vector::Raw(result)))
     }
 
     fn eval_range(&self, left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
@@ -1470,6 +1543,23 @@ impl Interpreter {
             }};
         }
         match v {
+            Vector::Raw(vals) => {
+                let result: Vec<u8> = indices
+                    .iter()
+                    .map(|idx| {
+                        idx.and_then(|i| {
+                            let i = usize::try_from(i).unwrap_or(0);
+                            if i > 0 && i <= vals.len() {
+                                Some(vals[i - 1])
+                            } else {
+                                Some(0u8)
+                            }
+                        })
+                        .unwrap_or(0u8)
+                    })
+                    .collect();
+                Ok(RValue::vec(Vector::Raw(result)))
+            }
             Vector::Double(vals) => index_vec!(vals, Double),
             Vector::Integer(vals) => index_vec!(vals, Integer),
             Vector::Logical(vals) => index_vec!(vals, Logical),
@@ -1496,6 +1586,15 @@ impl Interpreter {
             }};
         }
         match v {
+            Vector::Raw(vals) => {
+                let result: Vec<u8> = vals
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !exclude.contains(&(i + 1)))
+                    .map(|(_, &v)| v)
+                    .collect();
+                Ok(RValue::vec(Vector::Raw(result)))
+            }
             Vector::Double(vals) => filter_vec!(vals, Double),
             Vector::Integer(vals) => filter_vec!(vals, Integer),
             Vector::Logical(vals) => filter_vec!(vals, Logical),
@@ -1517,6 +1616,15 @@ impl Interpreter {
             }};
         }
         match v {
+            Vector::Raw(vals) => {
+                let result: Vec<u8> = vals
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask.get(*i).copied().flatten().unwrap_or(false))
+                    .map(|(_, &v)| v)
+                    .collect();
+                Ok(RValue::vec(Vector::Raw(result)))
+            }
             Vector::Double(vals) => mask_vec!(vals, Double),
             Vector::Integer(vals) => mask_vec!(vals, Integer),
             Vector::Logical(vals) => mask_vec!(vals, Logical),
@@ -1577,6 +1685,7 @@ impl Interpreter {
                 if i > 0 && i <= v.len() {
                     let idx = i - 1;
                     match &v.inner {
+                        Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(vec![vals[idx]]))),
                         Vector::Double(vals) => {
                             Ok(RValue::vec(Vector::Double(vec![vals[idx]].into())))
                         }
@@ -1883,6 +1992,7 @@ impl Interpreter {
                 let len = v.len();
                 for i in 0..len {
                     let elem = match &v.inner {
+                        Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[i]])),
                         Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[i]].into())),
                         Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[i]].into())),
                         Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[i]].into())),
@@ -1949,6 +2059,7 @@ impl Interpreter {
                     cls
                 } else {
                     match &rv.inner {
+                        Vector::Raw(_) => vec!["raw".to_string()],
                         Vector::Logical(_) => vec!["logical".to_string()],
                         Vector::Integer(_) => vec!["integer".to_string()],
                         Vector::Double(_) => vec!["numeric".to_string()],

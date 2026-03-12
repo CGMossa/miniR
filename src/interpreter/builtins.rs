@@ -243,11 +243,13 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         return Ok(RValue::List(RList::new(result)));
     }
 
-    // Determine highest type (logical < integer < double < complex < character)
+    // Determine highest type (raw < logical < integer < double < complex < character)
     let mut has_char = false;
     let mut has_complex = false;
     let mut has_double = false;
     let mut has_int = false;
+    let mut has_logical = false;
+    let mut has_raw = false;
 
     for val in &all_values {
         match val {
@@ -255,6 +257,8 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             RValue::Vector(rv) if matches!(rv.inner, Vector::Complex(_)) => has_complex = true,
             RValue::Vector(rv) if matches!(rv.inner, Vector::Double(_)) => has_double = true,
             RValue::Vector(rv) if matches!(rv.inner, Vector::Integer(_)) => has_int = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Logical(_)) => has_logical = true,
+            RValue::Vector(rv) if matches!(rv.inner, Vector::Raw(_)) => has_raw = true,
             RValue::Null => {}
             _ => {}
         }
@@ -300,7 +304,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             }
         }
         Ok(RValue::vec(Vector::Integer(result.into())))
-    } else {
+    } else if has_logical || !has_raw {
         let mut result = Vec::new();
         for val in &all_values {
             match val {
@@ -310,6 +314,17 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             }
         }
         Ok(RValue::vec(Vector::Logical(result.into())))
+    } else {
+        // All raw
+        let mut result = Vec::new();
+        for val in &all_values {
+            match val {
+                RValue::Vector(v) => result.extend(v.inner.to_raw()),
+                RValue::Null => {}
+                _ => {}
+            }
+        }
+        Ok(RValue::vec(Vector::Raw(result)))
     }
 }
 
@@ -334,6 +349,7 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .map(|arg| match arg {
             RValue::Vector(v) => {
                 let elems: Vec<String> = match &v.inner {
+                    Vector::Raw(vals) => vals.iter().map(|b| format!("{:02x}", b)).collect(),
                     Vector::Character(vals) => vals
                         .iter()
                         .map(|x| x.clone().unwrap_or_else(|| "NA".to_string()))
@@ -493,6 +509,7 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result: Vec<Option<bool>> = match &v.inner {
+                Vector::Raw(vals) => vals.iter().map(|_| Some(false)).collect(),
                 Vector::Logical(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
                 Vector::Integer(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
                 Vector::Double(vals) => vals
@@ -703,6 +720,7 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
     let c = match args.first() {
         Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Raw(_) => "raw",
             Vector::Logical(_) => "logical",
             Vector::Integer(_) => "integer",
             Vector::Double(_) => "numeric",
@@ -723,6 +741,7 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
 fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let m = match args.first() {
         Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Raw(_) => "raw",
             Vector::Logical(_) => "logical",
             Vector::Integer(_) | Vector::Double(_) => "numeric",
             Vector::Complex(_) => "complex",
@@ -747,6 +766,12 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                     let len = v.len();
                     let type_name = v.type_name();
                     let preview: String = match &v.inner {
+                        Vector::Raw(vals) => vals
+                            .iter()
+                            .take(10)
+                            .map(|b| format!("{:02x}", b))
+                            .collect::<Vec<_>>()
+                            .join(" "),
                         Vector::Double(vals) => vals
                             .iter()
                             .take(10)
@@ -968,6 +993,10 @@ fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         Some(RValue::List(l)) => Ok(RValue::List(l.clone())),
         Some(RValue::Vector(v)) => {
             let values: Vec<(Option<String>, RValue)> = match &v.inner {
+                Vector::Raw(vals) => vals
+                    .iter()
+                    .map(|&x| (None, RValue::vec(Vector::Raw(vec![x]))))
+                    .collect(),
                 Vector::Double(vals) => vals
                     .iter()
                     .map(|x| (None, RValue::vec(Vector::Double(vec![*x].into()))))
@@ -2158,6 +2187,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                 cls
             } else {
                 match &rv.inner {
+                    Vector::Raw(_) => vec!["raw".to_string()],
                     Vector::Logical(_) => vec!["logical".to_string()],
                     Vector::Integer(_) => vec!["integer".to_string()],
                     Vector::Double(_) => vec!["numeric".to_string()],
