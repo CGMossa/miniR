@@ -16,8 +16,7 @@ noop_builtin!("eigen", 1);
 noop_builtin!("det", 1);
 noop_builtin!("chol", 1);
 
-// Types (complex — math.rs)
-noop_builtin!("raw");
+// Types (complex — math.rs; raw, rawShift, as.raw, is.raw — strings.rs)
 
 // Factors & tables (factor, levels, nlevels, table, tabulate — builtins.rs)
 
@@ -31,9 +30,6 @@ noop_builtin!("loadNamespace", 1);
 noop_builtin!("requireNamespace", 1);
 noop_builtin!("installed.packages");
 noop_builtin!("install.packages");
-
-// Raw bytes
-noop_builtin!("rawShift", 2);
 
 // Regex
 noop_builtin!("reg.finalizer", 2);
