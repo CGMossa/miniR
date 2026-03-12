@@ -74,7 +74,7 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Builtin Stubs — String & Regex
 
-- [ ] 🔧 `raw(length)` / `rawShift(x, n)` — raw vectors
+- [x] 🔧 `raw(length)` / `rawShift(x, n)` / `as.raw(x)` / `is.raw(x)` — raw vectors
 
 ## Builtin Stubs — Environments
 
@@ -141,6 +141,10 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 - [ ] add typst conversion of R documentation and produce the manual
 - [ ] Arrow backend for vector types — replace `Vec<Option<T>>` with validity bitmap + contiguous buffer (see plans/arrow-backend.md)
 - [ ] Per-module error types — replace centralized `RError` with module-specific errors using derive_more (see plans/module-error-types.md)
+  - [x] Enable `error` and `display` features in derive_more
+  - [x] Add `RSignal` (Return/Break/Next) and `RFlow` (Error|Signal) types; eval() returns RFlow
+  - [ ] Migrate interpreter.rs functions from `RError` to `RFlow` (remove Return/Break/Next from RError)
+  - [ ] Extract per-module error types (MathError, StringError, IoError, etc.)
 - [ ] Feature-gate the IO module for sandboxed/WASM environments (see plans/io-feature-gate.md)
 
 ## Developer Experience
