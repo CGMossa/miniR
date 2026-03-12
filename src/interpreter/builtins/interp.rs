@@ -529,7 +529,7 @@ fn interp_source(
     };
     let ast = crate::parser::parse_program(&source)
         .map_err(|e| RError::Other(format!("parse error in '{}': {}", path, e)))?;
-    with_interpreter(|interp| interp.eval(&ast))
+    with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
 #[interpreter_builtin(name = "system.time", min_args = 1)]

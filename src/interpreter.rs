@@ -141,8 +141,8 @@ impl Interpreter {
         &self.rng
     }
 
-    pub fn eval(&self, expr: &Expr) -> Result<RValue, RError> {
-        self.eval_in(expr, &self.global_env)
+    pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
+        self.eval_in(expr, &self.global_env).map_err(RFlow::from)
     }
 
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RError> {

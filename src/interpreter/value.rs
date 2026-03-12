@@ -554,7 +554,11 @@ pub enum ConditionKind {
     Message,
 }
 
-/// R runtime errors
+/// R runtime errors and control flow signals.
+///
+/// Return/Break/Next are control flow signals, not errors. They live here
+/// temporarily for backward compatibility but should be matched via `RFlow`
+/// at call boundaries. Use `RSignal` for new code.
 #[derive(Debug, Clone)]
 pub enum RError {
     Type(String),
@@ -569,9 +573,71 @@ pub enum RError {
         condition: RValue,
         kind: ConditionKind,
     },
+    // Control flow — will be removed from RError once all callers migrate to RFlow
     Return(RValue),
     Break,
     Next,
+}
+
+/// Control flow signals — not errors, but propagated via Result for convenience
+#[derive(Debug, Clone)]
+pub enum RSignal {
+    Return(RValue),
+    Break,
+    Next,
+}
+
+/// Combined error/signal type for the evaluator.
+/// Builtins return `Result<RValue, RError>`, the evaluator returns `Result<RValue, RFlow>`.
+#[derive(Debug, Clone)]
+pub enum RFlow {
+    Error(RError),
+    Signal(RSignal),
+}
+
+impl From<RSignal> for RFlow {
+    fn from(s: RSignal) -> Self {
+        RFlow::Signal(s)
+    }
+}
+
+impl From<RFlow> for RError {
+    /// Convert back from RFlow to RError. Signals become their RError equivalents.
+    fn from(f: RFlow) -> Self {
+        match f {
+            RFlow::Error(e) => e,
+            RFlow::Signal(RSignal::Return(v)) => RError::Return(v),
+            RFlow::Signal(RSignal::Break) => RError::Break,
+            RFlow::Signal(RSignal::Next) => RError::Next,
+        }
+    }
+}
+
+impl From<TryFromIntError> for RFlow {
+    fn from(e: TryFromIntError) -> Self {
+        RFlow::Error(RError::Type(format!(
+            "integer conversion out of range: {e}"
+        )))
+    }
+}
+
+impl fmt::Display for RFlow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RFlow::Error(e) => write!(f, "{}", e),
+            RFlow::Signal(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl fmt::Display for RSignal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RSignal::Return(_) => write!(f, "no function to return from"),
+            RSignal::Break => write!(f, "no loop for break/next, jumping to top level"),
+            RSignal::Next => write!(f, "no loop for break/next, jumping to top level"),
+        }
+    }
 }
 
 impl From<TryFromIntError> for RError {
@@ -630,6 +696,18 @@ impl fmt::Display for RError {
             RError::Return(_) => write!(f, "no function to return from"),
             RError::Break => write!(f, "no loop for break/next, jumping to top level"),
             RError::Next => write!(f, "no loop for break/next, jumping to top level"),
+        }
+    }
+}
+
+/// Convert an `RError` into an `RFlow`, separating control flow from real errors.
+impl From<RError> for RFlow {
+    fn from(e: RError) -> Self {
+        match e {
+            RError::Return(v) => RFlow::Signal(RSignal::Return(v)),
+            RError::Break => RFlow::Signal(RSignal::Break),
+            RError::Next => RFlow::Signal(RSignal::Next),
+            other => RFlow::Error(other),
         }
     }
 }
