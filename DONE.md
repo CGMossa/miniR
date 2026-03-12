@@ -8,6 +8,7 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `match.arg(arg, choices)` — match argument to list of choices
 - `switch(expr, ...)` — multi-way branch
 - `do.call(fn, args)` — call function with arg list
+- `as.vector(x)` — strip vector/list attributes in the common path
 
 ## Attributes & OOP
 
