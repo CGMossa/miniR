@@ -772,8 +772,10 @@ impl Interpreter {
             let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
             // ndarray uses row-major by default, R uses column-major
             // Array2::from_shape_vec with column-major (Fortran) order
-            let arr = Array2::from_shape_vec((nrow, ncol).f(), flat)
-                .map_err(|e| RError::other(format!("matrix shape error: {}", e)))?;
+            let arr =
+                Array2::from_shape_vec((nrow, ncol).f(), flat).map_err(|source| -> RError {
+                    builtins::math::MathError::Shape { source }.into()
+                })?;
             Ok((arr, nrow, ncol))
         }
 

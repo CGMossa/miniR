@@ -1,10 +1,31 @@
 use std::collections::BTreeSet;
 
+use derive_more::{Display, Error};
 use ndarray::{Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
 use minir_macros::builtin;
+
+// region: MathError
+
+/// Structured error type for math/linear algebra operations.
+#[derive(Debug, Display, Error)]
+pub enum MathError {
+    #[display("matrix shape error: {}", source)]
+    Shape {
+        #[error(source)]
+        source: ndarray::ShapeError,
+    },
+}
+
+impl From<MathError> for RError {
+    fn from(e: MathError) -> Self {
+        RError::from_source(RErrorKind::Other, e)
+    }
+}
+
+// endregion
 
 // === Math functions ===
 
@@ -1522,7 +1543,7 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     };
     let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
     Array2::from_shape_vec((nrow, ncol).f(), flat)
-        .map_err(|e| RError::other(format!("matrix shape error: {}", e)))
+        .map_err(|source| -> RError { MathError::Shape { source }.into() })
 }
 
 /// Convert an ndarray Array2 back to an RValue matrix

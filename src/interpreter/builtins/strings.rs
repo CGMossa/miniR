@@ -1,10 +1,31 @@
 use std::collections::HashMap;
 
 use crate::interpreter::value::*;
+use derive_more::{Display, Error};
 use minir_macros::builtin;
 use regex::Regex;
 
 use crate::interpreter::value::deparse_expr;
+
+// region: StringError
+
+/// Structured error type for string operations.
+#[derive(Debug, Display, Error)]
+pub enum StringError {
+    #[display("invalid regular expression: {}", source)]
+    InvalidRegex {
+        #[error(source)]
+        source: regex::Error,
+    },
+}
+
+impl From<StringError> for RError {
+    fn from(e: StringError) -> Self {
+        RError::from_source(RErrorKind::Argument, e)
+    }
+}
+
+// endregion
 
 /// Extract common regex options from named args: fixed, ignore.case, perl
 fn get_regex_opts(named: &[(String, RValue)]) -> (bool, bool) {
@@ -34,12 +55,7 @@ fn build_regex(pattern: &str, fixed: bool, ignore_case: bool) -> Result<Regex, R
     } else {
         pat
     };
-    Regex::new(&pat).map_err(|e| {
-        RError::new(
-            RErrorKind::Argument,
-            format!("invalid regular expression: {}", e),
-        )
-    })
+    Regex::new(&pat).map_err(|source| -> RError { StringError::InvalidRegex { source }.into() })
 }
 
 /// Convert R-style replacement backreferences (\1, \2) to regex crate style ($1, $2)

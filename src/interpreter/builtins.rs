@@ -1,14 +1,14 @@
 mod conditions;
 mod factors;
 mod interp;
-mod io;
-mod math;
+pub mod io;
+pub mod math;
 mod pre_eval;
 #[cfg(feature = "random")]
 mod random;
-mod strings;
+pub mod strings;
 mod stubs;
-mod system;
+pub mod system;
 mod tables;
 
 use crate::interpreter::environment::Environment;
