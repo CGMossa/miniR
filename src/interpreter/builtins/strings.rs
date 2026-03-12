@@ -814,6 +814,87 @@ fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
+/// `raw(length)` — create a raw (byte) vector of zeros.
+/// Returns an integer vector with all elements 0 (representing 0x00 bytes).
+#[builtin(min_args = 1)]
+fn builtin_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let n = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .ok_or_else(|| RError::Argument("argument must be a single integer".to_string()))?;
+    if n < 0 {
+        return Err(RError::Argument(format!(
+            "invalid 'length' argument: {}",
+            n
+        )));
+    }
+    let len = usize::try_from(n)?;
+    let result: Vec<Option<i64>> = vec![Some(0i64); len];
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+/// `rawShift(x, n)` — bitwise shift of raw (byte) values.
+/// Positive n shifts left, negative n shifts right.
+#[builtin(name = "rawShift", min_args = 2)]
+fn builtin_raw_shift(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ints = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_integers(),
+        _ => {
+            return Err(RError::Argument(
+                "argument 'x' must be a raw (integer) vector".to_string(),
+            ))
+        }
+    };
+    let shift = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .ok_or_else(|| RError::Argument("argument 'n' must be a single integer".to_string()))?;
+    if !(-8..=8).contains(&shift) {
+        return Err(RError::Argument(format!(
+            "shift amount must be between -8 and 8, got {}",
+            shift
+        )));
+    }
+
+    let result: Vec<Option<i64>> = ints
+        .iter()
+        .map(|val| {
+            val.map(|b| {
+                let byte = u8::try_from(b.clamp(0, 255)).unwrap_or(0);
+                let shifted = if shift >= 0 {
+                    byte.wrapping_shl(u32::try_from(shift).unwrap_or(0))
+                } else {
+                    byte.wrapping_shr(u32::try_from(-shift).unwrap_or(0))
+                };
+                i64::from(shifted)
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+/// `as.raw(x)` — coerce to raw (byte) values (0-255), truncating to lowest byte.
+#[builtin(name = "as.raw", min_args = 1)]
+fn builtin_as_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let ints = rv.to_integers();
+            let result: Vec<Option<i64>> = ints
+                .iter()
+                .map(|val| val.map(|v| i64::from((v & 0xFF) as u8)))
+                .collect();
+            Ok(RValue::vec(Vector::Integer(result.into())))
+        }
+        _ => Err(RError::Argument("argument must be a vector".to_string())),
+    }
+}
+
+/// `is.raw(x)` — stub that always returns FALSE since we don't have a distinct raw type yet.
+#[builtin(name = "is.raw", min_args = 1)]
+fn builtin_is_raw(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
 #[builtin(name = "glob2rx", min_args = 1)]
 fn builtin_glob2rx(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
