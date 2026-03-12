@@ -41,7 +41,8 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
             let result: Vec<Option<f64>> = v.to_doubles().iter().map(|x| x.map(f)).collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "non-numeric argument to mathematical function".to_string(),
         )),
     }
@@ -808,7 +809,10 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 #[builtin(min_args = 2)]
 fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let result = format!("{:?}", args[0]) == format!("{:?}", args[1]);
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
@@ -823,7 +827,10 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         .unwrap_or(1.5e-8);
 
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     match (&args[0], &args[1]) {
         (RValue::Vector(v1), RValue::Vector(v2)) => {
@@ -903,7 +910,10 @@ fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 #[builtin(min_args = 2)]
 fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let a = args[0].as_vector().and_then(|v| v.as_logical_scalar());
     let b = args[1].as_vector().and_then(|v| v.as_logical_scalar());
@@ -1009,7 +1019,10 @@ fn builtin_invisible(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 3)]
 fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 3 {
-        return Err(RError::Argument("need 3 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 3 arguments".to_string(),
+        ));
     }
     let test = args[0].as_vector().and_then(|v| v.as_logical_scalar());
     match test {
@@ -1022,7 +1035,10 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 2, names = ["pmatch", "charmatch"])]
 fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let x = match &args[0] {
         RValue::Vector(v) => v.to_characters(),
@@ -1050,7 +1066,10 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
 #[builtin(min_args = 3)]
 fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 3 {
-        return Err(RError::Argument("need 3 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 3 arguments".to_string(),
+        ));
     }
     match &args[0] {
         RValue::Vector(v) => {
@@ -1255,7 +1274,10 @@ fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 2)]
 fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let x = args[0]
         .as_vector()
@@ -1272,7 +1294,10 @@ fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 #[builtin(min_args = 2)]
 fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let x = args[0]
         .as_vector()
@@ -1289,7 +1314,10 @@ fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2)]
 fn builtin_union(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let x = args[0]
         .as_vector()
@@ -1748,7 +1776,8 @@ fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             let ints = match val.as_vector() {
                 Some(v) => v.to_integers(),
                 None => {
-                    return Err(RError::Argument(
+                    return Err(RError::new(
+                        RErrorKind::Argument,
                         "'dim' must be a numeric vector".to_string(),
                     ))
                 }
@@ -1837,7 +1866,8 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             }
             RValue::Null => continue,
             _ => {
-                return Err(RError::Argument(
+                return Err(RError::new(
+                    RErrorKind::Argument,
                     "cannot rbind non-vector/matrix arguments".to_string(),
                 ))
             }
@@ -1857,7 +1887,8 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     // Check column compatibility
     for (_, _, nc) in &inputs {
         if *nc != max_ncol && max_ncol % nc != 0 && nc % max_ncol != 0 {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "number of columns of arguments do not match".to_string(),
             ));
         }
@@ -1925,7 +1956,8 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             }
             RValue::Null => continue,
             _ => {
-                return Err(RError::Argument(
+                return Err(RError::new(
+                    RErrorKind::Argument,
                     "cannot cbind non-vector/matrix arguments".to_string(),
                 ))
             }
@@ -1945,7 +1977,8 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     // Check row compatibility
     for (_, nr, _) in &inputs {
         if *nr != max_nrow && max_nrow % nr != 0 && nr % max_nrow != 0 {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "number of rows of arguments do not match".to_string(),
             ));
         }
@@ -1993,7 +2026,12 @@ fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         .get(1)
         .and_then(|v| v.as_vector())
         .and_then(|v| v.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'which' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'which' must be a character string".to_string(),
+            )
+        })?;
     match args.first() {
         Some(RValue::Vector(rv)) => Ok(rv.get_attr(&which).cloned().unwrap_or(RValue::Null)),
         Some(RValue::List(l)) => Ok(l.get_attr(&which).cloned().unwrap_or(RValue::Null)),
@@ -2007,7 +2045,12 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .get(1)
         .and_then(|v| v.as_vector())
         .and_then(|v| v.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'which' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'which' must be a character string".to_string(),
+            )
+        })?;
     let value = args.get(2).cloned().unwrap_or(RValue::Null);
     match args.first() {
         Some(RValue::Vector(rv)) => {
@@ -2197,7 +2240,10 @@ fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 #[builtin(min_args = 2)]
 fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let x = match &args[0] {
         RValue::Vector(v) => v.to_characters(),
@@ -2309,7 +2355,10 @@ fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             Some(p) => Ok(RValue::Environment(p)),
             None => Ok(RValue::Null),
         },
-        _ => Err(RError::Argument("not an environment".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "not an environment".to_string(),
+        )),
     }
 }
 
@@ -2475,22 +2524,28 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
                 1 => Ok(RValue::vec(Vector::Character(
                     vec![Some(matches[0].clone())].into(),
                 ))),
-                0 => Err(RError::Argument(format!(
-                    "'arg' should be one of {}",
-                    choices_vec
-                        .iter()
-                        .map(|c| format!("'{}'", c))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))),
-                _ => Err(RError::Argument(format!(
-                    "'arg' should be one of {}",
-                    choices_vec
-                        .iter()
-                        .map(|c| format!("'{}'", c))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))),
+                0 => Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "'arg' should be one of {}",
+                        choices_vec
+                            .iter()
+                            .map(|c| format!("'{}'", c))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )),
+                _ => Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "'arg' should be one of {}",
+                        choices_vec
+                            .iter()
+                            .map(|c| format!("'{}'", c))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )),
             }
         }
     }
@@ -2545,7 +2600,8 @@ fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             Ok(RValue::List(RList::new(entries)))
         }
         Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "'fn' is not a function — formals() requires a function argument".to_string(),
         )),
     }
@@ -2560,7 +2616,8 @@ fn builtin_body(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             Ok(RValue::Language(Language::new(body.clone())))
         }
         Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "'fn' is not a function — body() requires a function argument".to_string(),
         )),
     }
@@ -2582,7 +2639,8 @@ fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| {
-            RError::Argument(
+            RError::new(
+                RErrorKind::Argument,
                 "first argument must be a character string naming the function to call".to_string(),
             )
         })?;

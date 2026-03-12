@@ -34,18 +34,22 @@ fn match_fun(f: &RValue, env: &Environment) -> Result<RValue, RError> {
         RValue::Function(_) => Ok(f.clone()),
         RValue::Vector(rv) => match &rv.inner {
             Vector::Character(s) => {
-                let name = s
-                    .first()
-                    .and_then(|x| x.as_ref())
-                    .ok_or_else(|| RError::Argument("not a valid function name".to_string()))?;
+                let name = s.first().and_then(|x| x.as_ref()).ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "not a valid function name".to_string(),
+                    )
+                })?;
                 env.get_function(name)
                     .ok_or_else(|| RError::other(format!("could not find function '{}'", name)))
             }
-            _ => Err(RError::Argument(
+            _ => Err(RError::new(
+                RErrorKind::Argument,
                 "FUN is not a function and not a string naming a function".to_string(),
             )),
         },
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "FUN is not a function and not a string naming a function".to_string(),
         )),
     }
@@ -85,7 +89,8 @@ fn eval_apply(
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "need at least 2 arguments for apply".to_string(),
         ));
     }
@@ -214,7 +219,8 @@ fn interp_do_call(
                 .map_err(RError::from),
         });
     }
-    Err(RError::Argument(
+    Err(RError::new(
+        RErrorKind::Argument,
         "do.call requires at least 2 arguments".to_string(),
     ))
 }
@@ -235,7 +241,8 @@ fn interp_reduce(
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "Reduce requires at least 2 arguments".to_string(),
         ));
     }
@@ -295,7 +302,10 @@ fn interp_filter(
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
-        return Err(RError::Argument("Filter requires 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "Filter requires 2 arguments".to_string(),
+        ));
     }
     let (fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
@@ -353,7 +363,8 @@ fn interp_map(
     env: &Environment,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "Map requires at least 2 arguments".to_string(),
         ));
     }
@@ -400,7 +411,7 @@ fn interp_switch(
 ) -> Result<RValue, RError> {
     let expr = positional
         .first()
-        .ok_or_else(|| RError::Argument("'EXPR' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "'EXPR' is missing".to_string()))?;
 
     let is_character =
         matches!(expr, RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)));
@@ -461,7 +472,7 @@ fn interp_get(
                 None
             }
         })
-        .ok_or_else(|| RError::Argument("invalid first argument".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid first argument".to_string()))?;
     let _envir = named.iter().find(|(n, _)| n == "envir").map(|(_, v)| v);
     env.get(&name)
         .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
@@ -482,7 +493,7 @@ fn interp_assign(
                 None
             }
         })
-        .ok_or_else(|| RError::Argument("invalid first argument".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid first argument".to_string()))?;
     let value = positional
         .get(1)
         .or_else(|| named.iter().find(|(n, _)| n == "value").map(|(_, v)| v))
@@ -521,7 +532,7 @@ fn interp_source(
     let path = positional
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("invalid 'file' argument".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
     let source = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
@@ -819,7 +830,7 @@ fn interp_as_environment(
 ) -> Result<RValue, RError> {
     let x = positional
         .first()
-        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
 
     match x {
         RValue::Environment(_) => Ok(x.clone()),
@@ -835,7 +846,7 @@ fn interp_as_environment(
                             .unwrap_or_else(|| interp.global_env.clone());
                         Ok(RValue::Environment(base))
                     }
-                    _ => Err(RError::Argument(format!(
+                    _ => Err(RError::new(RErrorKind::Argument, format!(
                         "as.environment({}): only search path positions 1 (global) and -1 (base) are currently supported",
                         n
                     ))),
@@ -854,21 +865,30 @@ fn interp_as_environment(
                             .unwrap_or_else(|| interp.global_env.clone());
                         Ok(RValue::Environment(base))
                     }
-                    _ => Err(RError::Argument(format!(
+                    _ => Err(RError::new(
+                        RErrorKind::Argument,
+                        format!(
                         "no environment called '{}' was found. Use '.GlobalEnv' or 'package:base'",
                         s
-                    ))),
+                    ),
+                    )),
                 });
             }
-            Err(RError::Argument(format!(
+            Err(RError::new(
+                RErrorKind::Argument,
+                format!(
                 "cannot coerce {} to an environment — expected a number, string, or environment",
                 x.type_name()
-            )))
+            ),
+            ))
         }
-        _ => Err(RError::Argument(format!(
-            "cannot coerce {} to an environment — expected a number, string, or environment",
-            x.type_name()
-        ))),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "cannot coerce {} to an environment — expected a number, string, or environment",
+                x.type_name()
+            ),
+        )),
     }
 }
 
@@ -938,9 +958,12 @@ fn interp_eval(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
-    let expr = positional
-        .first()
-        .ok_or_else(|| RError::Argument("argument 'expr' is missing".to_string()))?;
+    let expr = positional.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'expr' is missing".to_string(),
+        )
+    })?;
 
     // Determine evaluation environment
     let eval_env = named
@@ -965,8 +988,8 @@ fn interp_eval(
         // Character string: parse then eval
         RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
             let text = rv.as_character_scalar().unwrap_or_default();
-            let parsed =
-                crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
+            let parsed = crate::parser::parse_program(&text)
+                .map_err(|e| RError::new(RErrorKind::Parse, format!("{}", e)))?;
             with_interpreter(|interp| interp.eval_in(&parsed, &eval_env)).map_err(RError::from)
         }
         // Already evaluated value: return as-is
@@ -989,10 +1012,15 @@ fn interp_parse(
                 .first()
                 .and_then(|v| v.as_vector()?.as_character_scalar())
         })
-        .ok_or_else(|| RError::Argument("argument 'text' is missing".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'text' is missing".to_string(),
+            )
+        })?;
 
-    let parsed =
-        crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
+    let parsed = crate::parser::parse_program(&text)
+        .map_err(|e| RError::new(RErrorKind::Parse, format!("{}", e)))?;
     Ok(RValue::Language(Language::new(parsed)))
 }
 
@@ -1007,14 +1035,20 @@ fn interp_apply(
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
         .first()
-        .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
-    let margin_val = positional
-        .get(1)
-        .ok_or_else(|| RError::Argument("argument 'MARGIN' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'X' is missing".to_string()))?;
+    let margin_val = positional.get(1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'MARGIN' is missing".to_string(),
+        )
+    })?;
     let fun = match_fun(
-        positional
-            .get(2)
-            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        positional.get(2).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
         env,
     )?;
 
@@ -1022,7 +1056,8 @@ fn interp_apply(
         .as_vector()
         .and_then(|v| v.as_integer_scalar())
         .ok_or_else(|| {
-            RError::Argument(
+            RError::new(
+                RErrorKind::Argument,
                 "MARGIN must be 1 (rows) or 2 (columns) — got a non-integer value".to_string(),
             )
         })?;
@@ -1031,14 +1066,16 @@ fn interp_apply(
     let (nrow, ncol, data) = match x {
         RValue::Vector(rv) => {
             let dims = super::get_dim_ints(rv.get_attr("dim")).ok_or_else(|| {
-                RError::Argument(
+                RError::new(
+                    RErrorKind::Argument,
                     "X must have a 'dim' attribute (i.e. be a matrix or array). \
                      Use matrix() to create one."
                         .to_string(),
                 )
             })?;
             if dims.len() < 2 {
-                return Err(RError::Argument(
+                return Err(RError::new(
+                    RErrorKind::Argument,
                     "X must be a 2D matrix for apply() — got an array with fewer than 2 dimensions"
                         .to_string(),
                 ));
@@ -1048,7 +1085,8 @@ fn interp_apply(
             (nr, nc, rv.to_doubles())
         }
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "apply() requires a matrix (vector with dim attribute) as the first argument"
                     .to_string(),
             ))
@@ -1105,11 +1143,14 @@ fn interp_apply(
             })?;
             simplify_apply_results(results)
         }
-        _ => Err(RError::Argument(format!(
-            "MARGIN must be 1 (rows) or 2 (columns) — got {}. \
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "MARGIN must be 1 (rows) or 2 (columns) — got {}. \
              Higher-dimensional margins are not yet supported.",
-            margin
-        ))),
+                margin
+            ),
+        )),
     }
 }
 
@@ -1215,9 +1256,12 @@ fn interp_mapply(
     // mapply(FUN, ..., MoreArgs = NULL, SIMPLIFY = TRUE, USE.NAMES = TRUE)
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let fun = match_fun(
-        positional
-            .first()
-            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        positional.first().ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
         env,
     )?;
 
@@ -1330,14 +1374,20 @@ fn interp_tapply(
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
         .first()
-        .ok_or_else(|| RError::Argument("argument 'X' is missing".to_string()))?;
-    let index = positional
-        .get(1)
-        .ok_or_else(|| RError::Argument("argument 'INDEX' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'X' is missing".to_string()))?;
+    let index = positional.get(1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'INDEX' is missing".to_string(),
+        )
+    })?;
     let fun = match_fun(
-        positional
-            .get(2)
-            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        positional.get(2).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
         env,
     )?;
 
@@ -1345,11 +1395,14 @@ fn interp_tapply(
     let index_items = rvalue_to_items(index);
 
     if x_items.len() != index_items.len() {
-        return Err(RError::Argument(format!(
-            "arguments 'X' (length {}) and 'INDEX' (length {}) must have the same length",
-            x_items.len(),
-            index_items.len()
-        )));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "arguments 'X' (length {}) and 'INDEX' (length {}) must have the same length",
+                x_items.len(),
+                index_items.len()
+            ),
+        ));
     }
 
     // Convert index values to string keys for grouping
@@ -1572,16 +1625,25 @@ fn interp_by(
     let (fail_fast, extra_named) = extract_fail_fast(named);
     // For vectors, delegate to tapply-like behavior.
     // For lists/data frames, split rows by INDICES and apply FUN to each subset.
-    let data = positional
-        .first()
-        .ok_or_else(|| RError::Argument("argument 'data' is missing".to_string()))?;
-    let indices = positional
-        .get(1)
-        .ok_or_else(|| RError::Argument("argument 'INDICES' is missing".to_string()))?;
+    let data = positional.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'data' is missing".to_string(),
+        )
+    })?;
+    let indices = positional.get(1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'INDICES' is missing".to_string(),
+        )
+    })?;
     let fun = match_fun(
-        positional
-            .get(2)
-            .ok_or_else(|| RError::Argument("argument 'FUN' is missing".to_string()))?,
+        positional.get(2).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
         env,
     )?;
 
@@ -1591,11 +1653,14 @@ fn interp_by(
         let index_items = rvalue_to_items(indices);
 
         if x_items.len() != index_items.len() {
-            return Err(RError::Argument(format!(
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
                 "arguments 'data' (length {}) and 'INDICES' (length {}) must have the same length",
                 x_items.len(),
                 index_items.len()
-            )));
+            ),
+            ));
         }
 
         let index_keys: Vec<String> = index_items
@@ -1654,11 +1719,14 @@ fn interp_by(
         let nrow = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
 
         if index_items.len() != nrow {
-            return Err(RError::Argument(format!(
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
                 "arguments 'data' ({} rows) and 'INDICES' (length {}) must have the same length",
                 nrow,
                 index_items.len()
-            )));
+            ),
+            ));
         }
 
         let index_keys: Vec<String> = index_items
@@ -1740,7 +1808,8 @@ fn interp_by(
         return Ok(RValue::List(RList::new(result_entries)));
     }
 
-    Err(RError::Argument(
+    Err(RError::new(
+        RErrorKind::Argument,
         "by() requires a vector, list, or data frame as 'data'".to_string(),
     ))
 }

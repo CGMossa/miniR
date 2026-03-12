@@ -34,7 +34,12 @@ fn build_regex(pattern: &str, fixed: bool, ignore_case: bool) -> Result<Regex, R
     } else {
         pat
     };
-    Regex::new(&pat).map_err(|e| RError::Argument(format!("invalid regular expression: {}", e)))
+    Regex::new(&pat).map_err(|e| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("invalid regular expression: {}", e),
+        )
+    })
 }
 
 /// Convert R-style replacement backreferences (\1, \2) to regex crate style ($1, $2)
@@ -94,7 +99,10 @@ fn builtin_toupper(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -111,7 +119,10 @@ fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -128,7 +139,10 @@ fn builtin_trimws(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -163,7 +177,10 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -198,7 +215,10 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -221,7 +241,10 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 .collect();
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -261,7 +284,10 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 Ok(RValue::vec(Vector::Integer(result?.into())))
             }
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -299,7 +325,10 @@ fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
             );
             Ok(RValue::Vector(rv))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -349,7 +378,10 @@ fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
             }
             Ok(RValue::List(RList::new(list_items)))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -362,7 +394,12 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             };
             vals.clone()
         }
-        _ => return Err(RError::Argument("argument is not character".to_string())),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            ))
+        }
     };
 
     // Second arg is regexpr/gregexpr output
@@ -375,9 +412,19 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             let lengths = match rv.get_attr("match.length") {
                 Some(RValue::Vector(lv)) => match &lv.inner {
                     Vector::Integer(l) => l.0.clone(),
-                    _ => return Err(RError::Argument("invalid match data".to_string())),
+                    _ => {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            "invalid match data".to_string(),
+                        ))
+                    }
                 },
-                _ => return Err(RError::Argument("invalid match data".to_string())),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "invalid match data".to_string(),
+                    ))
+                }
             };
             let mut result = Vec::new();
             for (i, pos) in positions.iter().enumerate() {
@@ -444,7 +491,10 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             }
             Ok(RValue::List(RList::new(list_items)))
         }
-        _ => Err(RError::Argument("invalid match data".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid match data".to_string(),
+        )),
     }
 }
 
@@ -733,7 +783,8 @@ fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let ints = match args.first() {
         Some(RValue::Vector(rv)) => rv.to_integers(),
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "argument must be an integer vector".to_string(),
             ))
         }
@@ -744,17 +795,17 @@ fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
             Some(code) if *code >= 0 => match char::from_u32(u32::try_from(*code)?) {
                 Some(c) => result.push(c),
                 None => {
-                    return Err(RError::Argument(format!(
-                        "invalid Unicode code point: {}",
-                        code
-                    )))
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        format!("invalid Unicode code point: {}", code),
+                    ))
                 }
             },
             Some(code) => {
-                return Err(RError::Argument(format!(
-                    "invalid Unicode code point: {}",
-                    code
-                )))
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!("invalid Unicode code point: {}", code),
+                ))
             }
             None => result.push('\u{FFFD}'), // replacement character for NA
         }
@@ -767,7 +818,12 @@ fn builtin_utf8_to_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let s = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument must be a single string".to_string(),
+            )
+        })?;
     let result: Vec<Option<i64>> = s.chars().map(|c| Some(i64::from(u32::from(c)))).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
@@ -777,7 +833,12 @@ fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let s = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("argument must be a single string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument must be a single string".to_string(),
+            )
+        })?;
     let result: Vec<Option<i64>> = s.bytes().map(|b| Some(i64::from(b))).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
@@ -787,7 +848,8 @@ fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let ints = match args.first() {
         Some(RValue::Vector(rv)) => rv.to_integers(),
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "argument must be an integer vector".to_string(),
             ))
         }
@@ -797,20 +859,25 @@ fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
         match val {
             Some(b) if (0..=255).contains(b) => bytes.push(u8::try_from(*b)?),
             Some(b) => {
-                return Err(RError::Argument(format!(
-                    "out of range for raw byte: {}",
-                    b
-                )))
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!("out of range for raw byte: {}", b),
+                ))
             }
             None => {
-                return Err(RError::Argument(
+                return Err(RError::new(
+                    RErrorKind::Argument,
                     "embedded nul in rawToChar input".to_string(),
                 ))
             }
         }
     }
-    let s = String::from_utf8(bytes)
-        .map_err(|e| RError::Argument(format!("invalid UTF-8 sequence: {}", e)))?;
+    let s = String::from_utf8(bytes).map_err(|e| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("invalid UTF-8 sequence: {}", e),
+        )
+    })?;
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
@@ -821,12 +888,17 @@ fn builtin_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .ok_or_else(|| RError::Argument("argument must be a single integer".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument must be a single integer".to_string(),
+            )
+        })?;
     if n < 0 {
-        return Err(RError::Argument(format!(
-            "invalid 'length' argument: {}",
-            n
-        )));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("invalid 'length' argument: {}", n),
+        ));
     }
     let len = usize::try_from(n)?;
     let result: Vec<Option<i64>> = vec![Some(0i64); len];
@@ -840,7 +912,8 @@ fn builtin_raw_shift(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     let ints = match args.first() {
         Some(RValue::Vector(rv)) => rv.to_integers(),
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "argument 'x' must be a raw (integer) vector".to_string(),
             ))
         }
@@ -848,12 +921,17 @@ fn builtin_raw_shift(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     let shift = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .ok_or_else(|| RError::Argument("argument 'n' must be a single integer".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'n' must be a single integer".to_string(),
+            )
+        })?;
     if !(-8..=8).contains(&shift) {
-        return Err(RError::Argument(format!(
-            "shift amount must be between -8 and 8, got {}",
-            shift
-        )));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("shift amount must be between -8 and 8, got {}", shift),
+        ));
     }
 
     let result: Vec<Option<i64>> = ints
@@ -885,7 +963,10 @@ fn builtin_as_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
-        _ => Err(RError::Argument("argument must be a vector".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument must be a vector".to_string(),
+        )),
     }
 }
 
@@ -900,7 +981,12 @@ fn builtin_glob2rx(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("argument must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument must be a character string".to_string(),
+            )
+        })?;
     let mut result = String::from("^");
     for c in pattern.chars() {
         match c {
@@ -967,7 +1053,10 @@ fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
             }
             Ok(RValue::List(RList::new(list_items)))
         }
-        _ => Err(RError::Argument("argument is not character".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -1026,7 +1115,10 @@ fn builtin_nzchar(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 vec![Some(!s.is_empty())].into(),
             )))
         }
-        None => Err(RError::Argument("argument is missing".to_string())),
+        None => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is missing".to_string(),
+        )),
     }
 }
 

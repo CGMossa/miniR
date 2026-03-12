@@ -15,11 +15,21 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     let from = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'from' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'from' must be a character string".to_string(),
+            )
+        })?;
     let to = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'to' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'to' must be a character string".to_string(),
+            )
+        })?;
 
     match fs::copy(&from, &to) {
         Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
@@ -71,11 +81,21 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     let from = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'from' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'from' must be a character string".to_string(),
+            )
+        })?;
     let to = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'to' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'to' must be a character string".to_string(),
+            )
+        })?;
 
     match fs::rename(&from, &to) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
@@ -106,7 +126,12 @@ fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'x' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'x' must be a character string".to_string(),
+            )
+        })?;
     let recursive = named
         .iter()
         .find(|(n, _)| n == "recursive")
@@ -140,7 +165,8 @@ fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
         .collect();
 
     if paths.is_empty() {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "'...' must contain at least one file path".to_string(),
         ));
     }
@@ -245,7 +271,12 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'path' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'path' must be a character string".to_string(),
+            )
+        })?;
 
     // miniR diverges from R: recursive by default
     match fs::create_dir_all(&path) {
@@ -399,7 +430,12 @@ fn builtin_normalize_path(args: &[RValue], _named: &[(String, RValue)]) -> Resul
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'path' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'path' must be a character string".to_string(),
+            )
+        })?;
 
     let normalized = fs::canonicalize(&path)
         .map(|p| p.to_string_lossy().to_string())
@@ -415,7 +451,12 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'path' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'path' must be a character string".to_string(),
+            )
+        })?;
 
     let expanded = if path.starts_with('~') {
         match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
@@ -436,7 +477,12 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
     let command = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'command' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'command' must be a character string".to_string(),
+            )
+        })?;
 
     let output = std::process::Command::new("sh")
         .arg("-c")
@@ -453,7 +499,12 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     let command = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'command' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'command' must be a character string".to_string(),
+            )
+        })?;
 
     let cmd_args: Vec<String> = args
         .get(1)
@@ -522,7 +573,12 @@ fn builtin_setwd(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     let dir = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("'dir' must be a character string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'dir' must be a character string".to_string(),
+            )
+        })?;
 
     let old_wd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())

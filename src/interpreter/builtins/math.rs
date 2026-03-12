@@ -81,7 +81,10 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("non-numeric argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "non-numeric argument".to_string(),
+        )),
     }
 }
 
@@ -112,7 +115,8 @@ fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "non-numeric argument to signif".to_string(),
         )),
     }
@@ -149,7 +153,10 @@ fn parallel_minmax(args: &[RValue], na_rm: bool, is_max: bool) -> Result<RValue,
         })
         .collect();
     if vecs.is_empty() {
-        return Err(RError::Argument("no arguments to pmin/pmax".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "no arguments to pmin/pmax".to_string(),
+        ));
     }
     // Find max length for recycling
     let max_len = vecs.iter().map(|v| v.len()).max().unwrap_or(0);
@@ -206,7 +213,10 @@ fn builtin_cumall(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument to cumall".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument to cumall".to_string(),
+        )),
     }
 }
 
@@ -228,7 +238,10 @@ fn builtin_cumany(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument to cumany".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument to cumany".to_string(),
+        )),
     }
 }
 
@@ -242,12 +255,22 @@ fn bitwise_binary_op_fallible(
         .first()
         .and_then(|v| v.as_vector())
         .map(|v| v.to_integers())
-        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "non-integer argument to bitwise function".to_string(),
+            )
+        })?;
     let b_ints = args
         .get(1)
         .and_then(|v| v.as_vector())
         .map(|v| v.to_integers())
-        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "non-integer argument to bitwise function".to_string(),
+            )
+        })?;
     let max_len = a_ints.len().max(b_ints.len());
     let result: Result<Vec<Option<i64>>, RError> = (0..max_len)
         .map(|i| {
@@ -267,12 +290,22 @@ fn bitwise_binary_op(args: &[RValue], op: fn(i64, i64) -> i64) -> Result<RValue,
         .first()
         .and_then(|v| v.as_vector())
         .map(|v| v.to_integers())
-        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "non-integer argument to bitwise function".to_string(),
+            )
+        })?;
     let b_ints = args
         .get(1)
         .and_then(|v| v.as_vector())
         .map(|v| v.to_integers())
-        .ok_or_else(|| RError::Argument("non-integer argument to bitwise function".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "non-integer argument to bitwise function".to_string(),
+            )
+        })?;
     let max_len = a_ints.len().max(b_ints.len());
     let result: Vec<Option<i64>> = (0..max_len)
         .map(|i| {
@@ -308,7 +341,12 @@ fn builtin_bitw_not(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .first()
         .and_then(|v| v.as_vector())
         .map(|v| v.to_integers())
-        .ok_or_else(|| RError::Argument("non-integer argument to bitwNot".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "non-integer argument to bitwNot".to_string(),
+            )
+        })?;
     let result: Vec<Option<i64>> = ints.iter().map(|x| x.map(|i| !i)).collect();
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
@@ -355,11 +393,26 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
                     usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
                     usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
                 ),
-                _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "argument is not a matrix".to_string(),
+                    ))
+                }
             },
-            _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "argument is not a matrix".to_string(),
+                ))
+            }
         },
-        _ => return Err(RError::Argument("argument is not a matrix".to_string())),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not a matrix".to_string(),
+            ))
+        }
     };
 
     // R stores matrices column-major
@@ -453,7 +506,10 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 Ok(RValue::Vector(out))
             }
         }
-        _ => Err(RError::Argument("'x' must be numeric".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "'x' must be numeric".to_string(),
+        )),
     }
 }
 
@@ -653,7 +709,10 @@ fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -674,7 +733,10 @@ fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -695,7 +757,10 @@ fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -716,7 +781,10 @@ fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -765,7 +833,8 @@ fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 
     let by = by.unwrap_or(if to >= from { 1.0 } else { -1.0 });
     if by == 0.0 {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "'by' argument must not be zero".to_string(),
         ));
     }
@@ -857,7 +926,10 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                     .into(),
             ))),
         },
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -1289,14 +1361,20 @@ fn builtin_diff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
 #[builtin(name = "rep_len", min_args = 2)]
 fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let length_out = args[1]
         .as_vector()
@@ -1351,14 +1429,20 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 ))),
             }
         }
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
 #[builtin(min_args = 2)]
 fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
-        return Err(RError::Argument("need 2 arguments".to_string()));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "need 2 arguments".to_string(),
+        ));
     }
     let times = args[1]
         .as_vector()
@@ -1408,7 +1492,10 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     .into(),
             ))),
         },
-        _ => Err(RError::Argument("invalid argument".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid argument".to_string(),
+        )),
     }
 }
 
@@ -1417,7 +1504,8 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     let (data, dim_attr) = match val {
         RValue::Vector(rv) => (rv.to_doubles(), rv.get_attr("dim")),
         _ => {
-            return Err(RError::Type(
+            return Err(RError::new(
+                RErrorKind::Type,
                 "requires numeric matrix/vector arguments".to_string(),
             ))
         }
@@ -1531,11 +1619,14 @@ fn builtin_norm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 .fold(f64::NEG_INFINITY, f64::max)
         }
         other => {
-            return Err(RError::Argument(format!(
-                "invalid norm type '{}'. Use \"O\" (one-norm), \"I\" (infinity-norm), \
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "invalid norm type '{}'. Use \"O\" (one-norm), \"I\" (infinity-norm), \
                  \"F\" (Frobenius), or \"M\" (max modulus)",
-                other
-            )));
+                    other
+                ),
+            ));
         }
     };
 
@@ -1553,16 +1644,20 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let ncol = a.ncols();
 
     if nrow != ncol {
-        return Err(RError::Argument(format!(
-            "solve() requires a square matrix, but got {}x{}. \
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "solve() requires a square matrix, but got {}x{}. \
              Non-square systems need qr.solve() or a least-squares method",
-            nrow, ncol
-        )));
+                nrow, ncol
+            ),
+        ));
     }
     let n = nrow;
 
     if n == 0 {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "solve() requires a non-empty matrix".to_string(),
         ));
     }
@@ -1579,11 +1674,14 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     };
 
     if b.nrows() != n {
-        return Err(RError::Argument(format!(
-            "solve(a, b): nrow(a) = {} but nrow(b) = {} — they must match",
-            n,
-            b.nrows()
-        )));
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "solve(a, b): nrow(a) = {} but nrow(b) = {} — they must match",
+                n,
+                b.nrows()
+            ),
+        ));
     }
 
     let b_ncol = b.ncols();
@@ -1658,7 +1756,8 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let x_vec = match args.first() {
         Some(RValue::Vector(rv)) => rv.to_doubles(),
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "outer() requires numeric vectors for X and Y".to_string(),
             ))
         }
@@ -1666,7 +1765,8 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let y_vec = match args.get(1) {
         Some(RValue::Vector(rv)) => rv.to_doubles(),
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "outer() requires numeric vectors for X and Y".to_string(),
             ))
         }
@@ -1689,11 +1789,14 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         "%%" => |a, b| a % b,
         "%/%" => |a: f64, b: f64| (a / b).floor(),
         other => {
-            return Err(RError::Argument(format!(
-                "outer() with FUN = \"{}\" is not supported. \
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "outer() with FUN = \"{}\" is not supported. \
                  Supported operators: \"*\", \"+\", \"-\", \"/\", \"^\", \"%%\", \"%/%\"",
-                other
-            )));
+                    other
+                ),
+            ));
         }
     };
 
@@ -1774,7 +1877,7 @@ fn builtin_re(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("non-numeric argument to Re".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "non-numeric argument to Re".to_string()))?;
     match v {
         Vector::Complex(vals) => {
             let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.re)).collect();
@@ -1792,7 +1895,7 @@ fn builtin_im(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("non-numeric argument to Im".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "non-numeric argument to Im".to_string()))?;
     match v {
         Vector::Complex(vals) => {
             let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.im)).collect();
@@ -1811,7 +1914,7 @@ fn builtin_mod_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("non-numeric argument to Mod".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "non-numeric argument to Mod".to_string()))?;
     match v {
         Vector::Complex(vals) => {
             let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.norm())).collect();
@@ -1830,7 +1933,7 @@ fn builtin_arg(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("non-numeric argument to Arg".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "non-numeric argument to Arg".to_string()))?;
     match v {
         Vector::Complex(vals) => {
             let result: Vec<Option<f64>> = vals.iter().map(|x| x.map(|c| c.arg())).collect();
@@ -1853,7 +1956,7 @@ fn builtin_conj(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("non-numeric argument to Conj".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "non-numeric argument to Conj".to_string()))?;
     match v {
         Vector::Complex(vals) => {
             let result: Vec<Option<num_complex::Complex64>> =
@@ -1881,7 +1984,7 @@ fn builtin_as_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     let v = args
         .first()
         .and_then(|v| v.as_vector())
-        .ok_or_else(|| RError::Type("cannot coerce to complex".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Type, "cannot coerce to complex".to_string()))?;
     match v {
         Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(vals.clone()))),
         _ => {

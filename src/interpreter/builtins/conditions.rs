@@ -157,7 +157,8 @@ fn builtin_condition_message(args: &[RValue], _: &[(String, RValue)]) -> Result<
             }
             Ok(RValue::Null)
         }
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "conditionMessage requires a condition object".to_string(),
         )),
     }
@@ -174,7 +175,8 @@ fn builtin_condition_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
             }
             Ok(RValue::Null)
         }
-        _ => Err(RError::Argument(
+        _ => Err(RError::new(
+            RErrorKind::Argument,
             "conditionCall requires a condition object".to_string(),
         )),
     }
@@ -185,7 +187,12 @@ fn builtin_invoke_restart(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     let restart_name = args
         .first()
         .and_then(|v| v.as_vector().and_then(|rv| rv.as_character_scalar()))
-        .ok_or_else(|| RError::Argument("restart name must be a string".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "restart name must be a string".to_string(),
+            )
+        })?;
     // Signal the restart by throwing it as an RError::other — caught by signal_condition
     Err(RError::other(restart_name))
 }
