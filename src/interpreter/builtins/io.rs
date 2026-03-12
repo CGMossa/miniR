@@ -668,6 +668,9 @@ fn split_line<'a>(line: &'a str, sep: &str) -> Vec<&'a str> {
 fn format_cell(val: &RValue, idx: usize, quote: bool) -> String {
     match val {
         RValue::Vector(rv) => match &rv.inner {
+            Vector::Raw(v) => v
+                .get(idx)
+                .map_or("00".to_string(), |b| format!("{:02x}", b)),
             Vector::Double(v) => v
                 .get(idx)
                 .and_then(|x| *x)

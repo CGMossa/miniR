@@ -906,6 +906,13 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 
     match args.first() {
         Some(RValue::Vector(v)) => match &v.inner {
+            Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(
+                vals.iter()
+                    .cycle()
+                    .take(vals.len() * times)
+                    .copied()
+                    .collect(),
+            ))),
             Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
                 vals.iter()
                     .cycle()
@@ -959,6 +966,11 @@ fn builtin_rev(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
+                Vector::Raw(vals) => {
+                    let mut v = vals.clone();
+                    v.reverse();
+                    Vector::Raw(v)
+                }
                 Vector::Double(vals) => {
                     let mut v = vals.clone();
                     v.reverse();
@@ -1058,6 +1070,17 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
+                Vector::Raw(vals) => {
+                    let mut seen = Vec::new();
+                    let mut result = Vec::new();
+                    for &x in vals.iter() {
+                        if !seen.contains(&x) {
+                            seen.push(x);
+                            result.push(x);
+                        }
+                    }
+                    Vector::Raw(result)
+                }
                 Vector::Double(vals) => {
                     let mut seen = Vec::new();
                     let mut result = Vec::new();
@@ -1303,6 +1326,7 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
+                Vector::Raw(vals) => Vector::Raw(vals[..n.min(vals.len())].to_vec()),
                 Vector::Double(vals) => Vector::Double(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Integer(vals) => Vector::Integer(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec().into()),
@@ -1332,6 +1356,7 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             let len = v.len();
             let start = len.saturating_sub(n);
             let result = match &v.inner {
+                Vector::Raw(vals) => Vector::Raw(vals[start..].to_vec()),
                 Vector::Double(vals) => Vector::Double(vals[start..].to_vec().into()),
                 Vector::Integer(vals) => Vector::Integer(vals[start..].to_vec().into()),
                 Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec().into()),
@@ -1408,6 +1433,9 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 return Ok(RValue::Vector(v.clone()));
             }
             match &v.inner {
+                Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(
+                    vals.iter().cycle().take(length_out).copied().collect(),
+                ))),
                 Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
                     vals.iter()
                         .cycle()
@@ -1472,6 +1500,13 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let times = usize::try_from(times)?;
     match &args[0] {
         RValue::Vector(v) => match &v.inner {
+            Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(
+                vals.iter()
+                    .cycle()
+                    .take(vals.len() * times)
+                    .copied()
+                    .collect(),
+            ))),
             Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
                 vals.iter()
                     .cycle()

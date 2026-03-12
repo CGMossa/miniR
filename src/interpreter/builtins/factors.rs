@@ -14,6 +14,7 @@ pub(super) fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RErr
             Vector::Integer(v) => Ok(v.iter().map(|i| i.map(|n| n.to_string())).collect()),
             Vector::Double(v) => Ok(v.iter().map(|d| d.map(|n| n.to_string())).collect()),
             Vector::Complex(v) => Ok(v.iter().map(|c| c.map(format_r_complex)).collect()),
+            Vector::Raw(v) => Ok(v.iter().map(|b| Some(format!("{:02x}", b))).collect()),
             Vector::Logical(v) => Ok(v
                 .iter()
                 .map(|b| {
