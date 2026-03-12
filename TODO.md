@@ -1,165 +1,42 @@
-# TODO — Stubs & Incomplete Implementations
+# TODO — Remaining Stubs and Partial Implementations
 
-Everything listed here currently returns NULL, does nothing, or has a simplified implementation.
+This file tracks behavior that is still stubbed, placeholder, or materially simplified.
 
-Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored crates).
+## Runtime Semantics
 
-## Interpreter Stubs (src/interpreter/mod.rs)
+- [ ] Formula (`~`) — parsed, but unary and binary formula evaluation still returns `NULL`
+- [ ] Call-stack introspection: `sys.call()`, `sys.frame()`, `sys.frames()`, `sys.parents()`, `sys.function()`, `sys.on.exit()`, `parent.frame()`, `sys.nframe()`, and `nargs()` still need real frame tracking
+- [ ] `missing(x)` — still returns `FALSE` because supplied/defaulted args are not tracked
+- [ ] Direct `UseMethod(generic)` dispatch — generic bodies that end in `UseMethod("generic")` dispatch through `extract_use_method()`, but calling `UseMethod()` directly is still a noop builtin
+- [ ] `on.exit(expr, add = ...)` works via the call environment today, but still needs to be reconciled with the eventual call-stack design
 
-- [x] 🔧 Complex numbers — full support via num-complex (Vector::Complex, arithmetic, Re/Im/Mod/Arg/Conj)
-- [x] 🔧 `..1`, `..2` etc. — element access into `...` list
-- [ ] Formula (`~`) — parsed, binary and unary both return NULL
+## Simplified Data and Object Semantics
 
-## Builtin Stubs — Core Language
+- [ ] `data.frame(...)` — currently constructs a classed list with `names` and `row.names`, but still needs column recycling, validation, and fuller R-compatible behavior
+- [ ] `as.vector(x)` — current implementation preserves attributes instead of stripping them the way R expects
+- [ ] Attribute, name, and class propagation still needs cleanup across more subsetting and combination paths
 
-- [ ] `missing(x)` — registered but always returns FALSE (see plans/call-stack.md)
-- [x] 🔧 `on.exit(expr)` — register cleanup on function exit
-- [x] 🔧 `Recall(...)` — recursive self-call (informative error until call stack exists)
-- [ ] `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.function()` / `sys.on.exit()` — call stack introspection (see plans/call-stack.md)
-- [x] 🔧 `args(fn)` — formal arguments of function
-- [x] 🔧 `formals(fn)` — get/set formal argument list
-- [x] 🔧 `body(fn)` — get/set function body
-- [x] 🔧 `call(name, ...)` — construct function call
-- [x] 🔧 `expression(...)` — construct expression object
+## Remaining Builtin Stubs
 
-## Builtin Stubs — Data Structures
+- [ ] `qr(x)`, `svd(x)`, `eigen(x)`, `det(x)`, `chol(x)` — linear algebra decompositions
+- [ ] `readRDS(file)`, `saveRDS(object, file)`, `load(file)`, `save(..., file)` — serialization and workspace I/O
+- [ ] `url(...)`, `connection(...)`, `open(con)`, `close(con)` — connection objects
+- [ ] `install.packages(pkgs)`, `installed.packages()`, `library(pkg)`, `require(pkg)`, `loadNamespace(pkg)`, `requireNamespace(pkg)` — package loading and management
+- [ ] `as.POSIXct(x)`, `as.POSIXlt(x)`, `ISOdate(...)`, `ISOdatetime(...)`, `strptime(x, format)`, `strftime(x, format)` — date/time support
+- [ ] `setClass(Class, ...)`, `setMethod(f, ...)`, `setGeneric(name, ...)` — S4
+- [ ] `pdf(...)`, `dev.off()`, `plot(...)`, `lm(formula, data)` — graphics and modeling stubs
+- [ ] `reg.finalizer(e, f)` — finalizers
 
-- [x] 🔧 `array(data, dim)` — create array
-- [ ] `data.frame(...)` — create data frame (see plans/polars-dataframe.md)
-- [x] 🔧 `factor(x, levels, labels)` — create factor
-- [x] 🔧 `levels(x)` / `nlevels(x)` — factor levels
-- [x] 🔧 `rbind(...)` / `cbind(...)` — row/column bind
-- [x] 🔧 `table(...)` / `tabulate(x)` — contingency table
-- [x] 🔧 `dimnames(x)` / `dimnames<-` — get/set dimension names
-- [x] 🔧 `unname(x)` — remove names
+## Architecture and Cleanup
 
-## Builtin Stubs — Apply Family
-
-- [x] 🔧 `apply(X, MARGIN, FUN)` — matrix apply
-- [x] 🔧 `mapply(FUN, ...)` — multivariate apply
-- [x] 🔧 `tapply(X, INDEX, FUN)` — table apply
-- [x] 🔧 `by(data, INDICES, FUN)` — group apply
-
-## Builtin Stubs — Math & Statistics
-
-- [x] 🔧 `norm(x)` — matrix norm
-- [x] 🔧 `solve(a, b)` — solve linear system (ndarray)
-- [x] 🔧 `outer(X, Y, FUN)` — outer product
-- [ ] `qr(x)` — QR decomposition (see plans/nalgebra.md)
-- [ ] `svd(x)` — singular value decomposition (see plans/nalgebra.md)
-- [ ] `eigen(x)` — eigenvalues (see plans/nalgebra.md)
-- [ ] `det(x)` — determinant (see plans/nalgebra.md)
-- [ ] `chol(x)` — Cholesky decomposition (see plans/nalgebra.md)
-- [x] 🔧 `complex(...)` — create complex number via num-complex
-
-## Builtin Stubs — Random Numbers
-
-- [x] 🔧 `runif(n, min, max)` — uniform random
-- [x] 🔧 `rnorm(n, mean, sd)` — normal random
-- [x] 🔧 `rbinom(n, size, prob)` — binomial random
-- [x] 🔧 `rpois(n, lambda)` — Poisson random
-- [x] 🔧 `rexp(n, rate)` — exponential random
-- [x] 🔧 `rgamma(n, shape, rate)` — gamma random
-- [x] 🔧 `rbeta(n, shape1, shape2)` — beta random
-- [x] 🔧 `rcauchy(n, location, scale)` — Cauchy random
-- [x] 🔧 `rchisq(n, df)` — chi-squared random
-- [x] 🔧 `rt(n, df)` — Student's t random
-- [x] 🔧 `rf(n, df1, df2)` — F random
-- [x] 🔧 `rgeom(n, prob)` — geometric random
-- [x] 🔧 `rhyper(nn, m, n, k)` — hypergeometric random
-- [x] 🔧 `rweibull(n, shape, scale)` — Weibull random
-- [x] 🔧 `rlnorm(n, meanlog, sdlog)` — log-normal random
-- [x] 🔧 `set.seed(seed)` — seed RNG for reproducibility
-- [x] 🔧 `sample(x, size, replace, prob)` — random sampling
-
-## Builtin Stubs — String & Regex
-
-- [x] 🔧 `raw(length)` / `rawShift(x, n)` / `as.raw(x)` / `is.raw(x)` — raw vectors
-
-## Builtin Stubs — Environments
-
-- [ ] `parent.frame(n)` — calling frame (see plans/call-stack.md)
-- [x] 🔧 `as.environment(x)` — coerce to environment
-
-## Builtin Stubs — Error Handling
-
-- [x] 🔧 `withCallingHandlers(expr, ...)` — condition handlers (see plans/conditions.md)
-- [x] 🔧 `conditionMessage(c)` / `conditionCall(c)` — condition accessors (see plans/conditions.md)
-- [x] 🔧 `simpleError(msg)` / `simpleWarning(msg)` / `simpleMessage(msg)` / `simpleCondition(msg)` — condition constructors (see plans/conditions.md)
-- [x] 🔧 `suppressWarnings(expr)` / `suppressMessages(expr)` — suppress conditions (see plans/conditions.md)
-- [x] 🔧 `invokeRestart(name)` — invoke a restart (muffleWarning, muffleMessage)
-- [x] 🔧 `withVisible(expr)` — evaluate with visibility flag
-
-## Builtin Stubs — File I/O
-
-- [ ] `readRDS(file)` / `saveRDS(object, file)` — R serialization (see plans/serde.md, plans/parquet.md)
-- [ ] `load(file)` / `save(..., file)` — workspace I/O (see plans/serde.md)
-- [x] 🔧 `scan(file, ...)` — read data
-- [x] 🔧 `file.info(path)` — file metadata
-- [x] 🔧 `tempfile()` / `tempdir()` — session-scoped with auto-cleanup via temp-dir crate
-- [ ] `url(...)` / `open(con)` / `close(con)` / `connection(...)` — connections
-- [x] 🔧 `read.table(file)` / `write.table(x, file)` — tabular I/O
-- [ ] `read.parquet(file)` / `write.parquet(df, file)` — Parquet columnar I/O (see plans/parquet.md)
-
-## Builtin Stubs — System
-
-- [x] 🔧 `Sys.glob(paths)` — glob expansion via glob crate
-- [ ] `install.packages(pkgs)` / `installed.packages()` — package management
-- [ ] `require(pkg)` / `library(pkg)` / `loadNamespace(pkg)` / `requireNamespace(pkg)` — package loading (stub prints warning)
-
-## Builtin Stubs — Date/Time
-
-- [ ] `as.POSIXct(x)` / `as.POSIXlt(x)` — datetime constructors (see plans/chrono.md, plans/jiff.md)
-- [ ] `ISOdate(...)` / `ISOdatetime(...)` — ISO datetime (see plans/chrono.md, plans/jiff.md)
-- [ ] `strptime(x, format)` / `strftime(x, format)` — date formatting (see plans/chrono.md, plans/jiff.md)
-
-## Builtin Stubs — S4 / OOP
-
-- [ ] `setClass(Class, ...)` — define S4 class
-- [ ] `setMethod(f, ...)` — define S4 method
-- [ ] `setGeneric(name, ...)` — define S4 generic
-
-## Builtin Stubs — Graphics (stubs only)
-
-- [ ] `pdf(...)` / `dev.off()` — PDF graphics device
-- [ ] `plot(...)` — plotting
-- [ ] `lm(formula, data)` — linear model (needs stats plan, depends on formula + data.frame)
-
-## Builtin Stubs — Misc
-
-- [ ] `reg.finalizer(e, f)` — register finalizer
-
-## Module Refactoring
-
-- [ ] Ensure all modules use `foo.rs` + `foo/` style, not `foo/mod.rs`
-
-## Architecture
-
-- [x] `Language(Box<Expr>)` should have a dedicated `Language` newtype, so the enum variant becomes `Language(Language)` — use derive_more if needed
-- [x] rename newr to miniR
-- [ ] plan an r package builder
-- [ ] add typst conversion of R documentation and produce the manual
-- [ ] Arrow backend for vector types — replace `Vec<Option<T>>` with validity bitmap + contiguous buffer (see plans/arrow-backend.md)
-- [ ] Per-module error types — replace centralized `RError` with module-specific errors using derive_more (see plans/module-error-types.md)
-  - [x] Enable `error` and `display` features in derive_more
-  - [x] Add `RSignal` (Return/Break/Next) and `RFlow` (Error|Signal) types; eval() returns RFlow
-  - [x] Migrate interpreter.rs functions from `RError` to `RFlow` (remove Return/Break/Next from RError)
-  - [x] Redesign `RError` as `Standard { kind: RErrorKind, message, source: Option<Arc<dyn Error>> }` + `Condition`
-  - [x] Extract `IoError` module error type (builtins/io.rs) with derive_more `#[derive(Error)]`
-  - [x] Extract `SystemError`, `MathError`, `StringError` module types
-  - [ ] Continue extracting module error types as new external errors are wrapped
-- [ ] Feature-gate the IO module for sandboxed/WASM environments (see plans/io-feature-gate.md)
+- [ ] Reentrant embedding API — keep TLS access for builtins, but stop treating the thread-local interpreter as the only public instance model
+- [ ] `RError` cleanup — continue extracting module-specific error types as more external errors are wrapped
+- [ ] Arrow backend for vector storage — replace `Vec<Option<T>>` with contiguous storage + validity bitmaps
+- [ ] Feature-gate the I/O module for sandboxed/WASM environments
+- [ ] Plan an R package builder
+- [ ] Add Typst conversion of R documentation and produce the manual
 
 ## Developer Experience
 
-- [ ] Add tokei for file size tracking and refactoring detection (see plans/tokei-file-tracking.md)
-- [ ] Vendor patch system for modifying vendored dependencies (see plans/vendor-patches.md)
-
-## REPL
-
-- [x] Implement reedline features: persistent history, validator, highlighting, hints, completions (see plans/reedline-features.md)
-
-## Quick Wins
-
-- [x] 🔧 Nice error message for `..0` — R uses 1-based indexing for `...` args (see plans/dotdot-zero-error.md)
-- [x] 🔧 `sort_unique()` builtin — single-pass sorted unique via BTreeSet (see plans/sort-unique-optimization.md)
+- [ ] Add tokei for file size tracking and refactoring detection
+- [ ] Add a vendor patch workflow for intentional edits under `vendor/`

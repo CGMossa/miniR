@@ -1,18 +1,13 @@
 # DONE — Completed Implementations
 
-Items moved here from TODO.md once fully implemented.
-
-## Interpreter
-
-- S3 dispatch — full dispatch with `UseMethod()` and `NextMethod()` + dispatch stack
+Items moved here from TODO.md once their core user-facing behavior stops being a stub.
+If a feature still has important semantic gaps, keep those gaps in `TODO.md` or the relevant plan doc.
 
 ## Core Language
 
 - `match.arg(arg, choices)` — match argument to list of choices
 - `switch(expr, ...)` — multi-way branch
 - `do.call(fn, args)` — call function with arg list
-- `sys.call()` — return current call
-- `nargs()` — number of arguments to current function
 
 ## Attributes & OOP
 
@@ -23,11 +18,10 @@ Items moved here from TODO.md once fully implemented.
 - `class<-` — replacement function for setting class
 - `names<-` — replacement function for setting names
 - `inherits(x, what)` — check class membership
-- `UseMethod(generic)` — S3 method dispatch
-- `NextMethod()` — call next S3 method
 
 ## Data Structures
 
+- Basic `data.frame(...)` constructor — creates a classed list with `names` and `row.names`
 - `matrix(data, nrow, ncol, byrow)` — create matrix
 - `dim(x)` / `dim<-` — get/set dimensions
 - `nrow(x)` / `ncol(x)` / `NROW(x)` / `NCOL(x)` — row/column count
@@ -104,7 +98,7 @@ Items moved here from TODO.md once fully implemented.
 - `file.copy(from, to)` / `file.create(path)` / `file.remove(path)` / `file.rename(from, to)` — file ops
 - `file.size(path)` — file metadata
 - `dir(path)` / `dir.create(path)` / `dir.exists(path)` / `list.files(path)` — directory ops
-- `tempfile()` / `tempdir()` — temp paths (basic impl, to be rewritten with temp-dir crate)
+- `tempfile()` / `tempdir()` — session-scoped temp paths via `temp-dir`
 - `unlink(path)` — delete files
 - `normalizePath(path)` / `path.expand(path)` — path normalization
 
