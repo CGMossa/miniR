@@ -366,11 +366,8 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
 
     let regex = match &pattern {
-        Some(pat) => Some(regex::Regex::new(pat).map_err(|e| {
-            RError::other(format!(
-                "invalid regex pattern '{}': {}. Check your pattern syntax.",
-                pat, e
-            ))
+        Some(pat) => Some(regex::Regex::new(pat).map_err(|source| -> RError {
+            super::strings::StringError::InvalidRegex { source }.into()
         })?),
         None => None,
     };
