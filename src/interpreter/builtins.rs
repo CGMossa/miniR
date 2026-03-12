@@ -2473,8 +2473,16 @@ fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 1)]
 fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::Vector(v.clone())),
-        Some(RValue::List(items)) => Ok(RValue::List(items.clone())),
+        Some(RValue::Vector(v)) => {
+            let mut v = v.clone();
+            v.attrs = None;
+            Ok(RValue::Vector(v))
+        }
+        Some(RValue::List(items)) => {
+            let mut items = items.clone();
+            items.attrs = None;
+            Ok(RValue::List(items))
+        }
         Some(RValue::Null) => Ok(RValue::Null),
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }

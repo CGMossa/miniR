@@ -13,7 +13,6 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 ## Simplified Data and Object Semantics
 
 - [ ] `data.frame(...)` — currently constructs a classed list with `names` and `row.names`, but still needs column recycling, validation, and fuller R-compatible behavior
-- [ ] `as.vector(x)` — current implementation preserves attributes instead of stripping them the way R expects
 - [ ] Attribute, name, and class propagation still needs cleanup across more subsetting and combination paths
 
 ## Remaining Builtin Stubs
