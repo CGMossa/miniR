@@ -9,6 +9,8 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `switch(expr, ...)` — multi-way branch
 - `do.call(fn, args)` — call function with arg list
 - `as.vector(x)` — strip vector/list attributes in the common path
+- `missing(x)` — supplied/defaulted argument detection via call frames
+- `on.exit(expr)` — register exit handlers on the active call frame
 
 ## Attributes & OOP
 
@@ -73,6 +75,9 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `bquote(expr)` — partial substitution with `.()` splicing
 - `deparse(expr)` — expression to string
 - `dput(x)` — output R representation of object
+- `sys.call()` / `sys.calls()` — current and active call expressions
+- `sys.function()` / `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.on.exit()` — call-stack introspection
+- `sys.nframe()` / `nargs()` / `parent.frame()` — stack depth and caller lookup
 
 ## Environments
 

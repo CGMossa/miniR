@@ -3,7 +3,7 @@
 
 use minir_macros::noop_builtin;
 
-// Core language (on.exit — pre_eval.rs)
+// Core language (on.exit and missing — pre_eval.rs)
 noop_builtin!("UseMethod", 1);
 
 // Data structures
@@ -48,11 +48,3 @@ noop_builtin!("save");
 
 // Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
 noop_builtin!("arity", 1);
-
-// Call stack
-noop_builtin!("sys.frame");
-noop_builtin!("parent.frame");
-noop_builtin!("sys.parents");
-noop_builtin!("sys.calls");
-noop_builtin!("sys.frames");
-noop_builtin!("sys.on.exit");

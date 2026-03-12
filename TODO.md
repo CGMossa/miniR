@@ -5,10 +5,7 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 ## Runtime Semantics
 
 - [ ] Formula (`~`) — parsed, but unary and binary formula evaluation still returns `NULL`
-- [ ] Call-stack introspection: `sys.call()`, `sys.frame()`, `sys.frames()`, `sys.parents()`, `sys.function()`, `sys.on.exit()`, `parent.frame()`, `sys.nframe()`, and `nargs()` still need real frame tracking
-- [ ] `missing(x)` — still returns `FALSE` because supplied/defaulted args are not tracked
 - [ ] Direct `UseMethod(generic)` dispatch — generic bodies that end in `UseMethod("generic")` dispatch through `extract_use_method()`, but calling `UseMethod()` directly is still a noop builtin
-- [ ] `on.exit(expr, add = ...)` works via the call environment today, but still needs to be reconciled with the eventual call-stack design
 
 ## Simplified Data and Object Semantics
 

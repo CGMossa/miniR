@@ -2392,11 +2392,6 @@ fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-#[builtin(name = "nargs", names = ["sys.nframe", "sys.function"])]
-fn builtin_nargs_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::vec(Vector::Integer(vec![Some(0)].into())))
-}
-
 #[builtin(name = "isTRUE", min_args = 1)]
 fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
@@ -2505,11 +2500,6 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
-#[builtin(name = "missing", min_args = 1)]
-fn builtin_missing_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
-}
-
 #[builtin(name = "match.arg", min_args = 1)]
 fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let arg = args.first().cloned().unwrap_or(RValue::Null);
@@ -2587,11 +2577,6 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             }
         }
     }
-}
-
-#[builtin(name = "sys.call")]
-fn builtin_sys_call_stub(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
 }
 
 #[builtin(names = ["quit"])]
