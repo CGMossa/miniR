@@ -146,7 +146,8 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
   - [x] Migrate interpreter.rs functions from `RError` to `RFlow` (remove Return/Break/Next from RError)
   - [x] Redesign `RError` as `Standard { kind: RErrorKind, message, source: Option<Arc<dyn Error>> }` + `Condition`
   - [x] Extract `IoError` module error type (builtins/io.rs) with derive_more `#[derive(Error)]`
-  - [ ] Extract more module error types (MathError, StringError, SystemError, etc.)
+  - [x] Extract `SystemError`, `MathError`, `StringError` module types
+  - [ ] Continue extracting module error types as new external errors are wrapped
 - [ ] Feature-gate the IO module for sandboxed/WASM environments (see plans/io-feature-gate.md)
 
 ## Developer Experience
