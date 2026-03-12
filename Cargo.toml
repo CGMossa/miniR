@@ -36,9 +36,9 @@ derive_more = { version = "2.1", features = [
     # "add_assign",     # derive AddAssign trait (operator +=)
     # "as_ref",         # derive AsRef / AsMut traits
     # "debug",          # derive Debug with custom format strings
-    # "display",        # derive Display with format strings
+    "display",          # derive Display with format strings
     # "eq",             # derive Eq / PartialEq traits
-    # "error",          # derive Error trait (like thiserror)
+    "error",            # derive Error trait (like thiserror)
     # "from_str",       # derive FromStr trait
     # "index",          # derive Index trait (operator [])
     # "index_mut",      # derive IndexMut trait (operator []=)
