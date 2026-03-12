@@ -186,6 +186,6 @@ fn builtin_invoke_restart(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
         .first()
         .and_then(|v| v.as_vector().and_then(|rv| rv.as_character_scalar()))
         .ok_or_else(|| RError::Argument("restart name must be a string".to_string()))?;
-    // Signal the restart by throwing it as an RError::Other — caught by signal_condition
-    Err(RError::Other(restart_name))
+    // Signal the restart by throwing it as an RError::other — caught by signal_condition
+    Err(RError::other(restart_name))
 }

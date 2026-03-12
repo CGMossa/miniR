@@ -39,7 +39,7 @@ fn match_fun(f: &RValue, env: &Environment) -> Result<RValue, RError> {
                     .and_then(|x| x.as_ref())
                     .ok_or_else(|| RError::Argument("not a valid function name".to_string()))?;
                 env.get_function(name)
-                    .ok_or_else(|| RError::Other(format!("could not find function '{}'", name)))
+                    .ok_or_else(|| RError::other(format!("could not find function '{}'", name)))
             }
             _ => Err(RError::Argument(
                 "FUN is not a function and not a string naming a function".to_string(),
@@ -464,7 +464,7 @@ fn interp_get(
         .ok_or_else(|| RError::Argument("invalid first argument".to_string()))?;
     let _envir = named.iter().find(|(n, _)| n == "envir").map(|(_, v)| v);
     env.get(&name)
-        .ok_or_else(|| RError::Other(format!("object '{}' not found", name)))
+        .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
 }
 
 #[interpreter_builtin(name = "assign", min_args = 2)]
@@ -526,13 +526,13 @@ fn interp_source(
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
             let bytes = std::fs::read(&path)
-                .map_err(|e2| RError::Other(format!("cannot open file '{}': {}", path, e2)))?;
+                .map_err(|e2| RError::other(format!("cannot open file '{}': {}", path, e2)))?;
             String::from_utf8_lossy(&bytes).into_owned()
         }
-        Err(e) => return Err(RError::Other(format!("cannot open file '{}': {}", path, e))),
+        Err(e) => return Err(RError::other(format!("cannot open file '{}': {}", path, e))),
     };
     let ast = crate::parser::parse_program(&source)
-        .map_err(|e| RError::Other(format!("parse error in '{}': {}", path, e)))?;
+        .map_err(|e| RError::other(format!("parse error in '{}': {}", path, e)))?;
     with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
@@ -752,7 +752,7 @@ fn interp_next_method(
         let (generic, classes, start, object) = {
             let stack = interp.s3_dispatch_stack.borrow();
             let ctx = stack.last().ok_or_else(|| {
-                RError::Other("NextMethod called outside of a method dispatch".to_string())
+                RError::other("NextMethod called outside of a method dispatch".to_string())
             })?;
             (
                 ctx.generic.clone(),
@@ -804,7 +804,7 @@ fn interp_next_method(
             return result;
         }
 
-        Err(RError::Other(format!(
+        Err(RError::other(format!(
             "no more methods to dispatch for '{}'",
             generic
         )))

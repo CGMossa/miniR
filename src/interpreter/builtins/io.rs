@@ -2,7 +2,45 @@
 //! and file system utilities (file.path, file.exists).
 
 use crate::interpreter::value::*;
+use derive_more::{Display, Error};
 use minir_macros::builtin;
+
+// region: IoError
+
+/// Structured error type for file I/O operations.
+#[derive(Debug, Display, Error)]
+pub enum IoError {
+    #[display("cannot open file '{}': {}", path, source)]
+    CannotOpen {
+        path: String,
+        source: std::io::Error,
+    },
+    #[display("cannot write to file '{}': {}", path, source)]
+    WriteFailed {
+        path: String,
+        source: std::io::Error,
+    },
+    #[display("error reading CSV {}: {}", context, source)]
+    CsvRead { context: String, source: csv::Error },
+    #[display("error writing CSV: {}", source)]
+    CsvWrite {
+        #[error(source)]
+        source: csv::Error,
+    },
+    #[display("cannot open connection: {}", source)]
+    Connection {
+        #[error(source)]
+        source: std::io::Error,
+    },
+}
+
+impl From<IoError> for RError {
+    fn from(e: IoError) -> Self {
+        RError::caused_by(format!("{}", e), e)
+    }
+}
+
+// endregion
 
 #[builtin]
 fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -49,8 +87,8 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .unwrap_or(-1);
 
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| RError::Other(format!("cannot open connection: {}", e)))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|source| IoError::Connection { source })?;
     let lines: Vec<Option<String>> = if n < 0 {
         content.lines().map(|l| Some(l.to_string())).collect()
     } else {
@@ -88,8 +126,12 @@ fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 
     match con {
         Some(path) => {
-            std::fs::write(&path, format!("{}{}", output, sep))
-                .map_err(|e| RError::Other(format!("cannot open connection: {}", e)))?;
+            std::fs::write(&path, format!("{}{}", output, sep)).map_err(|source| {
+                IoError::WriteFailed {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
         }
         None => {
             // Write to stdout
@@ -123,11 +165,17 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .has_headers(header)
         .delimiter(sep)
         .from_path(&path)
-        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", path, e)))?;
+        .map_err(|source| IoError::CsvRead {
+            context: format!("opening '{}'", path),
+            source,
+        })?;
 
     let col_names: Vec<String> = if header {
         rdr.headers()
-            .map_err(|e| RError::Other(format!("error reading CSV headers: {}", e)))?
+            .map_err(|source| IoError::CsvRead {
+                context: "headers".to_string(),
+                source,
+            })?
             .iter()
             .map(|s| s.to_string())
             .collect()
@@ -147,8 +195,10 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     let mut nrows = 0usize;
 
     for result in rdr.records() {
-        let record =
-            result.map_err(|e| RError::Other(format!("error reading CSV record: {}", e)))?;
+        let record = result.map_err(|source| IoError::CsvRead {
+            context: "record".to_string(),
+            source,
+        })?;
         for (i, field) in record.iter().enumerate() {
             if i < ncols {
                 if field == "NA" || field.is_empty() {
@@ -234,8 +284,10 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         ));
     };
 
-    let mut wtr = csv::Writer::from_path(&file)
-        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+    let mut wtr = csv::Writer::from_path(&file).map_err(|source| IoError::CsvRead {
+        context: format!("opening '{}'", file),
+        source,
+    })?;
 
     // Write header
     let col_names: Vec<String> = list
@@ -248,10 +300,10 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         let mut header = vec!["".to_string()];
         header.extend(col_names.clone());
         wtr.write_record(&header)
-            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+            .map_err(|source| IoError::CsvWrite { source })?;
     } else {
         wtr.write_record(&col_names)
-            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+            .map_err(|source| IoError::CsvWrite { source })?;
     }
 
     // Determine number of rows
@@ -277,11 +329,12 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             }
         }
         wtr.write_record(&record)
-            .map_err(|e| RError::Other(format!("error writing CSV: {}", e)))?;
+            .map_err(|source| IoError::CsvWrite { source })?;
     }
 
-    wtr.flush()
-        .map_err(|e| RError::Other(format!("error flushing CSV: {}", e)))?;
+    wtr.flush().map_err(|source| IoError::CsvWrite {
+        source: csv::Error::from(source),
+    })?;
     Ok(RValue::Null)
 }
 
@@ -301,8 +354,10 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         ));
     }
 
-    let content = std::fs::read_to_string(&file)
-        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+    let content = std::fs::read_to_string(&file).map_err(|source| IoError::CannotOpen {
+        path: file.clone(),
+        source,
+    })?;
 
     // Determine separator
     let sep = named
@@ -388,8 +443,10 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         })
         .unwrap_or_else(|| "".to_string()); // empty = whitespace
 
-    let content = std::fs::read_to_string(&file)
-        .map_err(|e| RError::Other(format!("cannot open file '{}': {}", file, e)))?;
+    let content = std::fs::read_to_string(&file).map_err(|source| IoError::CannotOpen {
+        path: file.clone(),
+        source,
+    })?;
 
     let mut lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
@@ -575,8 +632,10 @@ fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
         }
     }
 
-    std::fs::write(&file, output)
-        .map_err(|e| RError::Other(format!("cannot write to file '{}': {}", file, e)))?;
+    std::fs::write(&file, output).map_err(|source| IoError::WriteFailed {
+        path: file.clone(),
+        source,
+    })?;
 
     Ok(RValue::Null)
 }

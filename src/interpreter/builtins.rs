@@ -50,8 +50,8 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
 /// Placeholder for interpreter-level builtins — never actually called because
 /// dispatch is intercepted by the interpreter/pre-eval registries.
 fn placeholder_builtin(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
-        "internal error: interpreter builtin not intercepted".to_string(),
+    Err(RError::other(
+        "internal error: interpreter builtin not intercepted",
     ))
 }
 
@@ -2358,14 +2358,14 @@ fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                     match val {
                         Some(true) => {}
                         Some(false) => {
-                            return Err(RError::Other(format!(
+                            return Err(RError::other(format!(
                                 "not all are TRUE (element {} of argument {})",
                                 j + 1,
                                 i + 1
                             )));
                         }
                         None => {
-                            return Err(RError::Other(format!(
+                            return Err(RError::other(format!(
                                 "missing value where TRUE/FALSE needed (argument {})",
                                 i + 1
                             )));
@@ -2376,12 +2376,12 @@ fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             RValue::Vector(v) => {
                 if let Some(b) = v.as_logical_scalar() {
                     if !b {
-                        return Err(RError::Other(format!("argument {} is not TRUE", i + 1)));
+                        return Err(RError::other(format!("argument {} is not TRUE", i + 1)));
                     }
                 }
             }
             _ => {
-                return Err(RError::Other(format!(
+                return Err(RError::other(format!(
                     "argument {} is not a logical value",
                     i + 1
                 )));
@@ -2618,10 +2618,9 @@ fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// function. Not yet implemented since we don't track a call stack.
 #[builtin(name = "Recall")]
 fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::Other(
+    Err(RError::other(
         "Recall() is not yet available — it requires call stack tracking, which is not yet implemented. \
-         As a workaround, give your function a name and call it directly for recursion."
-            .to_string(),
+         As a workaround, give your function a name and call it directly for recursion.",
     ))
 }
 
