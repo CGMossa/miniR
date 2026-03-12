@@ -1849,6 +1849,15 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_dim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(rv)) => Ok(rv.get_attr("dim").cloned().unwrap_or(RValue::Null)),
+        Some(value @ RValue::List(l)) if has_class(value, "data.frame") => {
+            Ok(RValue::vec(Vector::Integer(
+                vec![
+                    Some(i64::try_from(data_frame_row_count(l))?),
+                    Some(i64::try_from(l.values.len())?),
+                ]
+                .into(),
+            )))
+        }
         Some(RValue::List(l)) => Ok(l.get_attr("dim").cloned().unwrap_or(RValue::Null)),
         _ => Ok(RValue::Null),
     }
