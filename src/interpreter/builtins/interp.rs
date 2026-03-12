@@ -55,6 +55,28 @@ fn match_fun(f: &RValue, env: &Environment) -> Result<RValue, RError> {
     }
 }
 
+fn optional_frame_index(positional: &[RValue], default: i64) -> Result<i64, RError> {
+    match positional.first() {
+        None => Ok(default),
+        Some(value) => value
+            .as_vector()
+            .and_then(|v| v.as_integer_scalar())
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "frame index must be an integer".to_string(),
+                )
+            }),
+    }
+}
+
+fn language_or_null(expr: Option<crate::parser::ast::Expr>) -> RValue {
+    match expr {
+        Some(expr) => RValue::Language(Language::new(expr)),
+        None => RValue::Null,
+    }
+}
+
 #[interpreter_builtin(name = "sapply", min_args = 2)]
 fn interp_sapply(
     args: &[RValue],
@@ -798,8 +820,9 @@ fn interp_next_method(
                     object: args.first().cloned().unwrap_or(RValue::Null),
                 };
                 interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
+                let call_expr = interp.current_call_expr();
                 let result = interp
-                    .call_function(&method, &args, named, env)
+                    .call_function_with_call(&method, &args, named, env, call_expr)
                     .map_err(RError::from);
                 interp.s3_dispatch_stack.borrow_mut().pop();
                 return result;
@@ -816,8 +839,9 @@ fn interp_next_method(
                 object: args.first().cloned().unwrap_or(RValue::Null),
             };
             interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
+            let call_expr = interp.current_call_expr();
             let result = interp
-                .call_function(&method, &args, named, env)
+                .call_function_with_call(&method, &args, named, env, call_expr)
                 .map_err(RError::from);
             interp.s3_dispatch_stack.borrow_mut().pop();
             return result;
@@ -932,6 +956,216 @@ fn interp_emptyenv(
     _env: &Environment,
 ) -> Result<RValue, RError> {
     Ok(RValue::Environment(Environment::new_empty()))
+}
+
+#[interpreter_builtin(name = "sys.call")]
+fn interp_sys_call(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let which = optional_frame_index(positional, 0)?;
+    with_interpreter(|interp| {
+        if which == 0 {
+            return Ok(language_or_null(interp.current_call_expr()));
+        }
+
+        if which < 0 {
+            return Err(RError::other(
+                "negative frame indices are not yet supported",
+            ));
+        }
+
+        let which = usize::try_from(which).map_err(RError::from)?;
+        let frame = interp
+            .call_frame(which)
+            .ok_or_else(|| RError::other("not that many frames on the stack"))?;
+        Ok(language_or_null(frame.call))
+    })
+}
+
+#[interpreter_builtin(name = "sys.function")]
+fn interp_sys_function(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let which = optional_frame_index(positional, 0)?;
+    with_interpreter(|interp| {
+        if which == 0 {
+            return interp
+                .current_call_frame()
+                .map(|frame| frame.function)
+                .ok_or_else(|| RError::other("not that many frames on the stack"));
+        }
+
+        if which < 0 {
+            return Err(RError::other(
+                "negative frame indices are not yet supported",
+            ));
+        }
+
+        let which = usize::try_from(which).map_err(RError::from)?;
+        interp
+            .call_frame(which)
+            .map(|frame| frame.function)
+            .ok_or_else(|| RError::other("not that many frames on the stack"))
+    })
+}
+
+#[interpreter_builtin(name = "sys.frame")]
+fn interp_sys_frame(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let which = optional_frame_index(positional, 0)?;
+    with_interpreter(|interp| {
+        if which == 0 {
+            return Ok(RValue::Environment(interp.global_env.clone()));
+        }
+
+        if which < 0 {
+            return Err(RError::other(
+                "negative frame indices are not yet supported",
+            ));
+        }
+
+        let which = usize::try_from(which).map_err(RError::from)?;
+        interp
+            .call_frame(which)
+            .map(|frame| RValue::Environment(frame.env))
+            .ok_or_else(|| RError::other("not that many frames on the stack"))
+    })
+}
+
+#[interpreter_builtin(name = "sys.calls")]
+fn interp_sys_calls(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let values = interp
+            .call_frames()
+            .into_iter()
+            .map(|frame| (None, language_or_null(frame.call)))
+            .collect();
+        Ok(RValue::List(RList::new(values)))
+    })
+}
+
+#[interpreter_builtin(name = "sys.frames")]
+fn interp_sys_frames(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let values = interp
+            .call_frames()
+            .into_iter()
+            .map(|frame| (None, RValue::Environment(frame.env)))
+            .collect();
+        Ok(RValue::List(RList::new(values)))
+    })
+}
+
+#[interpreter_builtin(name = "sys.parents")]
+fn interp_sys_parents(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let len = interp.call_frames().len();
+        let parents: Vec<Option<i64>> = (0..len)
+            .map(|i| i64::try_from(i).map(Some))
+            .collect::<Result<_, _>>()
+            .map_err(RError::from)?;
+        Ok(RValue::vec(Vector::Integer(parents.into())))
+    })
+}
+
+#[interpreter_builtin(name = "sys.on.exit")]
+fn interp_sys_on_exit(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let frame = match interp.current_call_frame() {
+            Some(frame) => frame,
+            None => return Ok(RValue::Null),
+        };
+
+        let exprs = frame.env.peek_on_exit();
+        match exprs.len() {
+            0 => Ok(RValue::Null),
+            1 => Ok(RValue::Language(Language::new(exprs[0].clone()))),
+            _ => Ok(RValue::Language(Language::new(
+                crate::parser::ast::Expr::Block(exprs),
+            ))),
+        }
+    })
+}
+
+#[interpreter_builtin(name = "sys.nframe")]
+fn interp_sys_nframe(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let len = i64::try_from(interp.call_frames().len()).map_err(RError::from)?;
+        Ok(RValue::vec(Vector::Integer(vec![Some(len)].into())))
+    })
+}
+
+#[interpreter_builtin(name = "nargs")]
+fn interp_nargs(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    with_interpreter(|interp| {
+        let count = interp
+            .current_call_frame()
+            .map(|frame| frame.supplied_arg_count)
+            .unwrap_or(0);
+        Ok(RValue::vec(Vector::Integer(
+            vec![Some(i64::try_from(count).map_err(RError::from)?)].into(),
+        )))
+    })
+}
+
+#[interpreter_builtin(name = "parent.frame")]
+fn interp_parent_frame(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _env: &Environment,
+) -> Result<RValue, RError> {
+    let n = optional_frame_index(positional, 1)?;
+    if n <= 0 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "invalid 'n' value".to_string(),
+        ));
+    }
+
+    with_interpreter(|interp| {
+        let depth = interp.call_frames().len();
+        let n = usize::try_from(n).map_err(RError::from)?;
+        if n >= depth {
+            return Ok(RValue::Environment(interp.global_env.clone()));
+        }
+
+        let target = depth - n;
+        interp
+            .call_frame(target)
+            .map(|frame| RValue::Environment(frame.env))
+            .ok_or_else(|| RError::other("not that many frames on the stack"))
+    })
 }
 
 #[interpreter_builtin(name = "ls", names = ["objects"])]

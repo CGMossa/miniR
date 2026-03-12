@@ -4,6 +4,7 @@ pub mod environment;
 pub mod value;
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 
 use ndarray::{Array2, ShapeBuilder};
 
@@ -59,6 +60,16 @@ pub(crate) struct S3DispatchContext {
     pub object: RValue,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct CallFrame {
+    pub call: Option<Expr>,
+    pub function: RValue,
+    pub env: Environment,
+    pub formal_args: HashSet<String>,
+    pub supplied_args: HashSet<String>,
+    pub supplied_arg_count: usize,
+}
+
 /// A handler registered by withCallingHandlers().
 #[derive(Clone)]
 pub(crate) struct ConditionHandler {
@@ -71,6 +82,7 @@ pub(crate) struct ConditionHandler {
 pub struct Interpreter {
     pub global_env: Environment,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
+    call_stack: RefCell<Vec<CallFrame>>,
     /// Stack of handler sets from withCallingHandlers() calls.
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
     #[cfg(feature = "random")]
@@ -91,6 +103,7 @@ impl Interpreter {
         Interpreter {
             global_env,
             s3_dispatch_stack: RefCell::new(Vec::new()),
+            call_stack: RefCell::new(Vec::new()),
             condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
             rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
@@ -139,6 +152,25 @@ impl Interpreter {
     #[cfg(feature = "random")]
     pub fn rng(&self) -> &RefCell<rand::rngs::StdRng> {
         &self.rng
+    }
+
+    pub(crate) fn current_call_frame(&self) -> Option<CallFrame> {
+        self.call_stack.borrow().last().cloned()
+    }
+
+    pub(crate) fn call_frame(&self, which: usize) -> Option<CallFrame> {
+        self.call_stack
+            .borrow()
+            .get(which.saturating_sub(1))
+            .cloned()
+    }
+
+    pub(crate) fn call_frames(&self) -> Vec<CallFrame> {
+        self.call_stack.borrow().clone()
+    }
+
+    pub(crate) fn current_call_expr(&self) -> Option<Expr> {
+        self.current_call_frame().and_then(|frame| frame.call)
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
@@ -990,6 +1022,10 @@ impl Interpreter {
 
     fn eval_call(&self, func: &Expr, args: &[Arg], env: &Environment) -> Result<RValue, RFlow> {
         let f = self.eval_in(func, env)?;
+        let call_expr = Expr::Call {
+            func: Box::new(func.clone()),
+            args: args.to_vec(),
+        };
 
         // R behavior: if the symbol resolved to a non-function but we're in
         // call position, search up the env chain for a function with that name
@@ -1043,7 +1079,7 @@ impl Interpreter {
             }
         }
 
-        self.call_function(&f, &positional, &named, env)
+        self.call_function_with_call(&f, &positional, &named, env, Some(call_expr))
     }
 
     pub fn call_function(
@@ -1052,6 +1088,17 @@ impl Interpreter {
         positional: &[RValue],
         named: &[(String, RValue)],
         env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        self.call_function_with_call(func, positional, named, env, None)
+    }
+
+    pub(crate) fn call_function_with_call(
+        &self,
+        func: &RValue,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+        env: &Environment,
+        call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
         match func {
             RValue::Function(RFunction::Builtin { func, name, .. }) => {
@@ -1070,7 +1117,7 @@ impl Interpreter {
             }) => {
                 // Check for S3 generic (body contains UseMethod("generic"))
                 if let Some(generic_name) = extract_use_method(body) {
-                    return self.dispatch_s3(&generic_name, positional, named, env);
+                    return self.dispatch_s3(&generic_name, positional, named, env, call_expr);
                 }
 
                 let call_env = Environment::new_child(closure_env);
@@ -1080,6 +1127,17 @@ impl Interpreter {
                 let mut dots_vals: Vec<(Option<String>, RValue)> = Vec::new();
                 let mut has_dots = false;
                 let param_names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+                let mut formal_args = HashSet::new();
+                let mut supplied_args = HashSet::new();
+                let mut supplied_arg_count = 0usize;
+
+                for param in params {
+                    if param.is_dots {
+                        formal_args.insert("...".to_string());
+                    } else {
+                        formal_args.insert(param.name.clone());
+                    }
+                }
 
                 for param in params {
                     if param.is_dots {
@@ -1095,14 +1153,19 @@ impl Interpreter {
                                 dots_vals.push((Some(n.clone()), v.clone()));
                             }
                         }
+                        supplied_arg_count += dots_vals.len();
                         continue;
                     }
 
                     // Try named argument first
                     if let Some((_, val)) = named.iter().find(|(n, _)| *n == param.name) {
                         call_env.set(param.name.clone(), val.clone());
+                        supplied_args.insert(param.name.clone());
+                        supplied_arg_count += 1;
                     } else if pos_idx < positional.len() {
                         call_env.set(param.name.clone(), positional[pos_idx].clone());
+                        supplied_args.insert(param.name.clone());
+                        supplied_arg_count += 1;
                         pos_idx += 1;
                     } else if let Some(ref default) = param.default {
                         let val = self.eval_in(default, &call_env)?;
@@ -1116,6 +1179,15 @@ impl Interpreter {
                     call_env.set("...".to_string(), RValue::List(RList::new(dots_vals)));
                 }
 
+                self.call_stack.borrow_mut().push(CallFrame {
+                    call: call_expr,
+                    function: func.clone(),
+                    env: call_env.clone(),
+                    formal_args,
+                    supplied_args,
+                    supplied_arg_count,
+                });
+
                 let result = match self.eval_in(body, &call_env) {
                     Ok(val) => Ok(val),
                     Err(RFlow::Signal(RSignal::Return(val))) => Ok(val),
@@ -1128,6 +1200,7 @@ impl Interpreter {
                     // on.exit handlers run but don't alter the return value
                     let _ = self.eval_in(expr, &call_env);
                 }
+                self.call_stack.borrow_mut().pop();
 
                 result
             }
@@ -2040,6 +2113,7 @@ impl Interpreter {
         positional: &[RValue],
         named: &[(String, RValue)],
         env: &Environment,
+        call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
         // Get class of first argument
         let classes = match positional.first() {
@@ -2084,7 +2158,13 @@ impl Interpreter {
                     object: positional.first().cloned().unwrap_or(RValue::Null),
                 };
                 self.s3_dispatch_stack.borrow_mut().push(ctx);
-                let result = self.call_function(&method, positional, named, env);
+                let result = self.call_function_with_call(
+                    &method,
+                    positional,
+                    named,
+                    env,
+                    call_expr.clone(),
+                );
                 self.s3_dispatch_stack.borrow_mut().pop();
                 return result;
             }
@@ -2100,7 +2180,7 @@ impl Interpreter {
                 object: positional.first().cloned().unwrap_or(RValue::Null),
             };
             self.s3_dispatch_stack.borrow_mut().push(ctx);
-            let result = self.call_function(&method, positional, named, env);
+            let result = self.call_function_with_call(&method, positional, named, env, call_expr);
             self.s3_dispatch_stack.borrow_mut().pop();
             return result;
         }

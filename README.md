@@ -13,6 +13,7 @@ Early development. The current tree already has:
 - Attributes on vectors and lists, plus matrices, arrays, factors, and a basic `data.frame()`
 - Lexical scoping with R's environment chain (base -> global -> local)
 - Hundreds of built-in functions across math, strings/regex, I/O, system, factors, conditions, and metaprogramming
+- Call-stack introspection (`sys.*`, `parent.frame()`, `missing()`, `nargs()`, `on.exit()`)
 - Partial S3 dispatch, including `NextMethod()`
 - R's condition system (`tryCatch()`, `withCallingHandlers()`, suppressors, condition constructors)
 - CSV/table reading and writing, filesystem/system helpers, and a `reedline` REPL
@@ -20,7 +21,6 @@ Early development. The current tree already has:
 Major gaps that still need work:
 
 - Formula evaluation
-- Call-stack introspection (`sys.*`, `parent.frame()`, `missing()`, `nargs()`)
 - Direct `UseMethod()` builtin dispatch
 - Connections, serialization, and package loading
 - Date/time support, S4, graphics, and broader CRAN runtime compatibility

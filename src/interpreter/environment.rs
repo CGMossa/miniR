@@ -100,6 +100,11 @@ impl Environment {
         std::mem::take(&mut self.inner.borrow_mut().on_exit)
     }
 
+    /// Return the currently registered on.exit expressions without clearing them.
+    pub fn peek_on_exit(&self) -> Vec<Expr> {
+        self.inner.borrow().on_exit.clone()
+    }
+
     pub fn new_empty() -> Self {
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {

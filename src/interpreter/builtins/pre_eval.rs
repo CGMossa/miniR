@@ -282,6 +282,55 @@ fn pre_eval_on_exit(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     Ok(RValue::Null)
 }
 
+#[pre_eval_builtin(name = "missing", min_args = 1)]
+fn pre_eval_missing(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
+    let expr = args
+        .first()
+        .and_then(|a| a.value.as_ref())
+        .ok_or_else(|| RError::other("'missing(x)' did not find an argument".to_string()))?;
+
+    let is_missing = with_interpreter(|interp| {
+        let frame = interp
+            .current_call_frame()
+            .ok_or_else(|| RError::other("'missing(x)' did not find an argument".to_string()))?;
+
+        match expr {
+            Expr::Symbol(name) => {
+                if !frame.formal_args.contains(name) {
+                    return Err(RError::other(format!(
+                        "'missing({})' did not find an argument",
+                        name
+                    )));
+                }
+                Ok(!frame.supplied_args.contains(name))
+            }
+            Expr::Dots => {
+                if !frame.formal_args.contains("...") {
+                    return Err(RError::other("'missing(...)' did not find an argument"));
+                }
+                let dots_len = match frame.env.get("...") {
+                    Some(RValue::List(list)) => list.values.len(),
+                    _ => 0,
+                };
+                Ok(dots_len == 0)
+            }
+            Expr::DotDot(n) => {
+                if !frame.formal_args.contains("...") {
+                    return Err(RError::other("'missing(...)' did not find an argument"));
+                }
+                let dots_len = match frame.env.get("...") {
+                    Some(RValue::List(list)) => list.values.len(),
+                    _ => 0,
+                };
+                Ok(dots_len < usize::try_from(*n).unwrap_or(0))
+            }
+            _ => Err(RError::other("invalid use of 'missing'".to_string())),
+        }
+    })?;
+
+    Ok(RValue::vec(Vector::Logical(vec![Some(is_missing)].into())))
+}
+
 #[pre_eval_builtin(name = "quote", min_args = 1)]
 fn pre_eval_quote(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
     match args.first().and_then(|a| a.value.as_ref()) {
