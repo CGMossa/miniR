@@ -55,4 +55,11 @@ stopifnot(f4(1, 2, 3) == 3)
 stopifnot(f4() == 0)
 cat("PASS: length of ...\n")
 
+# ..0 should produce a nice error (1-based indexing)
+f5 <- function(...) ..0
+err <- tryCatch(f5(1, 2, 3), error = function(e) conditionMessage(e))
+stopifnot(grepl("..0 is not valid", err))
+stopifnot(grepl("1-based indexing", err))
+cat("PASS: ..0 gives informative error\n")
+
 cat("\nAll dotdot tests passed!\n")
