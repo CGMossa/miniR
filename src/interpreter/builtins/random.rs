@@ -384,6 +384,7 @@ fn builtin_sample(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     // If the input was a vector with >1 elements, index into it (1-based)
     if x_vec.len() > 1 {
         with_interpreter(|interp| interp.index_by_integer(&x_vec.inner, &result))
+            .map_err(RError::from)
     } else {
         Ok(RValue::vec(Vector::Integer(result.into())))
     }

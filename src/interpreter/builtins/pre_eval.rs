@@ -77,7 +77,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
             interp.condition_handlers.borrow_mut().push(unwind_handlers);
         }
         let eval_result = match expr {
-            Some(e) => interp.eval_in(e, env),
+            Some(e) => interp.eval_in(e, env).map_err(RError::from),
             None => Ok(RValue::Null),
         };
         if !non_error_classes.is_empty() {
@@ -91,12 +91,9 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                 let cond_classes = get_class(&condition);
                 for (handler_class, handler) in &handlers {
                     if cond_classes.iter().any(|c| c == handler_class) {
-                        return interp.call_function(
-                            handler,
-                            std::slice::from_ref(&condition),
-                            &[],
-                            env,
-                        );
+                        return interp
+                            .call_function(handler, std::slice::from_ref(&condition), &[], env)
+                            .map_err(RError::from);
                     }
                 }
                 // No matching handler — re-raise
@@ -108,7 +105,9 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                     let err_msg = format!("{}", other);
                     let condition =
                         make_condition(&err_msg, &["simpleError", "error", "condition"]);
-                    interp.call_function(handler, &[condition], &[], env)
+                    interp
+                        .call_function(handler, &[condition], &[], env)
+                        .map_err(RError::from)
                 } else {
                     Err(other)
                 }
@@ -118,7 +117,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
 
     // Run finally block if present
     if let Some(ref fin) = finally_expr {
-        with_interpreter(|interp| interp.eval_in(fin, env))?;
+        with_interpreter(|interp| interp.eval_in(fin, env).map_err(RError::from))?;
     }
 
     result
@@ -131,7 +130,7 @@ fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
         .find(|a| a.name.is_none())
         .and_then(|a| a.value.as_ref());
     with_interpreter(|interp| match expr {
-        Some(e) => match interp.eval_in(e, env) {
+        Some(e) => match interp.eval_in(e, env).map_err(RError::from) {
             Ok(val) => Ok(val),
             Err(err) => {
                 let msg = format!("{}", err);
@@ -158,7 +157,7 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
         for arg in args {
             if let Some(class) = &arg.name {
                 if let Some(ref val_expr) = arg.value {
-                    let handler = interp.eval_in(val_expr, env)?;
+                    let handler = interp.eval_in(val_expr, env).map_err(RError::from)?;
                     handler_set.push(ConditionHandler {
                         class: class.clone(),
                         handler,
@@ -174,7 +173,7 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
     with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
         let result = match expr {
-            Some(e) => interp.eval_in(e, env),
+            Some(e) => interp.eval_in(e, env).map_err(RError::from),
             None => Ok(RValue::Null),
         };
         interp.condition_handlers.borrow_mut().pop();
@@ -205,7 +204,7 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
 
     with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
-        let result = interp.eval_in(expr, env);
+        let result = interp.eval_in(expr, env).map_err(RError::from);
         interp.condition_handlers.borrow_mut().pop();
         result
     })
@@ -233,7 +232,7 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
 
     with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
-        let result = interp.eval_in(expr, env);
+        let result = interp.eval_in(expr, env).map_err(RError::from);
         interp.condition_handlers.borrow_mut().pop();
         result
     })
@@ -387,7 +386,7 @@ fn pre_eval_evalq(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     })?;
 
     let target_env = eval_env.unwrap_or_else(|| env.clone());
-    with_interpreter(|interp| interp.eval_in(expr, &target_env))
+    with_interpreter(|interp| interp.eval_in(expr, &target_env)).map_err(RError::from)
 }
 
 #[pre_eval_builtin(name = "bquote", min_args = 1)]
