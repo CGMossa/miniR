@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use ndarray::{Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
@@ -1020,6 +1022,92 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                     }
                     Vector::Logical(result.into())
                 }
+            };
+            Ok(RValue::vec(result))
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+/// miniR extension: single-pass sorted unique using BTreeSet.
+/// Faster than `sort(unique(x))` for large vectors.
+#[builtin(name = "sort_unique", min_args = 1)]
+fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let decreasing = named
+        .iter()
+        .find(|(n, _)| n == "decreasing")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let result = match &v.inner {
+                Vector::Double(vals) => {
+                    // Total ordering key: flip bits so BTreeSet gives numeric order.
+                    // Positive floats: bits as-is. Negative floats: flip all bits.
+                    // This maps f64 ordering to u64 ordering. NAs (None) sort last.
+                    fn sort_key(v: &Option<f64>) -> (bool, u64) {
+                        match v {
+                            None => (true, 0), // NAs last
+                            Some(f) => {
+                                let bits = f.to_bits();
+                                let key = if bits >> 63 == 1 {
+                                    !bits
+                                } else {
+                                    bits ^ (1 << 63)
+                                };
+                                (false, key)
+                            }
+                        }
+                    }
+                    let set: BTreeSet<(bool, u64)> = vals.iter().map(sort_key).collect();
+                    // Reverse-map keys back to f64 values
+                    let mut result: Vec<Option<f64>> = set
+                        .into_iter()
+                        .map(|(is_na, key)| {
+                            if is_na {
+                                None
+                            } else {
+                                let bits = if key >> 63 == 0 {
+                                    !key
+                                } else {
+                                    key ^ (1 << 63)
+                                };
+                                Some(f64::from_bits(bits))
+                            }
+                        })
+                        .collect();
+                    if decreasing {
+                        result.reverse();
+                    }
+                    Vector::Double(result.into())
+                }
+                Vector::Integer(vals) => {
+                    let has_na = vals.iter().any(|x| x.is_none());
+                    let set: BTreeSet<i64> = vals.iter().filter_map(|x| *x).collect();
+                    let mut result: Vec<Option<i64>> = set.into_iter().map(Some).collect();
+                    if decreasing {
+                        result.reverse();
+                    }
+                    if has_na {
+                        result.push(None); // NAs sort last
+                    }
+                    Vector::Integer(result.into())
+                }
+                Vector::Character(vals) => {
+                    let has_na = vals.iter().any(|x| x.is_none());
+                    let set: BTreeSet<&str> = vals.iter().filter_map(|x| x.as_deref()).collect();
+                    let mut result: Vec<Option<String>> =
+                        set.into_iter().map(|s| Some(s.to_string())).collect();
+                    if decreasing {
+                        result.reverse();
+                    }
+                    if has_na {
+                        result.push(None); // NAs sort last
+                    }
+                    Vector::Character(result.into())
+                }
+                other => other.clone(),
             };
             Ok(RValue::vec(result))
         }

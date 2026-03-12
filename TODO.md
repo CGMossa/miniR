@@ -154,5 +154,5 @@ Items marked 🔧 need no new dependencies (pure Rust / std / already-vendored c
 
 ## Quick Wins
 
-- [ ] 🔧 Nice error message for `..0` — R uses 1-based indexing for `...` args (see plans/dotdot-zero-error.md)
-- [ ] 🔧 Optimize `sort(unique())` with BTreeSet / add `sort_unique()` builtin (see plans/sort-unique-optimization.md)
+- [x] 🔧 Nice error message for `..0` — R uses 1-based indexing for `...` args (see plans/dotdot-zero-error.md)
+- [x] 🔧 `sort_unique()` builtin — single-pass sorted unique via BTreeSet (see plans/sort-unique-optimization.md)
