@@ -173,6 +173,13 @@ impl Interpreter {
                     .ok_or_else(|| RError::Other("'...' used in incorrect context".to_string()))
             }
             Expr::DotDot(n) => {
+                if *n == 0 {
+                    return Err(RError::Other(
+                        "..0 is not valid — R uses 1-based indexing for ... arguments.\n  \
+                         Did you mean ..1? (..1 is the first element, ..2 is the second, etc.)"
+                            .to_string(),
+                    ));
+                }
                 // ..1, ..2 etc. — 1-indexed access into ...
                 let dots = env
                     .get("...")
