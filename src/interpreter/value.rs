@@ -405,7 +405,10 @@ impl RValue {
         match self {
             RValue::Vector(rv) => Ok(rv.inner),
             RValue::Null => Ok(Vector::Logical(Logical(vec![]))),
-            _ => Err(RError::Type("cannot coerce to vector".to_string())),
+            _ => Err(RError::new(
+                RErrorKind::Type,
+                "cannot coerce to vector".to_string(),
+            )),
         }
     }
 
@@ -555,31 +558,43 @@ pub enum ConditionKind {
     Message,
 }
 
-/// R runtime errors and control flow signals.
+// region: RError
+
+/// The R-facing error category — determines how R's condition system classifies the error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RErrorKind {
+    Type,
+    Argument,
+    Name,
+    Index,
+    Parse,
+    Other,
+}
+
+/// R runtime error — wraps any module error with an R-facing category and preserves
+/// the full error chain via `Arc<dyn Error>`.
 ///
-/// Return/Break/Next are control flow signals, not errors. They live here
-/// temporarily for backward compatibility but should be matched via `RFlow`
-/// at call boundaries. Use `RSignal` for new code.
+/// Construct via `RError::new()`, `RError::from_source()`, or `From<T: Error>` impls.
+/// Module errors (IoError, MathError, etc.) convert automatically via the blanket impl.
 #[derive(Debug, Clone)]
 pub enum RError {
-    Type(String),
-    Argument(String),
-    Name(String),
-    Index(String),
-    #[allow(dead_code)]
-    Parse(String),
-    /// General error with optional source chain. Use `RError::other("msg")` for simple
-    /// messages or `RError::caused_by("msg", source)` to preserve the error chain.
-    Other {
+    /// Standard error with kind, message, and optional source chain.
+    Standard {
+        kind: RErrorKind,
         message: String,
+        #[allow(dead_code)]
         source: Option<Arc<dyn std::error::Error + Send + Sync>>,
     },
-    /// R condition signal — carries a condition object (list with class attribute)
+    /// R condition signal — carries a condition object (list with class attribute).
+    /// This is distinct from standard errors because it carries an RValue, not a
+    /// std::error::Error.
     Condition {
         condition: RValue,
         kind: ConditionKind,
     },
 }
+
+// endregion
 
 /// Control flow signals — not errors, but propagated via Result for convenience
 #[derive(Debug, Clone)]
@@ -616,9 +631,7 @@ impl From<RFlow> for RError {
 
 impl From<TryFromIntError> for RFlow {
     fn from(e: TryFromIntError) -> Self {
-        RFlow::Error(RError::Type(format!(
-            "integer conversion out of range: {e}"
-        )))
+        RFlow::Error(RError::from_source(RErrorKind::Type, e))
     }
 }
 
@@ -643,27 +656,46 @@ impl fmt::Display for RSignal {
 
 impl From<TryFromIntError> for RError {
     fn from(e: TryFromIntError) -> Self {
-        RError::Type(format!("integer conversion out of range: {e}"))
+        RError::from_source(RErrorKind::Type, e)
     }
 }
 
+// region: RError impls
+
 impl RError {
-    /// Create an Other error with just a message (no source chain).
-    pub fn other(message: impl Into<String>) -> Self {
-        RError::Other {
+    /// Create an error with a kind and message (no source chain).
+    pub fn new(kind: RErrorKind, message: impl Into<String>) -> Self {
+        RError::Standard {
+            kind,
             message: message.into(),
             source: None,
         }
     }
 
-    /// Create an Other error that preserves the source error chain.
-    pub fn caused_by(
-        message: impl Into<String>,
+    /// Create an error that wraps a source error, using its Display as the message.
+    pub fn from_source(
+        kind: RErrorKind,
         source: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        RError::Other {
-            message: message.into(),
+        let message = format!("{}", source);
+        RError::Standard {
+            kind,
+            message,
             source: Some(Arc::new(source)),
+        }
+    }
+
+    /// Convenience: create an Other error with just a message.
+    pub fn other(message: impl Into<String>) -> Self {
+        RError::new(RErrorKind::Other, message)
+    }
+
+    /// Return the error kind (or None for Condition).
+    #[allow(dead_code)]
+    pub fn kind(&self) -> Option<RErrorKind> {
+        match self {
+            RError::Standard { kind, .. } => Some(*kind),
+            RError::Condition { .. } => None,
         }
     }
 
@@ -671,6 +703,7 @@ impl RError {
     #[allow(dead_code)]
     pub fn message(&self) -> String {
         match self {
+            RError::Standard { message, .. } => message.clone(),
             RError::Condition { condition, .. } => {
                 if let RValue::List(list) = condition {
                     for (name, val) in &list.values {
@@ -685,7 +718,15 @@ impl RError {
                 }
                 format!("{}", self)
             }
-            _ => format!("{}", self),
+        }
+    }
+
+    /// Get the source error, if any.
+    #[allow(dead_code)]
+    pub fn source(&self) -> Option<&(dyn std::error::Error + Send + Sync)> {
+        match self {
+            RError::Standard { source, .. } => source.as_deref(),
+            RError::Condition { .. } => None,
         }
     }
 }
@@ -693,15 +734,22 @@ impl RError {
 impl fmt::Display for RError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RError::Type(msg) => write!(f, "Error: {}", msg),
-            RError::Argument(msg) => write!(f, "Error in argument: {}", msg),
-            RError::Name(msg) => write!(f, "Error: object '{}' not found", msg),
-            RError::Index(msg) => write!(f, "Error in indexing: {}", msg),
-            RError::Parse(msg) => write!(f, "Error in parse: {}", msg),
-            RError::Other { message, source } => match source {
-                Some(src) => write!(f, "Error: {}: {}", message, src),
-                None => write!(f, "Error: {}", message),
-            },
+            RError::Standard { kind, message, .. } => {
+                let prefix = match kind {
+                    RErrorKind::Type => "Error",
+                    RErrorKind::Argument => "Error in argument",
+                    RErrorKind::Name => "Error",
+                    RErrorKind::Index => "Error in indexing",
+                    RErrorKind::Parse => "Error in parse",
+                    RErrorKind::Other => "Error",
+                };
+                // Name errors have a special format
+                if *kind == RErrorKind::Name {
+                    write!(f, "Error: object '{}' not found", message)
+                } else {
+                    write!(f, "{}: {}", prefix, message)
+                }
+            }
             RError::Condition { condition, .. } => {
                 if let RValue::List(list) = condition {
                     for (name, val) in &list.values {
@@ -719,6 +767,8 @@ impl fmt::Display for RError {
         }
     }
 }
+
+// endregion
 
 /// Convert an `RError` into an `RFlow`.
 impl From<RError> for RFlow {

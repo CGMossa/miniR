@@ -36,7 +36,7 @@ pub enum IoError {
 
 impl From<IoError> for RError {
     fn from(e: IoError) -> Self {
-        RError::caused_by(format!("{}", e), e)
+        RError::from_source(RErrorKind::Other, e)
     }
 }
 
@@ -79,7 +79,7 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("invalid 'con' argument".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'con' argument".to_string()))?;
     let n = named
         .iter()
         .find(|(n, _)| n == "n")
@@ -146,7 +146,7 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("invalid 'file' argument".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
 
     let header = named
         .iter()
@@ -265,12 +265,17 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let data = args
         .first()
-        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
     let file = args
         .get(1)
         .or_else(|| named.iter().find(|(n, _)| n == "file").map(|(_, v)| v))
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::Argument("argument 'file' is missing".to_string()))?;
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'file' is missing".to_string(),
+            )
+        })?;
 
     let row_names = named
         .iter()
@@ -279,7 +284,8 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         .unwrap_or(true);
 
     let RValue::List(list) = data else {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "write.csv requires a data frame or list".to_string(),
         ));
     };
@@ -349,7 +355,8 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or_default();
 
     if file.is_empty() {
-        return Err(RError::Argument(
+        return Err(RError::new(
+            RErrorKind::Argument,
             "scan() requires a file path — reading from stdin is not yet supported".to_string(),
         ));
     }
@@ -416,10 +423,14 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[0] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
-            RError::Argument("read.table() requires a file path string".to_string())
+            RError::new(
+                RErrorKind::Argument,
+                "read.table() requires a file path string".to_string(),
+            )
         })?,
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "read.table() requires a file path string".to_string(),
             ))
         }
@@ -518,12 +529,15 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 #[builtin(name = "write.table", min_args = 2)]
 fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[1] {
-        RValue::Vector(rv) => rv
-            .inner
-            .as_character_scalar()
-            .ok_or_else(|| RError::Argument("write.table() requires a file path".to_string()))?,
+        RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "write.table() requires a file path".to_string(),
+            )
+        })?,
         _ => {
-            return Err(RError::Argument(
+            return Err(RError::new(
+                RErrorKind::Argument,
                 "write.table() requires a file path as second argument".to_string(),
             ))
         }
@@ -626,7 +640,8 @@ fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
             }
         }
         _ => {
-            return Err(RError::Type(
+            return Err(RError::new(
+                RErrorKind::Type,
                 "write.table() requires a list or matrix".to_string(),
             ))
         }

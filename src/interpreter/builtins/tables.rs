@@ -17,13 +17,15 @@ fn builtin_tabulate(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                 .map(|d| d.map(f64_to_i64).transpose())
                 .collect::<Result<Vec<_>, _>>()?,
             _ => {
-                return Err(RError::Type(
+                return Err(RError::new(
+                    RErrorKind::Type,
                     "tabulate() requires an integer or double vector".to_string(),
                 ))
             }
         },
         _ => {
-            return Err(RError::Type(
+            return Err(RError::new(
+                RErrorKind::Type,
                 "tabulate() requires a numeric vector".to_string(),
             ))
         }

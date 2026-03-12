@@ -4,7 +4,7 @@
 //! don't exist. For integer↔integer conversions, use `From`/`TryFrom` directly
 //! (with `?` — `From<TryFromIntError>` is implemented for `RError`).
 
-use super::value::RError;
+use super::value::{RError, RErrorKind};
 
 // region: float → integer (no std TryFrom for f64 → int)
 
@@ -13,17 +13,26 @@ use super::value::RError;
 #[inline]
 pub fn f64_to_i64(v: f64) -> Result<i64, RError> {
     if v.is_nan() {
-        return Err(RError::Type("NaN cannot be converted to integer".into()));
+        return Err(RError::new(
+            RErrorKind::Type,
+            "NaN cannot be converted to integer",
+        ));
     }
     if v.is_infinite() {
-        return Err(RError::Type(format!(
-            "{}Inf cannot be converted to integer",
-            if v < 0.0 { "-" } else { "" }
-        )));
+        return Err(RError::new(
+            RErrorKind::Type,
+            format!(
+                "{}Inf cannot be converted to integer",
+                if v < 0.0 { "-" } else { "" }
+            ),
+        ));
     }
     // Check range before truncating
     if v > i64::MAX as f64 || v < i64::MIN as f64 {
-        return Err(RError::Type(format!("value {v} out of integer range")));
+        return Err(RError::new(
+            RErrorKind::Type,
+            format!("value {v} out of integer range"),
+        ));
     }
     Ok(v as i64) // intentional truncation toward zero
 }

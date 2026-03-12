@@ -28,7 +28,10 @@ pub(super) fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RErr
                 .collect()),
         },
         RValue::Null => Ok(vec![]),
-        _ => Err(RError::Type("expected an atomic vector".to_string())),
+        _ => Err(RError::new(
+            RErrorKind::Type,
+            "expected an atomic vector".to_string(),
+        )),
     }
 }
 
@@ -44,7 +47,8 @@ fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
             RValue::Vector(rv) => match &rv.inner {
                 Vector::Character(c) => c.iter().filter_map(|s| s.clone()).collect(),
                 _ => {
-                    return Err(RError::Argument(
+                    return Err(RError::new(
+                        RErrorKind::Argument,
                         "levels must be a character vector".to_string(),
                     ))
                 }
@@ -59,7 +63,8 @@ fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                 seen
             }
             _ => {
-                return Err(RError::Argument(
+                return Err(RError::new(
+                    RErrorKind::Argument,
                     "levels must be a character vector or NULL".to_string(),
                 ))
             }

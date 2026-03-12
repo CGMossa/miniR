@@ -188,7 +188,7 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
     let expr = args
         .first()
         .and_then(|a| a.value.as_ref())
-        .ok_or_else(|| RError::Argument("argument is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
 
     // Create a handler that muffles warnings by signaling muffleWarning
     let muffle_handler = RValue::Function(RFunction::Builtin {
@@ -217,7 +217,7 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
     let expr = args
         .first()
         .and_then(|a| a.value.as_ref())
-        .ok_or_else(|| RError::Argument("argument is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
 
     let muffle_handler = RValue::Function(RFunction::Builtin {
         name: "suppressMessages_handler".to_string(),
@@ -469,7 +469,7 @@ fn pre_eval_with_visible(args: &[Arg], env: &Environment) -> Result<RValue, RErr
     let expr = args
         .first()
         .and_then(|a| a.value.as_ref())
-        .ok_or_else(|| RError::Argument("argument 'x' is missing".to_string()))?;
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
 
     let value = with_interpreter(|interp| interp.eval_in(expr, env))?;
 
