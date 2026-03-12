@@ -122,12 +122,12 @@ impl Interpreter {
                         env,
                     );
                     match &result {
-                        Err(RError::Other(msg))
+                        Err(RFlow::Error(RError::Other(msg)))
                             if msg == "muffleWarning" || msg == "muffleMessage" =>
                         {
                             return Ok(true);
                         }
-                        Err(e) => return Err(e.clone()),
+                        Err(e) => return Err(RError::from(e.clone())),
                         Ok(_) => {} // handler returned normally, continue signaling
                     }
                 }
@@ -142,10 +142,10 @@ impl Interpreter {
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
-        self.eval_in(expr, &self.global_env).map_err(RFlow::from)
+        self.eval_in(expr, &self.global_env)
     }
 
-    pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RError> {
+    pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
@@ -166,11 +166,14 @@ impl Interpreter {
             Expr::Complex(f) => Ok(RValue::vec(Vector::Complex(
                 vec![Some(num_complex::Complex64::new(0.0, *f))].into(),
             ))),
-            Expr::Symbol(name) => env.get(name).ok_or_else(|| RError::Name(name.clone())),
+            Expr::Symbol(name) => env
+                .get(name)
+                .ok_or_else(|| RError::Name(name.clone()).into()),
             Expr::Dots => {
                 // Return the ... list from the current environment
-                env.get("...")
-                    .ok_or_else(|| RError::Other("'...' used in incorrect context".to_string()))
+                env.get("...").ok_or_else(|| {
+                    RError::Other("'...' used in incorrect context".to_string()).into()
+                })
             }
             Expr::DotDot(n) => {
                 if *n == 0 {
@@ -178,7 +181,8 @@ impl Interpreter {
                         "..0 is not valid — R uses 1-based indexing for ... arguments.\n  \
                          Did you mean ..1? (..1 is the first element, ..2 is the second, etc.)"
                             .to_string(),
-                    ));
+                    )
+                    .into());
                 }
                 // ..1, ..2 etc. — 1-indexed access into ...
                 let dots = env
@@ -189,12 +193,10 @@ impl Interpreter {
                         let idx = usize::try_from(i64::from(*n))?.saturating_sub(1);
                         list.values.get(idx).map(|(_, v)| v.clone()).ok_or_else(|| {
                             RError::Other(format!("the ... list does not contain {} elements", n))
+                                .into()
                         })
                     }
-                    _ => Err(RError::Other(format!(
-                        "'..{}' used in incorrect context",
-                        n
-                    ))),
+                    _ => Err(RError::Other(format!("'..{}' used in incorrect context", n)).into()),
                 }
             }
 
@@ -264,8 +266,8 @@ impl Interpreter {
                         break;
                     }
                     match self.eval_in(body, env) {
-                        Err(RError::Break) => break,
-                        Err(RError::Next) => continue,
+                        Err(RFlow::Signal(RSignal::Break)) => break,
+                        Err(RFlow::Signal(RSignal::Next)) => continue,
                         Err(e) => return Err(e),
                         _ => {}
                     }
@@ -276,8 +278,8 @@ impl Interpreter {
             Expr::Repeat { body } => {
                 loop {
                     match self.eval_in(body, env) {
-                        Err(RError::Break) => break,
-                        Err(RError::Next) => continue,
+                        Err(RFlow::Signal(RSignal::Break)) => break,
+                        Err(RFlow::Signal(RSignal::Next)) => continue,
                         Err(e) => return Err(e),
                         _ => {}
                     }
@@ -285,14 +287,14 @@ impl Interpreter {
                 Ok(RValue::Null)
             }
 
-            Expr::Break => Err(RError::Break),
-            Expr::Next => Err(RError::Next),
+            Expr::Break => Err(RFlow::Signal(RSignal::Break)),
+            Expr::Next => Err(RFlow::Signal(RSignal::Next)),
             Expr::Return(val) => {
                 let ret_val = match val {
                     Some(expr) => self.eval_in(expr, env)?,
                     None => RValue::Null,
                 };
-                Err(RError::Return(ret_val))
+                Err(RFlow::Signal(RSignal::Return(ret_val)))
             }
 
             Expr::Block(exprs) => {
@@ -319,7 +321,7 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_unary(&self, op: UnaryOp, val: &RValue) -> Result<RValue, RError> {
+    pub fn eval_unary(&self, op: UnaryOp, val: &RValue) -> Result<RValue, RFlow> {
         match op {
             UnaryOp::Neg => match val {
                 RValue::Vector(v) => {
@@ -345,14 +347,13 @@ impl Interpreter {
                         _ => {
                             return Err(RError::Type(
                                 "invalid argument to unary operator".to_string(),
-                            ))
+                            )
+                            .into())
                         }
                     };
                     Ok(RValue::vec(result))
                 }
-                _ => Err(RError::Type(
-                    "invalid argument to unary operator".to_string(),
-                )),
+                _ => Err(RError::Type("invalid argument to unary operator".to_string()).into()),
             },
             UnaryOp::Pos => Ok(val.clone()),
             UnaryOp::Not => match val {
@@ -362,7 +363,7 @@ impl Interpreter {
                         logicals.iter().map(|x| x.map(|b| !b)).collect();
                     Ok(RValue::vec(Vector::Logical(result.into())))
                 }
-                _ => Err(RError::Type("invalid argument type".to_string())),
+                _ => Err(RError::Type("invalid argument type".to_string()).into()),
             },
             UnaryOp::Formula => Ok(RValue::Null), // stub for unary ~
         }
@@ -373,7 +374,7 @@ impl Interpreter {
         op: BinaryOp,
         left: &RValue,
         right: &RValue,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         match op {
             BinaryOp::Range => return self.eval_range(left, right),
             BinaryOp::Special(SpecialOp::In) => return self.eval_in_op(left, right),
@@ -386,18 +387,18 @@ impl Interpreter {
             RValue::Vector(v) => v,
             RValue::Null => return Ok(RValue::Null),
             _ => {
-                return Err(RError::Type(
-                    "non-numeric argument to binary operator".to_string(),
-                ))
+                return Err(
+                    RError::Type("non-numeric argument to binary operator".to_string()).into(),
+                )
             }
         };
         let rv = match right {
             RValue::Vector(v) => v,
             RValue::Null => return Ok(RValue::Null),
             _ => {
-                return Err(RError::Type(
-                    "non-numeric argument to binary operator".to_string(),
-                ))
+                return Err(
+                    RError::Type("non-numeric argument to binary operator".to_string()).into(),
+                )
             }
         };
 
@@ -460,7 +461,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_arith(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
+    fn eval_arith(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         // Check if both are integer and op preserves integer type
         let use_integer = matches!(
             (&lv, &rv, &op),
@@ -521,7 +522,7 @@ impl Interpreter {
                 return Ok(RValue::vec(Vector::Complex(vec![].into())));
             }
             if matches!(op, BinaryOp::Mod | BinaryOp::IntDiv) {
-                return Err(RError::Type("unimplemented complex operation".to_string()));
+                return Err(RError::Type("unimplemented complex operation".to_string()).into());
             }
             let result: Vec<Option<num_complex::Complex64>> = (0..len)
                 .map(|i| {
@@ -572,13 +573,13 @@ impl Interpreter {
         Ok(RValue::vec(Vector::Double(result.into())))
     }
 
-    fn eval_compare(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
+    fn eval_compare(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         // Complex comparison: only == and != are defined
         if matches!(lv, Vector::Complex(_)) || matches!(rv, Vector::Complex(_)) {
             if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
-                return Err(RError::Type(
-                    "invalid comparison with complex values".to_string(),
-                ));
+                return Err(
+                    RError::Type("invalid comparison with complex values".to_string()).into(),
+                );
             }
             let lc = lv.to_complex();
             let rc = rv.to_complex();
@@ -654,7 +655,7 @@ impl Interpreter {
         Ok(RValue::vec(Vector::Logical(result.into())))
     }
 
-    fn eval_logical_vec(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RError> {
+    fn eval_logical_vec(&self, op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         let ll = lv.to_logicals();
         let rl = rv.to_logicals();
         let len = ll.len().max(rl.len());
@@ -681,7 +682,7 @@ impl Interpreter {
         Ok(RValue::vec(Vector::Logical(result.into())))
     }
 
-    fn eval_range(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    fn eval_range(&self, left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
         let from = match left {
             RValue::Vector(v) => f64_to_i64(v.as_double_scalar().unwrap_or(0.0))?,
             _ => 0,
@@ -699,7 +700,7 @@ impl Interpreter {
         Ok(RValue::vec(Vector::Integer(result.into())))
     }
 
-    fn eval_in_op(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    fn eval_in_op(&self, left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
         match (left, right) {
             (RValue::Vector(lv), RValue::Vector(rv)) => {
                 // If either side is character, compare as strings
@@ -732,7 +733,7 @@ impl Interpreter {
     }
 
     /// Matrix multiplication using ndarray
-    fn eval_matmul(&self, left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    fn eval_matmul(&self, left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
         // Helper to extract matrix dims and data
         fn to_matrix(val: &RValue) -> Result<(Array2<f64>, usize, usize), RError> {
             let (data, dim_attr) = match val {
@@ -771,7 +772,8 @@ impl Interpreter {
                 acols,
                 brows,
                 bcols
-            )));
+            ))
+            .into());
         }
 
         let c = a.dot(&b);
@@ -795,7 +797,7 @@ impl Interpreter {
         Ok(RValue::Vector(rv))
     }
 
-    fn eval_pipe(&self, lhs: &Expr, rhs: &Expr, env: &Environment) -> Result<RValue, RError> {
+    fn eval_pipe(&self, lhs: &Expr, rhs: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         let left_val = self.eval_in(lhs, env)?;
         // rhs should be a function call; inject left_val as first argument
         match rhs {
@@ -819,7 +821,7 @@ impl Interpreter {
                 let f = env.get(name).ok_or_else(|| RError::Name(name.clone()))?;
                 self.call_function(&f, &[left_val], &[], env)
             }
-            _ => Err(RError::Other("invalid use of pipe".to_string())),
+            _ => Err(RError::Other("invalid use of pipe".to_string()).into()),
         }
     }
 
@@ -829,7 +831,7 @@ impl Interpreter {
         target: &Expr,
         val: RValue,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         match target {
             Expr::Symbol(name) => {
                 match op {
@@ -876,7 +878,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Err(RError::Other("invalid assignment target".to_string()))
+                Err(RError::Other("invalid assignment target".to_string()).into())
             }
             // In R, "name" <- value creates a binding named "name"
             Expr::String(name) => {
@@ -890,11 +892,11 @@ impl Interpreter {
                 }
                 Ok(val)
             }
-            _ => Err(RError::Other("invalid assignment target".to_string())),
+            _ => Err(RError::Other("invalid assignment target".to_string()).into()),
         }
     }
 
-    fn eval_call(&self, func: &Expr, args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    fn eval_call(&self, func: &Expr, args: &[Arg], env: &Environment) -> Result<RValue, RFlow> {
         let f = self.eval_in(func, env)?;
 
         // R behavior: if the symbol resolved to a non-function but we're in
@@ -915,7 +917,7 @@ impl Interpreter {
         if let RValue::Function(RFunction::Builtin { name, .. }) = &f {
             for &(pname, pfunc, _) in builtins::PRE_EVAL_BUILTIN_REGISTRY {
                 if pname == name {
-                    return pfunc(args, env);
+                    return pfunc(args, env).map_err(Into::into);
                 }
             }
         }
@@ -958,16 +960,16 @@ impl Interpreter {
         positional: &[RValue],
         named: &[(String, RValue)],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         match func {
             RValue::Function(RFunction::Builtin { func, name, .. }) => {
                 // Check interpreter-level builtins (access interp via thread-local)
                 for &(iname, ifunc, _) in builtins::INTERPRETER_BUILTIN_REGISTRY {
                     if iname == name {
-                        return ifunc(positional, named, env);
+                        return ifunc(positional, named, env).map_err(Into::into);
                     }
                 }
-                func(positional, named)
+                func(positional, named).map_err(Into::into)
             }
             RValue::Function(RFunction::Closure {
                 params,
@@ -1024,7 +1026,7 @@ impl Interpreter {
 
                 let result = match self.eval_in(body, &call_env) {
                     Ok(val) => Ok(val),
-                    Err(RError::Return(val)) => Ok(val),
+                    Err(RFlow::Signal(RSignal::Return(val))) => Ok(val),
                     Err(e) => Err(e),
                 };
 
@@ -1037,7 +1039,7 @@ impl Interpreter {
 
                 result
             }
-            _ => Err(RError::Type("attempt to apply non-function".to_string())),
+            _ => Err(RError::Type("attempt to apply non-function".to_string()).into()),
         }
     }
 
@@ -1046,7 +1048,7 @@ impl Interpreter {
         object: &Expr,
         indices: &[Arg],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         let obj = self.eval_in(object, env)?;
 
         if indices.is_empty() {
@@ -1082,7 +1084,7 @@ impl Interpreter {
                         self.index_by_integer(v, &indices)
                     }
                     RValue::Null => Ok(obj.clone()),
-                    _ => Err(RError::Index("invalid index type".to_string())),
+                    _ => Err(RError::Index("invalid index type".to_string()).into()),
                 }
             }
             RValue::List(list) => {
@@ -1114,10 +1116,10 @@ impl Interpreter {
                         }
                         Ok(RValue::List(RList::new(result)))
                     }
-                    _ => Err(RError::Index("invalid index type".to_string())),
+                    _ => Err(RError::Index("invalid index type".to_string()).into()),
                 }
             }
-            _ => Err(RError::Index("object is not subsettable".to_string())),
+            _ => Err(RError::Index("object is not subsettable".to_string()).into()),
         }
     }
 
@@ -1127,7 +1129,7 @@ impl Interpreter {
         obj: &RValue,
         indices: &[Arg],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         // Get the dim attribute
         let (data, dim_attr) = match obj {
             RValue::Vector(rv) => (&rv.inner, rv.get_attr("dim")),
@@ -1135,19 +1137,19 @@ impl Interpreter {
                 // Data frame: x[rows, cols] or list with dim
                 return self.eval_list_2d_index(l, indices, env);
             }
-            _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+            _ => return Err(RError::Index("incorrect number of dimensions".to_string()).into()),
         };
 
         let dims = match dim_attr {
             Some(RValue::Vector(rv)) => match &rv.inner {
                 Vector::Integer(d) => d.0.clone(),
-                _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+                _ => return Err(RError::Index("incorrect number of dimensions".to_string()).into()),
             },
-            _ => return Err(RError::Index("incorrect number of dimensions".to_string())),
+            _ => return Err(RError::Index("incorrect number of dimensions".to_string()).into()),
         };
 
         if dims.len() < 2 {
-            return Err(RError::Index("incorrect number of dimensions".to_string()));
+            return Err(RError::Index("incorrect number of dimensions".to_string()).into());
         }
         let nrow = usize::try_from(dims[0].unwrap_or(0)).unwrap_or(0);
         let ncol = usize::try_from(dims[1].unwrap_or(0)).unwrap_or(0);
@@ -1175,7 +1177,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect(),
-            _ => return Err(RError::Index("invalid row index".to_string())),
+            _ => return Err(RError::Index("invalid row index".to_string()).into()),
         };
 
         let cols: Vec<usize> = match &col_idx {
@@ -1185,7 +1187,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect(),
-            _ => return Err(RError::Index("invalid column index".to_string())),
+            _ => return Err(RError::Index("invalid column index".to_string()).into()),
         };
 
         // Extract elements in column-major order
@@ -1226,7 +1228,7 @@ impl Interpreter {
         list: &RList,
         indices: &[Arg],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         // For data frames: x[rows, cols]
         let is_df = if let Some(RValue::Vector(rv)) = list.get_attr("class") {
             if let Vector::Character(cls) = &rv.inner {
@@ -1391,7 +1393,7 @@ impl Interpreter {
         &self,
         v: &Vector,
         indices: &[Option<i64>],
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         macro_rules! index_vec {
             ($vals:expr, $variant:ident) => {{
                 let result: Vec<_> = indices
@@ -1419,7 +1421,7 @@ impl Interpreter {
         }
     }
 
-    fn index_by_negative(&self, v: &Vector, indices: &[Option<i64>]) -> Result<RValue, RError> {
+    fn index_by_negative(&self, v: &Vector, indices: &[Option<i64>]) -> Result<RValue, RFlow> {
         let exclude: Vec<usize> = indices
             .iter()
             .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
@@ -1445,7 +1447,7 @@ impl Interpreter {
         }
     }
 
-    fn index_by_logical(&self, v: &Vector, mask: &[Option<bool>]) -> Result<RValue, RError> {
+    fn index_by_logical(&self, v: &Vector, mask: &[Option<bool>]) -> Result<RValue, RFlow> {
         macro_rules! mask_vec {
             ($vals:expr, $variant:ident) => {{
                 let result: Vec<_> = $vals
@@ -1471,7 +1473,7 @@ impl Interpreter {
         object: &Expr,
         indices: &[Arg],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         let obj = self.eval_in(object, env)?;
         if indices.is_empty() {
             return Ok(obj);
@@ -1538,16 +1540,11 @@ impl Interpreter {
                     Ok(RValue::Null)
                 }
             }
-            _ => Err(RError::Index("object is not subsettable".to_string())),
+            _ => Err(RError::Index("object is not subsettable".to_string()).into()),
         }
     }
 
-    fn eval_dollar(
-        &self,
-        object: &Expr,
-        member: &str,
-        env: &Environment,
-    ) -> Result<RValue, RError> {
+    fn eval_dollar(&self, object: &Expr, member: &str, env: &Environment) -> Result<RValue, RFlow> {
         let obj = self.eval_in(object, env)?;
         match &obj {
             RValue::List(list) => {
@@ -1560,7 +1557,7 @@ impl Interpreter {
             }
             RValue::Environment(e) => e
                 .get(member)
-                .ok_or_else(|| RError::Name(member.to_string())),
+                .ok_or_else(|| RError::Name(member.to_string()).into()),
             _ => Ok(RValue::Null),
         }
     }
@@ -1571,10 +1568,10 @@ impl Interpreter {
         indices: &[Arg],
         val: RValue,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string())),
+            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
@@ -1594,12 +1591,12 @@ impl Interpreter {
             RValue::Vector(v) => {
                 let idx_ints = match &idx_val {
                     RValue::Vector(iv) => iv.to_integers(),
-                    _ => return Err(RError::Index("invalid index".to_string())),
+                    _ => return Err(RError::Index("invalid index".to_string()).into()),
                 };
 
                 let new_vals = match &val {
                     RValue::Vector(vv) => vv.to_doubles(),
-                    _ => return Err(RError::Type("replacement value error".to_string())),
+                    _ => return Err(RError::Type("replacement value error".to_string()).into()),
                 };
 
                 let mut doubles = v.to_doubles();
@@ -1684,7 +1681,7 @@ impl Interpreter {
                 }
                 Ok(val)
             }
-            _ => Err(RError::Index("object is not subsettable".to_string())),
+            _ => Err(RError::Index("object is not subsettable".to_string()).into()),
         }
     }
 
@@ -1694,10 +1691,10 @@ impl Interpreter {
         indices: &[Arg],
         val: RValue,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string())),
+            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env
@@ -1752,10 +1749,10 @@ impl Interpreter {
         member: &str,
         val: RValue,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string())),
+            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env
@@ -1794,13 +1791,13 @@ impl Interpreter {
         namespace: &Expr,
         name: &str,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         // For now, just look up the name in the global environment
         // A real implementation would use R's namespace/package system
         let _ns = self.eval_in(namespace, env)?;
         env.get(name)
             .or_else(|| self.global_env.get(name))
-            .ok_or_else(|| RError::Name(format!("{}::{}", "pkg", name)))
+            .ok_or_else(|| RError::Name(format!("{}::{}", "pkg", name)).into())
     }
 
     fn eval_for(
@@ -1809,7 +1806,7 @@ impl Interpreter {
         iter_val: &RValue,
         body: &Expr,
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         match iter_val {
             RValue::Vector(v) => {
                 let len = v.len();
@@ -1826,8 +1823,8 @@ impl Interpreter {
                     env.set(var.to_string(), elem);
                     match self.eval_in(body, env) {
                         Ok(_) => {}
-                        Err(RError::Next) => continue,
-                        Err(RError::Break) => break,
+                        Err(RFlow::Signal(RSignal::Next)) => continue,
+                        Err(RFlow::Signal(RSignal::Break)) => break,
                         Err(e) => return Err(e),
                     }
                 }
@@ -1837,14 +1834,14 @@ impl Interpreter {
                     env.set(var.to_string(), val.clone());
                     match self.eval_in(body, env) {
                         Ok(_) => {}
-                        Err(RError::Next) => continue,
-                        Err(RError::Break) => break,
+                        Err(RFlow::Signal(RSignal::Next)) => continue,
+                        Err(RFlow::Signal(RSignal::Break)) => break,
                         Err(e) => return Err(e),
                     }
                 }
             }
             RValue::Null => {}
-            _ => return Err(RError::Type("invalid for() loop sequence".to_string())),
+            _ => return Err(RError::Type("invalid for() loop sequence".to_string()).into()),
         }
         Ok(RValue::Null)
     }
@@ -1856,7 +1853,7 @@ impl Interpreter {
         positional: &[RValue],
         named: &[(String, RValue)],
         env: &Environment,
-    ) -> Result<RValue, RError> {
+    ) -> Result<RValue, RFlow> {
         // Get class of first argument
         let classes = match positional.first() {
             Some(RValue::List(l)) => {
@@ -1924,6 +1921,7 @@ impl Interpreter {
             "no applicable method for '{}' applied to an object of class \"{}\"",
             generic,
             classes.first().unwrap_or(&"unknown".to_string())
-        )))
+        ))
+        .into())
     }
 }

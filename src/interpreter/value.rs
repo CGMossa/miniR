@@ -573,10 +573,6 @@ pub enum RError {
         condition: RValue,
         kind: ConditionKind,
     },
-    // Control flow — will be removed from RError once all callers migrate to RFlow
-    Return(RValue),
-    Break,
-    Next,
 }
 
 /// Control flow signals — not errors, but propagated via Result for convenience
@@ -602,13 +598,12 @@ impl From<RSignal> for RFlow {
 }
 
 impl From<RFlow> for RError {
-    /// Convert back from RFlow to RError. Signals become their RError equivalents.
+    /// Convert back from RFlow to RError. Signals become Other errors (they shouldn't
+    /// normally reach builtin boundaries, but if they do we don't lose information).
     fn from(f: RFlow) -> Self {
         match f {
             RFlow::Error(e) => e,
-            RFlow::Signal(RSignal::Return(v)) => RError::Return(v),
-            RFlow::Signal(RSignal::Break) => RError::Break,
-            RFlow::Signal(RSignal::Next) => RError::Next,
+            RFlow::Signal(s) => RError::Other(format!("{}", s)),
         }
     }
 }
@@ -693,22 +688,14 @@ impl fmt::Display for RError {
                 }
                 write!(f, "Error: <condition>")
             }
-            RError::Return(_) => write!(f, "no function to return from"),
-            RError::Break => write!(f, "no loop for break/next, jumping to top level"),
-            RError::Next => write!(f, "no loop for break/next, jumping to top level"),
         }
     }
 }
 
-/// Convert an `RError` into an `RFlow`, separating control flow from real errors.
+/// Convert an `RError` into an `RFlow`.
 impl From<RError> for RFlow {
     fn from(e: RError) -> Self {
-        match e {
-            RError::Return(v) => RFlow::Signal(RSignal::Return(v)),
-            RError::Break => RFlow::Signal(RSignal::Break),
-            RError::Next => RFlow::Signal(RSignal::Next),
-            other => RFlow::Error(other),
-        }
+        RFlow::Error(e)
     }
 }
 

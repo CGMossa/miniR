@@ -205,9 +205,13 @@ fn interp_do_call(
         return with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
                 let args: Vec<RValue> = l.values.iter().map(|(_, v)| v.clone()).collect();
-                interp.call_function(&f, &args, named, env)
+                interp
+                    .call_function(&f, &args, named, env)
+                    .map_err(RError::from)
             }
-            _ => interp.call_function(&f, &positional[1..], named, env),
+            _ => interp
+                .call_function(&f, &positional[1..], named, env)
+                .map_err(RError::from),
         });
     }
     Err(RError::Argument(
@@ -552,7 +556,7 @@ fn interp_system_time(
 fn eval_binop(op: BinaryOp, args: &[RValue]) -> Result<RValue, RError> {
     let left = args.first().cloned().unwrap_or(RValue::Null);
     let right = args.get(1).cloned().unwrap_or(RValue::Null);
-    with_interpreter(|interp| interp.eval_binary(op, &left, &right))
+    with_interpreter(|interp| interp.eval_binary(op, &left, &right)).map_err(RError::from)
 }
 
 #[interpreter_builtin(name = "+", min_args = 1)]
@@ -562,7 +566,7 @@ fn interp_op_add(
     _env: &Environment,
 ) -> Result<RValue, RError> {
     if args.len() == 1 {
-        with_interpreter(|interp| interp.eval_unary(UnaryOp::Pos, &args[0]))
+        with_interpreter(|interp| interp.eval_unary(UnaryOp::Pos, &args[0])).map_err(RError::from)
     } else {
         eval_binop(BinaryOp::Add, args)
     }
@@ -575,7 +579,7 @@ fn interp_op_sub(
     _env: &Environment,
 ) -> Result<RValue, RError> {
     if args.len() == 1 {
-        with_interpreter(|interp| interp.eval_unary(UnaryOp::Neg, &args[0]))
+        with_interpreter(|interp| interp.eval_unary(UnaryOp::Neg, &args[0])).map_err(RError::from)
     } else {
         eval_binop(BinaryOp::Sub, args)
     }
@@ -704,7 +708,7 @@ fn interp_op_not(
     _named: &[(String, RValue)],
     _env: &Environment,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| interp.eval_unary(UnaryOp::Not, &args[0]))
+    with_interpreter(|interp| interp.eval_unary(UnaryOp::Not, &args[0])).map_err(RError::from)
 }
 
 /// Convert an RValue to a Vec of individual items (for apply/map/filter/reduce).
@@ -775,7 +779,9 @@ fn interp_next_method(
                     object: args.first().cloned().unwrap_or(RValue::Null),
                 };
                 interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-                let result = interp.call_function(&method, &args, named, env);
+                let result = interp
+                    .call_function(&method, &args, named, env)
+                    .map_err(RError::from);
                 interp.s3_dispatch_stack.borrow_mut().pop();
                 return result;
             }
@@ -791,7 +797,9 @@ fn interp_next_method(
                 object: args.first().cloned().unwrap_or(RValue::Null),
             };
             interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-            let result = interp.call_function(&method, &args, named, env);
+            let result = interp
+                .call_function(&method, &args, named, env)
+                .map_err(RError::from);
             interp.s3_dispatch_stack.borrow_mut().pop();
             return result;
         }
@@ -951,13 +959,15 @@ fn interp_eval(
 
     match expr {
         // Language object: evaluate the AST
-        RValue::Language(ast) => with_interpreter(|interp| interp.eval_in(ast, &eval_env)),
+        RValue::Language(ast) => {
+            with_interpreter(|interp| interp.eval_in(ast, &eval_env)).map_err(RError::from)
+        }
         // Character string: parse then eval
         RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
             let text = rv.as_character_scalar().unwrap_or_default();
             let parsed =
                 crate::parser::parse_program(&text).map_err(|e| RError::Parse(format!("{}", e)))?;
-            with_interpreter(|interp| interp.eval_in(&parsed, &eval_env))
+            with_interpreter(|interp| interp.eval_in(&parsed, &eval_env)).map_err(RError::from)
         }
         // Already evaluated value: return as-is
         _ => Ok(expr.clone()),
