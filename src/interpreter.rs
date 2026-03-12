@@ -122,7 +122,7 @@ impl Interpreter {
                         env,
                     );
                     match &result {
-                        Err(RFlow::Error(RError::Other(msg)))
+                        Err(RFlow::Error(RError::Other { message: msg, .. }))
                             if msg == "muffleWarning" || msg == "muffleMessage" =>
                         {
                             return Ok(true);
@@ -172,31 +172,30 @@ impl Interpreter {
             Expr::Dots => {
                 // Return the ... list from the current environment
                 env.get("...").ok_or_else(|| {
-                    RError::Other("'...' used in incorrect context".to_string()).into()
+                    RError::other("'...' used in incorrect context".to_string()).into()
                 })
             }
             Expr::DotDot(n) => {
                 if *n == 0 {
-                    return Err(RError::Other(
+                    return Err(RError::other(
                         "..0 is not valid — R uses 1-based indexing for ... arguments.\n  \
-                         Did you mean ..1? (..1 is the first element, ..2 is the second, etc.)"
-                            .to_string(),
+                         Did you mean ..1? (..1 is the first element, ..2 is the second, etc.)",
                     )
                     .into());
                 }
                 // ..1, ..2 etc. — 1-indexed access into ...
                 let dots = env
                     .get("...")
-                    .ok_or_else(|| RError::Other(format!("'..{}' used in incorrect context", n)))?;
+                    .ok_or_else(|| RError::other(format!("'..{}' used in incorrect context", n)))?;
                 match dots {
                     RValue::List(list) => {
                         let idx = usize::try_from(i64::from(*n))?.saturating_sub(1);
                         list.values.get(idx).map(|(_, v)| v.clone()).ok_or_else(|| {
-                            RError::Other(format!("the ... list does not contain {} elements", n))
+                            RError::other(format!("the ... list does not contain {} elements", n))
                                 .into()
                         })
                     }
-                    _ => Err(RError::Other(format!("'..{}' used in incorrect context", n)).into()),
+                    _ => Err(RError::other(format!("'..{}' used in incorrect context", n)).into()),
                 }
             }
 
@@ -758,7 +757,7 @@ impl Interpreter {
             // ndarray uses row-major by default, R uses column-major
             // Array2::from_shape_vec with column-major (Fortran) order
             let arr = Array2::from_shape_vec((nrow, ncol).f(), flat)
-                .map_err(|e| RError::Other(format!("matrix shape error: {}", e)))?;
+                .map_err(|e| RError::other(format!("matrix shape error: {}", e)))?;
             Ok((arr, nrow, ncol))
         }
 
@@ -766,7 +765,7 @@ impl Interpreter {
         let (b, brows, bcols) = to_matrix(right)?;
 
         if acols != brows {
-            return Err(RError::Other(format!(
+            return Err(RError::other(format!(
                 "non-conformable arguments: {}x{} vs {}x{}",
                 a.nrows(),
                 acols,
@@ -821,7 +820,7 @@ impl Interpreter {
                 let f = env.get(name).ok_or_else(|| RError::Name(name.clone()))?;
                 self.call_function(&f, &[left_val], &[], env)
             }
-            _ => Err(RError::Other("invalid use of pipe".to_string()).into()),
+            _ => Err(RError::other("invalid use of pipe".to_string()).into()),
         }
     }
 
@@ -878,7 +877,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Err(RError::Other("invalid assignment target".to_string()).into())
+                Err(RError::other("invalid assignment target".to_string()).into())
             }
             // In R, "name" <- value creates a binding named "name"
             Expr::String(name) => {
@@ -892,7 +891,7 @@ impl Interpreter {
                 }
                 Ok(val)
             }
-            _ => Err(RError::Other("invalid assignment target".to_string()).into()),
+            _ => Err(RError::other("invalid assignment target".to_string()).into()),
         }
     }
 
@@ -905,7 +904,7 @@ impl Interpreter {
         let f = if !matches!(f, RValue::Function(_)) {
             if let Expr::Symbol(name) = func {
                 env.get_function(name)
-                    .ok_or_else(|| RError::Other("attempt to apply non-function".to_string()))?
+                    .ok_or_else(|| RError::other("attempt to apply non-function".to_string()))?
             } else {
                 f
             }
@@ -1571,7 +1570,7 @@ impl Interpreter {
     ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
+            _ => return Err(RError::other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
@@ -1694,7 +1693,7 @@ impl Interpreter {
     ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
+            _ => return Err(RError::other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env
@@ -1752,7 +1751,7 @@ impl Interpreter {
     ) -> Result<RValue, RFlow> {
         let var_name = match object {
             Expr::Symbol(name) => name.clone(),
-            _ => return Err(RError::Other("invalid assignment target".to_string()).into()),
+            _ => return Err(RError::other("invalid assignment target".to_string()).into()),
         };
 
         let mut obj = env
@@ -1917,7 +1916,7 @@ impl Interpreter {
             return result;
         }
 
-        Err(RError::Other(format!(
+        Err(RError::other(format!(
             "no applicable method for '{}' applied to an object of class \"{}\"",
             generic,
             classes.first().unwrap_or(&"unknown".to_string())

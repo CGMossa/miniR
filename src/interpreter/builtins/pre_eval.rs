@@ -193,7 +193,7 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
     // Create a handler that muffles warnings by signaling muffleWarning
     let muffle_handler = RValue::Function(RFunction::Builtin {
         name: "suppressWarnings_handler".to_string(),
-        func: |_args, _named| Err(RError::Other("muffleWarning".to_string())),
+        func: |_args, _named| Err(RError::other("muffleWarning".to_string())),
     });
 
     let handler_set = vec![ConditionHandler {
@@ -221,7 +221,7 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
 
     let muffle_handler = RValue::Function(RFunction::Builtin {
         name: "suppressMessages_handler".to_string(),
-        func: |_args, _named| Err(RError::Other("muffleMessage".to_string())),
+        func: |_args, _named| Err(RError::other("muffleMessage".to_string())),
     });
 
     let handler_set = vec![ConditionHandler {

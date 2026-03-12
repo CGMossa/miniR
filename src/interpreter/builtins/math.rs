@@ -1434,7 +1434,7 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     };
     let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
     Array2::from_shape_vec((nrow, ncol).f(), flat)
-        .map_err(|e| RError::Other(format!("matrix shape error: {}", e)))
+        .map_err(|e| RError::other(format!("matrix shape error: {}", e)))
 }
 
 /// Convert an ndarray Array2 back to an RValue matrix
@@ -1612,10 +1612,9 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         }
 
         if max_val < 1e-15 {
-            return Err(RError::Other(
+            return Err(RError::other(
                 "solve(): matrix is singular (or very close to singular). \
-                 Check that your matrix has full rank — its determinant is effectively zero"
-                    .to_string(),
+                 Check that your matrix has full rank — its determinant is effectively zero",
             ));
         }
 

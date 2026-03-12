@@ -23,7 +23,7 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
     match fs::copy(&from, &to) {
         Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::Other(format!(
+        Err(e) => Err(RError::other(format!(
             "cannot copy '{}' to '{}': {}",
             from, to, e
         ))),
@@ -79,7 +79,7 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 
     match fs::rename(&from, &to) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::Other(format!(
+        Err(e) => Err(RError::other(format!(
             "cannot rename '{}' to '{}': {}",
             from, to, e
         ))),
@@ -250,7 +250,7 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     // miniR diverges from R: recursive by default
     match fs::create_dir_all(&path) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(e) => Err(RError::Other(format!(
+        Err(e) => Err(RError::other(format!(
             "cannot create directory '{}': {}",
             path, e
         ))),
@@ -286,7 +286,7 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
     let regex = match &pattern {
         Some(pat) => Some(regex::Regex::new(pat).map_err(|e| {
-            RError::Other(format!(
+            RError::other(format!(
                 "invalid regex pattern '{}': {}. Check your pattern syntax.",
                 pat, e
             ))
@@ -295,7 +295,7 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     };
 
     let entries = fs::read_dir(&path).map_err(|e| {
-        RError::Other(format!(
+        RError::other(format!(
             "cannot open directory '{}': {}. Does the directory exist?",
             path, e
         ))
@@ -381,7 +381,7 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
                 }
             }
             Err(e) => {
-                return Err(RError::Other(format!(
+                return Err(RError::other(format!(
                     "invalid glob pattern '{}': {}",
                     pattern, e
                 )));
@@ -442,7 +442,7 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
         .arg("-c")
         .arg(&command)
         .status()
-        .map_err(|e| RError::Other(format!("cannot execute command '{}': {}", command, e)))?;
+        .map_err(|e| RError::other(format!("cannot execute command '{}': {}", command, e)))?;
 
     let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
@@ -466,7 +466,7 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
         .args(&cmd_args)
         .status()
         .map_err(|e| {
-            RError::Other(format!(
+            RError::other(format!(
                 "cannot execute '{}': {}. Is the program installed and in PATH?",
                 command, e
             ))
@@ -529,7 +529,7 @@ fn builtin_setwd(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
         .unwrap_or_default();
 
     std::env::set_current_dir(&dir).map_err(|e| {
-        RError::Other(format!(
+        RError::other(format!(
             "cannot change working directory to '{}': {}. Does the directory exist?",
             dir, e
         ))

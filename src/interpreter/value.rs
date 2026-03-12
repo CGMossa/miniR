@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::num::TryFromIntError;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut};
 
@@ -567,7 +568,12 @@ pub enum RError {
     Index(String),
     #[allow(dead_code)]
     Parse(String),
-    Other(String),
+    /// General error with optional source chain. Use `RError::other("msg")` for simple
+    /// messages or `RError::caused_by("msg", source)` to preserve the error chain.
+    Other {
+        message: String,
+        source: Option<Arc<dyn std::error::Error + Send + Sync>>,
+    },
     /// R condition signal — carries a condition object (list with class attribute)
     Condition {
         condition: RValue,
@@ -603,7 +609,7 @@ impl From<RFlow> for RError {
     fn from(f: RFlow) -> Self {
         match f {
             RFlow::Error(e) => e,
-            RFlow::Signal(s) => RError::Other(format!("{}", s)),
+            RFlow::Signal(s) => RError::other(format!("{}", s)),
         }
     }
 }
@@ -642,6 +648,25 @@ impl From<TryFromIntError> for RError {
 }
 
 impl RError {
+    /// Create an Other error with just a message (no source chain).
+    pub fn other(message: impl Into<String>) -> Self {
+        RError::Other {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// Create an Other error that preserves the source error chain.
+    pub fn caused_by(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        RError::Other {
+            message: message.into(),
+            source: Some(Arc::new(source)),
+        }
+    }
+
     /// Extract the error message string from any RError variant.
     #[allow(dead_code)]
     pub fn message(&self) -> String {
@@ -673,7 +698,10 @@ impl fmt::Display for RError {
             RError::Name(msg) => write!(f, "Error: object '{}' not found", msg),
             RError::Index(msg) => write!(f, "Error in indexing: {}", msg),
             RError::Parse(msg) => write!(f, "Error in parse: {}", msg),
-            RError::Other(msg) => write!(f, "Error: {}", msg),
+            RError::Other { message, source } => match source {
+                Some(src) => write!(f, "Error: {}: {}", message, src),
+                None => write!(f, "Error: {}", message),
+            },
             RError::Condition { condition, .. } => {
                 if let RValue::List(list) = condition {
                     for (name, val) in &list.values {
