@@ -31,6 +31,17 @@ vendor:
     printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
     echo "$CURRENT_HASH" > "$HASH_FILE"
 
+# Find minimum supported Rust version (requires cargo-msrv)
+find-msrv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! cargo msrv --version &>/dev/null; then
+        echo "error: cargo-msrv is not installed" >&2
+        echo "  install it with: cargo install cargo-msrv" >&2
+        exit 1
+    fi
+    cargo msrv find --min 1.66
+
 # Re-vendor crates unconditionally (ignores hash check)
 vendor-force:
     #!/usr/bin/env bash
