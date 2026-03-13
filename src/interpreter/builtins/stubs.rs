@@ -40,8 +40,6 @@ noop_builtin!("close", 1);
 noop_builtin!("open", 1);
 
 // Serialization
-noop_builtin!("readRDS", 1);
-noop_builtin!("saveRDS", 2);
 noop_builtin!("load", 1);
 noop_builtin!("save");
 

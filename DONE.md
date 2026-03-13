@@ -80,6 +80,10 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `deparse(expr)` — expression to string
 - `dput(x)` — output R representation of object
 - `sys.call()` / `sys.calls()` — current and active call expressions
+
+## I/O
+
+- `readRDS(file)` / `saveRDS(object, file)` — text-based miniRDS round-trip for common miniR values
 - `sys.function()` / `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.on.exit()` — call-stack introspection
 - `sys.nframe()` / `nargs()` / `parent.frame()` — stack depth and caller lookup
 
