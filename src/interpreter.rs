@@ -129,6 +129,32 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
+    fn ensure_builtin_max_arity(
+        name: &str,
+        max_args: Option<usize>,
+        actual_args: usize,
+    ) -> Result<(), RError> {
+        let Some(max_args) = max_args else {
+            return Ok(());
+        };
+
+        if actual_args <= max_args {
+            return Ok(());
+        }
+
+        let expectation = match max_args {
+            0 => "takes no arguments".to_string(),
+            1 => "takes at most 1 argument".to_string(),
+            n => format!("takes at most {n} arguments"),
+        };
+        let suffix = if actual_args == 1 { "" } else { "s" };
+
+        Err(RError::new(
+            RErrorKind::Argument,
+            format!("{name}() {expectation}, got {actual_args} argument{suffix}"),
+        ))
+    }
+
     pub fn new() -> Self {
         let base_env = Environment::new_global();
         base_env.set_name("base".to_string());
@@ -1080,6 +1106,7 @@ impl Interpreter {
         if let RValue::Function(RFunction::Builtin {
             name,
             implementation,
+            max_args,
             ..
         }) = &f
         {
@@ -1087,6 +1114,7 @@ impl Interpreter {
                 return self.eval_use_method(args, env);
             }
             if let BuiltinImplementation::PreEval(handler) = implementation {
+                Self::ensure_builtin_max_arity(name, *max_args, args.len()).map_err(RFlow::from)?;
                 return handler(args, env).map_err(Into::into);
             }
         }
@@ -1224,16 +1252,29 @@ impl Interpreter {
         call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
         match func {
-            RValue::Function(RFunction::Builtin { implementation, .. }) => match implementation {
-                BuiltinImplementation::Eager(func) => func(positional, named).map_err(Into::into),
-                BuiltinImplementation::Interpreter(handler) => {
-                    handler(positional, named, env).map_err(Into::into)
+            RValue::Function(RFunction::Builtin {
+                name,
+                implementation,
+                max_args,
+                ..
+            }) => {
+                let actual_args = positional.len() + named.len();
+                Self::ensure_builtin_max_arity(name, *max_args, actual_args)
+                    .map_err(RFlow::from)?;
+
+                match implementation {
+                    BuiltinImplementation::Eager(func) => {
+                        func(positional, named).map_err(Into::into)
+                    }
+                    BuiltinImplementation::Interpreter(handler) => {
+                        handler(positional, named, env).map_err(Into::into)
+                    }
+                    BuiltinImplementation::PreEval(_) => Err(RError::other(
+                        "internal error: pre-eval builtin reached eager dispatch",
+                    )
+                    .into()),
                 }
-                BuiltinImplementation::PreEval(_) => Err(RError::other(
-                    "internal error: pre-eval builtin reached eager dispatch",
-                )
-                .into()),
-            },
+            }
             RValue::Function(RFunction::Closure {
                 params,
                 body,

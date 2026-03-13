@@ -1,7 +1,7 @@
-//! Noop stub builtins — not-yet-implemented functions that return their first
-//! argument (or NULL). Each is auto-registered via `noop_builtin!`.
+//! Stub builtins — not-yet-implemented functions that fail explicitly instead
+//! of returning misleading placeholder values.
 
-use minir_macros::noop_builtin;
+use minir_macros::stub_builtin;
 
 // Core language (on.exit and missing — pre_eval.rs; UseMethod — builtins.rs)
 
@@ -9,11 +9,11 @@ use minir_macros::noop_builtin;
 
 // Apply family (apply, mapply, tapply, by — interp.rs)
 // Linear algebra (norm, solve, outer — math.rs; crossprod, tcrossprod — math.rs)
-noop_builtin!("qr", 1);
-noop_builtin!("svd", 1);
-noop_builtin!("eigen", 1);
-noop_builtin!("det", 1);
-noop_builtin!("chol", 1);
+stub_builtin!("qr", 1);
+stub_builtin!("svd", 1);
+stub_builtin!("eigen", 1);
+stub_builtin!("det", 1);
+stub_builtin!("chol", 1);
 
 // Types (complex — math.rs; raw, rawShift, as.raw, is.raw — strings.rs)
 
@@ -25,19 +25,19 @@ noop_builtin!("chol", 1);
 
 // File I/O (scan — builtins.rs)
 // Package management
-noop_builtin!("loadNamespace", 1);
-noop_builtin!("requireNamespace", 1);
-noop_builtin!("installed.packages");
-noop_builtin!("install.packages");
+stub_builtin!("loadNamespace", 1);
+stub_builtin!("requireNamespace", 1);
+stub_builtin!("installed.packages");
+stub_builtin!("install.packages");
 
 // Regex
-noop_builtin!("reg.finalizer", 2);
+stub_builtin!("reg.finalizer", 2);
 
 // Connections
-noop_builtin!("url", 1);
-noop_builtin!("connection", 1);
-noop_builtin!("close", 1);
-noop_builtin!("open", 1);
+stub_builtin!("url", 1);
+stub_builtin!("connection", 1);
+stub_builtin!("close", 1);
+stub_builtin!("open", 1);
 
 // Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
-noop_builtin!("arity", 1);
+stub_builtin!("arity", 1);

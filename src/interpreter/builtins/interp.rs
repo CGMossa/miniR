@@ -902,7 +902,7 @@ fn interp_as_environment(
     }
 }
 
-#[interpreter_builtin(name = "globalenv")]
+#[interpreter_builtin(name = "globalenv", max_args = 0)]
 fn interp_globalenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -911,7 +911,7 @@ fn interp_globalenv(
     with_interpreter(|interp| Ok(RValue::Environment(interp.global_env.clone())))
 }
 
-#[interpreter_builtin(name = "baseenv")]
+#[interpreter_builtin(name = "baseenv", max_args = 0)]
 fn interp_baseenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -927,7 +927,7 @@ fn interp_baseenv(
     })
 }
 
-#[interpreter_builtin(name = "emptyenv")]
+#[interpreter_builtin(name = "emptyenv", max_args = 0)]
 fn interp_emptyenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -936,7 +936,7 @@ fn interp_emptyenv(
     Ok(RValue::Environment(Environment::new_empty()))
 }
 
-#[interpreter_builtin(name = "sys.call")]
+#[interpreter_builtin(name = "sys.call", max_args = 1)]
 fn interp_sys_call(
     positional: &[RValue],
     _named: &[(String, RValue)],
@@ -962,7 +962,7 @@ fn interp_sys_call(
     })
 }
 
-#[interpreter_builtin(name = "sys.function")]
+#[interpreter_builtin(name = "sys.function", max_args = 1)]
 fn interp_sys_function(
     positional: &[RValue],
     _named: &[(String, RValue)],
@@ -991,7 +991,7 @@ fn interp_sys_function(
     })
 }
 
-#[interpreter_builtin(name = "sys.frame")]
+#[interpreter_builtin(name = "sys.frame", max_args = 1)]
 fn interp_sys_frame(
     positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1017,7 +1017,7 @@ fn interp_sys_frame(
     })
 }
 
-#[interpreter_builtin(name = "sys.calls")]
+#[interpreter_builtin(name = "sys.calls", max_args = 0)]
 fn interp_sys_calls(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1033,7 +1033,7 @@ fn interp_sys_calls(
     })
 }
 
-#[interpreter_builtin(name = "sys.frames")]
+#[interpreter_builtin(name = "sys.frames", max_args = 0)]
 fn interp_sys_frames(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1049,7 +1049,7 @@ fn interp_sys_frames(
     })
 }
 
-#[interpreter_builtin(name = "sys.parents")]
+#[interpreter_builtin(name = "sys.parents", max_args = 0)]
 fn interp_sys_parents(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1065,7 +1065,7 @@ fn interp_sys_parents(
     })
 }
 
-#[interpreter_builtin(name = "sys.on.exit")]
+#[interpreter_builtin(name = "sys.on.exit", max_args = 0)]
 fn interp_sys_on_exit(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1088,7 +1088,7 @@ fn interp_sys_on_exit(
     })
 }
 
-#[interpreter_builtin(name = "sys.nframe")]
+#[interpreter_builtin(name = "sys.nframe", max_args = 0)]
 fn interp_sys_nframe(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1100,7 +1100,7 @@ fn interp_sys_nframe(
     })
 }
 
-#[interpreter_builtin(name = "nargs")]
+#[interpreter_builtin(name = "nargs", max_args = 0)]
 fn interp_nargs(
     _positional: &[RValue],
     _named: &[(String, RValue)],
@@ -1117,7 +1117,7 @@ fn interp_nargs(
     })
 }
 
-#[interpreter_builtin(name = "parent.frame")]
+#[interpreter_builtin(name = "parent.frame", max_args = 1)]
 fn interp_parent_frame(
     positional: &[RValue],
     _named: &[(String, RValue)],

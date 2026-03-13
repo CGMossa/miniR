@@ -664,6 +664,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                     Err(RError::Condition { condition, kind })
                 }),
                 min_args: 0,
+                max_args: None,
             }),
             env: env.clone(),
         })
@@ -795,6 +796,7 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
             Err(RError::other("muffleWarning".to_string()))
         }),
         min_args: 0,
+        max_args: None,
     });
 
     let handler_set = vec![ConditionHandler {
@@ -826,6 +828,7 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
             Err(RError::other("muffleMessage".to_string()))
         }),
         min_args: 0,
+        max_args: None,
     });
 
     let handler_set = vec![ConditionHandler {
