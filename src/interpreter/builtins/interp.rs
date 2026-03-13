@@ -5,7 +5,7 @@
 use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
-use crate::interpreter::{retarget_call_expr, BuiltinContext, S3DispatchContext};
+use crate::interpreter::BuiltinContext;
 use crate::parser::ast::{BinaryOp, UnaryOp};
 use minir_macros::interpreter_builtin;
 
@@ -785,70 +785,9 @@ fn interp_next_method(
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let env = context.env();
-    context.with_interpreter(|interp| {
-        // Clone the context data to avoid holding a borrow during dispatch
-        let (generic, classes, start, object) = {
-            let stack = interp.s3_dispatch_stack.borrow();
-            let ctx = stack.last().ok_or_else(|| {
-                RError::other("NextMethod called outside of a method dispatch".to_string())
-            })?;
-            (
-                ctx.generic.clone(),
-                ctx.classes.clone(),
-                ctx.class_index + 1,
-                ctx.object.clone(),
-            )
-        };
-
-        let args: Vec<RValue> = if positional.is_empty() {
-            vec![object.clone()]
-        } else {
-            positional.to_vec()
-        };
-
-        // Try remaining classes
-        for i in start..classes.len() {
-            let method_name = format!("{}.{}", generic, classes[i]);
-            if let Some(method) = env.get(&method_name) {
-                let next_ctx = S3DispatchContext {
-                    generic: generic.clone(),
-                    classes: classes.clone(),
-                    class_index: i,
-                    object: args.first().cloned().unwrap_or(RValue::Null),
-                };
-                interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-                let call_expr = retarget_call_expr(interp.current_call_expr(), &method_name);
-                let result = interp
-                    .call_function_with_call(&method, &args, named, env, call_expr)
-                    .map_err(RError::from);
-                interp.s3_dispatch_stack.borrow_mut().pop();
-                return result;
-            }
-        }
-
-        // Try generic.default
-        let default_name = format!("{}.default", generic);
-        if let Some(method) = env.get(&default_name) {
-            let next_ctx = S3DispatchContext {
-                generic: generic.clone(),
-                classes: classes.clone(),
-                class_index: classes.len(),
-                object: args.first().cloned().unwrap_or(RValue::Null),
-            };
-            interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-            let call_expr = retarget_call_expr(interp.current_call_expr(), &default_name);
-            let result = interp
-                .call_function_with_call(&method, &args, named, env, call_expr)
-                .map_err(RError::from);
-            interp.s3_dispatch_stack.borrow_mut().pop();
-            return result;
-        }
-
-        Err(RError::other(format!(
-            "no more methods to dispatch for '{}'",
-            generic
-        )))
-    })
+    context
+        .with_interpreter(|interp| interp.dispatch_next_method(positional, named, env))
+        .map_err(RError::from)
 }
 
 #[interpreter_builtin(name = "as.environment", min_args = 1)]
