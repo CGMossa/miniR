@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod call;
 pub mod coerce;
 pub mod environment;
 pub mod value;
@@ -9,6 +10,8 @@ use std::collections::HashSet;
 use ndarray::{Array2, ShapeBuilder};
 
 use crate::parser::ast::*;
+pub use call::BuiltinContext;
+pub(crate) use call::{retarget_call_expr, CallFrame, S3DispatchContext};
 use coerce::f64_to_i64;
 use environment::Environment;
 use value::*;
@@ -57,16 +60,6 @@ where
     })
 }
 
-pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
-    match call_expr {
-        Some(Expr::Call { args, .. }) => Some(Expr::Call {
-            func: Box::new(Expr::Symbol(target.to_string())),
-            args,
-        }),
-        _ => None,
-    }
-}
-
 fn formula_value(expr: Expr, env: &Environment) -> RValue {
     let mut lang = Language::new(expr);
     lang.set_attr(
@@ -75,55 +68,6 @@ fn formula_value(expr: Expr, env: &Environment) -> RValue {
     );
     lang.set_attr(".Environment".to_string(), RValue::Environment(env.clone()));
     RValue::Language(lang)
-}
-
-/// Context for S3 method dispatch — tracks which class was dispatched and the
-/// remaining classes in the chain (for NextMethod).
-#[derive(Debug, Clone)]
-pub(crate) struct S3DispatchContext {
-    pub generic: String,
-    pub classes: Vec<String>,
-    pub class_index: usize, // index of the class that was dispatched
-    pub object: RValue,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct CallFrame {
-    pub call: Option<Expr>,
-    pub function: RValue,
-    pub env: Environment,
-    pub formal_args: HashSet<String>,
-    pub supplied_args: HashSet<String>,
-    pub supplied_positional: Vec<RValue>,
-    pub supplied_named: Vec<(String, RValue)>,
-    pub supplied_arg_count: usize,
-}
-
-#[derive(Clone, Copy)]
-pub struct BuiltinContext<'a> {
-    interpreter: &'a Interpreter,
-    env: &'a Environment,
-}
-
-impl<'a> BuiltinContext<'a> {
-    fn new(interpreter: &'a Interpreter, env: &'a Environment) -> Self {
-        Self { interpreter, env }
-    }
-
-    pub fn env(&self) -> &'a Environment {
-        self.env
-    }
-
-    pub fn interpreter(&self) -> &'a Interpreter {
-        self.interpreter
-    }
-
-    pub fn with_interpreter<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&Interpreter) -> R,
-    {
-        f(self.interpreter)
-    }
 }
 
 /// A handler registered by withCallingHandlers().
@@ -240,25 +184,6 @@ impl Interpreter {
     #[cfg(feature = "random")]
     pub fn rng(&self) -> &RefCell<rand::rngs::StdRng> {
         &self.rng
-    }
-
-    pub(crate) fn current_call_frame(&self) -> Option<CallFrame> {
-        self.call_stack.borrow().last().cloned()
-    }
-
-    pub(crate) fn call_frame(&self, which: usize) -> Option<CallFrame> {
-        self.call_stack
-            .borrow()
-            .get(which.saturating_sub(1))
-            .cloned()
-    }
-
-    pub(crate) fn call_frames(&self) -> Vec<CallFrame> {
-        self.call_stack.borrow().clone()
-    }
-
-    pub(crate) fn current_call_expr(&self) -> Option<Expr> {
-        self.current_call_frame().and_then(|frame| frame.call)
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
