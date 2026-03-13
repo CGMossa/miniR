@@ -7,6 +7,9 @@ use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
 use minir_macros::builtin;
 
+type DimNameVec = Vec<Option<String>>;
+type MatrixDimNames = (Option<DimNameVec>, Option<DimNameVec>);
+
 // region: MathError
 
 /// Structured error type for math/linear algebra operations.
@@ -455,12 +458,7 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
         }
     }
     let mut rv = RVector::from(Vector::Logical(result.into()));
-    rv.set_attr(
-        "dim".to_string(),
-        RValue::vec(Vector::Integer(
-            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
-        )),
-    );
+    set_matrix_attrs(&mut rv, nrow, ncol, None, None)?;
     Ok(RValue::Vector(rv))
 }
 
@@ -502,12 +500,7 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     result[i * n + i] = Some(1.0);
                 }
                 let mut out = RVector::from(Vector::Double(result.into()));
-                out.set_attr(
-                    "dim".to_string(),
-                    RValue::vec(Vector::Integer(
-                        vec![Some(i64::try_from(n)?), Some(i64::try_from(n)?)].into(),
-                    )),
-                );
+                set_matrix_attrs(&mut out, n, n, None, None)?;
                 Ok(RValue::Vector(out))
             } else {
                 // Vector: create diagonal matrix from vector
@@ -518,12 +511,7 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     result[i * n + i] = *v;
                 }
                 let mut out = RVector::from(Vector::Double(result.into()));
-                out.set_attr(
-                    "dim".to_string(),
-                    RValue::vec(Vector::Integer(
-                        vec![Some(i64::try_from(n)?), Some(i64::try_from(n)?)].into(),
-                    )),
-                );
+                set_matrix_attrs(&mut out, n, n, None, None)?;
                 Ok(RValue::Vector(out))
             }
         }
@@ -1604,6 +1592,53 @@ fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
     RValue::Vector(rv)
 }
 
+fn names_attr(value: &RValue) -> Option<DimNameVec> {
+    match value {
+        RValue::Vector(rv) => rv.get_attr("names").and_then(super::coerce_name_values),
+        RValue::List(list) => list.get_attr("names").and_then(super::coerce_name_values),
+        _ => None,
+    }
+}
+
+fn matrix_dimnames(value: &RValue) -> MatrixDimNames {
+    let dimnames = match value {
+        RValue::Vector(rv) => rv.get_attr("dimnames"),
+        RValue::List(list) => list.get_attr("dimnames"),
+        _ => None,
+    };
+
+    let row_names = super::dimnames_component(dimnames, 0);
+    let col_names = super::dimnames_component(dimnames, 1);
+    (row_names, col_names)
+}
+
+fn set_matrix_attrs(
+    rv: &mut RVector,
+    nrow: usize,
+    ncol: usize,
+    row_names: Option<DimNameVec>,
+    col_names: Option<DimNameVec>,
+) -> Result<(), RError> {
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+        )),
+    );
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
+        )),
+    );
+    if let Some(dimnames) =
+        super::bind_dimnames_value(row_names.unwrap_or_default(), col_names.unwrap_or_default())
+    {
+        rv.set_attr("dimnames".to_string(), dimnames);
+    }
+    Ok(())
+}
+
 /// crossprod(x, y) = t(x) %*% y
 #[builtin(min_args = 1)]
 fn builtin_crossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -1615,7 +1650,24 @@ fn builtin_crossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     };
     let xt = x.t();
     let result = xt.dot(&y);
-    Ok(array2_to_rvalue(&result))
+    let mut out = match array2_to_rvalue(&result) {
+        RValue::Vector(rv) => rv,
+        _ => unreachable!(),
+    };
+    let (_, x_col_names) = matrix_dimnames(args.first().unwrap_or(&RValue::Null));
+    let (_, y_col_names) = args.get(1).map_or((None, None), matrix_dimnames);
+    set_matrix_attrs(
+        &mut out,
+        result.nrows(),
+        result.ncols(),
+        x_col_names,
+        if args.get(1).is_some() {
+            y_col_names
+        } else {
+            matrix_dimnames(args.first().unwrap_or(&RValue::Null)).1
+        },
+    )?;
+    Ok(RValue::Vector(out))
 }
 
 /// tcrossprod(x, y) = x %*% t(y)
@@ -1629,7 +1681,24 @@ fn builtin_tcrossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     };
     let yt = y.t();
     let result = x.dot(&yt);
-    Ok(array2_to_rvalue(&result))
+    let mut out = match array2_to_rvalue(&result) {
+        RValue::Vector(rv) => rv,
+        _ => unreachable!(),
+    };
+    let (x_row_names, _) = matrix_dimnames(args.first().unwrap_or(&RValue::Null));
+    let (y_row_names, _) = args.get(1).map_or((None, None), matrix_dimnames);
+    set_matrix_attrs(
+        &mut out,
+        result.nrows(),
+        result.ncols(),
+        x_row_names,
+        if args.get(1).is_some() {
+            y_row_names
+        } else {
+            matrix_dimnames(args.first().unwrap_or(&RValue::Null)).0
+        },
+    )?;
+    Ok(RValue::Vector(out))
 }
 
 // region: norm, solve, outer
@@ -1872,12 +1941,7 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     }
 
     let mut rv = RVector::from(Vector::Double(result.into()));
-    rv.set_attr(
-        "dim".to_string(),
-        RValue::vec(Vector::Integer(
-            vec![Some(i64::try_from(nx)?), Some(i64::try_from(ny)?)].into(),
-        )),
-    );
+    set_matrix_attrs(&mut rv, nx, ny, names_attr(&args[0]), names_attr(&args[1]))?;
     Ok(RValue::Vector(rv))
 }
 // endregion
