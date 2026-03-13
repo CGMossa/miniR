@@ -39,9 +39,5 @@ noop_builtin!("connection", 1);
 noop_builtin!("close", 1);
 noop_builtin!("open", 1);
 
-// Serialization
-noop_builtin!("load", 1);
-noop_builtin!("save");
-
 // Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
 noop_builtin!("arity", 1);

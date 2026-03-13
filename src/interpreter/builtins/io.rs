@@ -6,11 +6,13 @@ use std::collections::HashSet;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
+use crate::parser::ast::{Arg, Expr};
 use crate::parser::parse_program;
 use derive_more::{Display, Error};
-use minir_macros::builtin;
+use minir_macros::{builtin, interpreter_builtin, pre_eval_builtin};
 
 const MINIR_RDS_HEADER: &str = "miniRDS1\n";
+const MINIR_WORKSPACE_CLASS: &str = "miniR.workspace";
 
 // region: IoError
 
@@ -266,23 +268,22 @@ fn serialize_rvalue(value: &RValue) -> Result<String, RError> {
     }
 }
 
-fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, RError> {
-    args.first()
-        .or_else(|| {
-            named
-                .iter()
-                .find(|(name, _)| name == "file")
-                .map(|(_, value)| value)
-        })
-        .and_then(|value| value.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))
+// region: miniRDS helpers
+
+fn write_minirds(path: &str, value: &RValue) -> Result<(), RError> {
+    let serialized = serialize_rvalue(value)?;
+    std::fs::write(path, format!("{MINIR_RDS_HEADER}{serialized}\n")).map_err(|source| {
+        IoError::WriteFailed {
+            path: path.to_string(),
+            source,
+        }
+        .into()
+    })
 }
 
-#[builtin(name = "readRDS", min_args = 1)]
-fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = read_rds_path(args, named)?;
-    let content = std::fs::read_to_string(&path).map_err(|source| IoError::CannotOpen {
-        path: path.clone(),
+fn read_minirds(path: &str, reader_name: &str, writer_name: &str) -> Result<RValue, RError> {
+    let content = std::fs::read_to_string(path).map_err(|source| IoError::CannotOpen {
+        path: path.to_string(),
         source,
     })?;
 
@@ -290,8 +291,8 @@ fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         RError::new(
             RErrorKind::Argument,
             format!(
-                "unsupported readRDS() format in '{}': miniR currently reads only miniRDS text files written by saveRDS()",
-                path
+                "unsupported {reader_name}() format in '{}': miniR currently reads only miniRDS text files written by {writer_name}()",
+                path,
             ),
         )
     })?;
@@ -307,6 +308,232 @@ fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         let eval_env = Environment::new_child(&base);
         interp.eval_in(&ast, &eval_env).map_err(RError::from)
     })
+}
+
+// endregion
+
+// region: workspace helpers
+
+fn workspace_class_value() -> RValue {
+    RValue::vec(Vector::Character(
+        vec![Some(MINIR_WORKSPACE_CLASS.to_string())].into(),
+    ))
+}
+
+fn is_workspace_value(value: &RValue) -> bool {
+    let RValue::List(list) = value else {
+        return false;
+    };
+
+    list.get_attr("class")
+        .and_then(|value| value.as_vector())
+        .map(|values| {
+            values
+                .to_characters()
+                .iter()
+                .flatten()
+                .any(|class_name| class_name == MINIR_WORKSPACE_CLASS)
+        })
+        .unwrap_or(false)
+}
+
+fn workspace_binding_names(list: &RList) -> Result<Vec<String>, RError> {
+    if let Some(names_attr) = list.get_attr("names") {
+        let values = names_attr
+            .as_vector()
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "invalid workspace file: 'names' attribute is not a character vector"
+                        .to_string(),
+                )
+            })?
+            .to_characters();
+
+        if values.len() != list.values.len() {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "invalid workspace file: binding names do not match saved values".to_string(),
+            ));
+        }
+
+        return values
+            .into_iter()
+            .map(|name| {
+                name.ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "invalid workspace file: every saved object needs a name".to_string(),
+                    )
+                })
+            })
+            .collect();
+    }
+
+    list.values
+        .iter()
+        .map(|(name, _)| {
+            name.clone().ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "invalid workspace file: every saved object needs a name".to_string(),
+                )
+            })
+        })
+        .collect()
+}
+
+fn eval_arg_value(arg: &Arg, env: &Environment) -> Result<RValue, RError> {
+    let expr = arg.value.as_ref().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument is missing a value".to_string(),
+        )
+    })?;
+    with_interpreter(|interp| interp.eval_in(expr, env).map_err(RError::from))
+}
+
+fn push_save_name(
+    names: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    name: String,
+) -> Result<(), RError> {
+    if !seen.insert(name.clone()) {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("duplicate object name '{}' in save()", name),
+        ));
+    }
+
+    names.push(name);
+    Ok(())
+}
+
+fn workspace_file_arg(args: &[Arg], env: &Environment) -> Result<String, RError> {
+    args.iter()
+        .find(|arg| arg.name.as_deref() == Some("file"))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "save() requires a named 'file' argument".to_string(),
+            )
+        })
+        .and_then(|arg| {
+            eval_arg_value(arg, env)?
+                .as_vector()
+                .and_then(|value| value.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string())
+                })
+        })
+}
+
+fn workspace_target_env(args: &[Arg], env: &Environment) -> Result<Environment, RError> {
+    match args.iter().find(|arg| arg.name.as_deref() == Some("envir")) {
+        Some(arg) => match eval_arg_value(arg, env)? {
+            RValue::Environment(target_env) => Ok(target_env),
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "invalid 'envir' argument".to_string(),
+            )),
+        },
+        None => Ok(env.clone()),
+    }
+}
+
+fn workspace_requested_names(args: &[Arg], env: &Environment) -> Result<Vec<String>, RError> {
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+
+    for arg in args {
+        match arg.name.as_deref() {
+            None => match arg.value.as_ref() {
+                Some(Expr::Symbol(name)) | Some(Expr::String(name)) => {
+                    push_save_name(&mut names, &mut seen, name.clone())?;
+                }
+                Some(_) => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "save() positional arguments must be bare names; use list = c(...) for computed names".to_string(),
+                    ));
+                }
+                None => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "save() received an empty argument".to_string(),
+                    ));
+                }
+            },
+            Some("file" | "envir") => {}
+            Some("list") => {
+                let listed = eval_arg_value(arg, env)?;
+                if listed.is_null() {
+                    continue;
+                }
+
+                let listed_names = listed
+                    .as_vector()
+                    .ok_or_else(|| {
+                        RError::new(
+                            RErrorKind::Argument,
+                            "invalid 'list' argument in save(): expected a character vector of object names"
+                                .to_string(),
+                        )
+                    })?
+                    .to_characters();
+
+                for name in listed_names {
+                    push_save_name(
+                        &mut names,
+                        &mut seen,
+                        name.ok_or_else(|| {
+                            RError::new(
+                                RErrorKind::Argument,
+                                "invalid 'list' argument in save(): object names cannot be NA"
+                                    .to_string(),
+                            )
+                        })?,
+                    )?;
+                }
+            }
+            Some("ascii" | "compress" | "version" | "precheck" | "eval.promises" | "safe") => {}
+            Some(name) => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!("unsupported argument '{}' in save()", name),
+                ));
+            }
+        }
+    }
+
+    if names.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "save() needs at least one object name".to_string(),
+        ));
+    }
+
+    Ok(names)
+}
+
+// endregion
+
+fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, RError> {
+    args.first()
+        .or_else(|| {
+            named
+                .iter()
+                .find(|(name, _)| name == "file")
+                .map(|(_, value)| value)
+        })
+        .and_then(|value| value.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))
+}
+
+#[builtin(name = "readRDS", min_args = 1)]
+fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = read_rds_path(args, named)?;
+    read_minirds(&path, "readRDS", "saveRDS")
 }
 
 #[builtin(name = "saveRDS", min_args = 2)]
@@ -328,13 +555,76 @@ fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .and_then(|value| value.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
 
-    let serialized = serialize_rvalue(object)?;
-    std::fs::write(&path, format!("{MINIR_RDS_HEADER}{serialized}\n")).map_err(|source| {
-        IoError::WriteFailed {
-            path: path.clone(),
-            source,
-        }
-    })?;
+    write_minirds(&path, object)?;
+    Ok(RValue::Null)
+}
+
+#[interpreter_builtin(name = "load", min_args = 1)]
+fn interp_load(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    env: &Environment,
+) -> Result<RValue, RError> {
+    let path = read_rds_path(positional, named)?;
+    let target_env = named
+        .iter()
+        .find(|(name, _)| name == "envir")
+        .map(|(_, value)| value)
+        .or_else(|| positional.get(1))
+        .map(|value| match value {
+            RValue::Environment(target_env) => Ok(target_env.clone()),
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "invalid 'envir' argument".to_string(),
+            )),
+        })
+        .transpose()?
+        .unwrap_or_else(|| env.clone());
+
+    let value = read_minirds(&path, "load", "save")?;
+    if !is_workspace_value(&value) {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "unsupported load() format in '{}': miniR currently loads only workspace files written by save()",
+                path
+            ),
+        ));
+    }
+
+    let RValue::List(list) = value else {
+        unreachable!();
+    };
+    let names = workspace_binding_names(&list)?;
+    let loaded_names: Vec<Option<String>> = names.iter().cloned().map(Some).collect();
+
+    for (name, (_, saved_value)) in names.into_iter().zip(list.values.into_iter()) {
+        target_env.set(name, saved_value);
+    }
+
+    Ok(RValue::vec(Vector::Character(loaded_names.into())))
+}
+
+#[pre_eval_builtin(name = "save")]
+fn pre_eval_save(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    let path = workspace_file_arg(args, env)?;
+    let target_env = workspace_target_env(args, env)?;
+    let requested_names = workspace_requested_names(args, env)?;
+
+    let mut values = Vec::with_capacity(requested_names.len());
+    for name in requested_names {
+        let value = target_env.get(&name).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Name,
+                format!("object '{}' not found in save()", name),
+            )
+        })?;
+        values.push((Some(name), value));
+    }
+
+    let mut workspace = RList::new(values);
+    workspace.set_attr("class".to_string(), workspace_class_value());
+    write_minirds(&path, &RValue::List(workspace))?;
     Ok(RValue::Null)
 }
 

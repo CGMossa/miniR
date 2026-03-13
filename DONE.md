@@ -84,6 +84,7 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 ## I/O
 
 - `readRDS(file)` / `saveRDS(object, file)` — text-based miniRDS round-trip for common miniR values
+- `load(file)` / `save(..., file)` — text-based miniR workspace round-trip for named bindings
 - `sys.function()` / `sys.frame()` / `sys.frames()` / `sys.parents()` / `sys.on.exit()` — call-stack introspection
 - `sys.nframe()` / `nargs()` / `parent.frame()` — stack depth and caller lookup
 

@@ -17,11 +17,11 @@ Early development. The current tree already has:
 - Call-stack introspection (`sys.*`, `parent.frame()`, `missing()`, `nargs()`, `on.exit()`)
 - Partial S3 dispatch, including direct `UseMethod()` and `NextMethod()`
 - R's condition system (`tryCatch()`, `withCallingHandlers()`, suppressors, condition constructors)
-- CSV/table reading and writing, text-based `readRDS()` / `saveRDS()`, filesystem/system helpers, and a `reedline` REPL
+- CSV/table reading and writing, text-based `readRDS()` / `saveRDS()` / `save()` / `load()`, filesystem/system helpers, and a `reedline` REPL
 
 Major gaps that still need work:
 
-- Connections, workspace save/load, GNU-R-compatible binary serialization, and package loading
+- Connections, GNU-R-compatible binary serialization, and package loading
 - Date/time support, S4, graphics, and broader CRAN runtime compatibility
 
 ## Building
