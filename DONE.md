@@ -11,6 +11,7 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `as.vector(x)` — strip vector/list attributes in the common path
 - `missing(x)` — supplied/defaulted argument detection via call frames
 - `on.exit(expr)` — register exit handlers on the active call frame
+- Formula literals (`~`) — classed language objects with `.Environment`
 - `UseMethod(generic, object)` / `NextMethod()` — S3 dispatch with method-visible call frames
 
 ## Attributes & OOP

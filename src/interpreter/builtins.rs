@@ -692,6 +692,15 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             }
             Ok(RValue::List(l))
         }
+        Some(RValue::Language(lang)) => {
+            let mut lang = lang.clone();
+            if class_val.is_null() {
+                lang.attrs.as_mut().map(|a| a.remove("class"));
+            } else {
+                lang.set_attr("class".to_string(), class_val);
+            }
+            Ok(RValue::Language(lang))
+        }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
 }
@@ -718,6 +727,11 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             return Ok(cls.clone());
         }
     }
+    if let Some(RValue::Language(lang)) = args.first() {
+        if let Some(cls) = lang.get_attr("class") {
+            return Ok(cls.clone());
+        }
+    }
     let c = match args.first() {
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Raw(_) => "raw",
@@ -729,6 +743,10 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         },
         Some(RValue::List(_)) => "list",
         Some(RValue::Function(_)) => "function",
+        Some(RValue::Language(lang)) => match &**lang {
+            Expr::Symbol(_) => "name",
+            _ => "call",
+        },
         Some(RValue::Null) => "NULL",
         _ => "NULL",
     };
@@ -749,6 +767,10 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         },
         Some(RValue::List(_)) => "list",
         Some(RValue::Function(_)) => "function",
+        Some(RValue::Language(lang)) => match &**lang {
+            Expr::Symbol(_) => "name",
+            _ => "call",
+        },
         Some(RValue::Null) => "NULL",
         _ => "NULL",
     };
@@ -2064,6 +2086,7 @@ fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     match args.first() {
         Some(RValue::Vector(rv)) => Ok(rv.get_attr(&which).cloned().unwrap_or(RValue::Null)),
         Some(RValue::List(l)) => Ok(l.get_attr(&which).cloned().unwrap_or(RValue::Null)),
+        Some(RValue::Language(lang)) => Ok(lang.get_attr(&which).cloned().unwrap_or(RValue::Null)),
         _ => Ok(RValue::Null),
     }
 }
@@ -2100,6 +2123,15 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
             }
             Ok(RValue::List(l))
         }
+        Some(RValue::Language(lang)) => {
+            let mut lang = lang.clone();
+            if value.is_null() {
+                lang.attrs.as_mut().map(|a| a.remove(&which));
+            } else {
+                lang.set_attr(which, value);
+            }
+            Ok(RValue::Language(lang))
+        }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
 }
@@ -2109,6 +2141,7 @@ fn builtin_attributes(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     let attrs = match args.first() {
         Some(RValue::Vector(rv)) => rv.attrs.as_deref(),
         Some(RValue::List(l)) => l.attrs.as_deref(),
+        Some(RValue::Language(lang)) => lang.attrs.as_deref(),
         _ => None,
     };
     match attrs {
@@ -2158,6 +2191,12 @@ fn builtin_structure(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             }
             Ok(RValue::Vector(rv))
         }
+        RValue::Language(mut lang) => {
+            for (name, value) in named {
+                lang.set_attr(name.clone(), value.clone());
+            }
+            Ok(RValue::Language(lang))
+        }
         other => Ok(other),
     }
 }
@@ -2197,6 +2236,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
             }
         }
         Some(RValue::Function(_)) => vec!["function".to_string()],
+        Some(RValue::Language(lang)) => lang.class().unwrap_or_default(),
         _ => vec![],
     };
 
@@ -2221,6 +2261,7 @@ fn has_class(val: &RValue, class_name: &str) -> bool {
     let class_attr = match val {
         RValue::Vector(rv) => rv.get_attr("class"),
         RValue::List(l) => l.get_attr("class"),
+        RValue::Language(lang) => lang.get_attr("class"),
         _ => None,
     };
     if let Some(RValue::Vector(rv)) = class_attr {
@@ -2496,6 +2537,11 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             l.attrs.as_mut().map(|a| a.remove("class"));
             Ok(RValue::List(l))
         }
+        Some(RValue::Language(lang)) => {
+            let mut lang = lang.clone();
+            lang.attrs.as_mut().map(|a| a.remove("class"));
+            Ok(RValue::Language(lang))
+        }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
 }
@@ -2717,7 +2763,7 @@ fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// Convert an RValue back to an AST expression (for call/expression construction).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
-        RValue::Language(expr) => *expr.0.clone(),
+        RValue::Language(expr) => *expr.inner.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(d) if d.len() == 1 => match d[0] {

@@ -550,7 +550,7 @@ fn pre_eval_expression(args: &[Arg], _env: &Environment) -> Result<RValue, RErro
 /// Convert an RValue back to an AST expression (for substitute).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
-        RValue::Language(expr) => *expr.0.clone(),
+        RValue::Language(expr) => *expr.inner.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(d) if d.len() == 1 => match d[0] {

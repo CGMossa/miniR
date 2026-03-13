@@ -16,8 +16,6 @@ use std::num::TryFromIntError;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use derive_more::{Deref, DerefMut};
-
 use crate::interpreter::coerce;
 use crate::interpreter::environment::Environment;
 use crate::parser::ast::{Expr, Param};
@@ -30,12 +28,52 @@ pub type Attributes = HashMap<String, RValue>;
 /// Unevaluated expression (language object) — returned by quote(), parse().
 ///
 /// Wraps a boxed AST node. Derefs to `Expr` for pattern matching.
-#[derive(Debug, Clone, Deref, DerefMut)]
-pub struct Language(pub Box<Expr>);
+#[derive(Debug, Clone)]
+pub struct Language {
+    pub inner: Box<Expr>,
+    pub attrs: Option<Box<Attributes>>,
+}
 
 impl Language {
     pub fn new(expr: Expr) -> Self {
-        Language(Box::new(expr))
+        Language {
+            inner: Box::new(expr),
+            attrs: None,
+        }
+    }
+
+    pub fn get_attr(&self, name: &str) -> Option<&RValue> {
+        self.attrs.as_ref().and_then(|a| a.get(name))
+    }
+
+    pub fn set_attr(&mut self, name: String, value: RValue) {
+        self.attrs
+            .get_or_insert_with(|| Box::new(HashMap::new()))
+            .insert(name, value);
+    }
+
+    pub fn class(&self) -> Option<Vec<String>> {
+        match self.get_attr("class") {
+            Some(RValue::Vector(rv)) => match &rv.inner {
+                Vector::Character(v) => Some(v.iter().filter_map(|s| s.clone()).collect()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+impl Deref for Language {
+    type Target = Expr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for Language {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
@@ -853,6 +891,7 @@ pub fn get_class(val: &RValue) -> Vec<String> {
     let attrs = match val {
         RValue::Vector(rv) => rv.attrs.as_ref(),
         RValue::List(list) => list.attrs.as_ref(),
+        RValue::Language(lang) => lang.attrs.as_ref(),
         _ => None,
     };
     match attrs.and_then(|a| a.get("class")) {

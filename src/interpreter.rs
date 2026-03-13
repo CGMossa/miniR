@@ -36,6 +36,16 @@ pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Optio
     }
 }
 
+fn formula_value(expr: Expr, env: &Environment) -> RValue {
+    let mut lang = Language::new(expr);
+    lang.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("formula".to_string())].into())),
+    );
+    lang.set_attr(".Environment".to_string(), RValue::Environment(env.clone()));
+    RValue::Language(lang)
+}
+
 /// Context for S3 method dispatch — tracks which class was dispatched and the
 /// remaining classes in the chain (for NextMethod).
 #[derive(Debug, Clone)]
@@ -245,7 +255,7 @@ impl Interpreter {
             Expr::NsGet { namespace, name } => self.eval_ns_get(namespace, name, env),
             Expr::NsGetInt { namespace, name } => self.eval_ns_get(namespace, name, env),
 
-            Expr::Formula { lhs: _, rhs: _ } => Ok(RValue::Null), // Stub for formula
+            Expr::Formula { .. } => Ok(formula_value(expr.clone(), env)),
 
             Expr::If {
                 condition,
@@ -2218,6 +2228,7 @@ impl Interpreter {
             }
             RValue::Function(_) => vec!["function".to_string()],
             RValue::Null => vec!["NULL".to_string()],
+            RValue::Language(lang) => lang.class().unwrap_or_default(),
             _ => vec![],
         };
 
