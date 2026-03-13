@@ -2,6 +2,7 @@
 //! call back into the interpreter. Each is auto-registered via `#[interpreter_builtin]`.
 //! The interpreter is accessed via the thread-local `with_interpreter()`.
 
+use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::{retarget_call_expr, with_interpreter, S3DispatchContext};
@@ -489,18 +490,11 @@ fn interp_get(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
-    let name = positional
-        .first()
-        .and_then(|v| {
-            if let RValue::Vector(vec) = v {
-                vec.as_character_scalar()
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid first argument".to_string()))?;
-    let _envir = named.iter().find(|(n, _)| n == "envir").map(|(_, v)| v);
-    env.get(&name)
+    let call_args = CallArgs::new(positional, named);
+    let name = call_args.string("x", 0)?;
+    let target_env = call_args.environment_or("envir", usize::MAX, env)?;
+    target_env
+        .get(&name)
         .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
 }
 
@@ -510,22 +504,11 @@ fn interp_assign(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
-    let name = positional
-        .first()
-        .and_then(|v| {
-            if let RValue::Vector(vec) = v {
-                vec.as_character_scalar()
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid first argument".to_string()))?;
-    let value = positional
-        .get(1)
-        .or_else(|| named.iter().find(|(n, _)| n == "value").map(|(_, v)| v))
-        .cloned()
-        .unwrap_or(RValue::Null);
-    env.set(name, value.clone());
+    let call_args = CallArgs::new(positional, named);
+    let name = call_args.string("x", 0)?;
+    let value = call_args.value("value", 1).cloned().unwrap_or(RValue::Null);
+    let target_env = call_args.environment_or("envir", usize::MAX, env)?;
+    target_env.set(name, value.clone());
     Ok(value)
 }
 
@@ -535,17 +518,12 @@ fn interp_exists(
     _named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
-    let name = positional
-        .first()
-        .and_then(|v| {
-            if let RValue::Vector(vec) = v {
-                vec.as_character_scalar()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-    let found = env.get(&name).is_some();
+    let call_args = CallArgs::new(positional, _named);
+    let name = call_args.optional_string("x", 0).unwrap_or_default();
+    let found = call_args
+        .environment_or("envir", usize::MAX, env)?
+        .get(&name)
+        .is_some();
     Ok(RValue::vec(Vector::Logical(vec![Some(found)].into())))
 }
 
@@ -1174,20 +1152,7 @@ fn interp_ls(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
-    // Determine which environment to list
-    let target_env = named
-        .iter()
-        .find(|(n, _)| n == "envir")
-        .map(|(_, v)| v)
-        .or_else(|| positional.first())
-        .and_then(|v| {
-            if let RValue::Environment(e) = v {
-                Some(e.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| env.clone());
+    let target_env = CallArgs::new(positional, named).environment_or("envir", 0, env)?;
 
     let names = target_env.ls();
     let chars: Vec<Option<String>> = names.into_iter().map(Some).collect();
@@ -1200,6 +1165,7 @@ fn interp_eval(
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(positional, named);
     let expr = positional.first().ok_or_else(|| {
         RError::new(
             RErrorKind::Argument,
@@ -1207,20 +1173,7 @@ fn interp_eval(
         )
     })?;
 
-    // Determine evaluation environment
-    let eval_env = named
-        .iter()
-        .find(|(n, _)| n == "envir")
-        .map(|(_, v)| v)
-        .or_else(|| positional.get(1))
-        .and_then(|v| {
-            if let RValue::Environment(e) = v {
-                Some(e.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| env.clone());
+    let eval_env = call_args.environment_or("envir", 1, env)?;
 
     match expr {
         // Language object: evaluate the AST

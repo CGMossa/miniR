@@ -1,3 +1,4 @@
+mod args;
 mod conditions;
 mod factors;
 mod interp;
@@ -20,6 +21,7 @@ use minir_macros::builtin;
 pub use crate::interpreter::value::{
     BuiltinDescriptor, BuiltinFn, BuiltinImplementation, InterpreterBuiltinFn, PreEvalBuiltinFn,
 };
+pub(crate) use args::CallArgs;
 
 #[distributed_slice]
 pub static BUILTIN_REGISTRY: [BuiltinDescriptor];
