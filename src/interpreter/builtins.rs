@@ -2693,6 +2693,15 @@ fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::Language(Language::new(expr)))
 }
 
+/// `UseMethod()` is intercepted directly by the evaluator so it can unwind the
+/// current generic frame instead of returning like an ordinary builtin.
+#[builtin(name = "UseMethod", min_args = 1)]
+fn builtin_use_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::other(
+        "internal error: UseMethod() should be intercepted during evaluation",
+    ))
+}
+
 // `expression()` is a pre-eval builtin — see builtins/pre_eval.rs
 
 /// `Recall(...)` — recursive self-call. Requires a call stack to know the current

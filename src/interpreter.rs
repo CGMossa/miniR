@@ -26,26 +26,12 @@ where
     INTERPRETER.with(|cell| f(&cell.borrow()))
 }
 
-/// Extract generic name from a UseMethod("name") call in a function body.
-/// Handles: UseMethod("name"), { UseMethod("name") }, { ...; UseMethod("name") }
-fn extract_use_method(body: &Expr) -> Option<String> {
-    match body {
-        Expr::Call { func, args } => {
-            if let Expr::Symbol(name) = func.as_ref() {
-                if name == "UseMethod" {
-                    if let Some(arg) = args.first() {
-                        if let Some(Expr::String(s)) = arg.value.as_ref() {
-                            return Some(s.clone());
-                        }
-                    }
-                }
-            }
-            None
-        }
-        Expr::Block(stmts) => {
-            // Check last statement in block
-            stmts.last().and_then(extract_use_method)
-        }
+pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
+    match call_expr {
+        Some(Expr::Call { args, .. }) => Some(Expr::Call {
+            func: Box::new(Expr::Symbol(target.to_string())),
+            args,
+        }),
         _ => None,
     }
 }
@@ -67,6 +53,8 @@ pub(crate) struct CallFrame {
     pub env: Environment,
     pub formal_args: HashSet<String>,
     pub supplied_args: HashSet<String>,
+    pub supplied_positional: Vec<RValue>,
+    pub supplied_named: Vec<(String, RValue)>,
     pub supplied_arg_count: usize,
 }
 
@@ -1043,6 +1031,9 @@ impl Interpreter {
 
         // Pre-eval builtins intercept before argument evaluation
         if let RValue::Function(RFunction::Builtin { name, .. }) = &f {
+            if name == "UseMethod" {
+                return self.eval_use_method(args, env);
+            }
             for &(pname, pfunc, _) in builtins::PRE_EVAL_BUILTIN_REGISTRY {
                 if pname == name {
                     return pfunc(args, env).map_err(Into::into);
@@ -1082,6 +1073,88 @@ impl Interpreter {
         self.call_function_with_call(&f, &positional, &named, env, Some(call_expr))
     }
 
+    fn eval_use_method(&self, args: &[Arg], env: &Environment) -> Result<RValue, RFlow> {
+        let frame = self.current_call_frame().ok_or_else(|| {
+            RError::other("'UseMethod' used in an inappropriate fashion".to_string())
+        })?;
+
+        let generic_expr = match args
+            .iter()
+            .find(|arg| arg.name.as_deref() == Some("generic"))
+            .or_else(|| args.first())
+            .and_then(|arg| arg.value.as_ref())
+        {
+            Some(expr) => expr,
+            None => {
+                return Err(RError::other("there must be a 'generic' argument".to_string()).into());
+            }
+        };
+
+        let generic_value = self.eval_in(generic_expr, env)?;
+        let generic = match generic_value {
+            RValue::Vector(rv) => match &rv.inner {
+                Vector::Character(values) if values.len() == 1 => {
+                    values.first().cloned().flatten().ok_or_else(|| {
+                        RError::other("'generic' argument must be a character string".to_string())
+                    })?
+                }
+                _ => {
+                    return Err(RError::other(
+                        "'generic' argument must be a character string".to_string(),
+                    )
+                    .into());
+                }
+            },
+            _ => {
+                return Err(RError::other(
+                    "'generic' argument must be a character string".to_string(),
+                )
+                .into());
+            }
+        };
+
+        let object_expr = args
+            .iter()
+            .find(|arg| arg.name.as_deref() == Some("object"))
+            .or_else(|| args.get(1))
+            .and_then(|arg| arg.value.as_ref());
+
+        let dispatch_object = match object_expr {
+            Some(expr) => Some(self.eval_in(expr, env)?),
+            None => match &frame.function {
+                RValue::Function(RFunction::Closure { params, .. }) => match params.first() {
+                    Some(param) if param.is_dots => {
+                        frame.env.get("...").and_then(|value| match value {
+                            RValue::List(list) => {
+                                list.values.first().map(|(_, value)| value.clone())
+                            }
+                            _ => None,
+                        })
+                    }
+                    Some(param) => frame.env.get(&param.name),
+                    None => None,
+                },
+                _ => {
+                    return Err(RError::other(
+                        "'UseMethod' used in an inappropriate fashion".to_string(),
+                    )
+                    .into());
+                }
+            },
+        };
+
+        let value = self.dispatch_s3(
+            &generic,
+            &frame.supplied_positional,
+            &frame.supplied_named,
+            dispatch_object,
+            env,
+            frame.call.clone(),
+        )?;
+
+        Err(RSignal::Return(value).into())
+    }
+
     pub fn call_function(
         &self,
         func: &RValue,
@@ -1115,11 +1188,6 @@ impl Interpreter {
                 body,
                 env: closure_env,
             }) => {
-                // Check for S3 generic (body contains UseMethod("generic"))
-                if let Some(generic_name) = extract_use_method(body) {
-                    return self.dispatch_s3(&generic_name, positional, named, env, call_expr);
-                }
-
                 let call_env = Environment::new_child(closure_env);
 
                 // Bind parameters
@@ -1185,6 +1253,8 @@ impl Interpreter {
                     env: call_env.clone(),
                     formal_args,
                     supplied_args,
+                    supplied_positional: positional.to_vec(),
+                    supplied_named: named.to_vec(),
                     supplied_arg_count,
                 });
 
@@ -2112,12 +2182,16 @@ impl Interpreter {
         generic: &str,
         positional: &[RValue],
         named: &[(String, RValue)],
+        dispatch_object: Option<RValue>,
         env: &Environment,
         call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
+        let dispatch_object =
+            dispatch_object.unwrap_or_else(|| positional.first().cloned().unwrap_or(RValue::Null));
+
         // Get class of first argument
-        let classes = match positional.first() {
-            Some(RValue::List(l)) => {
+        let classes = match &dispatch_object {
+            RValue::List(l) => {
                 if let Some(RValue::Vector(rv)) = l.get_attr("class") {
                     if let Vector::Character(cls) = &rv.inner {
                         cls.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
@@ -2128,7 +2202,7 @@ impl Interpreter {
                     vec!["list".to_string()]
                 }
             }
-            Some(RValue::Vector(rv)) => {
+            RValue::Vector(rv) => {
                 if let Some(cls) = rv.class() {
                     cls
                 } else {
@@ -2142,8 +2216,8 @@ impl Interpreter {
                     }
                 }
             }
-            Some(RValue::Function(_)) => vec!["function".to_string()],
-            Some(RValue::Null) => vec!["NULL".to_string()],
+            RValue::Function(_) => vec!["function".to_string()],
+            RValue::Null => vec!["NULL".to_string()],
             _ => vec![],
         };
 
@@ -2155,16 +2229,12 @@ impl Interpreter {
                     generic: generic.to_string(),
                     classes: classes.clone(),
                     class_index: i,
-                    object: positional.first().cloned().unwrap_or(RValue::Null),
+                    object: dispatch_object.clone(),
                 };
                 self.s3_dispatch_stack.borrow_mut().push(ctx);
-                let result = self.call_function_with_call(
-                    &method,
-                    positional,
-                    named,
-                    env,
-                    call_expr.clone(),
-                );
+                let method_call = retarget_call_expr(call_expr.clone(), &method_name);
+                let result =
+                    self.call_function_with_call(&method, positional, named, env, method_call);
                 self.s3_dispatch_stack.borrow_mut().pop();
                 return result;
             }
@@ -2177,10 +2247,11 @@ impl Interpreter {
                 generic: generic.to_string(),
                 classes: classes.clone(),
                 class_index: classes.len(),
-                object: positional.first().cloned().unwrap_or(RValue::Null),
+                object: dispatch_object.clone(),
             };
             self.s3_dispatch_stack.borrow_mut().push(ctx);
-            let result = self.call_function_with_call(&method, positional, named, env, call_expr);
+            let method_call = retarget_call_expr(call_expr, &default_name);
+            let result = self.call_function_with_call(&method, positional, named, env, method_call);
             self.s3_dispatch_stack.borrow_mut().pop();
             return result;
         }

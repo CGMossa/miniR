@@ -4,7 +4,7 @@
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
-use crate::interpreter::{with_interpreter, S3DispatchContext};
+use crate::interpreter::{retarget_call_expr, with_interpreter, S3DispatchContext};
 use crate::parser::ast::{BinaryOp, UnaryOp};
 use minir_macros::interpreter_builtin;
 
@@ -820,7 +820,7 @@ fn interp_next_method(
                     object: args.first().cloned().unwrap_or(RValue::Null),
                 };
                 interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-                let call_expr = interp.current_call_expr();
+                let call_expr = retarget_call_expr(interp.current_call_expr(), &method_name);
                 let result = interp
                     .call_function_with_call(&method, &args, named, env, call_expr)
                     .map_err(RError::from);
@@ -839,7 +839,7 @@ fn interp_next_method(
                 object: args.first().cloned().unwrap_or(RValue::Null),
             };
             interp.s3_dispatch_stack.borrow_mut().push(next_ctx);
-            let call_expr = interp.current_call_expr();
+            let call_expr = retarget_call_expr(interp.current_call_expr(), &default_name);
             let result = interp
                 .call_function_with_call(&method, &args, named, env, call_expr)
                 .map_err(RError::from);

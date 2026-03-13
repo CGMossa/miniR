@@ -3,8 +3,7 @@
 
 use minir_macros::noop_builtin;
 
-// Core language (on.exit and missing — pre_eval.rs)
-noop_builtin!("UseMethod", 1);
+// Core language (on.exit and missing — pre_eval.rs; UseMethod — builtins.rs)
 
 // Data structures
 
