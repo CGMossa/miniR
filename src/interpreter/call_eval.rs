@@ -18,6 +18,38 @@ struct ClosureCall<'a> {
     call_expr: Option<Expr>,
 }
 
+impl Interpreter {
+    pub(super) fn eval_call(
+        &self,
+        func: &Expr,
+        args: &[Arg],
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_call(self, func, args, env)
+    }
+
+    pub fn call_function(
+        &self,
+        func: &RValue,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        call_function(self, func, positional, named, env)
+    }
+
+    pub(crate) fn call_function_with_call(
+        &self,
+        func: &RValue,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+        env: &Environment,
+        call_expr: Option<Expr>,
+    ) -> Result<RValue, RFlow> {
+        call_function_with_call(self, func, positional, named, env, call_expr)
+    }
+}
+
 pub(super) fn eval_call(
     interp: &Interpreter,
     func: &Expr,
