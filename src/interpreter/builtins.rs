@@ -670,7 +670,7 @@ fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
-fn coerce_row_names_value(value: &RValue) -> RValue {
+fn coerce_name_strings(value: &RValue) -> RValue {
     match value {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Character(_) => value.clone(),
@@ -699,12 +699,41 @@ fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     match args.first() {
         Some(RValue::List(list)) => Ok(list
             .get_attr("row.names")
-            .map(coerce_row_names_value)
+            .map(coerce_name_strings)
             .unwrap_or(RValue::Null)),
         Some(RValue::Vector(rv)) => {
             if let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") {
                 if let Some((_, row_names)) = dimnames.values.first() {
-                    return Ok(coerce_row_names_value(row_names));
+                    return Ok(coerce_name_strings(row_names));
+                }
+            }
+            Ok(RValue::Null)
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+#[builtin(name = "colnames", min_args = 1)]
+fn builtin_col_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(value @ RValue::List(list)) => {
+            if let Some(RValue::List(dimnames)) = list.get_attr("dimnames") {
+                if let Some((_, col_names)) = dimnames.values.get(1) {
+                    return Ok(coerce_name_strings(col_names));
+                }
+            }
+            if has_class(value, "data.frame") {
+                return Ok(list
+                    .get_attr("names")
+                    .map(coerce_name_strings)
+                    .unwrap_or(RValue::Null));
+            }
+            Ok(RValue::Null)
+        }
+        Some(RValue::Vector(rv)) => {
+            if let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") {
+                if let Some((_, col_names)) = dimnames.values.get(1) {
+                    return Ok(coerce_name_strings(col_names));
                 }
             }
             Ok(RValue::Null)
