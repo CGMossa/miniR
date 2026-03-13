@@ -33,8 +33,8 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `dim(x)` / `dim<-` — get/set dimensions
 - `nrow(x)` / `ncol(x)` / `NROW(x)` / `NCOL(x)` — row/column count
 - `t(x)` — transpose with matrix dimname propagation
-- `crossprod(x)` / `tcrossprod(x)` — cross products (via ndarray)
-- `diag(x)` — extract diagonal, create diagonal/identity matrix
+- `crossprod(x)` / `tcrossprod(x)` — cross products with matrix class and common dimname propagation
+- `diag(x)` — extract diagonal, create diagonal/identity matrix with matrix-class outputs
 
 ## Apply Family
 
@@ -51,7 +51,7 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `pmin(...)` / `pmax(...)` — parallel min/max with recycling and NA propagation
 - `signif(x, digits)` — round to significant digits
 - `cumall(x)` / `cumany(x)` — cumulative logical AND/OR
-- `lower.tri(x)` / `upper.tri(x)` — triangular matrix extraction
+- `lower.tri(x)` / `upper.tri(x)` — triangular matrix extraction as logical matrices
 
 ## Bitwise
 
