@@ -5,6 +5,73 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, Expr};
 
+impl Interpreter {
+    pub(super) fn eval_index(
+        &self,
+        object: &Expr,
+        indices: &[Arg],
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_index(self, object, indices, env)
+    }
+
+    pub(crate) fn index_by_integer(
+        &self,
+        v: &Vector,
+        indices: &[Option<i64>],
+    ) -> Result<RValue, RFlow> {
+        index_by_integer(self, v, indices)
+    }
+
+    pub(super) fn eval_index_double(
+        &self,
+        object: &Expr,
+        indices: &[Arg],
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_index_double(self, object, indices, env)
+    }
+
+    pub(super) fn eval_dollar(
+        &self,
+        object: &Expr,
+        member: &str,
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_dollar(self, object, member, env)
+    }
+
+    pub(super) fn eval_index_assign(
+        &self,
+        object: &Expr,
+        indices: &[Arg],
+        val: RValue,
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_index_assign(self, object, indices, val, env)
+    }
+
+    pub(super) fn eval_index_double_assign(
+        &self,
+        object: &Expr,
+        indices: &[Arg],
+        val: RValue,
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_index_double_assign(self, object, indices, val, env)
+    }
+
+    pub(super) fn eval_dollar_assign(
+        &self,
+        object: &Expr,
+        member: &str,
+        val: RValue,
+        env: &Environment,
+    ) -> Result<RValue, RFlow> {
+        eval_dollar_assign(self, object, member, val, env)
+    }
+}
+
 pub(super) fn eval_index(
     interp: &Interpreter,
     object: &Expr,
