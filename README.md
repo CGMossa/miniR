@@ -10,7 +10,7 @@ Early development. The current tree already has:
 
 - A parser for the full R grammar with custom parse errors and suggestions
 - Atomic vectors (logical, integer, double, character, raw, complex), lists, and language objects
-- Attributes on vectors and lists, plus matrices, arrays, factors, and a basic `data.frame()`
+- Attributes on vectors and lists, plus matrices, arrays, factors, and a `data.frame()` constructor with recycling and row-name handling
 - Lexical scoping with R's environment chain (base -> global -> local)
 - Hundreds of built-in functions across math, strings/regex, I/O, system, factors, conditions, and metaprogramming
 - Formula literals (`~`) as classed language objects with `.Environment`
