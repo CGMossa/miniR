@@ -9,4 +9,6 @@ This document tracks where miniR intentionally diverges from GNU R behavior.
 
 ## Planned
 
-(None yet — add divergences here as they are implemented.)
+- `readRDS()` / `saveRDS()` currently use a miniR-specific text format (`miniRDS1`)
+  instead of GNU R's binary RDS/XDR format. Files round-trip common miniR values
+  within miniR, but they are not compatible with GNU R yet.

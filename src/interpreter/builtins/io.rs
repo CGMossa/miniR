@@ -1,9 +1,16 @@
 //! File I/O builtins — reading and writing data files (CSV, table, lines, scan)
 //! and file system utilities (file.path, file.exists).
 
+use std::collections::HashSet;
+
+use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
+use crate::interpreter::with_interpreter;
+use crate::parser::parse_program;
 use derive_more::{Display, Error};
 use minir_macros::builtin;
+
+const MINIR_RDS_HEADER: &str = "miniRDS1\n";
 
 // region: IoError
 
@@ -32,6 +39,8 @@ pub enum IoError {
         #[error(source)]
         source: std::io::Error,
     },
+    #[display("unsupported value in saveRDS(): {}", details)]
+    UnsupportedSerialization { details: String },
 }
 
 impl From<IoError> for RError {
@@ -41,6 +50,293 @@ impl From<IoError> for RError {
 }
 
 // endregion
+
+fn escape_r_string(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn syntactic_attr_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '.') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '_')
+}
+
+fn serialize_complex(value: num_complex::Complex64) -> String {
+    if value.im < 0.0 {
+        format!(
+            "{}{}i",
+            format_r_double(value.re),
+            format_r_double(value.im)
+        )
+    } else {
+        format!(
+            "{}+{}i",
+            format_r_double(value.re),
+            format_r_double(value.im)
+        )
+    }
+}
+
+fn serialize_vector(value: &Vector) -> String {
+    match value {
+        Vector::Raw(values) if values.is_empty() => "raw(0)".to_string(),
+        Vector::Raw(values) => format!(
+            "as.raw(c({}))",
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Vector::Logical(values) if values.is_empty() => "logical(0)".to_string(),
+        Vector::Logical(values) => format!(
+            "c({})",
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(true) => "TRUE".to_string(),
+                    Some(false) => "FALSE".to_string(),
+                    None => "NA".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Vector::Integer(values) if values.is_empty() => "integer(0)".to_string(),
+        Vector::Integer(values) => format!(
+            "c({})",
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(value) => format!("{value}L"),
+                    None => "NA_integer_".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Vector::Double(values) if values.is_empty() => "numeric(0)".to_string(),
+        Vector::Double(values) => format!(
+            "c({})",
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(value) => format_r_double(*value),
+                    None => "NA_real_".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Vector::Complex(values) if values.is_empty() => "complex(0)".to_string(),
+        Vector::Complex(values) => format!(
+            "c({})",
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(value) => serialize_complex(*value),
+                    None => "NA_complex_".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Vector::Character(values) if values.is_empty() => "character(0)".to_string(),
+        Vector::Character(values) => format!(
+            "c({})",
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(value) => format!("\"{}\"", escape_r_string(value)),
+                    None => "NA_character_".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn serialize_attr_pairs(
+    attrs: Option<&std::collections::HashMap<String, RValue>>,
+    synthetic_names: Option<Vec<Option<String>>>,
+) -> Result<Vec<(String, String)>, RError> {
+    let mut pairs = Vec::new();
+    let mut seen = HashSet::new();
+
+    if let Some(names) = synthetic_names {
+        if names.iter().any(|name| name.is_some()) {
+            pairs.push((
+                "names".to_string(),
+                serialize_rvalue(&RValue::vec(Vector::Character(names.into())))?,
+            ));
+            seen.insert("names".to_string());
+        }
+    }
+
+    if let Some(attrs) = attrs {
+        let mut keys: Vec<&String> = attrs.keys().collect();
+        keys.sort();
+        for key in keys {
+            if seen.contains(key) {
+                continue;
+            }
+            if !syntactic_attr_name(key) {
+                return Err(IoError::UnsupportedSerialization {
+                    details: format!("attribute '{}' is not yet serializable", key),
+                }
+                .into());
+            }
+            pairs.push((key.clone(), serialize_rvalue(&attrs[key])?));
+        }
+    }
+
+    Ok(pairs)
+}
+
+fn serialize_with_attrs(base: String, attrs: Vec<(String, String)>) -> String {
+    if attrs.is_empty() {
+        return base;
+    }
+    let attr_args = attrs
+        .into_iter()
+        .map(|(name, value)| format!("{name} = {value}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("structure({base}, {attr_args})")
+}
+
+fn serialize_rvalue(value: &RValue) -> Result<String, RError> {
+    match value {
+        RValue::Null => Ok("NULL".to_string()),
+        RValue::Vector(rv) => Ok(serialize_with_attrs(
+            serialize_vector(&rv.inner),
+            serialize_attr_pairs(rv.attrs.as_deref(), None)?,
+        )),
+        RValue::List(list) => {
+            let base = format!(
+                "list({})",
+                list.values
+                    .iter()
+                    .map(|(_, value)| serialize_rvalue(value))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ")
+            );
+            let synthetic_names = if list.get_attr("names").is_none() {
+                Some(
+                    list.values
+                        .iter()
+                        .map(|(name, _)| name.clone())
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            };
+            Ok(serialize_with_attrs(
+                base,
+                serialize_attr_pairs(list.attrs.as_deref(), synthetic_names)?,
+            ))
+        }
+        RValue::Language(expr) => {
+            let base = format!("quote({})", deparse_expr(expr));
+            Ok(serialize_with_attrs(
+                base,
+                serialize_attr_pairs(expr.attrs.as_deref(), None)?,
+            ))
+        }
+        RValue::Function(_) => Err(IoError::UnsupportedSerialization {
+            details: "functions are not yet serializable".to_string(),
+        }
+        .into()),
+        RValue::Environment(_) => Err(IoError::UnsupportedSerialization {
+            details: "environments are not yet serializable".to_string(),
+        }
+        .into()),
+    }
+}
+
+fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, RError> {
+    args.first()
+        .or_else(|| {
+            named
+                .iter()
+                .find(|(name, _)| name == "file")
+                .map(|(_, value)| value)
+        })
+        .and_then(|value| value.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))
+}
+
+#[builtin(name = "readRDS", min_args = 1)]
+fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = read_rds_path(args, named)?;
+    let content = std::fs::read_to_string(&path).map_err(|source| IoError::CannotOpen {
+        path: path.clone(),
+        source,
+    })?;
+
+    let body = content.strip_prefix(MINIR_RDS_HEADER).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            format!(
+                "unsupported readRDS() format in '{}': miniR currently reads only miniRDS text files written by saveRDS()",
+                path
+            ),
+        )
+    })?;
+
+    let ast =
+        parse_program(body).map_err(|err| RError::new(RErrorKind::Parse, format!("{err}")))?;
+
+    with_interpreter(|interp| {
+        let base = interp
+            .global_env
+            .parent()
+            .unwrap_or_else(|| interp.global_env.clone());
+        let eval_env = Environment::new_child(&base);
+        interp.eval_in(&ast, &eval_env).map_err(RError::from)
+    })
+}
+
+#[builtin(name = "saveRDS", min_args = 2)]
+fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let object = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'object' is missing".to_string(),
+        )
+    })?;
+    let path = args
+        .get(1)
+        .or_else(|| {
+            named
+                .iter()
+                .find(|(name, _)| name == "file")
+                .map(|(_, value)| value)
+        })
+        .and_then(|value| value.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
+
+    let serialized = serialize_rvalue(object)?;
+    std::fs::write(&path, format!("{MINIR_RDS_HEADER}{serialized}\n")).map_err(|source| {
+        IoError::WriteFailed {
+            path: path.clone(),
+            source,
+        }
+    })?;
+    Ok(RValue::Null)
+}
 
 #[builtin]
 fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
