@@ -7,9 +7,7 @@
 
 use reedline::{Completer, Span, Suggestion};
 
-use crate::interpreter::builtins::{
-    BUILTIN_REGISTRY, INTERPRETER_BUILTIN_REGISTRY, PRE_EVAL_BUILTIN_REGISTRY,
-};
+use crate::interpreter::builtins::BUILTIN_REGISTRY;
 
 pub struct RCompleter {
     names: Vec<String>,
@@ -51,27 +49,10 @@ impl RCompleter {
             names.push((*kw).to_string());
         }
 
-        // Collect all builtin names from the registries
-        for &(name, _, _) in BUILTIN_REGISTRY {
+        // Collect all builtin names from the registry
+        for descriptor in BUILTIN_REGISTRY {
+            let name = descriptor.name;
             // Skip operator-style names like "+", "-", "==", etc.
-            if name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphabetic() || c == '.')
-            {
-                names.push(name.to_string());
-            }
-        }
-        for &(name, _, _) in INTERPRETER_BUILTIN_REGISTRY {
-            if name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphabetic() || c == '.')
-            {
-                names.push(name.to_string());
-            }
-        }
-        for &(name, _, _) in PRE_EVAL_BUILTIN_REGISTRY {
             if name
                 .chars()
                 .next()

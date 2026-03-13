@@ -18,9 +18,26 @@ use std::sync::Arc;
 
 use crate::interpreter::coerce;
 use crate::interpreter::environment::Environment;
-use crate::parser::ast::{Expr, Param};
+use crate::parser::ast::{Arg, Expr, Param};
 
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
+pub type InterpreterBuiltinFn =
+    fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>;
+pub type PreEvalBuiltinFn = fn(&[Arg], &Environment) -> Result<RValue, RError>;
+
+#[derive(Debug, Clone, Copy)]
+pub enum BuiltinImplementation {
+    Eager(BuiltinFn),
+    Interpreter(InterpreterBuiltinFn),
+    PreEval(PreEvalBuiltinFn),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BuiltinDescriptor {
+    pub name: &'static str,
+    pub implementation: BuiltinImplementation,
+    pub min_args: usize,
+}
 
 /// Attribute map — every R object can carry named attributes
 pub type Attributes = HashMap<String, RValue>;
@@ -189,7 +206,8 @@ pub enum RFunction {
     },
     Builtin {
         name: String,
-        func: BuiltinFn,
+        implementation: BuiltinImplementation,
+        min_args: usize,
     },
 }
 
@@ -1060,8 +1078,6 @@ pub fn deparse_expr(expr: &Expr) -> String {
         }
     }
 }
-
-use crate::parser::ast::Arg;
 
 fn deparse_arg(arg: &Arg) -> String {
     match (&arg.name, &arg.value) {

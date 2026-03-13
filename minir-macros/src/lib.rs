@@ -31,16 +31,16 @@ fn r_name_to_ident(name: &str) -> String {
 fn emit_builtin_registration(
     input: &ItemFn,
     attr_args: BuiltinAttr,
+    kind: BuiltinKind,
     prefix: &str,
     reg_prefix: &str,
-    registry_path: TokenStream2,
-    fn_type: TokenStream2,
 ) -> TokenStream2 {
     let fn_name = &input.sig.ident;
     let r_name = attr_args
         .name
         .unwrap_or_else(|| infer_r_name(&fn_name.to_string(), prefix));
     let min_args = attr_args.min_args as usize;
+    let implementation = kind.registry_ctor(fn_name);
 
     let reg_name = format_ident!("__{}_{}", reg_prefix, fn_name.to_string().to_uppercase());
 
@@ -52,8 +52,13 @@ fn emit_builtin_registration(
             i
         );
         quote! {
-            #[linkme::distributed_slice(#registry_path)]
-            static #alias_reg: (&str, #fn_type, usize) = (#alias, #fn_name, #min_args);
+            #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
+            static #alias_reg: crate::interpreter::builtins::BuiltinDescriptor =
+                crate::interpreter::builtins::BuiltinDescriptor {
+                    name: #alias,
+                    implementation: #implementation,
+                    min_args: #min_args,
+                };
         }
     });
 
@@ -61,8 +66,13 @@ fn emit_builtin_registration(
         #[doc(alias = #r_name)]
         #input
 
-        #[linkme::distributed_slice(#registry_path)]
-        static #reg_name: (&str, #fn_type, usize) = (#r_name, #fn_name, #min_args);
+        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
+        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor =
+            crate::interpreter::builtins::BuiltinDescriptor {
+                name: #r_name,
+                implementation: #implementation,
+                min_args: #min_args,
+            };
 
         #(#alias_regs)*
     }
@@ -229,6 +239,20 @@ impl BuiltinKind {
             BuiltinKind::PreEval => "`#[pre_eval_builtin]`",
         }
     }
+
+    fn registry_ctor(self, fn_name: &syn::Ident) -> TokenStream2 {
+        match self {
+            BuiltinKind::Builtin => {
+                quote!(crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_name))
+            }
+            BuiltinKind::Interpreter => {
+                quote!(crate::interpreter::builtins::BuiltinImplementation::Interpreter(#fn_name))
+            }
+            BuiltinKind::PreEval => {
+                quote!(crate::interpreter::builtins::BuiltinImplementation::PreEval(#fn_name))
+            }
+        }
+    }
 }
 
 /// Attribute macro for builtin R function definitions.
@@ -255,10 +279,9 @@ pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     emit_builtin_registration(
         &input,
         attr_args,
+        BuiltinKind::Builtin,
         "builtin_",
         "BUILTIN_REG",
-        quote!(crate::interpreter::builtins::BUILTIN_REGISTRY),
-        quote!(crate::interpreter::builtins::BuiltinFn),
     )
     .into()
 }
@@ -281,10 +304,9 @@ pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream 
     emit_builtin_registration(
         &input,
         attr_args,
+        BuiltinKind::Interpreter,
         "interp_",
         "INTERP_REG",
-        quote!(crate::interpreter::builtins::INTERPRETER_BUILTIN_REGISTRY),
-        quote!(crate::interpreter::builtins::InterpreterBuiltinFn),
     )
     .into()
 }
@@ -306,10 +328,9 @@ pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     emit_builtin_registration(
         &input,
         attr_args,
+        BuiltinKind::PreEval,
         "pre_eval_",
         "PRE_EVAL_REG",
-        quote!(crate::interpreter::builtins::PRE_EVAL_BUILTIN_REGISTRY),
-        quote!(crate::interpreter::builtins::PreEvalBuiltinFn),
     )
     .into()
 }
@@ -343,8 +364,12 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
         }
 
         #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-        static #reg_name: (&str, crate::interpreter::builtins::BuiltinFn, usize) =
-            (#r_name, #fn_ident, #min_args);
+        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor =
+            crate::interpreter::builtins::BuiltinDescriptor {
+                name: #r_name,
+                implementation: crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident),
+                min_args: #min_args,
+            };
     };
 
     expanded.into()
