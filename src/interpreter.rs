@@ -1,6 +1,7 @@
 mod arguments;
 pub mod builtins;
 pub mod call;
+mod call_eval;
 pub mod coerce;
 pub mod environment;
 mod indexing;
@@ -1036,73 +1037,7 @@ impl Interpreter {
     }
 
     fn eval_call(&self, func: &Expr, args: &[Arg], env: &Environment) -> Result<RValue, RFlow> {
-        let f = self.eval_in(func, env)?;
-        let call_expr = Expr::Call {
-            func: Box::new(func.clone()),
-            args: args.to_vec(),
-        };
-
-        // R behavior: if the symbol resolved to a non-function but we're in
-        // call position, search up the env chain for a function with that name
-        // (like R's findFun). This lets `c <- 1; c(1,2,3)` still work.
-        let f = if !matches!(f, RValue::Function(_)) {
-            if let Expr::Symbol(name) = func {
-                env.get_function(name)
-                    .ok_or_else(|| RError::other("attempt to apply non-function".to_string()))?
-            } else {
-                f
-            }
-        } else {
-            f
-        };
-
-        // Pre-eval builtins intercept before argument evaluation
-        if let RValue::Function(RFunction::Builtin {
-            name,
-            implementation,
-            max_args,
-            ..
-        }) = &f
-        {
-            if name == "UseMethod" {
-                return self.eval_use_method(args, env);
-            }
-            if let BuiltinImplementation::PreEval(handler) = implementation {
-                Self::ensure_builtin_max_arity(name, *max_args, args.len()).map_err(RFlow::from)?;
-                return handler(args, env).map_err(Into::into);
-            }
-        }
-
-        let mut positional = Vec::new();
-        let mut named = Vec::new();
-
-        for arg in args {
-            if let Some(ref name) = arg.name {
-                if let Some(ref val_expr) = arg.value {
-                    named.push((name.clone(), self.eval_in(val_expr, env)?));
-                } else {
-                    // name= with no value (missing)
-                    named.push((name.clone(), RValue::Null));
-                }
-            } else if let Some(ref val_expr) = arg.value {
-                // Expand ... into individual positional/named args
-                if matches!(val_expr, Expr::Dots) {
-                    if let Some(RValue::List(list)) = env.get("...") {
-                        for (opt_name, val) in &list.values {
-                            if let Some(n) = opt_name {
-                                named.push((n.clone(), val.clone()));
-                            } else {
-                                positional.push(val.clone());
-                            }
-                        }
-                    }
-                } else {
-                    positional.push(self.eval_in(val_expr, env)?);
-                }
-            }
-        }
-
-        self.call_function_with_call(&f, &positional, &named, env, Some(call_expr))
+        call_eval::eval_call(self, func, args, env)
     }
 
     pub fn call_function(
@@ -1112,7 +1047,7 @@ impl Interpreter {
         named: &[(String, RValue)],
         env: &Environment,
     ) -> Result<RValue, RFlow> {
-        self.call_function_with_call(func, positional, named, env, None)
+        call_eval::call_function(self, func, positional, named, env)
     }
 
     pub(crate) fn call_function_with_call(
@@ -1123,70 +1058,7 @@ impl Interpreter {
         env: &Environment,
         call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
-        match func {
-            RValue::Function(RFunction::Builtin {
-                name,
-                implementation,
-                max_args,
-                ..
-            }) => {
-                let actual_args = positional.len() + named.len();
-                Self::ensure_builtin_max_arity(name, *max_args, actual_args)
-                    .map_err(RFlow::from)?;
-
-                match implementation {
-                    BuiltinImplementation::Eager(func) => {
-                        func(positional, named).map_err(Into::into)
-                    }
-                    BuiltinImplementation::Interpreter(handler) => {
-                        handler(positional, named, &BuiltinContext::new(self, env))
-                            .map_err(Into::into)
-                    }
-                    BuiltinImplementation::PreEval(_) => Err(RError::other(
-                        "internal error: pre-eval builtin reached eager dispatch",
-                    )
-                    .into()),
-                }
-            }
-            RValue::Function(RFunction::Closure {
-                params,
-                body,
-                env: closure_env,
-            }) => {
-                let bound = self.bind_closure_call(
-                    params,
-                    positional,
-                    named,
-                    closure_env,
-                    func,
-                    call_expr,
-                )?;
-                let call_env = bound.env;
-
-                self.call_stack.borrow_mut().push(bound.frame);
-
-                let result = match self.eval_in(body, &call_env) {
-                    Ok(val) => Ok(val),
-                    Err(RFlow::Signal(RSignal::Return(val))) => Ok(val),
-                    Err(e) => Err(e),
-                };
-
-                // Run on.exit handlers regardless of success/failure
-                let on_exit_exprs = call_env.take_on_exit();
-                for expr in &on_exit_exprs {
-                    // on.exit handlers run but don't alter the return value
-                    let _ = self.eval_in(expr, &call_env);
-                }
-                self.call_stack.borrow_mut().pop();
-
-                result
-            }
-            _ => Err(RError::new(
-                RErrorKind::Type,
-                "attempt to apply non-function".to_string(),
-            )
-            .into()),
-        }
+        call_eval::call_function_with_call(self, func, positional, named, env, call_expr)
     }
 
     fn eval_index(
