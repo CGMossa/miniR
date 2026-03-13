@@ -670,6 +670,49 @@ fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+fn coerce_row_names_value(value: &RValue) -> RValue {
+    match value {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(_) => value.clone(),
+            Vector::Integer(values) => RValue::vec(Vector::Character(
+                values
+                    .iter()
+                    .map(|value| value.map(|value| value.to_string()))
+                    .collect::<Vec<_>>()
+                    .into(),
+            )),
+            Vector::Double(values) => RValue::vec(Vector::Character(
+                values
+                    .iter()
+                    .map(|value| value.map(format_r_double))
+                    .collect::<Vec<_>>()
+                    .into(),
+            )),
+            _ => RValue::Null,
+        },
+        _ => RValue::Null,
+    }
+}
+
+#[builtin(name = "row.names", names = ["rownames"], min_args = 1)]
+fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::List(list)) => Ok(list
+            .get_attr("row.names")
+            .map(coerce_row_names_value)
+            .unwrap_or(RValue::Null)),
+        Some(RValue::Vector(rv)) => {
+            if let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") {
+                if let Some((_, row_names)) = dimnames.values.first() {
+                    return Ok(coerce_row_names_value(row_names));
+                }
+            }
+            Ok(RValue::Null)
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
 #[builtin(name = "class<-", min_args = 2)]
 fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_val = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -1490,6 +1533,11 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .or(args.get(3))
         .and_then(|v| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
+    let dimnames = named
+        .iter()
+        .find(|(n, _)| n == "dimnames")
+        .map(|(_, v)| v)
+        .or(args.get(4));
 
     let data_vec = match &data {
         RValue::Vector(v) => v.to_doubles(),
@@ -1538,6 +1586,11 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
             vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
         )),
     );
+    if let Some(dimnames) = dimnames {
+        if !dimnames.is_null() {
+            rv.set_attr("dimnames".to_string(), dimnames.clone());
+        }
+    }
     Ok(RValue::Vector(rv))
 }
 

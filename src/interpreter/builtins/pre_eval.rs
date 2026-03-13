@@ -2,11 +2,608 @@
 //! Each is auto-registered via `#[pre_eval_builtin]`.
 //! The interpreter is accessed via the thread-local `with_interpreter()`.
 
+use std::collections::BTreeSet;
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
 use crate::parser::ast::{Arg, Expr};
 use minir_macros::pre_eval_builtin;
+
+#[derive(Clone)]
+struct DataFrameColumn {
+    name: String,
+    value: RValue,
+    row_count: usize,
+    row_names: Option<RowNames>,
+}
+
+type RowNames = Vec<Option<String>>;
+
+fn is_data_frame_control_arg(name: &str) -> bool {
+    matches!(
+        name,
+        "row.names" | "stringsAsFactors" | "check.rows" | "check.names" | "fix.empty.names"
+    )
+}
+
+fn sanitize_data_frame_name(source: &str) -> String {
+    let mut out = String::new();
+    for ch in source.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('.');
+        }
+    }
+
+    if out.is_empty() || out == "." {
+        out = "X".to_string();
+    }
+
+    if out
+        .chars()
+        .next()
+        .is_some_and(|ch| !(ch.is_ascii_alphabetic() || ch == '.'))
+    {
+        out.insert(0, 'X');
+    }
+
+    out
+}
+
+fn default_data_frame_name(expr: Option<&Expr>, index: usize) -> String {
+    expr.map(|expr| sanitize_data_frame_name(&deparse_expr(expr)))
+        .unwrap_or_else(|| format!("V{}", index))
+}
+
+fn row_names_to_strings(value: &RValue) -> Option<RowNames> {
+    match value {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(values) => Some(values.to_vec()),
+            Vector::Integer(values) => {
+                Some(values.iter().map(|v| v.map(|v| v.to_string())).collect())
+            }
+            Vector::Double(values) => Some(values.iter().map(|v| v.map(format_r_double)).collect()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn vector_names(rv: &RVector) -> Option<RowNames> {
+    rv.get_attr("names").and_then(row_names_to_strings)
+}
+
+fn expr_vector_names(expr: &Expr) -> Option<RowNames> {
+    let Expr::Call { func, args } = expr else {
+        return None;
+    };
+    let Expr::Symbol(name) = func.as_ref() else {
+        return None;
+    };
+    if name != "c" || !args.iter().any(|arg| arg.name.is_some()) {
+        return None;
+    }
+    Some(args.iter().map(|arg| arg.name.clone()).collect())
+}
+
+fn matrix_dimnames(rv: &RVector) -> (Option<RowNames>, Option<RowNames>) {
+    let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") else {
+        return (None, None);
+    };
+
+    let row_names = dimnames
+        .values
+        .first()
+        .and_then(|(_, value)| row_names_to_strings(value));
+    let col_names = dimnames
+        .values
+        .get(1)
+        .and_then(|(_, value)| row_names_to_strings(value));
+
+    (row_names, col_names)
+}
+
+fn factorize_character_vector(values: Vec<Option<String>>) -> Result<RValue, RError> {
+    let mut levels: Vec<String> = values.iter().flatten().cloned().collect();
+    levels.sort();
+    levels.dedup();
+
+    let codes: Vec<Option<i64>> = values
+        .iter()
+        .map(|value| match value {
+            Some(value) => levels
+                .iter()
+                .position(|level| level == value)
+                .map(|idx| i64::try_from(idx + 1))
+                .transpose(),
+            None => Ok(None),
+        })
+        .collect::<Result<_, _>>()?;
+
+    let mut rv = RVector::from(Vector::Integer(codes.into()));
+    rv.set_attr(
+        "levels".to_string(),
+        RValue::vec(Vector::Character(
+            levels.into_iter().map(Some).collect::<Vec<_>>().into(),
+        )),
+    );
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("factor".to_string())].into())),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+fn maybe_factorize_strings(value: RValue, strings_as_factors: bool) -> Result<RValue, RError> {
+    if !strings_as_factors {
+        return Ok(value);
+    }
+
+    match value {
+        RValue::Vector(rv)
+            if matches!(rv.inner, Vector::Character(_)) && rv.get_attr("class").is_none() =>
+        {
+            let Vector::Character(values) = rv.inner else {
+                unreachable!();
+            };
+            factorize_character_vector(values.to_vec())
+        }
+        other => Ok(other),
+    }
+}
+
+fn strip_names_attr(value: &mut RValue) {
+    match value {
+        RValue::Vector(rv) => {
+            rv.attrs.as_mut().map(|attrs| attrs.remove("names"));
+        }
+        RValue::List(list) => {
+            list.attrs.as_mut().map(|attrs| attrs.remove("names"));
+        }
+        _ => {}
+    }
+}
+
+fn recycle_value(value: &RValue, target_len: usize) -> Result<RValue, RError> {
+    match value {
+        RValue::Vector(rv) => {
+            let mut recycled = rv.clone();
+            recycled.inner = match &rv.inner {
+                Vector::Raw(values) => Vector::Raw(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()])
+                        .collect::<Vec<_>>(),
+                ),
+                Vector::Logical(values) => Vector::Logical(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()])
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                Vector::Integer(values) => Vector::Integer(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()])
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                Vector::Double(values) => Vector::Double(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()])
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                Vector::Complex(values) => Vector::Complex(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()])
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                Vector::Character(values) => Vector::Character(
+                    (0..target_len)
+                        .map(|idx| values[idx % values.len()].clone())
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+            };
+            Ok(RValue::Vector(recycled))
+        }
+        RValue::List(list) => {
+            let mut recycled = list.clone();
+            recycled.values = (0..target_len)
+                .map(|idx| {
+                    let (name, value) = &list.values[idx % list.values.len()];
+                    (name.clone(), value.clone())
+                })
+                .collect();
+            Ok(RValue::List(recycled))
+        }
+        other if target_len == 1 => Ok(other.clone()),
+        other if other.length() == 1 => Ok(other.clone()),
+        other => Err(RError::other(format!(
+            "cannot recycle {} to {} rows",
+            other.type_name(),
+            target_len
+        ))),
+    }
+}
+
+fn matrix_columns(
+    rv: &RVector,
+    explicit_name: Option<&str>,
+) -> Result<Vec<DataFrameColumn>, RError> {
+    let Some(dims) = super::get_dim_ints(rv.get_attr("dim")) else {
+        return Ok(Vec::new());
+    };
+    if dims.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let nrow = usize::try_from(dims[0].unwrap_or(0))?;
+    let ncol = usize::try_from(dims[1].unwrap_or(0))?;
+    let (row_names, col_names) = matrix_dimnames(rv);
+
+    let columns = match &rv.inner {
+        Vector::Raw(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Raw(values[start..start + nrow].to_vec())),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+        Vector::Logical(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Logical(
+                        values[start..start + nrow].to_vec().into(),
+                    )),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+        Vector::Integer(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Integer(
+                        values[start..start + nrow].to_vec().into(),
+                    )),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+        Vector::Double(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Double(values[start..start + nrow].to_vec().into())),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+        Vector::Complex(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Complex(
+                        values[start..start + nrow].to_vec().into(),
+                    )),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+        Vector::Character(values) => (0..ncol)
+            .map(|col_idx| {
+                let start = col_idx * nrow;
+                DataFrameColumn {
+                    name: match (
+                        explicit_name,
+                        col_names
+                            .as_ref()
+                            .and_then(|n| n.get(col_idx))
+                            .cloned()
+                            .flatten(),
+                    ) {
+                        (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                        (Some(prefix), None) => format!("{}.{}", prefix, col_idx + 1),
+                        (None, Some(name)) => name,
+                        (None, None) => format!("X{}", col_idx + 1),
+                    },
+                    value: RValue::vec(Vector::Character(
+                        values[start..start + nrow].to_vec().into(),
+                    )),
+                    row_count: nrow,
+                    row_names: row_names.clone(),
+                }
+            })
+            .collect(),
+    };
+
+    Ok(columns)
+}
+
+fn expand_data_frame_value(
+    value: &RValue,
+    explicit_name: Option<&str>,
+    default_name: &str,
+    fallback_row_names: Option<RowNames>,
+    strings_as_factors: bool,
+) -> Result<Vec<DataFrameColumn>, RError> {
+    match value {
+        RValue::Null => Ok(Vec::new()),
+        RValue::List(list) => {
+            let source_row_names = if get_class(value)
+                .iter()
+                .any(|class_name| class_name == "data.frame")
+            {
+                list.get_attr("row.names").and_then(row_names_to_strings)
+            } else {
+                None
+            };
+
+            let mut columns = Vec::new();
+            for (idx, (name, column_value)) in list.values.iter().enumerate() {
+                let column_name = match (explicit_name, name.as_deref()) {
+                    (Some(prefix), Some(name)) => format!("{}.{}", prefix, name),
+                    (Some(prefix), None) => format!("{}.{}", prefix, idx + 1),
+                    (None, Some(name)) => name.to_string(),
+                    (None, None) => format!("{}.{}", default_name, idx + 1),
+                };
+                let row_names = source_row_names.clone().or_else(|| match column_value {
+                    RValue::Vector(rv) => vector_names(rv),
+                    _ => None,
+                });
+                let value = maybe_factorize_strings(column_value.clone(), strings_as_factors)?;
+                columns.push(DataFrameColumn {
+                    name: column_name,
+                    row_count: column_value.length(),
+                    value,
+                    row_names,
+                });
+            }
+            Ok(columns)
+        }
+        RValue::Vector(rv) if super::get_dim_ints(rv.get_attr("dim")).is_some() => {
+            let mut columns = matrix_columns(rv, explicit_name)?;
+            for column in &mut columns {
+                column.value = maybe_factorize_strings(column.value.clone(), strings_as_factors)?;
+            }
+            Ok(columns)
+        }
+        _ => Ok(vec![DataFrameColumn {
+            name: explicit_name.unwrap_or(default_name).to_string(),
+            row_count: value.length(),
+            row_names: match value {
+                RValue::Vector(rv) => vector_names(rv).or(fallback_row_names),
+                _ => None,
+            },
+            value: maybe_factorize_strings(value.clone(), strings_as_factors)?,
+        }]),
+    }
+}
+
+fn automatic_row_names(count: usize) -> RValue {
+    RValue::vec(Vector::Integer(
+        (1..=i64::try_from(count).unwrap_or(0))
+            .map(Some)
+            .collect::<Vec<_>>()
+            .into(),
+    ))
+}
+
+#[pre_eval_builtin(name = "data.frame")]
+fn pre_eval_data_frame(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+    let mut explicit_row_names = None;
+    let mut strings_as_factors = false;
+    let mut columns = Vec::new();
+    let mut unnamed_index = 0usize;
+
+    with_interpreter(|interp| {
+        for arg in args {
+            let Some(name) = arg.name.as_deref() else {
+                continue;
+            };
+            if !is_data_frame_control_arg(name) {
+                continue;
+            }
+            let Some(expr) = arg.value.as_ref() else {
+                continue;
+            };
+            let value = interp.eval_in(expr, env).map_err(RError::from)?;
+            match name {
+                "row.names" => explicit_row_names = Some(value),
+                "stringsAsFactors" => {
+                    strings_as_factors = value
+                        .as_vector()
+                        .and_then(Vector::as_logical_scalar)
+                        .unwrap_or(false);
+                }
+                _ => {}
+            }
+        }
+
+        for arg in args {
+            let Some(expr) = arg.value.as_ref() else {
+                continue;
+            };
+            if arg.name.as_deref().is_some_and(is_data_frame_control_arg) {
+                continue;
+            }
+
+            unnamed_index += 1;
+            let value = interp.eval_in(expr, env).map_err(RError::from)?;
+            let default_name = default_data_frame_name(
+                if arg.name.is_none() { Some(expr) } else { None },
+                unnamed_index,
+            );
+            columns.extend(expand_data_frame_value(
+                &value,
+                arg.name.as_deref(),
+                &default_name,
+                expr_vector_names(expr),
+                strings_as_factors,
+            )?);
+        }
+        Ok::<(), RError>(())
+    })?;
+
+    let mut lengths = BTreeSet::new();
+    for column in &columns {
+        lengths.insert(column.row_count);
+    }
+
+    let target_rows = match explicit_row_names.as_ref() {
+        Some(RValue::Null) => lengths.iter().copied().max().unwrap_or(0),
+        Some(value) => value.length(),
+        None => lengths.iter().copied().max().unwrap_or(0),
+    };
+
+    if let Some(row_names) = explicit_row_names.as_ref() {
+        if !matches!(row_names, RValue::Null) && !columns.is_empty() {
+            let valid = columns.iter().all(|column| column.row_count == target_rows);
+            if !valid {
+                return Err(RError::other(
+                    "row names supplied are of the wrong length".to_string(),
+                ));
+            }
+        }
+    }
+
+    let invalid_lengths: Vec<usize> = columns
+        .iter()
+        .filter_map(|column| {
+            if column.row_count == target_rows {
+                None
+            } else if column.row_count == 0 || target_rows % column.row_count != 0 {
+                Some(column.row_count)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if !invalid_lengths.is_empty() {
+        let mut all_lengths = lengths;
+        all_lengths.insert(target_rows);
+        return Err(RError::other(format!(
+            "arguments imply differing number of rows: {}",
+            all_lengths
+                .iter()
+                .map(|length| length.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+
+    let row_names_attr = match explicit_row_names {
+        Some(RValue::Null) => automatic_row_names(target_rows),
+        Some(value) => value,
+        None => columns
+            .iter()
+            .find(|column| column.row_count == target_rows)
+            .and_then(|column| column.row_names.clone())
+            .map(|names| RValue::vec(Vector::Character(names.into())))
+            .unwrap_or_else(|| automatic_row_names(target_rows)),
+    };
+
+    let mut output_columns = Vec::new();
+    for mut column in columns {
+        if column.row_count != target_rows {
+            column.value = recycle_value(&column.value, target_rows)?;
+        }
+        strip_names_attr(&mut column.value);
+        output_columns.push((Some(column.name), column.value));
+    }
+
+    let mut list = RList::new(output_columns);
+    let names: Vec<Option<String>> = list.values.iter().map(|(name, _)| name.clone()).collect();
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    list.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(names.into())),
+    );
+    list.set_attr("row.names".to_string(), row_names_attr);
+    Ok(RValue::List(list))
+}
 
 #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
 fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {

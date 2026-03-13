@@ -4,7 +4,7 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 
 ## Simplified Data and Object Semantics
 
-- [ ] `data.frame(...)` — currently constructs a classed list with `names` and `row.names`, but still needs column recycling, validation, and fuller R-compatible behavior
+- [ ] `data.frame(...)` — the common constructor path now handles recycling, `row.names`, list/matrix expansion, and `stringsAsFactors`, but subsetting edge cases, coercions, and fuller R-compatible behavior still need work
 - [ ] Attribute, name, and class propagation still needs cleanup across more subsetting and combination paths
 
 ## Remaining Builtin Stubs

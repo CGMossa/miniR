@@ -26,8 +26,8 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 
 ## Data Structures
 
-- Basic `data.frame(...)` constructor — creates a classed list with `names` and `row.names`
-- `matrix(data, nrow, ncol, byrow)` — create matrix
+- `data.frame(...)` — common constructor path handles recycling, `row.names`, list/matrix expansion, and `stringsAsFactors`
+- `matrix(data, nrow, ncol, byrow, dimnames)` — create matrix with optional dimension names
 - `dim(x)` / `dim<-` — get/set dimensions
 - `nrow(x)` / `ncol(x)` / `NROW(x)` / `NCOL(x)` — row/column count
 - `t(x)` — transpose
