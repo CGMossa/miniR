@@ -1,9 +1,4 @@
-mod interpreter;
-mod parser;
-mod repl;
-
 use std::env;
-use std::fs;
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
@@ -11,10 +6,8 @@ use reedline::{
     KeyCode, KeyModifiers, MenuBuilder, Reedline, ReedlineEvent, ReedlineMenu, Signal,
 };
 
-use interpreter::with_interpreter;
-use parser::ast::Expr;
-use parser::parse_program;
-use repl::{RCompleter, RHighlighter, RPrompt, RValidator};
+use r::repl::{RCompleter, RHighlighter, RPrompt, RValidator};
+use r::Session;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -35,18 +28,13 @@ fn main() {
 }
 
 fn run_expr(source: &str) {
-    match parse_program(source) {
-        Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
-            Ok(val) => {
-                if !val.is_null() && !is_invisible_result(&ast) {
-                    println!("{}", val);
-                }
+    let mut session = Session::new();
+    match session.eval_source(source) {
+        Ok(result) => {
+            if result.visible {
+                println!("{}", result.value);
             }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        },
+        }
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(1);
@@ -55,32 +43,10 @@ fn run_expr(source: &str) {
 }
 
 fn run_file(filename: &str) {
-    // Try UTF-8 first, fall back to lossy conversion for Latin-1/other encodings
-    let source = match fs::read_to_string(filename) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => match fs::read(filename) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(e2) => {
-                eprintln!("Error reading file '{}': {}", filename, e2);
-                std::process::exit(1);
-            }
-        },
+    let mut session = Session::new();
+    match session.eval_file(filename) {
+        Ok(_) => {}
         Err(e) => {
-            eprintln!("Error reading file '{}': {}", filename, e);
-            std::process::exit(1);
-        }
-    };
-
-    match parse_program(&source) {
-        Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        },
-        Err(mut e) => {
-            e.filename = Some(filename.to_string());
             eprintln!("{}", e);
             std::process::exit(1);
         }
@@ -145,27 +111,20 @@ Type 'q()' to quit.
         .with_edit_mode(edit_mode);
 
     let prompt = RPrompt;
+    let mut session = Session::new();
 
     loop {
         match line_editor.read_line(&prompt) {
-            Ok(Signal::Success(buffer)) => {
-                // The validator already ensures we only get complete expressions
-                match parse_program(&buffer) {
-                    Ok(ast) => match with_interpreter(|interp| interp.eval(&ast)) {
-                        Ok(val) => {
-                            if !val.is_null() && !is_invisible_result(&ast) {
-                                println!("{}", val);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("{}", e);
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("{}", e);
+            Ok(Signal::Success(buffer)) => match session.eval_source(&buffer) {
+                Ok(result) => {
+                    if result.visible {
+                        println!("{}", result.value);
                     }
                 }
-            }
+                Err(e) => {
+                    eprintln!("{}", e);
+                }
+            },
             Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
                 println!();
                 break;
@@ -175,20 +134,5 @@ Type 'q()' to quit.
                 break;
             }
         }
-    }
-}
-
-fn is_invisible_result(ast: &Expr) -> bool {
-    match ast {
-        Expr::Assign { .. } => true,
-        Expr::For { .. } => true,
-        Expr::While { .. } => true,
-        Expr::Repeat { .. } => true,
-        Expr::Call { func, .. } => {
-            matches!(func.as_ref(), Expr::Symbol(name) if name == "invisible")
-        }
-        Expr::Program(exprs) => exprs.last().is_some_and(is_invisible_result),
-        Expr::Block(exprs) => exprs.last().is_some_and(is_invisible_result),
-        _ => false,
     }
 }

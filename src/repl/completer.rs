@@ -15,6 +15,12 @@ pub struct RCompleter {
     names: Vec<String>,
 }
 
+impl Default for RCompleter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RCompleter {
     pub fn new() -> Self {
         let mut names: Vec<String> = Vec::new();
