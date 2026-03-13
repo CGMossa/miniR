@@ -18,11 +18,12 @@ use std::sync::Arc;
 
 use crate::interpreter::coerce;
 use crate::interpreter::environment::Environment;
+use crate::interpreter::BuiltinContext;
 use crate::parser::ast::{Arg, Expr, Param};
 
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
 pub type InterpreterBuiltinFn =
-    fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>;
+    for<'a> fn(&[RValue], &[(String, RValue)], &BuiltinContext<'a>) -> Result<RValue, RError>;
 pub type PreEvalBuiltinFn = fn(&[Arg], &Environment) -> Result<RValue, RError>;
 
 #[derive(Debug, Clone, Copy)]

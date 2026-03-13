@@ -145,9 +145,8 @@ fn signature_arg_matches(kind: BuiltinKind, index: usize, ty: &Type) -> bool {
         (BuiltinKind::Builtin, 1) | (BuiltinKind::Interpreter, 1) => {
             is_ref_to_slice_of_string_rvalue_pairs(ty)
         }
-        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 1) => {
-            is_ref_to_named(ty, "Environment")
-        }
+        (BuiltinKind::PreEval, 1) => is_ref_to_named(ty, "Environment"),
+        (BuiltinKind::Interpreter, 2) => is_ref_to_named(ty, "BuiltinContext"),
         (BuiltinKind::PreEval, 0) => is_ref_to_slice_of_named(ty, "Arg"),
         _ => false,
     }
@@ -157,7 +156,8 @@ fn expected_parameter_description(kind: BuiltinKind, index: usize) -> &'static s
     match (kind, index) {
         (BuiltinKind::Builtin, 0) | (BuiltinKind::Interpreter, 0) => "`&[RValue]`",
         (BuiltinKind::Builtin, 1) | (BuiltinKind::Interpreter, 1) => "`&[(String, RValue)]`",
-        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 1) => "`&Environment`",
+        (BuiltinKind::Interpreter, 2) => "`&BuiltinContext`",
+        (BuiltinKind::PreEval, 1) => "`&Environment`",
         (BuiltinKind::PreEval, 0) => "`&[Arg]`",
         _ => "the expected builtin parameter type",
     }
@@ -304,11 +304,12 @@ pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Attribute macro for interpreter-level builtins that need `&Environment` access.
+/// Attribute macro for interpreter-level builtins that need `BuiltinContext`.
 ///
 /// These builtins require calling back into the interpreter (e.g. to evaluate
-/// sub-expressions, look up environments). They access the interpreter via
-/// `crate::interpreter::with_interpreter()`.
+/// sub-expressions or inspect environments). The explicit context keeps
+/// dispatch tied to the active interpreter instance instead of hidden TLS
+/// lookup.
 ///
 /// The R name is inferred from the function name (stripping `interp_` prefix),
 /// or can be overridden with `name = "..."`.
