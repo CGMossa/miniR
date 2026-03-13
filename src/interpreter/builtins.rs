@@ -2040,6 +2040,22 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
                     vec![Some(i64::try_from(ncol)?), Some(i64::try_from(nrow)?)].into(),
                 )),
             );
+            if let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") {
+                let row_names = dimnames
+                    .values
+                    .first()
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or(RValue::Null);
+                let col_names = dimnames
+                    .values
+                    .get(1)
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or(RValue::Null);
+                result.set_attr(
+                    "dimnames".to_string(),
+                    RValue::List(RList::new(vec![(None, col_names), (None, row_names)])),
+                );
+            }
             Ok(RValue::Vector(result))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
