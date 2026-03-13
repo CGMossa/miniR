@@ -32,7 +32,7 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `dimnames(x)` / data-frame-aware `dimnames<-` — keep matrix and data-frame labels visible through the shared dimnames interface
 - `dim(x)` / `dim<-` — get/set dimensions
 - `nrow(x)` / `ncol(x)` / `NROW(x)` / `NCOL(x)` — row/column count
-- `t(x)` — transpose
+- `t(x)` — transpose with matrix dimname propagation
 - `crossprod(x)` / `tcrossprod(x)` — cross products (via ndarray)
 - `diag(x)` — extract diagonal, create diagonal/identity matrix
 
