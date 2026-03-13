@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
@@ -519,15 +520,7 @@ fn workspace_requested_names(args: &[Arg], env: &Environment) -> Result<Vec<Stri
 // endregion
 
 fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, RError> {
-    args.first()
-        .or_else(|| {
-            named
-                .iter()
-                .find(|(name, _)| name == "file")
-                .map(|(_, value)| value)
-        })
-        .and_then(|value| value.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))
+    CallArgs::new(args, named).string("file", 0)
 }
 
 #[builtin(name = "readRDS", min_args = 1)]
@@ -538,22 +531,14 @@ fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 
 #[builtin(name = "saveRDS", min_args = 2)]
 fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let object = args.first().ok_or_else(|| {
+    let call_args = CallArgs::new(args, named);
+    let object = call_args.value("object", 0).ok_or_else(|| {
         RError::new(
             RErrorKind::Argument,
             "argument 'object' is missing".to_string(),
         )
     })?;
-    let path = args
-        .get(1)
-        .or_else(|| {
-            named
-                .iter()
-                .find(|(name, _)| name == "file")
-                .map(|(_, value)| value)
-        })
-        .and_then(|value| value.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
+    let path = call_args.string("file", 1)?;
 
     write_minirds(&path, object)?;
     Ok(RValue::Null)
@@ -630,10 +615,8 @@ fn pre_eval_save(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
 
 #[builtin]
 fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let sep = named
-        .iter()
-        .find(|(n, _)| n == "fsep")
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+    let sep = CallArgs::new(args, named)
+        .named_string("fsep")
         .unwrap_or_else(|| "/".to_string());
 
     let parts: Vec<String> = args
@@ -662,16 +645,9 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 
 #[builtin(name = "readLines", min_args = 1)]
 fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'con' argument".to_string()))?;
-    let n = named
-        .iter()
-        .find(|(n, _)| n == "n")
-        .or_else(|| named.iter().find(|(n, _)| n == "n"))
-        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(-1);
+    let call_args = CallArgs::new(args, named);
+    let path = call_args.string("con", 0)?;
+    let n = call_args.integer_or("n", usize::MAX, -1);
 
     let content =
         std::fs::read_to_string(&path).map_err(|source| IoError::Connection { source })?;
@@ -689,19 +665,15 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
 #[builtin(name = "writeLines", min_args = 1)]
 fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
     let text = args
         .first()
         .and_then(|v| v.as_vector())
         .map(|v| v.to_characters())
         .unwrap_or_default();
-    let con = args
-        .get(1)
-        .or_else(|| named.iter().find(|(n, _)| n == "con").map(|(_, v)| v))
-        .and_then(|v| v.as_vector()?.as_character_scalar());
-    let sep = named
-        .iter()
-        .find(|(n, _)| n == "sep")
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+    let con = call_args.optional_string("con", 1);
+    let sep = call_args
+        .named_string("sep")
         .unwrap_or_else(|| "\n".to_string());
 
     let output: String = text
@@ -729,21 +701,13 @@ fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 
 #[builtin(name = "read.csv", min_args = 1)]
 fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
+    let call_args = CallArgs::new(args, named);
+    let path = call_args.string("file", 0)?;
 
-    let header = named
-        .iter()
-        .find(|(n, _)| n == "header")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(true);
+    let header = call_args.logical_flag("header", usize::MAX, true);
 
-    let sep = named
-        .iter()
-        .find(|(n, _)| n == "sep")
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+    let sep = call_args
+        .named_string("sep")
         .and_then(|s| s.bytes().next())
         .unwrap_or(b',');
 
