@@ -10,7 +10,7 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 ## Remaining Builtin Stubs
 
 - [ ] `qr(x)`, `svd(x)`, `eigen(x)`, `det(x)`, `chol(x)` — linear algebra decompositions
-- [ ] `load(file)`, `save(..., file)` — workspace save/load on top of the new `readRDS()` / `saveRDS()` path
+- [ ] GNU-R-compatible binary serialization for `readRDS()`, `saveRDS()`, `load()`, and `save()` — the current miniRDS workspace path is text-based and miniR-only
 - [ ] `url(...)`, `connection(...)`, `open(con)`, `close(con)` — connection objects
 - [ ] `install.packages(pkgs)`, `installed.packages()`, `library(pkg)`, `require(pkg)`, `loadNamespace(pkg)`, `requireNamespace(pkg)` — package loading and management
 - [ ] `as.POSIXct(x)`, `as.POSIXlt(x)`, `ISOdate(...)`, `ISOdatetime(...)`, `strptime(x, format)`, `strftime(x, format)` — date/time support

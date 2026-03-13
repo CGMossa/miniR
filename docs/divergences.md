@@ -9,6 +9,7 @@ This document tracks where miniR intentionally diverges from GNU R behavior.
 
 ## Planned
 
-- `readRDS()` / `saveRDS()` currently use a miniR-specific text format (`miniRDS1`)
-  instead of GNU R's binary RDS/XDR format. Files round-trip common miniR values
-  within miniR, but they are not compatible with GNU R yet.
+- `readRDS()` / `saveRDS()` / `load()` / `save()` currently use a miniR-specific
+  text format (`miniRDS1`) instead of GNU R's binary RDS/XDR and `.RData`
+  formats. Files round-trip common miniR values and named workspaces within
+  miniR, but they are not compatible with GNU R yet.
