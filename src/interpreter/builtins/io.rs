@@ -7,6 +7,7 @@ use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::with_interpreter;
+use crate::interpreter::BuiltinContext;
 use crate::parser::ast::{Arg, Expr};
 use crate::parser::parse_program;
 use derive_more::{Display, Error};
@@ -548,9 +549,10 @@ fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 fn interp_load(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let path = read_rds_path(positional, named)?;
+    let env = context.env();
     let target_env = named
         .iter()
         .find(|(name, _)| name == "envir")

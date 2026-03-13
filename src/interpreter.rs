@@ -99,6 +99,33 @@ pub(crate) struct CallFrame {
     pub supplied_arg_count: usize,
 }
 
+#[derive(Clone, Copy)]
+pub struct BuiltinContext<'a> {
+    interpreter: &'a Interpreter,
+    env: &'a Environment,
+}
+
+impl<'a> BuiltinContext<'a> {
+    fn new(interpreter: &'a Interpreter, env: &'a Environment) -> Self {
+        Self { interpreter, env }
+    }
+
+    pub fn env(&self) -> &'a Environment {
+        self.env
+    }
+
+    pub fn interpreter(&self) -> &'a Interpreter {
+        self.interpreter
+    }
+
+    pub fn with_interpreter<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Interpreter) -> R,
+    {
+        f(self.interpreter)
+    }
+}
+
 /// A handler registered by withCallingHandlers().
 #[derive(Clone)]
 pub(crate) struct ConditionHandler {
@@ -1267,7 +1294,8 @@ impl Interpreter {
                         func(positional, named).map_err(Into::into)
                     }
                     BuiltinImplementation::Interpreter(handler) => {
-                        handler(positional, named, env).map_err(Into::into)
+                        handler(positional, named, &BuiltinContext::new(self, env))
+                            .map_err(Into::into)
                     }
                     BuiltinImplementation::PreEval(_) => Err(RError::other(
                         "internal error: pre-eval builtin reached eager dispatch",

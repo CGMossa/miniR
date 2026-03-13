@@ -1,11 +1,11 @@
-//! Interpreter-level builtins — functions that need `&Environment` access and
-//! call back into the interpreter. Each is auto-registered via `#[interpreter_builtin]`.
-//! The interpreter is accessed via the thread-local `with_interpreter()`.
+//! Interpreter-level builtins — functions that receive `BuiltinContext` so
+//! they can call back into the active interpreter without direct TLS lookups.
+//! Each is auto-registered via `#[interpreter_builtin]`.
 
 use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
-use crate::interpreter::{retarget_call_expr, with_interpreter, S3DispatchContext};
+use crate::interpreter::{retarget_call_expr, BuiltinContext, S3DispatchContext};
 use crate::parser::ast::{BinaryOp, UnaryOp};
 use minir_macros::interpreter_builtin;
 
@@ -82,34 +82,34 @@ fn language_or_null(expr: Option<crate::parser::ast::Expr>) -> RValue {
 fn interp_sapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, true, env)
+    eval_apply(args, named, true, context)
 }
 
 #[interpreter_builtin(name = "lapply", min_args = 2)]
 fn interp_lapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, false, env)
+    eval_apply(args, named, false, context)
 }
 
 #[interpreter_builtin(name = "vapply", min_args = 3)]
 fn interp_vapply(
     args: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, true, env)
+    eval_apply(args, named, true, context)
 }
 
 fn eval_apply(
     positional: &[RValue],
     named: &[(String, RValue)],
     simplify: bool,
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::new(
@@ -117,6 +117,7 @@ fn eval_apply(
             "need at least 2 arguments for apply".to_string(),
         ));
     }
+    let env = context.env();
     let (fail_fast, _extra_named) = extract_fail_fast(named);
     let x = &positional[0];
     let f = match_fun(&positional[1], env)?;
@@ -152,7 +153,8 @@ fn eval_apply(
         _ => vec![x.clone()],
     };
 
-    with_interpreter(|interp| {
+    let env = context.env();
+    context.with_interpreter(|interp| {
         let mut results: Vec<RValue> = Vec::new();
         for item in &items {
             if fail_fast {
@@ -230,11 +232,12 @@ fn eval_apply(
 fn interp_do_call(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     if positional.len() >= 2 {
         let f = match_fun(&positional[0], env)?;
-        return with_interpreter(|interp| match &positional[1] {
+        return context.with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
                 let args: Vec<RValue> = l.values.iter().map(|(_, v)| v.clone()).collect();
                 interp
@@ -256,7 +259,7 @@ fn interp_do_call(
 fn interp_vectorize(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     Ok(positional.first().cloned().unwrap_or(RValue::Null))
 }
@@ -265,7 +268,7 @@ fn interp_vectorize(
 fn interp_reduce(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::new(
@@ -273,6 +276,7 @@ fn interp_reduce(
             "Reduce requires at least 2 arguments".to_string(),
         ));
     }
+    let env = context.env();
     let (_fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
@@ -304,7 +308,8 @@ fn interp_reduce(
 
     // Reduce is inherently sequential — each step depends on the previous.
     // fail_fast has no meaningful "collect errors" behavior here; errors always propagate.
-    with_interpreter(|interp| {
+    let env = context.env();
+    context.with_interpreter(|interp| {
         for item in items.iter().skip(start) {
             acc = interp.call_function(&f, &[acc, item.clone()], &[], env)?;
             if accumulate {
@@ -326,7 +331,7 @@ fn interp_reduce(
 fn interp_filter(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::new(
@@ -334,6 +339,7 @@ fn interp_filter(
             "Filter requires 2 arguments".to_string(),
         ));
     }
+    let env = context.env();
     let (fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
     let x = &positional[1];
@@ -341,7 +347,7 @@ fn interp_filter(
     let items: Vec<RValue> = rvalue_to_items(x);
 
     let mut results = Vec::new();
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for item in &items {
             if fail_fast {
                 let keep = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
@@ -387,7 +393,7 @@ fn interp_filter(
 fn interp_map(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if positional.len() < 2 {
         return Err(RError::new(
@@ -395,6 +401,7 @@ fn interp_map(
             "Map requires at least 2 arguments".to_string(),
         ));
     }
+    let env = context.env();
     let (fail_fast, _extra_named) = extract_fail_fast(named);
     let f = match_fun(&positional[0], env)?;
 
@@ -403,7 +410,7 @@ fn interp_map(
     let max_len = seqs.iter().map(|s| s.len()).max().unwrap_or(0);
     let mut results = Vec::new();
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for i in 0..max_len {
             let call_args: Vec<RValue> = seqs
                 .iter()
@@ -434,7 +441,7 @@ fn interp_map(
 fn interp_switch(
     positional: &[RValue],
     named: &[(String, RValue)],
-    _env: &Environment,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let expr = positional
         .first()
@@ -488,8 +495,9 @@ fn interp_switch(
 fn interp_get(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let call_args = CallArgs::new(positional, named);
     let name = call_args.string("x", 0)?;
     let target_env = call_args.environment_or("envir", usize::MAX, env)?;
@@ -502,8 +510,9 @@ fn interp_get(
 fn interp_assign(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let call_args = CallArgs::new(positional, named);
     let name = call_args.string("x", 0)?;
     let value = call_args.value("value", 1).cloned().unwrap_or(RValue::Null);
@@ -516,8 +525,9 @@ fn interp_assign(
 fn interp_exists(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let call_args = CallArgs::new(positional, _named);
     let name = call_args.optional_string("x", 0).unwrap_or_default();
     let found = call_args
@@ -531,7 +541,7 @@ fn interp_exists(
 fn interp_source(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let path = positional
         .first()
@@ -548,14 +558,14 @@ fn interp_source(
     };
     let ast = crate::parser::parse_program(&source)
         .map_err(|e| RError::other(format!("parse error in '{}': {}", path, e)))?;
-    with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
+    context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
 #[interpreter_builtin(name = "system.time", min_args = 1)]
 fn interp_system_time(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let start = std::time::Instant::now();
     let _result = positional.first().cloned().unwrap_or(RValue::Null);
@@ -568,22 +578,26 @@ fn interp_system_time(
 // --- Operator builtins: R operators as first-class functions ---
 // These allow `Reduce("+", 1:10)`, `sapply(x, "-")`, `do.call("*", list(3,4))`, etc.
 
-fn eval_binop(op: BinaryOp, args: &[RValue]) -> Result<RValue, RError> {
+fn eval_binop(op: BinaryOp, args: &[RValue], context: &BuiltinContext) -> Result<RValue, RError> {
     let left = args.first().cloned().unwrap_or(RValue::Null);
     let right = args.get(1).cloned().unwrap_or(RValue::Null);
-    with_interpreter(|interp| interp.eval_binary(op, &left, &right)).map_err(RError::from)
+    context
+        .with_interpreter(|interp| interp.eval_binary(op, &left, &right))
+        .map_err(RError::from)
 }
 
 #[interpreter_builtin(name = "+", min_args = 1)]
 fn interp_op_add(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if args.len() == 1 {
-        with_interpreter(|interp| interp.eval_unary(UnaryOp::Pos, &args[0])).map_err(RError::from)
+        context
+            .with_interpreter(|interp| interp.eval_unary(UnaryOp::Pos, &args[0]))
+            .map_err(RError::from)
     } else {
-        eval_binop(BinaryOp::Add, args)
+        eval_binop(BinaryOp::Add, args, context)
     }
 }
 
@@ -591,12 +605,14 @@ fn interp_op_add(
 fn interp_op_sub(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     if args.len() == 1 {
-        with_interpreter(|interp| interp.eval_unary(UnaryOp::Neg, &args[0])).map_err(RError::from)
+        context
+            .with_interpreter(|interp| interp.eval_unary(UnaryOp::Neg, &args[0]))
+            .map_err(RError::from)
     } else {
-        eval_binop(BinaryOp::Sub, args)
+        eval_binop(BinaryOp::Sub, args, context)
     }
 }
 
@@ -604,126 +620,128 @@ fn interp_op_sub(
 fn interp_op_mul(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Mul, args)
+    eval_binop(BinaryOp::Mul, args, context)
 }
 
 #[interpreter_builtin(name = "/", min_args = 2)]
 fn interp_op_div(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Div, args)
+    eval_binop(BinaryOp::Div, args, context)
 }
 
 #[interpreter_builtin(name = "^", min_args = 2)]
 fn interp_op_pow(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Pow, args)
+    eval_binop(BinaryOp::Pow, args, context)
 }
 
 #[interpreter_builtin(name = "%%", min_args = 2)]
 fn interp_op_mod(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Mod, args)
+    eval_binop(BinaryOp::Mod, args, context)
 }
 
 #[interpreter_builtin(name = "%/%", min_args = 2)]
 fn interp_op_intdiv(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::IntDiv, args)
+    eval_binop(BinaryOp::IntDiv, args, context)
 }
 
 #[interpreter_builtin(name = "==", min_args = 2)]
 fn interp_op_eq(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Eq, args)
+    eval_binop(BinaryOp::Eq, args, context)
 }
 
 #[interpreter_builtin(name = "!=", min_args = 2)]
 fn interp_op_ne(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Ne, args)
+    eval_binop(BinaryOp::Ne, args, context)
 }
 
 #[interpreter_builtin(name = "<", min_args = 2)]
 fn interp_op_lt(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Lt, args)
+    eval_binop(BinaryOp::Lt, args, context)
 }
 
 #[interpreter_builtin(name = ">", min_args = 2)]
 fn interp_op_gt(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Gt, args)
+    eval_binop(BinaryOp::Gt, args, context)
 }
 
 #[interpreter_builtin(name = "<=", min_args = 2)]
 fn interp_op_le(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Le, args)
+    eval_binop(BinaryOp::Le, args, context)
 }
 
 #[interpreter_builtin(name = ">=", min_args = 2)]
 fn interp_op_ge(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Ge, args)
+    eval_binop(BinaryOp::Ge, args, context)
 }
 
 #[interpreter_builtin(name = "&", min_args = 2)]
 fn interp_op_and(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::And, args)
+    eval_binop(BinaryOp::And, args, context)
 }
 
 #[interpreter_builtin(name = "|", min_args = 2)]
 fn interp_op_or(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_binop(BinaryOp::Or, args)
+    eval_binop(BinaryOp::Or, args, context)
 }
 
 #[interpreter_builtin(name = "!", min_args = 1)]
 fn interp_op_not(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| interp.eval_unary(UnaryOp::Not, &args[0])).map_err(RError::from)
+    context
+        .with_interpreter(|interp| interp.eval_unary(UnaryOp::Not, &args[0]))
+        .map_err(RError::from)
 }
 
 /// Convert an RValue to a Vec of individual items (for apply/map/filter/reduce).
@@ -764,9 +782,10 @@ fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
 fn interp_next_method(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    let env = context.env();
+    context.with_interpreter(|interp| {
         // Clone the context data to avoid holding a borrow during dispatch
         let (generic, classes, start, object) = {
             let stack = interp.s3_dispatch_stack.borrow();
@@ -836,7 +855,7 @@ fn interp_next_method(
 fn interp_as_environment(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let x = positional
         .first()
@@ -846,7 +865,7 @@ fn interp_as_environment(
         RValue::Environment(_) => Ok(x.clone()),
         RValue::Vector(rv) => {
             if let Some(n) = rv.as_integer_scalar() {
-                return with_interpreter(|interp| {
+                return context.with_interpreter(|interp| {
                     match n {
                     1 => Ok(RValue::Environment(interp.global_env.clone())),
                     -1 => {
@@ -864,7 +883,7 @@ fn interp_as_environment(
                 });
             }
             if let Some(s) = rv.as_character_scalar() {
-                return with_interpreter(|interp| match s.as_str() {
+                return context.with_interpreter(|interp| match s.as_str() {
                     ".GlobalEnv" | "R_GlobalEnv" => {
                         Ok(RValue::Environment(interp.global_env.clone()))
                     }
@@ -906,18 +925,18 @@ fn interp_as_environment(
 fn interp_globalenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| Ok(RValue::Environment(interp.global_env.clone())))
+    context.with_interpreter(|interp| Ok(RValue::Environment(interp.global_env.clone())))
 }
 
 #[interpreter_builtin(name = "baseenv", max_args = 0)]
 fn interp_baseenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         Ok(RValue::Environment(
             interp
                 .global_env
@@ -931,7 +950,7 @@ fn interp_baseenv(
 fn interp_emptyenv(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     Ok(RValue::Environment(Environment::new_empty()))
 }
@@ -940,10 +959,10 @@ fn interp_emptyenv(
 fn interp_sys_call(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let which = optional_frame_index(positional, 0)?;
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         if which == 0 {
             return Ok(language_or_null(interp.current_call_expr()));
         }
@@ -966,10 +985,10 @@ fn interp_sys_call(
 fn interp_sys_function(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let which = optional_frame_index(positional, 0)?;
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         if which == 0 {
             return interp
                 .current_call_frame()
@@ -995,10 +1014,10 @@ fn interp_sys_function(
 fn interp_sys_frame(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let which = optional_frame_index(positional, 0)?;
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         if which == 0 {
             return Ok(RValue::Environment(interp.global_env.clone()));
         }
@@ -1021,9 +1040,9 @@ fn interp_sys_frame(
 fn interp_sys_calls(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let values = interp
             .call_frames()
             .into_iter()
@@ -1037,9 +1056,9 @@ fn interp_sys_calls(
 fn interp_sys_frames(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let values = interp
             .call_frames()
             .into_iter()
@@ -1053,9 +1072,9 @@ fn interp_sys_frames(
 fn interp_sys_parents(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let len = interp.call_frames().len();
         let parents: Vec<Option<i64>> = (0..len)
             .map(|i| i64::try_from(i).map(Some))
@@ -1069,9 +1088,9 @@ fn interp_sys_parents(
 fn interp_sys_on_exit(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let frame = match interp.current_call_frame() {
             Some(frame) => frame,
             None => return Ok(RValue::Null),
@@ -1092,9 +1111,9 @@ fn interp_sys_on_exit(
 fn interp_sys_nframe(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let len = i64::try_from(interp.call_frames().len()).map_err(RError::from)?;
         Ok(RValue::vec(Vector::Integer(vec![Some(len)].into())))
     })
@@ -1104,9 +1123,9 @@ fn interp_sys_nframe(
 fn interp_nargs(
     _positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let count = interp
             .current_call_frame()
             .map(|frame| frame.supplied_arg_count)
@@ -1121,7 +1140,7 @@ fn interp_nargs(
 fn interp_parent_frame(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    _env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let n = optional_frame_index(positional, 1)?;
     if n <= 0 {
@@ -1131,7 +1150,7 @@ fn interp_parent_frame(
         ));
     }
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         let depth = interp.call_frames().len();
         let n = usize::try_from(n).map_err(RError::from)?;
         if n >= depth {
@@ -1150,8 +1169,9 @@ fn interp_parent_frame(
 fn interp_ls(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let target_env = CallArgs::new(positional, named).environment_or("envir", 0, env)?;
 
     let names = target_env.ls();
@@ -1163,8 +1183,9 @@ fn interp_ls(
 fn interp_eval(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let call_args = CallArgs::new(positional, named);
     let expr = positional.first().ok_or_else(|| {
         RError::new(
@@ -1177,15 +1198,17 @@ fn interp_eval(
 
     match expr {
         // Language object: evaluate the AST
-        RValue::Language(ast) => {
-            with_interpreter(|interp| interp.eval_in(ast, &eval_env)).map_err(RError::from)
-        }
+        RValue::Language(ast) => context
+            .with_interpreter(|interp| interp.eval_in(ast, &eval_env))
+            .map_err(RError::from),
         // Character string: parse then eval
         RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
             let text = rv.as_character_scalar().unwrap_or_default();
             let parsed = crate::parser::parse_program(&text)
                 .map_err(|e| RError::new(RErrorKind::Parse, format!("{}", e)))?;
-            with_interpreter(|interp| interp.eval_in(&parsed, &eval_env)).map_err(RError::from)
+            context
+                .with_interpreter(|interp| interp.eval_in(&parsed, &eval_env))
+                .map_err(RError::from)
         }
         // Already evaluated value: return as-is
         _ => Ok(expr.clone()),
@@ -1196,7 +1219,7 @@ fn interp_eval(
 fn interp_parse(
     positional: &[RValue],
     named: &[(String, RValue)],
-    _env: &Environment,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let text = named
         .iter()
@@ -1225,8 +1248,9 @@ fn interp_parse(
 fn interp_apply(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
         .first()
@@ -1295,7 +1319,7 @@ fn interp_apply(
         1 => {
             // Apply FUN to each row
             let mut results: Vec<RValue> = Vec::with_capacity(nrow);
-            with_interpreter(|interp| {
+            context.with_interpreter(|interp| {
                 for i in 0..nrow {
                     let row: Vec<Option<f64>> = (0..ncol).map(|j| data[i + j * nrow]).collect();
                     let row_val = RValue::vec(Vector::Double(row.into()));
@@ -1318,7 +1342,7 @@ fn interp_apply(
         2 => {
             // Apply FUN to each column
             let mut results: Vec<RValue> = Vec::with_capacity(ncol);
-            with_interpreter(|interp| {
+            context.with_interpreter(|interp| {
                 for j in 0..ncol {
                     let col: Vec<Option<f64>> = (0..nrow).map(|i| data[i + j * nrow]).collect();
                     let col_val = RValue::vec(Vector::Double(col.into()));
@@ -1446,8 +1470,9 @@ fn simplify_apply_results(results: Vec<RValue>) -> Result<RValue, RError> {
 fn interp_mapply(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     // mapply(FUN, ..., MoreArgs = NULL, SIMPLIFY = TRUE, USE.NAMES = TRUE)
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let fun = match_fun(
@@ -1478,7 +1503,7 @@ fn interp_mapply(
 
     let mut results: Vec<RValue> = Vec::with_capacity(max_len);
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for i in 0..max_len {
             let call_args: Vec<RValue> = seqs
                 .iter()
@@ -1563,8 +1588,9 @@ fn interp_mapply(
 fn interp_tapply(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     // tapply(X, INDEX, FUN)
     let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = positional
@@ -1631,7 +1657,7 @@ fn interp_tapply(
     // Apply FUN to each group
     let mut result_entries: Vec<(Option<String>, RValue)> = Vec::with_capacity(group_names.len());
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for name in &group_names {
             let group = groups.remove(name).unwrap_or_default();
             let group_vec = combine_items_to_vector(&group);
@@ -1814,8 +1840,9 @@ fn combine_items_to_vector(items: &[RValue]) -> RValue {
 fn interp_by(
     positional: &[RValue],
     named: &[(String, RValue)],
-    env: &Environment,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let env = context.env();
     // by(data, INDICES, FUN) — similar to tapply but for data-frame-like objects.
     let (fail_fast, extra_named) = extract_fail_fast(named);
     // For vectors, delegate to tapply-like behavior.
@@ -1886,7 +1913,7 @@ fn interp_by(
         let mut result_entries: Vec<(Option<String>, RValue)> =
             Vec::with_capacity(group_names.len());
 
-        with_interpreter(|interp| {
+        context.with_interpreter(|interp| {
             for name in &group_names {
                 let group = groups.remove(name).unwrap_or_default();
                 let group_vec = combine_items_to_vector(&group);
@@ -1947,7 +1974,7 @@ fn interp_by(
         let mut result_entries: Vec<(Option<String>, RValue)> =
             Vec::with_capacity(group_names.len());
 
-        with_interpreter(|interp| {
+        context.with_interpreter(|interp| {
             for name in &group_names {
                 // Find row indices belonging to this group
                 let row_indices: Vec<usize> = index_keys
