@@ -650,7 +650,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
             class: class.clone(),
             handler: RValue::Function(RFunction::Builtin {
                 name: "tryCatch_unwinder".to_string(),
-                func: |args, _named| {
+                implementation: BuiltinImplementation::Eager(|args, _named| {
                     // Re-raise the condition to unwind past tryCatch
                     let condition = args.first().cloned().unwrap_or(RValue::Null);
                     let cond_classes = get_class(&condition);
@@ -662,7 +662,8 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
                         ConditionKind::Error
                     };
                     Err(RError::Condition { condition, kind })
-                },
+                }),
+                min_args: 0,
             }),
             env: env.clone(),
         })
@@ -790,7 +791,10 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
     // Create a handler that muffles warnings by signaling muffleWarning
     let muffle_handler = RValue::Function(RFunction::Builtin {
         name: "suppressWarnings_handler".to_string(),
-        func: |_args, _named| Err(RError::other("muffleWarning".to_string())),
+        implementation: BuiltinImplementation::Eager(|_args, _named| {
+            Err(RError::other("muffleWarning".to_string()))
+        }),
+        min_args: 0,
     });
 
     let handler_set = vec![ConditionHandler {
@@ -818,7 +822,10 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
 
     let muffle_handler = RValue::Function(RFunction::Builtin {
         name: "suppressMessages_handler".to_string(),
-        func: |_args, _named| Err(RError::other("muffleMessage".to_string())),
+        implementation: BuiltinImplementation::Eager(|_args, _named| {
+            Err(RError::other("muffleMessage".to_string()))
+        }),
+        min_args: 0,
     });
 
     let handler_set = vec![ConditionHandler {

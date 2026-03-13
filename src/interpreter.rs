@@ -1077,14 +1077,17 @@ impl Interpreter {
         };
 
         // Pre-eval builtins intercept before argument evaluation
-        if let RValue::Function(RFunction::Builtin { name, .. }) = &f {
+        if let RValue::Function(RFunction::Builtin {
+            name,
+            implementation,
+            ..
+        }) = &f
+        {
             if name == "UseMethod" {
                 return self.eval_use_method(args, env);
             }
-            for &(pname, pfunc, _) in builtins::PRE_EVAL_BUILTIN_REGISTRY {
-                if pname == name {
-                    return pfunc(args, env).map_err(Into::into);
-                }
+            if let BuiltinImplementation::PreEval(handler) = implementation {
+                return handler(args, env).map_err(Into::into);
             }
         }
 
@@ -1221,15 +1224,16 @@ impl Interpreter {
         call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
         match func {
-            RValue::Function(RFunction::Builtin { func, name, .. }) => {
-                // Check interpreter-level builtins (access interp via thread-local)
-                for &(iname, ifunc, _) in builtins::INTERPRETER_BUILTIN_REGISTRY {
-                    if iname == name {
-                        return ifunc(positional, named, env).map_err(Into::into);
-                    }
+            RValue::Function(RFunction::Builtin { implementation, .. }) => match implementation {
+                BuiltinImplementation::Eager(func) => func(positional, named).map_err(Into::into),
+                BuiltinImplementation::Interpreter(handler) => {
+                    handler(positional, named, env).map_err(Into::into)
                 }
-                func(positional, named).map_err(Into::into)
-            }
+                BuiltinImplementation::PreEval(_) => Err(RError::other(
+                    "internal error: pre-eval builtin reached eager dispatch",
+                )
+                .into()),
+            },
             RValue::Function(RFunction::Closure {
                 params,
                 body,

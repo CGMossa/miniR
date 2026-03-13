@@ -17,21 +17,12 @@ use crate::parser::ast::Arg;
 use linkme::distributed_slice;
 use minir_macros::builtin;
 
-pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
-
-pub type InterpreterBuiltinFn =
-    fn(&[RValue], &[(String, RValue)], &Environment) -> Result<RValue, RError>;
-
-pub type PreEvalBuiltinFn = fn(&[Arg], &Environment) -> Result<RValue, RError>;
+pub use crate::interpreter::value::{
+    BuiltinDescriptor, BuiltinFn, BuiltinImplementation, InterpreterBuiltinFn, PreEvalBuiltinFn,
+};
 
 #[distributed_slice]
-pub static BUILTIN_REGISTRY: [(&str, BuiltinFn, usize)];
-
-#[distributed_slice]
-pub static INTERPRETER_BUILTIN_REGISTRY: [(&str, InterpreterBuiltinFn, usize)];
-
-#[distributed_slice]
-pub static PRE_EVAL_BUILTIN_REGISTRY: [(&str, PreEvalBuiltinFn, usize)];
+pub static BUILTIN_REGISTRY: [BuiltinDescriptor];
 
 /// Helper for unary math builtins: applies `f64 -> f64` element-wise.
 #[inline]
@@ -48,44 +39,14 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
     }
 }
 
-/// Placeholder for interpreter-level builtins — never actually called because
-/// dispatch is intercepted by the interpreter/pre-eval registries.
-fn placeholder_builtin(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::other(
-        "internal error: interpreter builtin not intercepted",
-    ))
-}
-
 pub fn register_builtins(env: &Environment) {
-    // Auto-registered builtins (via #[builtin] + linkme, including noop stubs)
-    for &(name, func, _min_args) in BUILTIN_REGISTRY {
+    for descriptor in BUILTIN_REGISTRY {
         env.set(
-            name.to_string(),
+            descriptor.name.to_string(),
             RValue::Function(RFunction::Builtin {
-                name: name.to_string(),
-                func,
-            }),
-        );
-    }
-
-    // Interpreter-level builtins (intercepted at dispatch time)
-    for &(name, _, _) in INTERPRETER_BUILTIN_REGISTRY {
-        env.set(
-            name.to_string(),
-            RValue::Function(RFunction::Builtin {
-                name: name.to_string(),
-                func: placeholder_builtin,
-            }),
-        );
-    }
-
-    // Pre-eval builtins (intercepted before argument evaluation)
-    for &(name, _, _) in PRE_EVAL_BUILTIN_REGISTRY {
-        env.set(
-            name.to_string(),
-            RValue::Function(RFunction::Builtin {
-                name: name.to_string(),
-                func: placeholder_builtin,
+                name: descriptor.name.to_string(),
+                implementation: descriptor.implementation,
+                min_args: descriptor.min_args,
             }),
         );
     }
@@ -211,6 +172,26 @@ pub fn register_builtins(env: &Environment) {
             ),
         ])),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::BUILTIN_REGISTRY;
+
+    #[test]
+    fn builtin_registry_names_are_unique() {
+        let mut names = HashSet::new();
+
+        for descriptor in BUILTIN_REGISTRY {
+            assert!(
+                names.insert(descriptor.name),
+                "duplicate builtin name or alias in registry: {}",
+                descriptor.name
+            );
+        }
+    }
 }
 
 // === Builtin implementations ===
@@ -2802,47 +2783,6 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         })
         .collect();
     Ok(RValue::vec(Vector::Logical(result.into())))
-}
-
-#[builtin]
-fn builtin_data_frame(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let mut columns: Vec<(Option<String>, RValue)> = Vec::new();
-    let mut max_len = 0usize;
-
-    for (name, value) in named {
-        let len = value.length();
-        if len > max_len {
-            max_len = len;
-        }
-        columns.push((Some(name.clone()), value.clone()));
-    }
-    for (i, arg) in args.iter().enumerate() {
-        let len = arg.length();
-        if len > max_len {
-            max_len = len;
-        }
-        columns.push((Some(format!("V{}", i + 1)), arg.clone()));
-    }
-
-    let col_names: Vec<Option<String>> = columns.iter().map(|(n, _)| n.clone()).collect();
-
-    let mut list = RList::new(columns);
-    list.set_attr(
-        "class".to_string(),
-        RValue::vec(Vector::Character(
-            vec![Some("data.frame".to_string())].into(),
-        )),
-    );
-    list.set_attr(
-        "names".to_string(),
-        RValue::vec(Vector::Character(col_names.into())),
-    );
-    let row_names: Vec<Option<i64>> = (1..=i64::try_from(max_len)?).map(Some).collect();
-    list.set_attr(
-        "row.names".to_string(),
-        RValue::vec(Vector::Integer(row_names.into())),
-    );
-    Ok(RValue::List(list))
 }
 
 #[builtin(name = "environment")]
