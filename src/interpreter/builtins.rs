@@ -622,17 +622,7 @@ fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             Some(v) => Ok(v.clone()),
             None => Ok(RValue::Null),
         },
-        Some(RValue::List(l)) => {
-            if let Some(names_attr) = l.get_attr("names") {
-                return Ok(names_attr.clone());
-            }
-            let names: Vec<Option<String>> = l.values.iter().map(|(n, _)| n.clone()).collect();
-            if names.iter().all(|n| n.is_none()) {
-                Ok(RValue::Null)
-            } else {
-                Ok(RValue::vec(Vector::Character(names.into())))
-            }
-        }
+        Some(RValue::List(l)) => Ok(list_names_value(l)),
         _ => Ok(RValue::Null),
     }
 }
@@ -652,22 +642,15 @@ fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         }
         Some(RValue::List(l)) => {
             let mut l = l.clone();
-            if let Some(names_vec) = names_val.as_vector() {
-                let names = names_vec.to_characters();
-                for (i, name) in names.iter().enumerate() {
-                    if i < l.values.len() {
-                        l.values[i].0 = name.clone();
-                    }
-                }
-            } else if names_val.is_null() {
-                for entry in &mut l.values {
-                    entry.0 = None;
-                }
-            }
+            set_list_names(&mut l, &names_val);
             Ok(RValue::List(l))
         }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
+}
+
+fn character_name_vector(values: Vec<Option<String>>) -> RValue {
+    RValue::vec(Vector::Character(values.into()))
 }
 
 fn coerce_name_strings(value: &RValue) -> RValue {
@@ -694,6 +677,182 @@ fn coerce_name_strings(value: &RValue) -> RValue {
     }
 }
 
+fn coerce_name_values(value: &RValue) -> Option<Vec<Option<String>>> {
+    let coerced = coerce_name_strings(value);
+    coerced.as_vector().map(|values| values.to_characters())
+}
+
+fn list_names_value(list: &RList) -> RValue {
+    if let Some(names_attr) = list.get_attr("names") {
+        return coerce_name_strings(names_attr);
+    }
+
+    let names: Vec<Option<String>> = list.values.iter().map(|(name, _)| name.clone()).collect();
+    if names.iter().all(|name| name.is_none()) {
+        RValue::Null
+    } else {
+        character_name_vector(names)
+    }
+}
+
+fn set_list_names(list: &mut RList, names_val: &RValue) {
+    if let Some(mut names) = coerce_name_values(names_val) {
+        names.resize(list.values.len(), None);
+        for (entry, name) in list.values.iter_mut().zip(names.iter()) {
+            entry.0 = name.clone();
+        }
+        list.set_attr("names".to_string(), character_name_vector(names));
+        return;
+    }
+
+    if names_val.is_null() {
+        for entry in &mut list.values {
+            entry.0 = None;
+        }
+        list.attrs.as_mut().map(|attrs| attrs.remove("names"));
+    }
+}
+
+fn data_frame_row_count(list: &RList) -> usize {
+    list.get_attr("row.names")
+        .map(RValue::length)
+        .unwrap_or_else(|| {
+            list.values
+                .iter()
+                .map(|(_, value)| value.length())
+                .max()
+                .unwrap_or(0)
+        })
+}
+
+fn automatic_row_names_value(count: usize) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Integer(
+        (1..=i64::try_from(count)?)
+            .map(Some)
+            .collect::<Vec<_>>()
+            .into(),
+    )))
+}
+
+fn data_frame_dimnames_value(list: &RList) -> Result<RValue, RError> {
+    let row_names = list
+        .get_attr("row.names")
+        .map(coerce_name_strings)
+        .unwrap_or(automatic_row_names_value(data_frame_row_count(list))?);
+    let col_names = list_names_value(list);
+    Ok(RValue::List(RList::new(vec![
+        (None, row_names),
+        (None, col_names),
+    ])))
+}
+
+fn set_data_frame_row_names(list: &mut RList, row_names: &RValue) -> Result<(), RError> {
+    if row_names.is_null() {
+        list.set_attr(
+            "row.names".to_string(),
+            automatic_row_names_value(data_frame_row_count(list))?,
+        );
+        return Ok(());
+    }
+
+    let Some(names) = coerce_name_values(row_names) else {
+        return Err(RError::other(
+            "row names supplied are of the wrong length".to_string(),
+        ));
+    };
+    if names.len() != data_frame_row_count(list) {
+        return Err(RError::other(
+            "row names supplied are of the wrong length".to_string(),
+        ));
+    }
+    list.set_attr("row.names".to_string(), character_name_vector(names));
+    Ok(())
+}
+
+fn set_data_frame_col_names(list: &mut RList, col_names: &RValue) -> Result<(), RError> {
+    if col_names.is_null() {
+        set_list_names(list, col_names);
+        return Ok(());
+    }
+
+    let Some(names) = coerce_name_values(col_names) else {
+        return Err(RError::other(
+            "'names' attribute [1] must be the same length as the vector [0]".to_string(),
+        ));
+    };
+    if names.len() != list.values.len() {
+        return Err(RError::other(format!(
+            "'names' attribute [{}] must be the same length as the vector [{}]",
+            names.len(),
+            list.values.len()
+        )));
+    }
+    set_list_names(list, &character_name_vector(names));
+    Ok(())
+}
+
+fn set_data_frame_dimnames(list: &mut RList, dimnames: &RValue) -> Result<(), RError> {
+    let RValue::List(values) = dimnames else {
+        return Err(RError::other(
+            "invalid 'dimnames' given for data frame".to_string(),
+        ));
+    };
+    if values.values.len() != 2 {
+        return Err(RError::other(
+            "invalid 'dimnames' given for data frame".to_string(),
+        ));
+    }
+
+    let row_names = &values.values[0].1;
+    let col_names = &values.values[1].1;
+
+    let Some(row_values) = coerce_name_values(row_names) else {
+        return Err(RError::other(
+            "invalid 'dimnames' given for data frame".to_string(),
+        ));
+    };
+    let Some(col_values) = coerce_name_values(col_names) else {
+        return Err(RError::other(
+            "invalid 'dimnames' given for data frame".to_string(),
+        ));
+    };
+
+    if row_values.len() != data_frame_row_count(list) || col_values.len() != list.values.len() {
+        return Err(RError::other(
+            "invalid 'dimnames' given for data frame".to_string(),
+        ));
+    }
+
+    list.set_attr("row.names".to_string(), character_name_vector(row_values));
+    set_list_names(list, &character_name_vector(col_values));
+    list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+    Ok(())
+}
+
+fn updated_dimnames_component(current: Option<&RValue>, index: usize, value: &RValue) -> RValue {
+    let mut components = match current {
+        Some(RValue::List(list)) => {
+            let mut components: Vec<RValue> =
+                list.values.iter().map(|(_, value)| value.clone()).collect();
+            components.resize(2, RValue::Null);
+            components
+        }
+        _ => vec![RValue::Null, RValue::Null],
+    };
+
+    if index < components.len() {
+        components[index] = value.clone();
+    }
+
+    if components.iter().all(RValue::is_null) {
+        RValue::Null
+    } else {
+        RValue::List(RList::new(
+            components.into_iter().map(|value| (None, value)).collect(),
+        ))
+    }
+}
+
 #[builtin(name = "row.names", names = ["rownames"], min_args = 1)]
 fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -717,16 +876,13 @@ fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_col_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(value @ RValue::List(list)) => {
+            if has_class(value, "data.frame") {
+                return Ok(list_names_value(list));
+            }
             if let Some(RValue::List(dimnames)) = list.get_attr("dimnames") {
                 if let Some((_, col_names)) = dimnames.values.get(1) {
                     return Ok(coerce_name_strings(col_names));
                 }
-            }
-            if has_class(value, "data.frame") {
-                return Ok(list
-                    .get_attr("names")
-                    .map(coerce_name_strings)
-                    .unwrap_or(RValue::Null));
             }
             Ok(RValue::Null)
         }
@@ -739,6 +895,72 @@ fn builtin_col_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             Ok(RValue::Null)
         }
         _ => Ok(RValue::Null),
+    }
+}
+
+#[builtin(name = "rownames<-", names = ["row.names<-"], min_args = 2)]
+fn builtin_row_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let row_names = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(value @ RValue::List(list)) if has_class(value, "data.frame") => {
+            let mut list = list.clone();
+            set_data_frame_row_names(&mut list, &row_names)?;
+            Ok(RValue::List(list))
+        }
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            let dimnames = updated_dimnames_component(rv.get_attr("dimnames"), 0, &row_names);
+            if dimnames.is_null() {
+                rv.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+            } else {
+                rv.set_attr("dimnames".to_string(), dimnames);
+            }
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(list)) => {
+            let mut list = list.clone();
+            let dimnames = updated_dimnames_component(list.get_attr("dimnames"), 0, &row_names);
+            if dimnames.is_null() {
+                list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+            } else {
+                list.set_attr("dimnames".to_string(), dimnames);
+            }
+            Ok(RValue::List(list))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+#[builtin(name = "colnames<-", min_args = 2)]
+fn builtin_col_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let col_names = args.get(1).cloned().unwrap_or(RValue::Null);
+    match args.first() {
+        Some(value @ RValue::List(list)) if has_class(value, "data.frame") => {
+            let mut list = list.clone();
+            set_data_frame_col_names(&mut list, &col_names)?;
+            Ok(RValue::List(list))
+        }
+        Some(RValue::Vector(rv)) => {
+            let mut rv = rv.clone();
+            let dimnames = updated_dimnames_component(rv.get_attr("dimnames"), 1, &col_names);
+            if dimnames.is_null() {
+                rv.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+            } else {
+                rv.set_attr("dimnames".to_string(), dimnames);
+            }
+            Ok(RValue::Vector(rv))
+        }
+        Some(RValue::List(list)) => {
+            let mut list = list.clone();
+            let dimnames = updated_dimnames_component(list.get_attr("dimnames"), 1, &col_names);
+            if dimnames.is_null() {
+                list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+            } else {
+                list.set_attr("dimnames".to_string(), dimnames);
+            }
+            Ok(RValue::List(list))
+        }
+        other => Ok(other.cloned().unwrap_or(RValue::Null)),
     }
 }
 
@@ -1847,6 +2069,9 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 1)]
 fn builtin_dimnames(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
+        Some(value @ RValue::List(list)) if has_class(value, "data.frame") => {
+            data_frame_dimnames_value(list)
+        }
         Some(RValue::Vector(rv)) => Ok(rv.get_attr("dimnames").cloned().unwrap_or(RValue::Null)),
         Some(RValue::List(l)) => Ok(l.get_attr("dimnames").cloned().unwrap_or(RValue::Null)),
         _ => Ok(RValue::Null),
@@ -1865,6 +2090,11 @@ fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
                 rv.set_attr("dimnames".to_string(), dimnames_val);
             }
             Ok(RValue::Vector(rv))
+        }
+        Some(value @ RValue::List(l)) if has_class(value, "data.frame") => {
+            let mut l = l.clone();
+            set_data_frame_dimnames(&mut l, &dimnames_val)?;
+            Ok(RValue::List(l))
         }
         Some(RValue::List(l)) => {
             let mut l = l.clone();
