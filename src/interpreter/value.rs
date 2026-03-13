@@ -35,8 +35,10 @@ pub enum BuiltinImplementation {
 #[derive(Debug, Clone, Copy)]
 pub struct BuiltinDescriptor {
     pub name: &'static str,
+    pub aliases: &'static [&'static str],
     pub implementation: BuiltinImplementation,
     pub min_args: usize,
+    pub max_args: Option<usize>,
 }
 
 /// Attribute map — every R object can carry named attributes
@@ -208,6 +210,7 @@ pub enum RFunction {
         name: String,
         implementation: BuiltinImplementation,
         min_args: usize,
+        max_args: Option<usize>,
     },
 }
 

@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, FnArg, ItemFn, LitInt, LitStr, ReturnType, Type};
+use syn::{parse_macro_input, FnArg, ItemFn, Lit, LitInt, LitStr, ReturnType, Type};
 
 #[derive(Clone, Copy)]
 enum BuiltinKind {
@@ -25,9 +25,39 @@ fn r_name_to_ident(name: &str) -> String {
         .replace('-', "_")
 }
 
+fn descriptor_literal(
+    name: &str,
+    aliases: &[String],
+    implementation: TokenStream2,
+    min_args: usize,
+    max_args: Option<usize>,
+) -> TokenStream2 {
+    let max_args = match max_args {
+        Some(max_args) => quote!(Some(#max_args)),
+        None => quote!(None),
+    };
+
+    quote! {
+        crate::interpreter::builtins::BuiltinDescriptor {
+            name: #name,
+            aliases: &[#(#aliases),*],
+            implementation: #implementation,
+            min_args: #min_args,
+            max_args: #max_args,
+        }
+    }
+}
+
+fn emit_descriptor_registration(reg_name: &syn::Ident, descriptor: TokenStream2) -> TokenStream2 {
+    quote! {
+        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
+        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor = #descriptor;
+    }
+}
+
 /// Shared code generation for all three builtin macro variants.
 ///
-/// Emits: `#[doc(alias)] fn ...` + registry entry + alias entries.
+/// Emits: `#[doc(alias)] fn ...` + one descriptor entry carrying aliases.
 fn emit_builtin_registration(
     input: &ItemFn,
     attr_args: BuiltinAttr,
@@ -40,41 +70,29 @@ fn emit_builtin_registration(
         .name
         .unwrap_or_else(|| infer_r_name(&fn_name.to_string(), prefix));
     let min_args = attr_args.min_args as usize;
+    let max_args = attr_args.max_args.map(|value| value as usize);
     let implementation = kind.registry_ctor(fn_name);
 
     let reg_name = format_ident!("__{}_{}", reg_prefix, fn_name.to_string().to_uppercase());
-
-    let alias_regs = attr_args.names.iter().enumerate().map(|(i, alias)| {
-        let alias_reg = format_ident!(
-            "{}_{}_ALIAS_{}",
-            reg_name,
-            fn_name.to_string().to_uppercase(),
-            i
-        );
-        quote! {
-            #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-            static #alias_reg: crate::interpreter::builtins::BuiltinDescriptor =
-                crate::interpreter::builtins::BuiltinDescriptor {
-                    name: #alias,
-                    implementation: #implementation,
-                    min_args: #min_args,
-                };
-        }
-    });
+    let descriptor = descriptor_literal(
+        &r_name,
+        &attr_args.names,
+        implementation,
+        min_args,
+        max_args,
+    );
+    let registration = emit_descriptor_registration(&reg_name, descriptor);
+    let alias_docs = attr_args
+        .names
+        .iter()
+        .map(|alias| quote!(#[doc(alias = #alias)]));
 
     quote! {
+        #(#alias_docs)*
         #[doc(alias = #r_name)]
         #input
 
-        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor =
-            crate::interpreter::builtins::BuiltinDescriptor {
-                name: #r_name,
-                implementation: #implementation,
-                min_args: #min_args,
-            };
-
-        #(#alias_regs)*
+        #registration
     }
 }
 
@@ -348,12 +366,20 @@ pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn noop_builtin(input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(input as NoopArgs);
+    let args = parse_macro_input!(input as StubArgs);
     let r_name = &args.name;
     let min_args = args.min_args as usize;
 
     let fn_ident = format_ident!("__noop_{}", r_name_to_ident(r_name));
     let reg_name = format_ident!("__BUILTIN_REG_{}", fn_ident.to_string().to_uppercase());
+    let descriptor = descriptor_literal(
+        r_name,
+        &[],
+        quote!(crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident)),
+        min_args,
+        None,
+    );
+    let registration = emit_descriptor_registration(&reg_name, descriptor);
 
     let expanded = quote! {
         fn #fn_ident(
@@ -363,22 +389,63 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
             Ok(args.first().cloned().unwrap_or(crate::interpreter::value::RValue::Null))
         }
 
-        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
-        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor =
-            crate::interpreter::builtins::BuiltinDescriptor {
-                name: #r_name,
-                implementation: crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident),
-                min_args: #min_args,
-            };
+        #registration
     };
 
     expanded.into()
 }
 
+/// Function-like macro to declare an explicit unimplemented stub builtin.
+///
+/// Generates a function that returns a clear runtime error and registers it in
+/// the builtin registry.
+///
+/// # Usage
+///
+/// ```ignore
+/// stub_builtin!("url", 1);
+/// stub_builtin!("open", 1, "connections are not implemented yet");
+/// ```
+#[proc_macro]
+pub fn stub_builtin(input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(input as StubArgs);
+    let r_name = &args.name;
+    let min_args = args.min_args as usize;
+    let message = args
+        .message
+        .unwrap_or_else(|| format!("{r_name}() is not implemented yet"));
+
+    let fn_ident = format_ident!("__stub_{}", r_name_to_ident(r_name));
+    let reg_name = format_ident!("__BUILTIN_REG_{}", fn_ident.to_string().to_uppercase());
+    let descriptor = descriptor_literal(
+        r_name,
+        &[],
+        quote!(crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident)),
+        min_args,
+        None,
+    );
+    let registration = emit_descriptor_registration(&reg_name, descriptor);
+
+    let expanded = quote! {
+        fn #fn_ident(
+            _args: &[crate::interpreter::value::RValue],
+            _named: &[(String, crate::interpreter::value::RValue)],
+        ) -> Result<crate::interpreter::value::RValue, crate::interpreter::value::RError> {
+            Err(crate::interpreter::value::RError::other(#message))
+        }
+
+        #registration
+    };
+
+    expanded.into()
+}
+
+#[derive(Debug)]
 struct BuiltinAttr {
     name: Option<String>,
     names: Vec<String>,
     min_args: u64,
+    max_args: Option<u64>,
 }
 
 impl syn::parse::Parse for BuiltinAttr {
@@ -386,6 +453,7 @@ impl syn::parse::Parse for BuiltinAttr {
         let mut name = None;
         let mut names = Vec::new();
         let mut min_args = 0u64;
+        let mut max_args = None;
 
         while !input.is_empty() {
             let key: syn::Ident = input.parse()?;
@@ -411,6 +479,10 @@ impl syn::parse::Parse for BuiltinAttr {
                     let lit: LitInt = input.parse()?;
                     min_args = lit.base10_parse()?;
                 }
+                "max_args" => {
+                    let lit: LitInt = input.parse()?;
+                    max_args = Some(lit.base10_parse()?);
+                }
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -424,40 +496,74 @@ impl syn::parse::Parse for BuiltinAttr {
             }
         }
 
+        if let Some(max_args) = max_args {
+            if max_args < min_args {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "`max_args` cannot be smaller than `min_args`",
+                ));
+            }
+        }
+
         Ok(BuiltinAttr {
             name,
             names,
             min_args,
+            max_args,
         })
     }
 }
 
-struct NoopArgs {
+struct StubArgs {
     name: String,
     min_args: u64,
+    message: Option<String>,
 }
 
-impl syn::parse::Parse for NoopArgs {
+impl syn::parse::Parse for StubArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let name: LitStr = input.parse()?;
-        let min_args = if input.peek(syn::Token![,]) {
+        let mut min_args = 0u64;
+        let mut message = None;
+
+        if input.peek(syn::Token![,]) {
             input.parse::<syn::Token![,]>()?;
-            let lit: LitInt = input.parse()?;
-            lit.base10_parse()?
-        } else {
-            0
-        };
-        Ok(NoopArgs {
+            match input.parse::<Lit>()? {
+                Lit::Int(lit) => min_args = lit.base10_parse()?,
+                Lit::Str(lit) => message = Some(lit.value()),
+                other => {
+                    return Err(syn::Error::new(
+                        other.span(),
+                        "expected an integer min_args or string message",
+                    ));
+                }
+            }
+        }
+
+        if input.peek(syn::Token![,]) {
+            if message.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "stub macros accept at most name, min_args, and message",
+                ));
+            }
+            input.parse::<syn::Token![,]>()?;
+            let lit: LitStr = input.parse()?;
+            message = Some(lit.value());
+        }
+
+        Ok(StubArgs {
             name: name.value(),
             min_args,
+            message,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_signature, BuiltinKind};
-    use syn::parse_quote;
+    use super::{validate_signature, BuiltinAttr, BuiltinKind, StubArgs};
+    use syn::{parse_quote, parse_str};
 
     #[test]
     fn builtin_signature_accepts_expected_shape() {
@@ -504,5 +610,34 @@ mod tests {
         };
 
         assert!(validate_signature(&function, BuiltinKind::Builtin).is_err());
+    }
+
+    #[test]
+    fn builtin_attr_accepts_max_args() {
+        let attr = parse_str::<BuiltinAttr>(r#"name = "globalenv", max_args = 0"#)
+            .expect("failed to parse builtin attr");
+
+        assert_eq!(attr.max_args, Some(0));
+    }
+
+    #[test]
+    fn builtin_attr_rejects_max_args_below_min_args() {
+        let err = parse_str::<BuiltinAttr>(r#"min_args = 2, max_args = 1"#)
+            .expect_err("attr unexpectedly parsed");
+
+        assert!(err.to_string().contains("max_args"));
+    }
+
+    #[test]
+    fn stub_args_accept_custom_message() {
+        let args = parse_str::<StubArgs>(r#""url", 1, "connections are not implemented yet""#)
+            .expect("failed to parse stub args");
+
+        assert_eq!(args.name, "url");
+        assert_eq!(args.min_args, 1);
+        assert_eq!(
+            args.message.as_deref(),
+            Some("connections are not implemented yet")
+        );
     }
 }

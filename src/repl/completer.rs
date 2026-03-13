@@ -51,14 +51,15 @@ impl RCompleter {
 
         // Collect all builtin names from the registry
         for descriptor in BUILTIN_REGISTRY {
-            let name = descriptor.name;
-            // Skip operator-style names like "+", "-", "==", etc.
-            if name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphabetic() || c == '.')
-            {
-                names.push(name.to_string());
+            for name in std::iter::once(descriptor.name).chain(descriptor.aliases.iter().copied()) {
+                // Skip operator-style names like "+", "-", "==", etc.
+                if name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '.')
+                {
+                    names.push(name.to_string());
+                }
             }
         }
 

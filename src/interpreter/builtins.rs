@@ -26,6 +26,18 @@ pub(crate) use args::CallArgs;
 #[distributed_slice]
 pub static BUILTIN_REGISTRY: [BuiltinDescriptor];
 
+fn register_builtin_binding(env: &Environment, binding_name: &str, descriptor: BuiltinDescriptor) {
+    env.set(
+        binding_name.to_string(),
+        RValue::Function(RFunction::Builtin {
+            name: binding_name.to_string(),
+            implementation: descriptor.implementation,
+            min_args: descriptor.min_args,
+            max_args: descriptor.max_args,
+        }),
+    );
+}
+
 /// Helper for unary math builtins: applies `f64 -> f64` element-wise.
 #[inline]
 pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RError> {
@@ -43,14 +55,10 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
 
 pub fn register_builtins(env: &Environment) {
     for descriptor in BUILTIN_REGISTRY {
-        env.set(
-            descriptor.name.to_string(),
-            RValue::Function(RFunction::Builtin {
-                name: descriptor.name.to_string(),
-                implementation: descriptor.implementation,
-                min_args: descriptor.min_args,
-            }),
-        );
+        register_builtin_binding(env, descriptor.name, *descriptor);
+        for &alias in descriptor.aliases {
+            register_builtin_binding(env, alias, *descriptor);
+        }
     }
 
     // Constants
@@ -192,6 +200,13 @@ mod tests {
                 "duplicate builtin name or alias in registry: {}",
                 descriptor.name
             );
+            for &alias in descriptor.aliases {
+                assert!(
+                    names.insert(alias),
+                    "duplicate builtin name or alias in registry: {}",
+                    alias
+                );
+            }
         }
     }
 }
