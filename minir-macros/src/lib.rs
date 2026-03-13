@@ -1,7 +1,15 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, ItemFn, LitInt, LitStr};
+use syn::spanned::Spanned;
+use syn::{parse_macro_input, FnArg, ItemFn, LitInt, LitStr, ReturnType, Type};
+
+#[derive(Clone, Copy)]
+enum BuiltinKind {
+    Builtin,
+    Interpreter,
+    PreEval,
+}
 
 /// Infer R function name from a Rust ident, stripping a prefix and replacing `_` with `.`.
 fn infer_r_name(ident: &str, prefix: &str) -> String {
@@ -60,6 +68,169 @@ fn emit_builtin_registration(
     }
 }
 
+fn validate_signature(input: &ItemFn, kind: BuiltinKind) -> syn::Result<()> {
+    let expected_len = match kind {
+        BuiltinKind::Builtin | BuiltinKind::PreEval => 2,
+        BuiltinKind::Interpreter => 3,
+    };
+
+    if input.sig.inputs.len() != expected_len {
+        return Err(syn::Error::new(
+            input.sig.inputs.span(),
+            format!(
+                "{} handlers must take exactly {} parameter(s)",
+                kind.label(),
+                expected_len
+            ),
+        ));
+    }
+
+    for (index, arg) in input.sig.inputs.iter().enumerate() {
+        let FnArg::Typed(arg) = arg else {
+            return Err(syn::Error::new(
+                arg.span(),
+                format!("{} handlers cannot take a receiver", kind.label()),
+            ));
+        };
+
+        if !signature_arg_matches(kind, index, &arg.ty) {
+            return Err(syn::Error::new(
+                arg.ty.span(),
+                format!(
+                    "{} parameter {} must be {}",
+                    kind.label(),
+                    index + 1,
+                    expected_parameter_description(kind, index)
+                ),
+            ));
+        }
+    }
+
+    validate_return_type(&input.sig.output, kind)
+}
+
+fn signature_arg_matches(kind: BuiltinKind, index: usize, ty: &Type) -> bool {
+    match (kind, index) {
+        (BuiltinKind::Builtin, 0) | (BuiltinKind::Interpreter, 0) => {
+            is_ref_to_slice_of_named(ty, "RValue")
+        }
+        (BuiltinKind::Builtin, 1) | (BuiltinKind::Interpreter, 1) => {
+            is_ref_to_slice_of_string_rvalue_pairs(ty)
+        }
+        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 1) => {
+            is_ref_to_named(ty, "Environment")
+        }
+        (BuiltinKind::PreEval, 0) => is_ref_to_slice_of_named(ty, "Arg"),
+        _ => false,
+    }
+}
+
+fn expected_parameter_description(kind: BuiltinKind, index: usize) -> &'static str {
+    match (kind, index) {
+        (BuiltinKind::Builtin, 0) | (BuiltinKind::Interpreter, 0) => "`&[RValue]`",
+        (BuiltinKind::Builtin, 1) | (BuiltinKind::Interpreter, 1) => "`&[(String, RValue)]`",
+        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 1) => "`&Environment`",
+        (BuiltinKind::PreEval, 0) => "`&[Arg]`",
+        _ => "the expected builtin parameter type",
+    }
+}
+
+fn validate_return_type(output: &ReturnType, kind: BuiltinKind) -> syn::Result<()> {
+    match output {
+        ReturnType::Type(_, ty) if is_result_of_named(ty, "RValue", "RError") => Ok(()),
+        _ => Err(syn::Error::new(
+            output.span(),
+            format!(
+                "{} handlers must return `Result<RValue, RError>`",
+                kind.label()
+            ),
+        )),
+    }
+}
+
+fn is_ref_to_slice_of_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Reference(reference) => match reference.elem.as_ref() {
+            Type::Slice(slice) => type_ends_with(slice.elem.as_ref(), name),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_ref_to_slice_of_string_rvalue_pairs(ty: &Type) -> bool {
+    match ty {
+        Type::Reference(reference) => match reference.elem.as_ref() {
+            Type::Slice(slice) => match slice.elem.as_ref() {
+                Type::Tuple(tuple) if tuple.elems.len() == 2 => {
+                    type_ends_with(&tuple.elems[0], "String")
+                        && type_ends_with(&tuple.elems[1], "RValue")
+                }
+                _ => false,
+            },
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_ref_to_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Reference(reference) => type_ends_with(reference.elem.as_ref(), name),
+        _ => false,
+    }
+}
+
+fn is_result_of_named(ty: &Type, ok_name: &str, err_name: &str) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    if segment.ident != "Result" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return false;
+    };
+    if args.args.len() != 2 {
+        return false;
+    }
+
+    let mut args_iter = args.args.iter();
+    let Some(syn::GenericArgument::Type(ok_ty)) = args_iter.next() else {
+        return false;
+    };
+    let Some(syn::GenericArgument::Type(err_ty)) = args_iter.next() else {
+        return false;
+    };
+
+    type_ends_with(ok_ty, ok_name) && type_ends_with(err_ty, err_name)
+}
+
+fn type_ends_with(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident == name)
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+impl BuiltinKind {
+    fn label(self) -> &'static str {
+        match self {
+            BuiltinKind::Builtin => "`#[builtin]`",
+            BuiltinKind::Interpreter => "`#[interpreter_builtin]`",
+            BuiltinKind::PreEval => "`#[pre_eval_builtin]`",
+        }
+    }
+}
+
 /// Attribute macro for builtin R function definitions.
 ///
 /// Auto-registers the function in the builtin registry via linkme.
@@ -77,6 +248,9 @@ fn emit_builtin_registration(
 #[proc_macro_attribute]
 pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
+    if let Err(err) = validate_signature(&input, BuiltinKind::Builtin) {
+        return err.to_compile_error().into();
+    }
     let attr_args = parse_macro_input!(attr as BuiltinAttr);
     emit_builtin_registration(
         &input,
@@ -100,6 +274,9 @@ pub fn builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
+    if let Err(err) = validate_signature(&input, BuiltinKind::Interpreter) {
+        return err.to_compile_error().into();
+    }
     let attr_args = parse_macro_input!(attr as BuiltinAttr);
     emit_builtin_registration(
         &input,
@@ -122,6 +299,9 @@ pub fn interpreter_builtin(attr: TokenStream, item: TokenStream) -> TokenStream 
 #[proc_macro_attribute]
 pub fn pre_eval_builtin(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
+    if let Err(err) = validate_signature(&input, BuiltinKind::PreEval) {
+        return err.to_compile_error().into();
+    }
     let attr_args = parse_macro_input!(attr as BuiltinAttr);
     emit_builtin_registration(
         &input,
@@ -246,5 +426,58 @@ impl syn::parse::Parse for NoopArgs {
             name: name.value(),
             min_args,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_signature, BuiltinKind};
+    use syn::parse_quote;
+
+    #[test]
+    fn builtin_signature_accepts_expected_shape() {
+        let function = parse_quote! {
+            fn builtin_abs(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+                unimplemented!()
+            }
+        };
+
+        assert!(validate_signature(&function, BuiltinKind::Builtin).is_ok());
+    }
+
+    #[test]
+    fn interpreter_signature_rejects_missing_environment() {
+        let function = parse_quote! {
+            fn interp_eval(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+                unimplemented!()
+            }
+        };
+
+        assert!(validate_signature(&function, BuiltinKind::Interpreter).is_err());
+    }
+
+    #[test]
+    fn pre_eval_signature_accepts_fully_qualified_types() {
+        let function = parse_quote! {
+            fn pre_eval_quote(
+                args: &[crate::parser::ast::Arg],
+                env: &crate::interpreter::environment::Environment,
+            ) -> Result<crate::interpreter::value::RValue, crate::interpreter::value::RError> {
+                unimplemented!()
+            }
+        };
+
+        assert!(validate_signature(&function, BuiltinKind::PreEval).is_ok());
+    }
+
+    #[test]
+    fn builtin_signature_rejects_wrong_return_type() {
+        let function = parse_quote! {
+            fn builtin_abs(args: &[RValue], named: &[(String, RValue)]) -> RValue {
+                unimplemented!()
+            }
+        };
+
+        assert!(validate_signature(&function, BuiltinKind::Builtin).is_err());
     }
 }
