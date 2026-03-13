@@ -1,3 +1,4 @@
+mod arguments;
 pub mod builtins;
 pub mod call;
 pub mod coerce;
@@ -5,7 +6,6 @@ pub mod environment;
 pub mod value;
 
 use std::cell::RefCell;
-use std::collections::HashSet;
 
 use ndarray::{Array2, ShapeBuilder};
 
@@ -1233,75 +1233,17 @@ impl Interpreter {
                 body,
                 env: closure_env,
             }) => {
-                let call_env = Environment::new_child(closure_env);
+                let bound = self.bind_closure_call(
+                    params,
+                    positional,
+                    named,
+                    closure_env,
+                    func,
+                    call_expr,
+                )?;
+                let call_env = bound.env;
 
-                // Bind parameters
-                let mut pos_idx = 0;
-                let mut dots_vals: Vec<(Option<String>, RValue)> = Vec::new();
-                let mut has_dots = false;
-                let param_names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
-                let mut formal_args = HashSet::new();
-                let mut supplied_args = HashSet::new();
-                let mut supplied_arg_count = 0usize;
-
-                for param in params {
-                    if param.is_dots {
-                        formal_args.insert("...".to_string());
-                    } else {
-                        formal_args.insert(param.name.clone());
-                    }
-                }
-
-                for param in params {
-                    if param.is_dots {
-                        has_dots = true;
-                        // Collect remaining positional args into ...
-                        while pos_idx < positional.len() {
-                            dots_vals.push((None, positional[pos_idx].clone()));
-                            pos_idx += 1;
-                        }
-                        // Collect unmatched named args into ...
-                        for (n, v) in named {
-                            if !param_names.contains(&n.as_str()) {
-                                dots_vals.push((Some(n.clone()), v.clone()));
-                            }
-                        }
-                        supplied_arg_count += dots_vals.len();
-                        continue;
-                    }
-
-                    // Try named argument first
-                    if let Some((_, val)) = named.iter().find(|(n, _)| *n == param.name) {
-                        call_env.set(param.name.clone(), val.clone());
-                        supplied_args.insert(param.name.clone());
-                        supplied_arg_count += 1;
-                    } else if pos_idx < positional.len() {
-                        call_env.set(param.name.clone(), positional[pos_idx].clone());
-                        supplied_args.insert(param.name.clone());
-                        supplied_arg_count += 1;
-                        pos_idx += 1;
-                    } else if let Some(ref default) = param.default {
-                        let val = self.eval_in(default, &call_env)?;
-                        call_env.set(param.name.clone(), val);
-                    }
-                    // else: missing argument, will error when accessed
-                }
-
-                // Bind ... as a list in the call environment
-                if has_dots {
-                    call_env.set("...".to_string(), RValue::List(RList::new(dots_vals)));
-                }
-
-                self.call_stack.borrow_mut().push(CallFrame {
-                    call: call_expr,
-                    function: func.clone(),
-                    env: call_env.clone(),
-                    formal_args,
-                    supplied_args,
-                    supplied_positional: positional.to_vec(),
-                    supplied_named: named.to_vec(),
-                    supplied_arg_count,
-                });
+                self.call_stack.borrow_mut().push(bound.frame);
 
                 let result = match self.eval_in(body, &call_env) {
                     Ok(val) => Ok(val),
