@@ -2,10 +2,6 @@
 
 This file tracks behavior that is still stubbed, placeholder, or materially simplified.
 
-## Runtime Semantics
-
-- [ ] Formula (`~`) — parsed, but unary and binary formula evaluation still returns `NULL`
-
 ## Simplified Data and Object Semantics
 
 - [ ] `data.frame(...)` — currently constructs a classed list with `names` and `row.names`, but still needs column recycling, validation, and fuller R-compatible behavior
