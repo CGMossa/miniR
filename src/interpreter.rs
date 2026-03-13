@@ -26,6 +26,37 @@ where
     INTERPRETER.with(|cell| f(&cell.borrow()))
 }
 
+/// Temporarily install an explicit interpreter instance into thread-local state
+/// while executing `f`. This keeps legacy builtin TLS access working, but lets
+/// higher-level code own interpreter instances directly.
+pub fn with_interpreter_state<F, R>(state: &mut Interpreter, f: F) -> R
+where
+    F: FnOnce(&Interpreter) -> R,
+{
+    INTERPRETER.with(|cell| {
+        {
+            let mut installed = cell.borrow_mut();
+            std::mem::swap(&mut *installed, state);
+        }
+
+        struct Restore<'a> {
+            cell: &'a RefCell<Interpreter>,
+            state: &'a mut Interpreter,
+        }
+
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                let mut installed = self.cell.borrow_mut();
+                std::mem::swap(&mut *installed, self.state);
+            }
+        }
+
+        let _restore = Restore { cell, state };
+        let installed = cell.borrow();
+        f(&installed)
+    })
+}
+
 pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
     match call_expr {
         Some(Expr::Call { args, .. }) => Some(Expr::Call {
@@ -89,6 +120,12 @@ pub struct Interpreter {
     pub(crate) temp_dir: temp_dir::TempDir,
     /// Counter for unique tempfile names within the session.
     pub(crate) temp_counter: std::cell::Cell<u64>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Interpreter {
