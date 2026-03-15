@@ -188,12 +188,18 @@ fn r_date_vec(days: Vec<Option<f64>>) -> RValue {
 
 // region: Sys.Date / Sys.time
 
+/// Get the current date.
+///
+/// @return a Date object representing today's date
 #[builtin(name = "Sys.Date")]
 fn builtin_sys_date(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let today = jiff::Zoned::now().date();
     Ok(r_date(date_to_days(today)))
 }
 
+/// Get the current date-time as a POSIXct value.
+///
+/// @return a POSIXct object representing the current instant
 #[builtin(name = "Sys.time")]
 fn builtin_sys_time(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let ts = Timestamp::now();
@@ -204,6 +210,10 @@ fn builtin_sys_time(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
 // region: print.Date / print.POSIXct
 
+/// Print a Date object to stdout.
+///
+/// @param x a Date object to print
+/// @return x, invisibly
 #[builtin(name = "print.Date", min_args = 1)]
 fn builtin_print_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let formatted = builtin_format_date(args, named)?;
@@ -211,6 +221,10 @@ fn builtin_print_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// Print a POSIXct object to stdout.
+///
+/// @param x a POSIXct object to print
+/// @return x, invisibly
 #[builtin(name = "print.POSIXct", min_args = 1)]
 fn builtin_print_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let formatted = builtin_format_posixct(args, named)?;
@@ -222,6 +236,12 @@ fn builtin_print_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<
 
 // region: as.Date
 
+/// Convert a character string or numeric value to a Date object.
+///
+/// @param x character string, numeric (days since origin), or Date to convert
+/// @param format strptime-style format string for parsing (optional)
+/// @param origin Date or string giving the origin for numeric conversion
+/// @return a Date object
 #[builtin(name = "as.Date", min_args = 1)]
 fn builtin_as_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = &args[0];
@@ -332,6 +352,11 @@ fn resolve_origin(origin: Option<&RValue>) -> Result<f64, RError> {
 
 // region: as.POSIXct
 
+/// Convert a character string or numeric value to a POSIXct date-time.
+///
+/// @param x character string, numeric (seconds since epoch), or POSIXct to convert
+/// @param tz timezone name (default: UTC for parsing, system for display)
+/// @return a POSIXct object
 #[builtin(name = "as.POSIXct", min_args = 1)]
 fn builtin_as_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = &args[0];
@@ -392,6 +417,11 @@ fn builtin_as_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
 // region: format.Date / format.POSIXct
 
+/// Format a Date object as a character string.
+///
+/// @param x a Date object
+/// @param format strftime-style format string (default "%Y-%m-%d")
+/// @return character vector of formatted date strings
 #[builtin(name = "format.Date", min_args = 1)]
 fn builtin_format_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = &args[0];
@@ -431,6 +461,11 @@ fn builtin_format_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
     }
 }
 
+/// Format a POSIXct object as a character string.
+///
+/// @param x a POSIXct object
+/// @param format strftime-style format string (default "%Y-%m-%d %H:%M:%S")
+/// @return character vector of formatted datetime strings
 #[builtin(name = "format.POSIXct", min_args = 1)]
 fn builtin_format_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = &args[0];
@@ -497,6 +532,12 @@ fn secs_to_timestamp(secs: f64) -> Option<Timestamp> {
 
 // region: strptime / strftime
 
+/// Parse a character string into a POSIXct date-time using a format specification.
+///
+/// @param x character string to parse
+/// @param format strptime-style format string
+/// @param tz timezone name (default: UTC)
+/// @return a POSIXct object
 #[builtin(min_args = 2)]
 fn builtin_strptime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = args[0]
@@ -544,6 +585,11 @@ fn builtin_strptime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Err(DateTimeError::AmbiguousFormat.into())
 }
 
+/// Format a POSIXct date-time as a character string.
+///
+/// @param x a POSIXct object
+/// @param format strftime-style format string (default "%Y-%m-%d %H:%M:%S")
+/// @return character string representation
 #[builtin(min_args = 1)]
 fn builtin_strftime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     // strftime is essentially format.POSIXct
@@ -567,6 +613,12 @@ fn builtin_strftime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 
 // region: difftime
 
+/// Compute the time difference between two date-time values.
+///
+/// @param time1 first POSIXct or Date value
+/// @param time2 second POSIXct or Date value
+/// @param units time unit for the result: "secs", "mins", "hours", "days", or "weeks"
+/// @return a difftime object (numeric with class and units attributes)
 #[builtin(min_args = 2)]
 fn builtin_difftime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let t1 = args[0]
@@ -627,6 +679,10 @@ fn builtin_difftime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 
 // region: date component extractors
 
+/// Extract the day-of-week name from a Date object.
+///
+/// @param x a Date object
+/// @return character vector of weekday names (e.g. "Monday", "Tuesday")
 #[builtin(min_args = 1)]
 fn builtin_weekdays(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     extract_date_component(&args[0], |date| {
@@ -643,6 +699,10 @@ fn builtin_weekdays(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
     })
 }
 
+/// Extract the month name from a Date object.
+///
+/// @param x a Date object
+/// @return character vector of month names (e.g. "January", "February")
 #[builtin(min_args = 1)]
 fn builtin_months(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     extract_date_component(&args[0], |date| {
@@ -665,6 +725,10 @@ fn builtin_months(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
     })
 }
 
+/// Extract the quarter from a Date object.
+///
+/// @param x a Date object
+/// @return character vector of quarter labels (e.g. "Q1", "Q2", "Q3", "Q4")
 #[builtin(min_args = 1)]
 fn builtin_quarters(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     extract_date_component(&args[0], |date| {
@@ -703,6 +767,11 @@ fn extract_date_component(
 
 // region: as.POSIXlt (simplified: returns named list)
 
+/// Convert a value to a POSIXlt (broken-down time) list representation.
+///
+/// @param x character string, numeric, or POSIXct to convert
+/// @param tz timezone name (default: system timezone)
+/// @return a POSIXlt list with components sec, min, hour, mday, mon, year, wday, yday, isdst
 #[builtin(name = "as.POSIXlt", min_args = 1)]
 fn builtin_as_posixlt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = &args[0];

@@ -129,6 +129,10 @@ fn try_s3_dispatch(
     Ok(None)
 }
 
+/// Print a value to stdout (S3 generic).
+///
+/// @param x the value to print
+/// @return x, invisibly
 #[interpreter_builtin(min_args = 1)]
 fn interp_print(
     args: &[RValue],
@@ -146,6 +150,10 @@ fn interp_print(
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// Format a value as a character string (S3 generic).
+///
+/// @param x the value to format
+/// @return character string representation
 #[interpreter_builtin(min_args = 1)]
 fn interp_format(
     args: &[RValue],
@@ -169,6 +177,11 @@ fn interp_format(
 
 // endregion
 
+/// Apply a function over a vector or list, simplifying the result.
+///
+/// @param X vector or list to iterate over
+/// @param FUN function to apply to each element
+/// @return simplified vector or list of results
 #[interpreter_builtin(name = "sapply", min_args = 2)]
 fn interp_sapply(
     args: &[RValue],
@@ -178,6 +191,11 @@ fn interp_sapply(
     eval_apply(args, named, true, context)
 }
 
+/// Apply a function over a vector or list, returning a list.
+///
+/// @param X vector or list to iterate over
+/// @param FUN function to apply to each element
+/// @return list of results
 #[interpreter_builtin(name = "lapply", min_args = 2)]
 fn interp_lapply(
     args: &[RValue],
@@ -187,6 +205,12 @@ fn interp_lapply(
     eval_apply(args, named, false, context)
 }
 
+/// Apply a function over a vector or list with a type-checked return template.
+///
+/// @param X vector or list to iterate over
+/// @param FUN function to apply to each element
+/// @param FUN.VALUE template value specifying the expected return type
+/// @return simplified vector matching FUN.VALUE type
 #[interpreter_builtin(name = "vapply", min_args = 3)]
 fn interp_vapply(
     args: &[RValue],
@@ -319,6 +343,11 @@ fn eval_apply(
     })
 }
 
+/// Call a function with arguments supplied as a list.
+///
+/// @param what function or character string naming the function
+/// @param args list of arguments to pass to the function
+/// @return the result of the function call
 #[interpreter_builtin(name = "do.call", min_args = 2)]
 fn interp_do_call(
     positional: &[RValue],
@@ -346,6 +375,10 @@ fn interp_do_call(
     ))
 }
 
+/// Create a vectorized version of a function (stub: returns FUN unchanged).
+///
+/// @param FUN function to vectorize
+/// @return the function (currently a no-op pass-through)
 #[interpreter_builtin(name = "Vectorize", min_args = 1)]
 fn interp_vectorize(
     positional: &[RValue],
@@ -355,6 +388,13 @@ fn interp_vectorize(
     Ok(positional.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// Reduce a vector or list to a single value by applying a binary function.
+///
+/// @param f binary function taking two arguments
+/// @param x vector or list to reduce
+/// @param init optional initial value for the accumulator
+/// @param accumulate if TRUE, return all intermediate results
+/// @return the final accumulated value, or a list of intermediate values if accumulate=TRUE
 #[interpreter_builtin(name = "Reduce", min_args = 2)]
 fn interp_reduce(
     positional: &[RValue],
@@ -418,6 +458,11 @@ fn interp_reduce(
     })
 }
 
+/// Select elements of a vector or list for which a predicate returns TRUE.
+///
+/// @param f predicate function returning a logical scalar
+/// @param x vector or list to filter
+/// @return elements of x for which f returns TRUE
 #[interpreter_builtin(name = "Filter", min_args = 2)]
 fn interp_filter(
     positional: &[RValue],
@@ -480,6 +525,11 @@ fn interp_filter(
     }
 }
 
+/// Apply a function to corresponding elements of multiple vectors or lists.
+///
+/// @param f function to apply
+/// @param ... vectors or lists to map over in parallel
+/// @return list of results
 #[interpreter_builtin(name = "Map", min_args = 2)]
 fn interp_map(
     positional: &[RValue],
@@ -528,6 +578,11 @@ fn interp_map(
     Ok(RValue::List(RList::new(results)))
 }
 
+/// Select one of several alternatives based on an expression value.
+///
+/// @param EXPR expression to evaluate; character for named matching, integer for positional
+/// @param ... named alternatives (for character EXPR) or positional alternatives (for integer)
+/// @return the value of the matched alternative, or NULL if none match
 #[interpreter_builtin(name = "switch", min_args = 1)]
 fn interp_switch(
     positional: &[RValue],
@@ -582,6 +637,11 @@ fn interp_switch(
     }
 }
 
+/// Look up a variable by name in an environment.
+///
+/// @param x character string giving the variable name
+/// @param envir environment in which to look up the variable (default: calling environment)
+/// @return the value bound to the name
 #[interpreter_builtin(name = "get", min_args = 1)]
 fn interp_get(
     positional: &[RValue],
@@ -597,6 +657,12 @@ fn interp_get(
         .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
 }
 
+/// Assign a value to a variable name in an environment.
+///
+/// @param x character string giving the variable name
+/// @param value the value to assign
+/// @param envir environment in which to make the assignment (default: calling environment)
+/// @return the assigned value, invisibly
 #[interpreter_builtin(name = "assign", min_args = 2)]
 fn interp_assign(
     positional: &[RValue],
@@ -612,6 +678,11 @@ fn interp_assign(
     Ok(value)
 }
 
+/// Test whether a variable exists in an environment.
+///
+/// @param x character string giving the variable name
+/// @param envir environment to search in (default: calling environment)
+/// @return TRUE if the variable exists, FALSE otherwise
 #[interpreter_builtin(name = "exists", min_args = 1)]
 fn interp_exists(
     positional: &[RValue],
@@ -628,6 +699,10 @@ fn interp_exists(
     Ok(RValue::vec(Vector::Logical(vec![Some(found)].into())))
 }
 
+/// Read and evaluate an R source file.
+///
+/// @param file path to the R source file
+/// @return the result of evaluating the last expression in the file
 #[interpreter_builtin(name = "source", min_args = 1)]
 fn interp_source(
     positional: &[RValue],
@@ -665,6 +740,11 @@ fn eval_binop(op: BinaryOp, args: &[RValue], context: &BuiltinContext) -> Result
         .map_err(RError::from)
 }
 
+/// Addition operator as a function (unary positive or binary addition).
+///
+/// @param e1 first operand (or sole operand for unary +)
+/// @param e2 second operand (optional)
+/// @return sum of e1 and e2, or e1 unchanged for unary +
 #[interpreter_builtin(name = "+", min_args = 1)]
 fn interp_op_add(
     args: &[RValue],
@@ -680,6 +760,11 @@ fn interp_op_add(
     }
 }
 
+/// Subtraction operator as a function (unary negation or binary subtraction).
+///
+/// @param e1 first operand (or sole operand for unary -)
+/// @param e2 second operand (optional)
+/// @return difference of e1 and e2, or negation of e1 for unary -
 #[interpreter_builtin(name = "-", min_args = 1)]
 fn interp_op_sub(
     args: &[RValue],
@@ -695,6 +780,11 @@ fn interp_op_sub(
     }
 }
 
+/// Multiplication operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return product of e1 and e2
 #[interpreter_builtin(name = "*", min_args = 2)]
 fn interp_op_mul(
     args: &[RValue],
@@ -704,6 +794,11 @@ fn interp_op_mul(
     eval_binop(BinaryOp::Mul, args, context)
 }
 
+/// Division operator as a function.
+///
+/// @param e1 numerator
+/// @param e2 denominator
+/// @return quotient of e1 and e2
 #[interpreter_builtin(name = "/", min_args = 2)]
 fn interp_op_div(
     args: &[RValue],
@@ -713,6 +808,11 @@ fn interp_op_div(
     eval_binop(BinaryOp::Div, args, context)
 }
 
+/// Exponentiation operator as a function.
+///
+/// @param e1 base
+/// @param e2 exponent
+/// @return e1 raised to the power of e2
 #[interpreter_builtin(name = "^", min_args = 2)]
 fn interp_op_pow(
     args: &[RValue],
@@ -722,6 +822,11 @@ fn interp_op_pow(
     eval_binop(BinaryOp::Pow, args, context)
 }
 
+/// Modulo operator as a function.
+///
+/// @param e1 dividend
+/// @param e2 divisor
+/// @return remainder of e1 divided by e2
 #[interpreter_builtin(name = "%%", min_args = 2)]
 fn interp_op_mod(
     args: &[RValue],
@@ -731,6 +836,11 @@ fn interp_op_mod(
     eval_binop(BinaryOp::Mod, args, context)
 }
 
+/// Integer division operator as a function.
+///
+/// @param e1 dividend
+/// @param e2 divisor
+/// @return integer quotient of e1 divided by e2
 #[interpreter_builtin(name = "%/%", min_args = 2)]
 fn interp_op_intdiv(
     args: &[RValue],
@@ -740,6 +850,11 @@ fn interp_op_intdiv(
     eval_binop(BinaryOp::IntDiv, args, context)
 }
 
+/// Equality comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise equality
 #[interpreter_builtin(name = "==", min_args = 2)]
 fn interp_op_eq(
     args: &[RValue],
@@ -749,6 +864,11 @@ fn interp_op_eq(
     eval_binop(BinaryOp::Eq, args, context)
 }
 
+/// Inequality comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise inequality
 #[interpreter_builtin(name = "!=", min_args = 2)]
 fn interp_op_ne(
     args: &[RValue],
@@ -758,6 +878,11 @@ fn interp_op_ne(
     eval_binop(BinaryOp::Ne, args, context)
 }
 
+/// Less-than comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise less-than
 #[interpreter_builtin(name = "<", min_args = 2)]
 fn interp_op_lt(
     args: &[RValue],
@@ -767,6 +892,11 @@ fn interp_op_lt(
     eval_binop(BinaryOp::Lt, args, context)
 }
 
+/// Greater-than comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise greater-than
 #[interpreter_builtin(name = ">", min_args = 2)]
 fn interp_op_gt(
     args: &[RValue],
@@ -776,6 +906,11 @@ fn interp_op_gt(
     eval_binop(BinaryOp::Gt, args, context)
 }
 
+/// Less-than-or-equal comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise less-than-or-equal
 #[interpreter_builtin(name = "<=", min_args = 2)]
 fn interp_op_le(
     args: &[RValue],
@@ -785,6 +920,11 @@ fn interp_op_le(
     eval_binop(BinaryOp::Le, args, context)
 }
 
+/// Greater-than-or-equal comparison operator as a function.
+///
+/// @param e1 first operand
+/// @param e2 second operand
+/// @return logical vector indicating element-wise greater-than-or-equal
 #[interpreter_builtin(name = ">=", min_args = 2)]
 fn interp_op_ge(
     args: &[RValue],
@@ -794,6 +934,11 @@ fn interp_op_ge(
     eval_binop(BinaryOp::Ge, args, context)
 }
 
+/// Element-wise logical AND operator as a function.
+///
+/// @param e1 first logical operand
+/// @param e2 second logical operand
+/// @return logical vector of element-wise AND results
 #[interpreter_builtin(name = "&", min_args = 2)]
 fn interp_op_and(
     args: &[RValue],
@@ -803,6 +948,11 @@ fn interp_op_and(
     eval_binop(BinaryOp::And, args, context)
 }
 
+/// Element-wise logical OR operator as a function.
+///
+/// @param e1 first logical operand
+/// @param e2 second logical operand
+/// @return logical vector of element-wise OR results
 #[interpreter_builtin(name = "|", min_args = 2)]
 fn interp_op_or(
     args: &[RValue],
@@ -812,6 +962,10 @@ fn interp_op_or(
     eval_binop(BinaryOp::Or, args, context)
 }
 
+/// Logical NOT operator as a function.
+///
+/// @param x logical operand
+/// @return logical vector of negated values
 #[interpreter_builtin(name = "!", min_args = 1)]
 fn interp_op_not(
     args: &[RValue],
@@ -857,6 +1011,11 @@ fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
     }
 }
 
+/// Invoke the next method in an S3 method dispatch chain.
+///
+/// @param generic character string naming the generic (optional, inferred from context)
+/// @param object the object being dispatched on (optional, inferred from context)
+/// @return the result of calling the next method
 #[interpreter_builtin(name = "NextMethod")]
 fn interp_next_method(
     positional: &[RValue],
@@ -869,6 +1028,10 @@ fn interp_next_method(
         .map_err(RError::from)
 }
 
+/// Get or query the environment of a function.
+///
+/// @param fun function whose environment to return (optional; returns calling env if omitted)
+/// @return the environment of fun, or the calling environment if no argument given
 #[interpreter_builtin(name = "environment")]
 fn interp_environment(
     positional: &[RValue],
@@ -885,6 +1048,10 @@ fn interp_environment(
     }
 }
 
+/// Coerce a value to an environment.
+///
+/// @param x integer (search path position), string (environment name), or environment
+/// @return the corresponding environment
 #[interpreter_builtin(name = "as.environment", min_args = 1)]
 fn interp_as_environment(
     positional: &[RValue],
@@ -955,6 +1122,9 @@ fn interp_as_environment(
     }
 }
 
+/// Return the global environment.
+///
+/// @return the global environment
 #[interpreter_builtin(name = "globalenv", max_args = 0)]
 fn interp_globalenv(
     _positional: &[RValue],
@@ -964,6 +1134,9 @@ fn interp_globalenv(
     context.with_interpreter(|interp| Ok(RValue::Environment(interp.global_env.clone())))
 }
 
+/// Return the base environment.
+///
+/// @return the base environment (parent of the global environment)
 #[interpreter_builtin(name = "baseenv", max_args = 0)]
 fn interp_baseenv(
     _positional: &[RValue],
@@ -980,6 +1153,9 @@ fn interp_baseenv(
     })
 }
 
+/// Return the empty environment (has no parent and no bindings).
+///
+/// @return the empty environment
 #[interpreter_builtin(name = "emptyenv", max_args = 0)]
 fn interp_emptyenv(
     _positional: &[RValue],
@@ -989,6 +1165,10 @@ fn interp_emptyenv(
     Ok(RValue::Environment(Environment::new_empty()))
 }
 
+/// Get the call expression of a frame on the call stack.
+///
+/// @param which frame number (0 = current, positive = counting from bottom)
+/// @return the call as a language object, or NULL
 #[interpreter_builtin(name = "sys.call", max_args = 1)]
 fn interp_sys_call(
     positional: &[RValue],
@@ -1015,6 +1195,10 @@ fn interp_sys_call(
     })
 }
 
+/// Get the function of a frame on the call stack.
+///
+/// @param which frame number (0 = current, positive = counting from bottom)
+/// @return the function object for the given frame
 #[interpreter_builtin(name = "sys.function", max_args = 1)]
 fn interp_sys_function(
     positional: &[RValue],
@@ -1044,6 +1228,10 @@ fn interp_sys_function(
     })
 }
 
+/// Get the environment of a frame on the call stack.
+///
+/// @param which frame number (0 = global env, positive = counting from bottom)
+/// @return the environment for the given frame
 #[interpreter_builtin(name = "sys.frame", max_args = 1)]
 fn interp_sys_frame(
     positional: &[RValue],
@@ -1070,6 +1258,9 @@ fn interp_sys_frame(
     })
 }
 
+/// Get the list of all calls on the call stack.
+///
+/// @return list of call language objects for all active frames
 #[interpreter_builtin(name = "sys.calls", max_args = 0)]
 fn interp_sys_calls(
     _positional: &[RValue],
@@ -1086,6 +1277,9 @@ fn interp_sys_calls(
     })
 }
 
+/// Get the list of all environments on the call stack.
+///
+/// @return list of environments for all active frames
 #[interpreter_builtin(name = "sys.frames", max_args = 0)]
 fn interp_sys_frames(
     _positional: &[RValue],
@@ -1102,6 +1296,9 @@ fn interp_sys_frames(
     })
 }
 
+/// Get the parent frame indices for all frames on the call stack.
+///
+/// @return integer vector of parent frame indices
 #[interpreter_builtin(name = "sys.parents", max_args = 0)]
 fn interp_sys_parents(
     _positional: &[RValue],
@@ -1118,6 +1315,9 @@ fn interp_sys_parents(
     })
 }
 
+/// Get the on.exit expression for the current frame.
+///
+/// @return the on.exit expression as a language object, or NULL if none
 #[interpreter_builtin(name = "sys.on.exit", max_args = 0)]
 fn interp_sys_on_exit(
     _positional: &[RValue],
@@ -1141,6 +1341,9 @@ fn interp_sys_on_exit(
     })
 }
 
+/// Get the number of frames on the call stack.
+///
+/// @return integer giving the current stack depth
 #[interpreter_builtin(name = "sys.nframe", max_args = 0)]
 fn interp_sys_nframe(
     _positional: &[RValue],
@@ -1153,6 +1356,9 @@ fn interp_sys_nframe(
     })
 }
 
+/// Get the number of arguments supplied to the current function call.
+///
+/// @return integer giving the number of supplied arguments
 #[interpreter_builtin(name = "nargs", max_args = 0)]
 fn interp_nargs(
     _positional: &[RValue],
@@ -1170,6 +1376,10 @@ fn interp_nargs(
     })
 }
 
+/// Get the environment of the parent (calling) frame.
+///
+/// @param n number of generations to go back (default 1)
+/// @return the environment of the n-th parent frame
 #[interpreter_builtin(name = "parent.frame", max_args = 1)]
 fn interp_parent_frame(
     positional: &[RValue],
@@ -1199,6 +1409,10 @@ fn interp_parent_frame(
     })
 }
 
+/// List the names of objects in an environment.
+///
+/// @param envir environment to list (default: calling environment)
+/// @return character vector of variable names
 #[interpreter_builtin(name = "ls", names = ["objects"])]
 fn interp_ls(
     positional: &[RValue],
@@ -1213,6 +1427,11 @@ fn interp_ls(
     Ok(RValue::vec(Vector::Character(chars.into())))
 }
 
+/// Evaluate an expression in a specified environment.
+///
+/// @param expr expression to evaluate (language object or character string)
+/// @param envir environment in which to evaluate (default: calling environment)
+/// @return the result of evaluating expr
 #[interpreter_builtin(name = "eval", min_args = 1)]
 fn interp_eval(
     positional: &[RValue],
@@ -1249,6 +1468,10 @@ fn interp_eval(
     }
 }
 
+/// Parse R source text into a language object.
+///
+/// @param text character string containing R code to parse
+/// @return a language object representing the parsed expression
 #[interpreter_builtin(name = "parse", min_args = 0)]
 fn interp_parse(
     positional: &[RValue],
@@ -1278,6 +1501,13 @@ fn interp_parse(
 
 // --- apply family: apply, mapply, tapply, by ---
 
+/// Apply a function over rows or columns of a matrix.
+///
+/// @param X matrix or array
+/// @param MARGIN 1 for rows, 2 for columns
+/// @param FUN function to apply
+/// @param ... additional arguments passed to FUN
+/// @return vector, matrix, or list of results
 #[interpreter_builtin(name = "apply", min_args = 3)]
 fn interp_apply(
     positional: &[RValue],
@@ -1500,6 +1730,12 @@ fn simplify_apply_results(results: Vec<RValue>) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(values)))
 }
 
+/// Apply a function to corresponding elements of multiple vectors.
+///
+/// @param FUN function to apply
+/// @param ... vectors to iterate over in parallel
+/// @param SIMPLIFY if TRUE, simplify the result to a vector or matrix
+/// @return simplified vector or list of results
 #[interpreter_builtin(name = "mapply", min_args = 2)]
 fn interp_mapply(
     positional: &[RValue],
@@ -1618,6 +1854,12 @@ fn interp_mapply(
     Ok(RValue::List(RList::new(values)))
 }
 
+/// Apply a function to groups of values defined by a factor/index.
+///
+/// @param X vector of values to split into groups
+/// @param INDEX factor or vector defining the groups
+/// @param FUN function to apply to each group
+/// @return named vector or list of per-group results
 #[interpreter_builtin(name = "tapply", min_args = 3)]
 fn interp_tapply(
     positional: &[RValue],
@@ -1870,6 +2112,12 @@ fn combine_items_to_vector(items: &[RValue]) -> RValue {
     }
 }
 
+/// Apply a function to subsets of a data frame or vector split by a grouping factor.
+///
+/// @param data data frame or vector to split
+/// @param INDICES factor or vector defining the groups
+/// @param FUN function to apply to each subset
+/// @return list of per-group results
 #[interpreter_builtin(name = "by", min_args = 3)]
 fn interp_by(
     positional: &[RValue],
