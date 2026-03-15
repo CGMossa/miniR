@@ -244,6 +244,41 @@ impl Vector {
         self.len() == 0
     }
 
+    /// Build a new vector by selecting elements at the given indices (with recycling).
+    /// Preserves the vector type.
+    pub fn select_indices(&self, indices: &[usize]) -> Vector {
+        macro_rules! sel {
+            ($vals:expr, $variant:ident) => {{
+                let result: Vec<_> = indices
+                    .iter()
+                    .map(|&i| {
+                        if i < $vals.len() {
+                            $vals[i].clone()
+                        } else {
+                            Default::default()
+                        }
+                    })
+                    .collect();
+                Vector::$variant(result.into())
+            }};
+        }
+
+        match self {
+            Vector::Raw(vals) => {
+                let result: Vec<u8> = indices
+                    .iter()
+                    .map(|&i| if i < vals.len() { vals[i] } else { 0 })
+                    .collect();
+                Vector::Raw(result)
+            }
+            Vector::Double(vals) => sel!(vals, Double),
+            Vector::Integer(vals) => sel!(vals, Integer),
+            Vector::Logical(vals) => sel!(vals, Logical),
+            Vector::Complex(vals) => sel!(vals, Complex),
+            Vector::Character(vals) => sel!(vals, Character),
+        }
+    }
+
     /// Get the first element as a boolean (for conditions)
     pub fn as_logical_scalar(&self) -> Option<bool> {
         match self {

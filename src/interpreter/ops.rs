@@ -10,6 +10,32 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{BinaryOp, SpecialOp, UnaryOp};
 
+/// Copy attributes (dim, dimnames, names, class) from the longer operand
+/// to the arithmetic result. R's rule: attrs come from the first operand
+/// if lengths are equal, otherwise from the longer one.
+fn propagate_attrs(result: RValue, lv: &RVector, rv: &RVector) -> RValue {
+    let donor = if lv.inner.len() >= rv.inner.len() {
+        lv
+    } else {
+        rv
+    };
+    let Some(attrs) = &donor.attrs else {
+        return result;
+    };
+    match result {
+        RValue::Vector(mut rv_out) => {
+            // Copy dim, dimnames, names — skip class (arithmetic strips S3 class for base types)
+            for key in &["dim", "dimnames", "names"] {
+                if let Some(val) = attrs.get(*key) {
+                    rv_out.set_attr(key.to_string(), val.clone());
+                }
+            }
+            RValue::Vector(rv_out)
+        }
+        other => other,
+    }
+}
+
 // region: Interpreter delegation
 
 impl Interpreter {
@@ -147,7 +173,8 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
                 )
                 .into());
             }
-            eval_arith(op, &lv.inner, &rv.inner)
+            let result = eval_arith(op, &lv.inner, &rv.inner)?;
+            Ok(propagate_attrs(result, lv, rv))
         }
 
         // Comparison (vectorized)

@@ -16,23 +16,39 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 ## Concurrency Rules
 
-- **No process-global mutable statics** — use `thread_local!` for interpreter state that builtins need to access (e.g. `with_interpreter()` pattern)
-- **`thread_local!` is the baseline** — each thread gets its own interpreter instance, no cross-thread sharing needed for interpreter state
+- **No process-global mutable statics** — put per-interpreter state on the `Interpreter` struct
+- **`thread_local!` exists as infrastructure** — but builtins should use `BuiltinContext` to access the interpreter, not raw TLS via `with_interpreter()`
 - **`Rc<RefCell<>>` is fine** — the interpreter is single-threaded per instance; no need for `Arc<Mutex<>>` unless explicitly sharing across threads
-- When adding new state (RNG, temp dirs, options, etc.), put it on the `Interpreter` struct, not in a static
+- When adding new state (RNG, temp dirs, env vars, working directory, options, etc.), put it on the `Interpreter` struct, not in a static
+- Env vars and working directory are per-interpreter (not process-global) — use `interp.get_env_var()` / `interp.set_env_var()` / `interp.get_working_dir()` / `interp.set_working_dir()`
 
 ## Project Structure
 
+- `src/lib.rs` — library boundary exposing interpreter, parser, repl, session
+- `src/session.rs` — `Session` struct wrapping `Interpreter` for public API
+- `src/main.rs` — thin CLI wrapper using Session API
+- `src/repl.rs` — REPL support (highlighting, completion, validation, prompt)
 - `src/parser/r.pest` — PEG grammar (pest), follows R Language Definition operator precedence
 - `src/parser/ast.rs` — AST types
-- `src/parser/mod.rs` — pest pairs to AST conversion
-- `src/interpreter/mod.rs` — tree-walking evaluator
-- `src/interpreter/value.rs` — RValue, Vector, RError types
-- `src/interpreter/environment.rs` — lexical scoping with Rc<RefCell<>>
-- `src/interpreter/builtins.rs` — built-in functions
-- `src/main.rs` — REPL (reedline) + file execution CLI
-- `tests/` — R test scripts
+- `src/parser.rs` — pest pairs to AST conversion
+- `src/parser/diagnostics.rs` — parse error formatting and fix suggestions
+- `src/interpreter.rs` — tree-walking evaluator (core `eval_in` dispatch, ~330 lines)
+- `src/interpreter/ops.rs` — arithmetic, comparison, logical, range, %in%, matmul
+- `src/interpreter/assignment.rs` — `eval_assign` + all replacement semantics
+- `src/interpreter/indexing.rs` — read-side vector/list/matrix/data-frame indexing
+- `src/interpreter/control_flow.rs` — if/while/repeat/for/pipe evaluation
+- `src/interpreter/call.rs` — `BuiltinContext`, `CallFrame`, `S3DispatchContext`
+- `src/interpreter/call_eval.rs` — call evaluation and function dispatch
+- `src/interpreter/arguments.rs` — three-pass closure argument binding (exact/partial/positional)
+- `src/interpreter/s3.rs` — S3 method dispatch (UseMethod/NextMethod)
+- `src/interpreter/value.rs` — `RValue`, `Vector`, `RError` types
+- `src/interpreter/environment.rs` — lexical scoping with `Rc<RefCell<>>`
+- `src/interpreter/builtins.rs` — 200+ built-in functions (unified `BuiltinDescriptor` dispatch)
+- `src/interpreter/builtins/args.rs` — `CallArgs` helper for argument decoding
+- `src/interpreter/builtins/datetime.rs` — date/time builtins (jiff crate)
+- `tests/` — Rust integration tests + R test scripts
 - `plans/` — dependency and design plans
+- `reviews/` — development notes on bugs and missing features
 
 ## Key Decisions
 
@@ -45,14 +61,25 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Complex numbers are fully supported via `num-complex` (Vector::Complex, arithmetic, Re/Im/Mod/Arg/Conj)
 - Dependencies are vendored (`cargo vendor`) for LLM help and clarity
 - Make as many dependencies optional as possible, and let the default feature include all additive features
+- `<<-` creates missing bindings in global env (not base)
+- `print()` and `format()` are S3 generics — they dispatch to `print.Date`, `format.POSIXct`, etc.
 
 ## Testing
 
+- `cargo test` — primary test command, runs all Rust integration tests
+- `cargo clippy --all-targets --all-features -- -D warnings` — must pass with zero warnings
+- `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
+- `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
+- `tests/parse_corpus.rs` — runs all .R files through Session API, asserts no regressions
+- `tests/argument_matching.rs` — three-pass matching conformance
 - `./scripts/parse-test.sh <dir>` — test if all .R files in a directory parse without errors or panics
-- `./scripts/parse-test.sh tests/` — run against our test corpus (should be 100%)
-- `./scripts/parse-test.sh cran/` — run against top 200 CRAN packages + R base/recommended packages
-- Use `--verbose` flag to see per-file results
 - `just update-cran-test-packages` — clone/refresh the CRAN test packages in `cran/`
+
+## CI
+
+- GitHub Actions: `.github/workflows/ci.yml`
+- Runs on push to main and on PRs
+- Steps: vendor dependencies, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
 
 ## Plans
 
@@ -86,7 +113,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 ## Code Quality
 
-- Before committing, always run: `cargo fmt`, `cargo clippy` (zero warnings), and `cargo test`
+- Before committing, always run: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings), and `cargo test`
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 - **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
 - **Prefer `From`/`TryFrom` over `as` casts** — use `TryFrom` and `From` trait conversions instead of `as`-casts; propagate the error rather than silently truncating or wrapping

@@ -217,17 +217,20 @@ mod tests {
 
 #[builtin]
 pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let mut all_values: Vec<RValue> = Vec::new();
+    // Collect (optional_name, value) pairs
+    let mut all_entries: Vec<(Option<String>, RValue)> = Vec::new();
     for arg in args {
-        all_values.push(arg.clone());
+        all_entries.push((None, arg.clone()));
     }
-    for (_, val) in named {
-        all_values.push(val.clone());
+    for (name, val) in named {
+        all_entries.push((Some(name.clone()), val.clone()));
     }
 
-    if all_values.is_empty() {
+    if all_entries.is_empty() {
         return Ok(RValue::Null);
     }
+
+    let all_values: Vec<RValue> = all_entries.iter().map(|(_, v)| v.clone()).collect();
 
     // Check if any are lists
     let has_list = all_values.iter().any(|v| matches!(v, RValue::List(_)));
@@ -264,7 +267,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         }
     }
 
-    if has_char {
+    let vec_result = if has_char {
         let mut result = Vec::new();
         for val in &all_values {
             match val {
@@ -273,7 +276,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Character(result.into())))
+        RValue::vec(Vector::Character(result.into()))
     } else if has_complex {
         let mut result = Vec::new();
         for val in &all_values {
@@ -283,7 +286,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Complex(result.into())))
+        RValue::vec(Vector::Complex(result.into()))
     } else if has_double {
         let mut result = Vec::new();
         for val in &all_values {
@@ -293,7 +296,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Double(result.into())))
+        RValue::vec(Vector::Double(result.into()))
     } else if has_int {
         let mut result = Vec::new();
         for val in &all_values {
@@ -303,7 +306,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Integer(result.into())))
+        RValue::vec(Vector::Integer(result.into()))
     } else if has_logical || !has_raw {
         let mut result = Vec::new();
         for val in &all_values {
@@ -313,9 +316,8 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Logical(result.into())))
+        RValue::vec(Vector::Logical(result.into()))
     } else {
-        // All raw
         let mut result = Vec::new();
         for val in &all_values {
             match val {
@@ -324,8 +326,61 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 _ => {}
             }
         }
-        Ok(RValue::vec(Vector::Raw(result)))
+        RValue::vec(Vector::Raw(result))
+    };
+
+    // Collect names from named arguments and existing names attributes
+    let result = vec_result;
+    let names = collect_c_names(&all_entries);
+    if names.iter().any(|n| n.is_some()) {
+        match result {
+            RValue::Vector(mut rv) => {
+                rv.set_attr(
+                    "names".to_string(),
+                    RValue::vec(Vector::Character(names.into())),
+                );
+                Ok(RValue::Vector(rv))
+            }
+            other => Ok(other),
+        }
+    } else {
+        Ok(result)
     }
+}
+
+/// Collect element names for c(): named arguments provide names for scalars,
+/// existing names attributes provide names for vector elements.
+fn collect_c_names(entries: &[(Option<String>, RValue)]) -> Vec<Option<String>> {
+    let mut names = Vec::new();
+    for (arg_name, val) in entries {
+        match val {
+            RValue::Vector(rv) => {
+                let len = rv.inner.len();
+                // Check for existing names attribute
+                let existing_names = rv
+                    .get_attr("names")
+                    .and_then(|v| v.as_vector())
+                    .map(|v| v.to_characters());
+
+                if let Some(ref enames) = existing_names {
+                    for i in 0..len {
+                        names.push(enames.get(i).cloned().flatten());
+                    }
+                } else if len == 1 {
+                    // Scalar: use the argument name if present
+                    names.push(arg_name.clone());
+                } else {
+                    // Multi-element unnamed vector
+                    for _ in 0..len {
+                        names.push(None);
+                    }
+                }
+            }
+            RValue::Null => {}
+            _ => names.push(arg_name.clone()),
+        }
+    }
+    names
 }
 
 // print() is in interp.rs (S3-dispatching interpreter builtin)
@@ -1817,11 +1872,16 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .map(|(_, v)| v)
         .or(args.get(4));
 
-    let data_vec = match &data {
-        RValue::Vector(v) => v.to_doubles(),
-        _ => vec![Some(f64::NAN)],
+    let data_inner = match &data {
+        RValue::Vector(v) => &v.inner,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "data must be a vector".to_string(),
+            ));
+        }
     };
-    let data_len = data_vec.len();
+    let data_len = data_inner.len();
 
     let (nrow, ncol) = match (nrow_arg, ncol_arg) {
         (Some(r), Some(c)) => (usize::try_from(r)?, usize::try_from(c)?),
@@ -1837,21 +1897,17 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     };
 
     let total = nrow * ncol;
-    let mut mat = Vec::with_capacity(total);
-    if byrow {
-        for i in 0..nrow {
-            for j in 0..ncol {
-                let idx = (i * ncol + j) % data_len;
-                mat.push(data_vec[idx]);
-            }
-        }
+    // Build index mapping: source index for each element in the result
+    let indices: Vec<usize> = if byrow {
+        (0..nrow)
+            .flat_map(|i| (0..ncol).map(move |j| (i * ncol + j) % data_len))
+            .collect()
     } else {
-        for idx in 0..total {
-            mat.push(data_vec[idx % data_len]);
-        }
-    }
+        (0..total).map(|idx| idx % data_len).collect()
+    };
 
-    let mut rv = RVector::from(Vector::Double(mat.into()));
+    let mat_vec = data_inner.select_indices(&indices);
+    let mut rv = RVector::from(mat_vec);
     rv.set_attr(
         "class".to_string(),
         RValue::vec(Vector::Character(

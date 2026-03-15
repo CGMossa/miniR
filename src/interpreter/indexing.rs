@@ -72,10 +72,25 @@ pub(super) fn eval_index(
                     return index_by_logical(interp, v, mask);
                 }
                 let indices = idx_vec.to_integers();
-                if indices.iter().all(|x| x.map(|i| i < 0).unwrap_or(false)) {
-                    return index_by_negative(interp, v, &indices);
+                // Drop zeros (R ignores them), then check sign consistency
+                let nonzero: Vec<Option<i64>> = indices
+                    .iter()
+                    .filter(|x| !matches!(x, Some(0)))
+                    .copied()
+                    .collect();
+                let has_pos = nonzero.iter().any(|x| x.map(|i| i > 0).unwrap_or(false));
+                let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
+                if has_pos && has_neg {
+                    return Err(RError::new(
+                        RErrorKind::Index,
+                        "can't mix positive and negative subscripts".to_string(),
+                    )
+                    .into());
                 }
-                index_by_integer(interp, v, &indices)
+                if has_neg {
+                    return index_by_negative(interp, v, &nonzero);
+                }
+                index_by_integer(interp, v, &nonzero)
             }
             RValue::Null => Ok(obj.clone()),
             _ => Err(RError::new(RErrorKind::Index, "invalid index type".to_string()).into()),
@@ -197,20 +212,19 @@ fn eval_matrix_index(
         }
     };
 
-    let doubles = data.to_doubles();
-    let mut result = Vec::new();
-    for &j in &cols {
-        for &i in &rows {
-            let flat_idx = j * nrow + i;
-            result.push(doubles.get(flat_idx).copied().unwrap_or(None));
-        }
-    }
+    // Collect flat indices in column-major order
+    let flat_indices: Vec<usize> = cols
+        .iter()
+        .flat_map(|&j| rows.iter().map(move |&i| j * nrow + i))
+        .collect();
+
+    let result = data.select_indices(&flat_indices);
 
     if rows.len() == 1 && cols.len() == 1 {
-        return Ok(RValue::vec(Vector::Double(result.into())));
+        return Ok(RValue::vec(result));
     }
 
-    let mut rv = RVector::from(Vector::Double(result.into()));
+    let mut rv = RVector::from(result);
     if rows.len() > 1 || cols.len() > 1 {
         rv.set_attr(
             "dim".to_string(),
@@ -477,24 +491,35 @@ fn index_by_logical(
     v: &Vector,
     mask: &[Option<bool>],
 ) -> Result<RValue, RFlow> {
+    let vlen = v.len();
+    // Recycle mask to target length (R's behavior)
+    let test = |i: usize| -> bool {
+        if mask.is_empty() {
+            return false;
+        }
+        mask[i % mask.len()].unwrap_or(false)
+    };
+
     macro_rules! mask_vec {
         ($vals:expr, $variant:ident) => {{
             let result: Vec<_> = $vals
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| mask.get(*i).copied().flatten().unwrap_or(false))
+                .filter(|(i, _)| test(*i))
                 .map(|(_, v)| v.clone())
                 .collect();
             Ok(RValue::vec(Vector::$variant(result.into())))
         }};
     }
 
+    // If mask is longer than vector, R extends with NA — we just iterate up to vlen
+    let _ = vlen;
     match v {
         Vector::Raw(vals) => {
             let result: Vec<u8> = vals
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| mask.get(*i).copied().flatten().unwrap_or(false))
+                .filter(|(i, _)| test(*i))
                 .map(|(_, &v)| v)
                 .collect();
             Ok(RValue::vec(Vector::Raw(result)))
