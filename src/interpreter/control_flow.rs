@@ -70,6 +70,7 @@ impl Interpreter {
         env: &Environment,
     ) -> Result<RValue, RFlow> {
         loop {
+            self.check_interrupt()?;
             let cond = self.eval_in(condition, env)?;
             let test = match &cond {
                 RValue::Vector(v) => v.as_logical_scalar().unwrap_or(false),
@@ -90,6 +91,7 @@ impl Interpreter {
 
     pub(super) fn eval_repeat(&self, body: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         loop {
+            self.check_interrupt()?;
             match self.eval_in(body, env) {
                 Err(RFlow::Signal(RSignal::Break)) => break,
                 Err(RFlow::Signal(RSignal::Next)) => continue,
@@ -123,6 +125,7 @@ impl Interpreter {
             RValue::Vector(v) => {
                 let len = v.len();
                 for i in 0..len {
+                    self.check_interrupt()?;
                     let elem = match &v.inner {
                         Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[i]])),
                         Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[i]].into())),
@@ -144,6 +147,7 @@ impl Interpreter {
             }
             RValue::List(list) => {
                 for (_, val) in &list.values {
+                    self.check_interrupt()?;
                     env.set(var.to_string(), val.clone());
                     match self.eval_in(body, env) {
                         Ok(_) => {}

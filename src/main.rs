@@ -29,6 +29,7 @@ fn main() {
 
 fn run_expr(source: &str) {
     let mut session = Session::new();
+    let _ = session.install_signal_handler();
     match session.eval_source(source) {
         Ok(result) => {
             if result.visible {
@@ -44,6 +45,7 @@ fn run_expr(source: &str) {
 
 fn run_file(filename: &str) {
     let mut session = Session::new();
+    let _ = session.install_signal_handler();
     match session.eval_file(filename) {
         Ok(_) => {}
         Err(e) => {
@@ -117,6 +119,7 @@ Type 'q()' to quit.
 
     let prompt = RPrompt;
     let mut session = Session::new();
+    let _ = session.install_signal_handler();
 
     loop {
         match line_editor.read_line(&prompt) {
@@ -127,10 +130,17 @@ Type 'q()' to quit.
                     }
                 }
                 Err(e) => {
+                    // Just print the error — interrupt errors display as
+                    // "Interrupted" via their Display impl, no special case needed.
                     eprintln!("{}", e);
                 }
             },
-            Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
+            Ok(Signal::CtrlC) => {
+                // Ctrl+C while waiting for input — print a blank line and
+                // show a new prompt (like R does).
+                println!();
+            }
+            Ok(Signal::CtrlD) => {
                 println!();
                 break;
             }

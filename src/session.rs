@@ -1,6 +1,8 @@
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::interpreter::value::{RFlow, RValue};
 use crate::interpreter::{with_interpreter_state, Interpreter};
@@ -90,6 +92,27 @@ impl Session {
 
     pub fn interpreter(&self) -> &Interpreter {
         &self.interpreter
+    }
+
+    /// Return a clone of the interpreter's interrupt flag.
+    /// The caller (or a signal handler) can set it to `true` to interrupt
+    /// the current computation.
+    pub fn interrupt_flag(&self) -> Arc<AtomicBool> {
+        self.interpreter.interrupt_flag()
+    }
+
+    /// Register a SIGINT handler that sets the interpreter's interrupt flag
+    /// instead of killing the process. Returns `Ok(())` on success.
+    ///
+    /// This should be called once at startup (e.g. before entering the REPL).
+    /// On platforms where SIGINT is not available this is a no-op.
+    pub fn install_signal_handler(&self) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            use signal_hook::consts::SIGINT;
+            signal_hook::flag::register(SIGINT, self.interrupt_flag())?;
+        }
+        Ok(())
     }
 }
 
