@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use r::Session;
@@ -12,7 +12,7 @@ fn temp_path(name: &str, extension: &str) -> PathBuf {
     std::env::temp_dir().join(format!("minir-{name}-{suffix}.{extension}"))
 }
 
-fn quote_path(path: &PathBuf) -> String {
+fn quote_path(path: &Path) -> String {
     path.to_string_lossy()
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
