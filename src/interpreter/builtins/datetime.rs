@@ -186,12 +186,18 @@ fn r_date_vec(days: Vec<Option<f64>>) -> RValue {
 
 // endregion
 
-// region: Sys.Date
+// region: Sys.Date / Sys.time
 
 #[builtin(name = "Sys.Date")]
 fn builtin_sys_date(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let today = jiff::Zoned::now().date();
     Ok(r_date(date_to_days(today)))
+}
+
+#[builtin(name = "Sys.time")]
+fn builtin_sys_time(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ts = Timestamp::now();
+    Ok(r_posixct(timestamp_to_secs(&ts), None))
 }
 
 // endregion

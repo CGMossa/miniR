@@ -1550,26 +1550,7 @@ fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-#[builtin(name = "Sys.time")]
-fn builtin_sys_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
-    Ok(RValue::vec(Vector::Double(vec![Some(secs)].into())))
-}
-
-#[builtin]
-fn builtin_proc_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
-    // R returns c(user.self, sys.self, elapsed) — we approximate with wall time
-    Ok(RValue::vec(Vector::Double(
-        vec![Some(secs), Some(0.0), Some(secs)].into(),
-    )))
-}
+// Sys.time() is in datetime.rs; proc.time() is in system.rs
 
 #[builtin]
 fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {

@@ -807,6 +807,36 @@ fn builtin_l10n_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     ])))
 }
 
+// region: proc.time
+
+#[interpreter_builtin(name = "proc.time")]
+fn interp_proc_time(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let elapsed = context.with_interpreter(|interp| interp.start_instant.elapsed().as_secs_f64());
+    // R returns a named vector c(user.self=..., sys.self=..., elapsed=...)
+    // We don't track CPU time, so user and sys are 0.0
+    let mut rv = RVector::from(Vector::Double(
+        vec![Some(0.0), Some(0.0), Some(elapsed)].into(),
+    ));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            vec![
+                Some("user.self".to_string()),
+                Some("sys.self".to_string()),
+                Some("elapsed".to_string()),
+            ]
+            .into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+// endregion
+
 #[builtin(name = "sessionInfo")]
 fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![
