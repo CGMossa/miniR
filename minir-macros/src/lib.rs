@@ -736,6 +736,7 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                     min_args: #min_args,
                     max_args: Some(#max_args),
                     doc: #full_doc,
+                    params: &[#(#field_names_str),*],
                 };
                 &INFO
             }
@@ -779,9 +780,30 @@ fn extract_builtin_name(attrs: &[syn::Attribute]) -> Option<String> {
     None
 }
 
-fn extract_builtin_aliases(_attrs: &[syn::Attribute]) -> Vec<String> {
-    // Aliases can be added later via #[builtin(names = ["alias1", "alias2"])]
-    Vec::new()
+fn extract_builtin_aliases(attrs: &[syn::Attribute]) -> Vec<String> {
+    let mut aliases = Vec::new();
+    for attr in attrs {
+        if attr.path().is_ident("builtin") {
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("names") {
+                    let value = meta.value()?;
+                    // Parse as a bracketed list of string literals: ["a", "b"]
+                    let content;
+                    syn::bracketed!(content in value);
+                    while !content.is_empty() {
+                        let s: LitStr = content.parse()?;
+                        aliases.push(s.value());
+                        if content.is_empty() {
+                            break;
+                        }
+                        let _: syn::Token![,] = content.parse()?;
+                    }
+                }
+                Ok(())
+            });
+        }
+    }
+    aliases
 }
 
 fn extract_doc_from_attrs(attrs: &[syn::Attribute]) -> String {

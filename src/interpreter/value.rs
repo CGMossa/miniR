@@ -54,6 +54,8 @@ pub struct BuiltinInfo {
     pub min_args: usize,
     pub max_args: Option<usize>,
     pub doc: &'static str,
+    /// Parameter names (from struct field names), for formals()/args().
+    pub params: &'static [&'static str],
 }
 
 /// Decode R call arguments into a typed struct.
