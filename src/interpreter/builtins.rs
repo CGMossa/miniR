@@ -3,6 +3,7 @@ mod conditions;
 #[cfg(feature = "datetime")]
 mod datetime;
 mod factors;
+mod graphics;
 mod interp;
 #[cfg(feature = "io")]
 pub mod io;
