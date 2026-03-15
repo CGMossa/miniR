@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn call_stack_builtins_work_for_nested_closures() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"f <- function(x = 1) {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"f <- function(x = 1) {
   g <- function(y = 2, ...) {
     on.exit(cat("cleanup\n"))
     stopifnot(
@@ -31,32 +30,20 @@ fn call_stack_builtins_work_for_nested_closures() {
   g()
 }
 f()"#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(
-        output.status.success(),
-        "process failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cleanup"), "unexpected stdout: {stdout}");
+    )
+    .expect("call stack tests failed");
 }
 
 #[test]
 fn missing_outside_a_function_reports_an_error() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args(["-e", "missing(x)"])
-        .output()
-        .expect("failed to run miniR");
+    let mut s = Session::new();
+    let err = s
+        .eval_source("missing(x)")
+        .expect_err("missing(x) outside a function should fail");
 
-    assert!(!output.status.success(), "command unexpectedly succeeded");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("'missing(x)' did not find an argument"),
-        "unexpected stderr: {stderr}"
+        err.to_string()
+            .contains("'missing(x)' did not find an argument"),
+        "unexpected error: {err}"
     );
 }

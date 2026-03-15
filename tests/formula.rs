@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn tilde_builds_formula_objects() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"rhs <- ~x + y
+    let mut s = Session::new();
+    s.eval_source(
+        r#"rhs <- ~x + y
 lhs <- z ~ x + y
 
 check_formula <- function(f, expected) {
@@ -22,13 +21,6 @@ check_formula <- function(f, expected) {
 
 check_formula(rhs, "~x + y")
 check_formula(lhs, "z ~ x + y")"#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(
-        output.status.success(),
-        "process failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    )
+    .expect("formula tests failed");
 }

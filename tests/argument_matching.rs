@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn three_pass_argument_matching() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
 # Exact matching
 f <- function(alpha, beta) c(alpha, beta)
 stopifnot(identical(f(alpha = 1, beta = 2), c(1, 2)))
@@ -48,17 +47,7 @@ tryCatch(
 f5 <- function(x, y = 10) x + y
 stopifnot(f5(1) == 11)
 stopifnot(f5(1, y = 20) == 21)
-
-cat("all argument matching tests passed\n")
 "#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "stdout: {stdout}\nstderr: {stderr}"
-    );
+    )
+    .expect("argument matching tests failed");
 }
