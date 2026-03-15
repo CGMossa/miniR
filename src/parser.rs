@@ -99,11 +99,18 @@ fn build_help(pair: Pair<Rule>) -> Expr {
     if first.as_rule() == Rule::help_expr {
         // Unary: "?foo" → help("foo")
         let topic = extract_help_topic(&first);
+        // Wrap in invisible() so ?foo doesn't print NULL
         Expr::Call {
-            func: Box::new(Expr::Symbol("help".to_string())),
+            func: Box::new(Expr::Symbol("invisible".to_string())),
             args: vec![Arg {
                 name: None,
-                value: Some(Expr::String(topic)),
+                value: Some(Expr::Call {
+                    func: Box::new(Expr::Symbol("help".to_string())),
+                    args: vec![Arg {
+                        name: None,
+                        value: Some(Expr::String(topic)),
+                    }],
+                }),
             }],
         }
     } else {
