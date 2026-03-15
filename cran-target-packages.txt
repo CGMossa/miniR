@@ -1,0 +1,50 @@
+# Extra CRAN packages to include in the test corpus.
+# These are fetched in addition to the top 200 downloaded packages.
+# One package name per line. Lines starting with # are comments.
+
+# Development tools
+usethis
+devtools
+roxygen2
+pkgdown
+testthat
+covr
+
+# OOP frameworks
+R6
+S7
+
+# Graphics
+svglite
+ggplot2
+patchwork
+plotly
+
+# Tidyverse ecosystem
+dplyr
+tidyr
+purrr
+stringr
+readr
+tibble
+forcats
+lubridate
+
+# Data manipulation
+data.table
+dtplyr
+
+# Reporting
+knitr
+rmarkdown
+quarto
+
+# Web
+shiny
+plumber
+httr2
+
+# Database
+DBI
+RSQLite
+dbplyr

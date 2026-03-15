@@ -145,4 +145,17 @@ update-cran-test-packages:
     )
     for p in "${TOP[@]}"; do grab "https://github.com/cran/$p.git" "$D/$p" "$p" || FAIL=$((FAIL+1)); N=$((N+1)); done
 
+    # Extra target packages from cran-target-packages.txt
+    EXTRAS_FILE="{{root}}/cran-target-packages.txt"
+    if [ -f "$EXTRAS_FILE" ]; then
+        echo -e "\n=== Target packages ==="
+        while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%%#*}"   # strip comments
+            line="${line// /}"   # strip whitespace
+            [ -z "$line" ] && continue
+            grab "https://github.com/cran/$line.git" "$D/$line" "$line" || FAIL=$((FAIL+1))
+            N=$((N+1))
+        done < "$EXTRAS_FILE"
+    fi
+
     echo -e "\nDone. $((N-FAIL))/$N packages ($FAIL failed)."
