@@ -4,8 +4,9 @@
 
 use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
+use crate::interpreter::BuiltinContext;
 use derive_more::{Display, Error};
-use minir_macros::builtin;
+use minir_macros::{builtin, interpreter_builtin};
 use std::fs;
 use std::path::Path;
 
@@ -398,16 +399,23 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
 // === Temp paths ===
 
-#[builtin]
-fn builtin_tempdir(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = crate::interpreter::with_interpreter(|interp| {
-        interp.temp_dir.path().to_string_lossy().to_string()
-    });
+#[interpreter_builtin]
+fn interp_tempdir(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let path =
+        context.with_interpreter(|interp| interp.temp_dir.path().to_string_lossy().to_string());
     Ok(RValue::vec(Vector::Character(vec![Some(path)].into())))
 }
 
-#[builtin]
-fn builtin_tempfile(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin]
+fn interp_tempfile(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let pattern = args
         .first()
         .or_else(|| named.iter().find(|(n, _)| n == "pattern").map(|(_, v)| v))
@@ -420,8 +428,7 @@ fn builtin_tempfile(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
 
-    let path = crate::interpreter::with_interpreter(|interp| {
-        // Allow tmpdir override, but default to session temp dir
+    let path = context.with_interpreter(|interp| {
         let tmpdir = args
             .get(1)
             .or_else(|| named.iter().find(|(n, _)| n == "tmpdir").map(|(_, v)| v))

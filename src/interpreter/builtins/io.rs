@@ -6,8 +6,8 @@ use std::collections::HashSet;
 use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
-use crate::interpreter::with_interpreter;
 use crate::interpreter::BuiltinContext;
+use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, Expr};
 use crate::parser::parse_program;
 use derive_more::{Display, Error};
@@ -283,7 +283,12 @@ fn write_minirds(path: &str, value: &RValue) -> Result<(), RError> {
     })
 }
 
-fn read_minirds(path: &str, reader_name: &str, writer_name: &str) -> Result<RValue, RError> {
+fn read_minirds(
+    path: &str,
+    reader_name: &str,
+    writer_name: &str,
+    interp: &Interpreter,
+) -> Result<RValue, RError> {
     let content = std::fs::read_to_string(path).map_err(|source| IoError::CannotOpen {
         path: path.to_string(),
         source,
@@ -302,14 +307,12 @@ fn read_minirds(path: &str, reader_name: &str, writer_name: &str) -> Result<RVal
     let ast =
         parse_program(body).map_err(|err| RError::new(RErrorKind::Parse, format!("{err}")))?;
 
-    with_interpreter(|interp| {
-        let base = interp
-            .global_env
-            .parent()
-            .unwrap_or_else(|| interp.global_env.clone());
-        let eval_env = Environment::new_child(&base);
-        interp.eval_in(&ast, &eval_env).map_err(RError::from)
-    })
+    let base = interp
+        .global_env
+        .parent()
+        .unwrap_or_else(|| interp.global_env.clone());
+    let eval_env = Environment::new_child(&base);
+    interp.eval_in(&ast, &eval_env).map_err(RError::from)
 }
 
 // endregion
@@ -385,14 +388,14 @@ fn workspace_binding_names(list: &RList) -> Result<Vec<String>, RError> {
         .collect()
 }
 
-fn eval_arg_value(arg: &Arg, env: &Environment) -> Result<RValue, RError> {
+fn eval_arg_value(arg: &Arg, env: &Environment, interp: &Interpreter) -> Result<RValue, RError> {
     let expr = arg.value.as_ref().ok_or_else(|| {
         RError::new(
             RErrorKind::Argument,
             "argument is missing a value".to_string(),
         )
     })?;
-    with_interpreter(|interp| interp.eval_in(expr, env).map_err(RError::from))
+    interp.eval_in(expr, env).map_err(RError::from)
 }
 
 fn push_save_name(
@@ -411,7 +414,11 @@ fn push_save_name(
     Ok(())
 }
 
-fn workspace_file_arg(args: &[Arg], env: &Environment) -> Result<String, RError> {
+fn workspace_file_arg(
+    args: &[Arg],
+    env: &Environment,
+    interp: &Interpreter,
+) -> Result<String, RError> {
     args.iter()
         .find(|arg| arg.name.as_deref() == Some("file"))
         .ok_or_else(|| {
@@ -421,7 +428,7 @@ fn workspace_file_arg(args: &[Arg], env: &Environment) -> Result<String, RError>
             )
         })
         .and_then(|arg| {
-            eval_arg_value(arg, env)?
+            eval_arg_value(arg, env, interp)?
                 .as_vector()
                 .and_then(|value| value.as_character_scalar())
                 .ok_or_else(|| {
@@ -430,9 +437,13 @@ fn workspace_file_arg(args: &[Arg], env: &Environment) -> Result<String, RError>
         })
 }
 
-fn workspace_target_env(args: &[Arg], env: &Environment) -> Result<Environment, RError> {
+fn workspace_target_env(
+    args: &[Arg],
+    env: &Environment,
+    interp: &Interpreter,
+) -> Result<Environment, RError> {
     match args.iter().find(|arg| arg.name.as_deref() == Some("envir")) {
-        Some(arg) => match eval_arg_value(arg, env)? {
+        Some(arg) => match eval_arg_value(arg, env, interp)? {
             RValue::Environment(target_env) => Ok(target_env),
             _ => Err(RError::new(
                 RErrorKind::Argument,
@@ -443,7 +454,11 @@ fn workspace_target_env(args: &[Arg], env: &Environment) -> Result<Environment, 
     }
 }
 
-fn workspace_requested_names(args: &[Arg], env: &Environment) -> Result<Vec<String>, RError> {
+fn workspace_requested_names(
+    args: &[Arg],
+    env: &Environment,
+    interp: &Interpreter,
+) -> Result<Vec<String>, RError> {
     let mut names = Vec::new();
     let mut seen = HashSet::new();
 
@@ -468,7 +483,7 @@ fn workspace_requested_names(args: &[Arg], env: &Environment) -> Result<Vec<Stri
             },
             Some("file" | "envir") => {}
             Some("list") => {
-                let listed = eval_arg_value(arg, env)?;
+                let listed = eval_arg_value(arg, env, interp)?;
                 if listed.is_null() {
                     continue;
                 }
@@ -524,10 +539,14 @@ fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, 
     CallArgs::new(args, named).string("file", 0)
 }
 
-#[builtin(name = "readRDS", min_args = 1)]
-fn builtin_read_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "readRDS", min_args = 1)]
+fn interp_read_rds(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = read_rds_path(args, named)?;
-    read_minirds(&path, "readRDS", "saveRDS")
+    read_minirds(&path, "readRDS", "saveRDS", context.interpreter())
 }
 
 #[builtin(name = "saveRDS", min_args = 2)]
@@ -568,7 +587,7 @@ fn interp_load(
         .transpose()?
         .unwrap_or_else(|| env.clone());
 
-    let value = read_minirds(&path, "load", "save")?;
+    let value = read_minirds(&path, "load", "save", context.interpreter())?;
     if !is_workspace_value(&value) {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -593,10 +612,15 @@ fn interp_load(
 }
 
 #[pre_eval_builtin(name = "save")]
-fn pre_eval_save(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
-    let path = workspace_file_arg(args, env)?;
-    let target_env = workspace_target_env(args, env)?;
-    let requested_names = workspace_requested_names(args, env)?;
+fn pre_eval_save(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let interp = context.interpreter();
+    let path = workspace_file_arg(args, env, interp)?;
+    let target_env = workspace_target_env(args, env, interp)?;
+    let requested_names = workspace_requested_names(args, env, interp)?;
 
     let mut values = Vec::with_capacity(requested_names.len());
     for name in requested_names {

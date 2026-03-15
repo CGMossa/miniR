@@ -2,7 +2,8 @@
 //! condition accessors, and restart invocation.
 
 use crate::interpreter::value::*;
-use minir_macros::builtin;
+use crate::interpreter::BuiltinContext;
+use minir_macros::{builtin, interpreter_builtin};
 
 #[builtin]
 fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -31,8 +32,12 @@ fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     })
 }
 
-#[builtin]
-fn builtin_warning(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin]
+fn interp_warning(
+    args: &[RValue],
+    _: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let msg = args
         .iter()
         .map(|v| match v {
@@ -42,18 +47,20 @@ fn builtin_warning(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .collect::<Vec<_>>()
         .join("");
     let condition = make_condition(&msg, &["simpleWarning", "warning", "condition"]);
-    // Signal to withCallingHandlers — may muffle, or may unwind (tryCatch)
-    let muffled = crate::interpreter::with_interpreter(|interp| {
-        interp.signal_condition(&condition, &interp.global_env)
-    })?;
+    let muffled = context
+        .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
         eprintln!("Warning message:\n{}", msg);
     }
     Ok(RValue::Null)
 }
 
-#[builtin]
-fn builtin_message(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin]
+fn interp_message(
+    args: &[RValue],
+    _: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let msg = args
         .iter()
         .map(|v| match v {
@@ -63,9 +70,8 @@ fn builtin_message(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         .collect::<Vec<_>>()
         .join("");
     let condition = make_condition(&msg, &["simpleMessage", "message", "condition"]);
-    let muffled = crate::interpreter::with_interpreter(|interp| {
-        interp.signal_condition(&condition, &interp.global_env)
-    })?;
+    let muffled = context
+        .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
         eprintln!("{}", msg);
     }
