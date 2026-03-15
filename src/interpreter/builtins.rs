@@ -693,7 +693,18 @@ fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 
 #[builtin(min_args = 1)]
 fn builtin_is_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(_)));
+    // R's is.vector returns TRUE only if the vector has no attributes other than "names"
+    let r = match args.first() {
+        Some(RValue::Vector(rv)) => match &rv.attrs {
+            None => true,
+            Some(attrs) => attrs.keys().all(|k| k == "names"),
+        },
+        Some(RValue::List(l)) => match &l.attrs {
+            None => true,
+            Some(attrs) => attrs.keys().all(|k| k == "names"),
+        },
+        _ => false,
+    };
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -1697,13 +1708,18 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 #[builtin(min_args = 1)]
 fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::List(_)));
+    // R's is.recursive: TRUE for lists and environments
+    let r = matches!(
+        args.first(),
+        Some(RValue::List(_)) | Some(RValue::Environment(_))
+    );
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
 #[builtin(min_args = 1)]
 fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(_) | RValue::Null));
+    // R's is.atomic: TRUE for atomic vectors and NULL
+    let r = matches!(args.first(), Some(RValue::Vector(_)) | Some(RValue::Null));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -1711,11 +1727,21 @@ fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = v
-                .to_doubles()
-                .iter()
-                .map(|x| Some(x.map(|f| f.is_finite()).unwrap_or(false)))
-                .collect();
+            let result: Vec<Option<bool>> = match &v.inner {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| Some(x.map(|f| f.is_finite()).unwrap_or(false)))
+                    .collect(),
+                // Non-NA integers and logicals are always finite
+                Vector::Integer(vals) => vals.iter().map(|x| Some(x.is_some())).collect(),
+                Vector::Logical(vals) => vals.iter().map(|x| Some(x.is_some())).collect(),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "default method not implemented for type".to_string(),
+                    ))
+                }
+            };
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
@@ -1726,11 +1752,22 @@ fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = v
-                .to_doubles()
-                .iter()
-                .map(|x| Some(x.map(|f| f.is_infinite()).unwrap_or(false)))
-                .collect();
+            let result: Vec<Option<bool>> = match &v.inner {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| Some(x.map(|f| f.is_infinite()).unwrap_or(false)))
+                    .collect(),
+                // Integers and logicals are never infinite
+                Vector::Integer(_) | Vector::Logical(_) => {
+                    vec![Some(false); v.inner.len()]
+                }
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "default method not implemented for type".to_string(),
+                    ))
+                }
+            };
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
@@ -1741,11 +1778,22 @@ fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = v
-                .to_doubles()
-                .iter()
-                .map(|x| Some(x.map(|f| f.is_nan()).unwrap_or(false)))
-                .collect();
+            let result: Vec<Option<bool>> = match &v.inner {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| Some(x.map(|f| f.is_nan()).unwrap_or(false)))
+                    .collect(),
+                // Integers and logicals are never NaN
+                Vector::Integer(_) | Vector::Logical(_) => {
+                    vec![Some(false); v.inner.len()]
+                }
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "default method not implemented for type".to_string(),
+                    ))
+                }
+            };
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
