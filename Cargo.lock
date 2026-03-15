@@ -689,6 +689,7 @@ dependencies = [
  "signal-hook",
  "tabled",
  "temp-dir",
+ "unicode-width",
 ]
 
 [[package]]

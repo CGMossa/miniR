@@ -20,6 +20,8 @@ pub mod system;
 mod tables;
 mod types;
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
@@ -645,9 +647,20 @@ fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
 /// Count the number of characters in each element of a character vector.
 ///
 /// @param x character vector
+/// @param type one of "bytes", "chars", or "width" (default "chars")
 /// @return integer vector of string lengths
 #[builtin(min_args = 1)]
-fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_nchar(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Extract the "type" named argument (default: "chars")
+    let nchar_type = named
+        .iter()
+        .find(|(k, _)| k == "type")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            _ => None,
+        })
+        .unwrap_or_else(|| "chars".to_string());
+
     match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -655,7 +668,16 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
             };
             let result: Vec<Option<i64>> = vals
                 .iter()
-                .map(|s| s.as_ref().map(|s| i64::try_from(s.len()).unwrap_or(0)))
+                .map(|s| {
+                    s.as_ref().map(|s| {
+                        let n = match nchar_type.as_str() {
+                            "bytes" => s.len(),
+                            "width" => UnicodeWidthStr::width(s.as_str()),
+                            _ => s.chars().count(), // "chars" or default
+                        };
+                        i64::try_from(n).unwrap_or(0)
+                    })
+                })
                 .collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
