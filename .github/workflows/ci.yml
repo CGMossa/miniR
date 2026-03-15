@@ -21,13 +21,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Override vendored sources for CI
-        run: |
-          mkdir -p .cargo
-          echo '[source.crates-io]' > .cargo/config.toml
-          echo 'replace-with = "vendored-sources"' >> .cargo/config.toml
-          echo '[source.vendored-sources]' >> .cargo/config.toml
-          echo "directory = \"$PWD/vendor\"" >> .cargo/config.toml
+      - name: Disable vendored sources for CI
+        run: rm -f .cargo/config.toml
 
       - name: cargo fmt --check
         run: cargo fmt --check
