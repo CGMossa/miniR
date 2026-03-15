@@ -1,10 +1,56 @@
 //! Read-side indexing helpers for vectors, lists, matrices, and data frames.
 //! Write-side (replacement) is in `assignment.rs`.
 
+use derive_more::{Display, Error};
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, Expr};
+
+// region: IndexingError
+
+/// Structured error type for indexing operations.
+#[derive(Debug, Display, Error)]
+pub enum IndexingError {
+    #[display("can't mix positive and negative subscripts")]
+    MixedSubscripts,
+
+    #[display("invalid index type")]
+    InvalidIndexType,
+
+    #[display("object is not subsettable")]
+    NotSubsettable,
+
+    #[display("incorrect number of dimensions")]
+    IncorrectDimensions,
+
+    #[display("subscript out of bounds (no dimnames to match against)")]
+    NoDimnames,
+
+    #[display("subscript out of bounds: '{}'", name)]
+    SubscriptOutOfBounds { name: String },
+
+    #[display("invalid subscript type")]
+    InvalidSubscriptType,
+
+    #[display("undefined row selected: '{}'", name)]
+    UndefinedRow { name: String },
+}
+
+impl From<IndexingError> for RError {
+    fn from(e: IndexingError) -> Self {
+        RError::from_source(RErrorKind::Index, e)
+    }
+}
+
+impl From<IndexingError> for RFlow {
+    fn from(e: IndexingError) -> Self {
+        RFlow::Error(RError::from(e))
+    }
+}
+
+// endregion
 
 impl Interpreter {
     pub(super) fn eval_index(
@@ -81,11 +127,7 @@ pub(super) fn eval_index(
                 let has_pos = nonzero.iter().any(|x| x.map(|i| i > 0).unwrap_or(false));
                 let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
                 if has_pos && has_neg {
-                    return Err(RError::new(
-                        RErrorKind::Index,
-                        "can't mix positive and negative subscripts".to_string(),
-                    )
-                    .into());
+                    return Err(IndexingError::MixedSubscripts.into());
                 }
                 if has_neg {
                     return index_by_negative(interp, v, &nonzero);
@@ -93,7 +135,7 @@ pub(super) fn eval_index(
                 index_by_integer(interp, v, &nonzero)
             }
             RValue::Null => Ok(obj.clone()),
-            _ => Err(RError::new(RErrorKind::Index, "invalid index type".to_string()).into()),
+            _ => Err(IndexingError::InvalidIndexType.into()),
         },
         RValue::List(list) => match &idx_val {
             RValue::Vector(idx_vec) => {
@@ -122,9 +164,9 @@ pub(super) fn eval_index(
                 }
                 Ok(RValue::List(RList::new(result)))
             }
-            _ => Err(RError::new(RErrorKind::Index, "invalid index type".to_string()).into()),
+            _ => Err(IndexingError::InvalidIndexType.into()),
         },
-        _ => Err(RError::new(RErrorKind::Index, "object is not subsettable".to_string()).into()),
+        _ => Err(IndexingError::NotSubsettable.into()),
     }
 }
 
@@ -140,11 +182,7 @@ fn eval_matrix_index(
             return eval_list_2d_index(interp, list, indices, env);
         }
         _ => {
-            return Err(RError::new(
-                RErrorKind::Index,
-                "incorrect number of dimensions".to_string(),
-            )
-            .into());
+            return Err(IndexingError::IncorrectDimensions.into());
         }
     };
 
@@ -152,28 +190,16 @@ fn eval_matrix_index(
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Integer(d) => d.0.clone(),
             _ => {
-                return Err(RError::new(
-                    RErrorKind::Index,
-                    "incorrect number of dimensions".to_string(),
-                )
-                .into());
+                return Err(IndexingError::IncorrectDimensions.into());
             }
         },
         _ => {
-            return Err(RError::new(
-                RErrorKind::Index,
-                "incorrect number of dimensions".to_string(),
-            )
-            .into());
+            return Err(IndexingError::IncorrectDimensions.into());
         }
     };
 
     if dims.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Index,
-            "incorrect number of dimensions".to_string(),
-        )
-        .into());
+        return Err(IndexingError::IncorrectDimensions.into());
     }
     let nrow = usize::try_from(dims[0].unwrap_or(0)).unwrap_or(0);
     let ncol = usize::try_from(dims[1].unwrap_or(0)).unwrap_or(0);
@@ -431,10 +457,9 @@ fn resolve_df_row_index(
                                 match pos {
                                     Some(p) => result.push(Some(i64::try_from(p + 1)?)),
                                     None => {
-                                        return Err(RError::new(
-                                            RErrorKind::Index,
-                                            format!("undefined row selected: '{n}'"),
-                                        )
+                                        return Err(IndexingError::UndefinedRow {
+                                            name: n.clone(),
+                                        }
                                         .into());
                                     }
                                 }
@@ -456,11 +481,7 @@ fn resolve_df_row_index(
                     let has_pos = nonzero.iter().any(|x| x.map(|i| i > 0).unwrap_or(false));
                     let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
                     if has_pos && has_neg {
-                        return Err(RError::new(
-                            RErrorKind::Index,
-                            "can't mix positive and negative subscripts".to_string(),
-                        )
-                        .into());
+                        return Err(IndexingError::MixedSubscripts.into());
                     }
                     if has_neg {
                         // Negative indexing: exclude those rows
@@ -640,21 +661,14 @@ fn resolve_dim_index(
         Some(RValue::Vector(rv)) => {
             // Character indices: look up in dimnames
             if matches!(rv.inner, Vector::Character(_)) {
-                let names = dim_names.as_ref().ok_or_else(|| {
-                    RError::new(
-                        RErrorKind::Index,
-                        "subscript out of bounds (no dimnames to match against)".to_string(),
-                    )
-                })?;
+                let names = dim_names.as_ref().ok_or(IndexingError::NoDimnames)?;
                 let chars = rv.inner.to_characters();
                 let mut result = Vec::new();
                 for ch in chars.into_iter().flatten() {
-                    let pos = names.iter().position(|n| n == &ch).ok_or_else(|| {
-                        RError::new(
-                            RErrorKind::Index,
-                            format!("subscript out of bounds: '{ch}'"),
-                        )
-                    })?;
+                    let pos = names
+                        .iter()
+                        .position(|n| n == &ch)
+                        .ok_or_else(|| IndexingError::SubscriptOutOfBounds { name: ch.clone() })?;
                     result.push(pos);
                 }
                 return Ok(result);
@@ -666,7 +680,7 @@ fn resolve_dim_index(
                 .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect())
         }
-        _ => Err(RError::new(RErrorKind::Index, "invalid subscript type".to_string()).into()),
+        _ => Err(IndexingError::InvalidSubscriptType.into()),
     }
 }
 
@@ -783,7 +797,7 @@ pub(super) fn eval_index_double(
                 Ok(RValue::Null)
             }
         }
-        _ => Err(RError::new(RErrorKind::Index, "object is not subsettable".to_string()).into()),
+        _ => Err(IndexingError::NotSubsettable.into()),
     }
 }
 

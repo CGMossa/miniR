@@ -1,10 +1,49 @@
 //! Assignment and replacement semantics: `<-`, `<<-`, `->`, `x[i] <- v`,
 //! `x[[i]] <- v`, `x$name <- v`, and replacement functions like `names<-`.
 
+use derive_more::{Display, Error};
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, AssignOp, Expr};
+
+// region: AssignmentError
+
+/// Structured error type for assignment operations.
+#[derive(Debug, Display, Error)]
+pub enum AssignmentError {
+    #[display("invalid assignment target")]
+    InvalidTarget,
+
+    #[display("invalid index")]
+    InvalidIndex,
+
+    #[display("replacement value must be a vector")]
+    InvalidReplacementValue,
+
+    #[display("object is not subsettable")]
+    NotSubsettable,
+}
+
+impl From<AssignmentError> for RError {
+    fn from(e: AssignmentError) -> Self {
+        let kind = match &e {
+            AssignmentError::InvalidTarget => RErrorKind::Other,
+            AssignmentError::InvalidIndex | AssignmentError::NotSubsettable => RErrorKind::Index,
+            AssignmentError::InvalidReplacementValue => RErrorKind::Type,
+        };
+        RError::from_source(kind, e)
+    }
+}
+
+impl From<AssignmentError> for RFlow {
+    fn from(e: AssignmentError) -> Self {
+        RFlow::Error(RError::from(e))
+    }
+}
+
+// endregion
 
 // region: type-preserving replacement
 
@@ -157,7 +196,7 @@ fn eval_assign(
                     }
                 }
             }
-            Err(RError::other("invalid assignment target".to_string()).into())
+            Err(AssignmentError::InvalidTarget.into())
         }
         // In R, "name" <- value creates a binding named "name"
         Expr::String(name) => {
@@ -171,7 +210,7 @@ fn eval_assign(
             }
             Ok(val)
         }
-        _ => Err(RError::other("invalid assignment target".to_string()).into()),
+        _ => Err(AssignmentError::InvalidTarget.into()),
     }
 }
 
@@ -188,7 +227,7 @@ fn eval_index_assign(
 ) -> Result<RValue, RFlow> {
     let var_name = match object {
         Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
+        _ => return Err(AssignmentError::InvalidTarget.into()),
     };
 
     let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
@@ -208,17 +247,13 @@ fn eval_index_assign(
         RValue::Vector(v) => {
             let idx_ints = match &idx_val {
                 RValue::Vector(iv) => iv.to_integers(),
-                _ => return Err(RError::new(RErrorKind::Index, "invalid index".to_string()).into()),
+                _ => return Err(AssignmentError::InvalidIndex.into()),
             };
 
             let val_vec = match &val {
                 RValue::Vector(vv) => vv,
                 _ => {
-                    return Err(RError::new(
-                        RErrorKind::Type,
-                        "replacement value error".to_string(),
-                    )
-                    .into());
+                    return Err(AssignmentError::InvalidReplacementValue.into());
                 }
             };
 
@@ -298,7 +333,7 @@ fn eval_index_assign(
             }
             Ok(val)
         }
-        _ => Err(RError::new(RErrorKind::Index, "object is not subsettable".to_string()).into()),
+        _ => Err(AssignmentError::NotSubsettable.into()),
     }
 }
 
@@ -315,7 +350,7 @@ fn eval_index_double_assign(
 ) -> Result<RValue, RFlow> {
     let var_name = match object {
         Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
+        _ => return Err(AssignmentError::InvalidTarget.into()),
     };
 
     let mut obj = env
@@ -377,7 +412,7 @@ fn eval_dollar_assign(
 ) -> Result<RValue, RFlow> {
     let var_name = match object {
         Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
+        _ => return Err(AssignmentError::InvalidTarget.into()),
     };
 
     let mut obj = env
