@@ -580,29 +580,38 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
 }
 
-#[builtin(name = "Sys.setenv")]
-fn builtin_sys_setenv(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    for (name, val) in named {
-        let val_str = val
-            .as_vector()
-            .and_then(|v| v.as_character_scalar())
-            .unwrap_or_default();
-        // SAFETY: We're single-threaded and this is the expected R behavior
-        unsafe {
-            std::env::set_var(name, &val_str);
+#[interpreter_builtin(name = "Sys.setenv")]
+fn interp_sys_setenv(
+    _args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.with_interpreter(|interp| {
+        for (name, val) in named {
+            let val_str = val
+                .as_vector()
+                .and_then(|v| v.as_character_scalar())
+                .unwrap_or_default();
+            interp.set_env_var(name.clone(), val_str);
         }
-    }
+    });
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
-#[builtin(name = "Sys.which", min_args = 1)]
-fn builtin_sys_which(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "Sys.which", min_args = 1)]
+fn interp_sys_which(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let names: Vec<String> = args
         .iter()
         .filter_map(|v| v.as_vector()?.as_character_scalar())
         .collect();
 
-    let path_var = std::env::var("PATH").unwrap_or_default();
+    let path_var = context
+        .with_interpreter(|interp| interp.get_env_var("PATH"))
+        .unwrap_or_default();
     let path_dirs: Vec<&str> = path_var.split(':').collect();
 
     let results: Vec<Option<String>> = names
@@ -621,8 +630,12 @@ fn builtin_sys_which(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::vec(Vector::Character(results.into())))
 }
 
-#[builtin(min_args = 1)]
-fn builtin_setwd(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(min_args = 1)]
+fn interp_setwd(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let dir = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -633,16 +646,20 @@ fn builtin_setwd(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
             )
         })?;
 
-    let old_wd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let path = Path::new(&dir);
+    if !path.is_dir() {
+        return Err(SystemError::SetCwd {
+            path: dir.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "no such directory"),
+        }
+        .into());
+    }
 
-    std::env::set_current_dir(&dir).map_err(|source| SystemError::SetCwd {
-        path: dir.clone(),
-        source,
-    })?;
-
-    Ok(RValue::vec(Vector::Character(vec![Some(old_wd)].into())))
+    context.with_interpreter(|interp| {
+        let old_wd = interp.get_working_dir().to_string_lossy().to_string();
+        interp.set_working_dir(path.to_path_buf());
+        Ok(RValue::vec(Vector::Character(vec![Some(old_wd)].into())))
+    })
 }
 
 // === System info ===

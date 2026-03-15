@@ -16,9 +16,10 @@ mod tables;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
+use crate::interpreter::BuiltinContext;
 use crate::parser::ast::Arg;
 use linkme::distributed_slice;
-use minir_macros::builtin;
+use minir_macros::{builtin, interpreter_builtin};
 
 pub use crate::interpreter::value::{
     BuiltinDescriptor, BuiltinFn, BuiltinImplementation, InterpreterBuiltinFn, PreEvalBuiltinFn,
@@ -1592,13 +1593,19 @@ fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     )))
 }
 
-#[builtin(name = "Sys.getenv")]
-fn builtin_sys_getenv(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "Sys.getenv")]
+fn interp_sys_getenv(
+    args: &[RValue],
+    _: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let name = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    let val = std::env::var(&name).unwrap_or_default();
+    let val = context
+        .with_interpreter(|interp| interp.get_env_var(&name))
+        .unwrap_or_default();
     Ok(RValue::vec(Vector::Character(vec![Some(val)].into())))
 }
 
@@ -1787,11 +1794,14 @@ fn builtin_duplicated(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-#[builtin]
-fn builtin_getwd(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+#[interpreter_builtin]
+fn interp_getwd(
+    _args: &[RValue],
+    _: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let cwd =
+        context.with_interpreter(|interp| interp.get_working_dir().to_string_lossy().to_string());
     Ok(RValue::vec(Vector::Character(vec![Some(cwd)].into())))
 }
 

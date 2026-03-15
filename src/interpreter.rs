@@ -94,6 +94,12 @@ pub struct Interpreter {
     pub(crate) temp_dir: temp_dir::TempDir,
     /// Counter for unique tempfile names within the session.
     pub(crate) temp_counter: std::cell::Cell<u64>,
+    /// Per-interpreter environment variable overrides.
+    /// Keys present here shadow process env; absent keys fall through to process env.
+    pub(crate) env_vars: RefCell<std::collections::HashMap<String, String>>,
+    /// Per-interpreter working directory override.
+    /// If None, falls through to the process working directory.
+    pub(crate) working_dir: RefCell<Option<std::path::PathBuf>>,
 }
 
 impl Default for Interpreter {
@@ -165,6 +171,8 @@ impl Interpreter {
             rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
             temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
             temp_counter: std::cell::Cell::new(0),
+            env_vars: RefCell::new(std::collections::HashMap::new()),
+            working_dir: RefCell::new(None),
         }
     }
 
@@ -208,6 +216,34 @@ impl Interpreter {
     #[cfg(feature = "random")]
     pub fn rng(&self) -> &RefCell<rand::rngs::StdRng> {
         &self.rng
+    }
+
+    /// Get an environment variable — checks interpreter-local overrides first,
+    /// then falls through to process env.
+    pub(crate) fn get_env_var(&self, name: &str) -> Option<String> {
+        if let Some(val) = self.env_vars.borrow().get(name) {
+            return Some(val.clone());
+        }
+        std::env::var(name).ok()
+    }
+
+    /// Set a per-interpreter environment variable (does not mutate process state).
+    pub(crate) fn set_env_var(&self, name: String, value: String) {
+        self.env_vars.borrow_mut().insert(name, value);
+    }
+
+    /// Get the working directory — uses interpreter-local override if set,
+    /// otherwise the process working directory.
+    pub(crate) fn get_working_dir(&self) -> std::path::PathBuf {
+        self.working_dir
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+    }
+
+    /// Set the per-interpreter working directory (does not mutate process state).
+    pub(crate) fn set_working_dir(&self, path: std::path::PathBuf) {
+        *self.working_dir.borrow_mut() = Some(path);
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
