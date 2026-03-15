@@ -65,7 +65,7 @@ impl Session {
         let value = with_interpreter_state(&mut self.interpreter, |interp| interp.eval(expr))
             .map_err(SessionError::Runtime)?;
         Ok(EvalOutput {
-            visible: !is_invisible_result(expr) && !value.is_null(),
+            visible: !is_invisible_result(expr),
             value,
         })
     }

@@ -211,13 +211,34 @@ fn classify_token(source: &str, offset: usize) -> String {
 
 /// Build context string showing input up to the error, truncated to ~40 chars.
 fn build_context(source_line: &str, col: usize) -> String {
-    let end = col.min(source_line.len());
+    // col is a byte offset — clamp to the nearest char boundary
+    let end = floor_char_boundary(source_line, col.min(source_line.len()));
     let context = &source_line[..end];
     if context.len() > 40 {
-        format!("...{}", &context[context.len() - 37..])
+        let start = ceil_char_boundary(context, context.len() - 37);
+        format!("...{}", &context[start..])
     } else {
         context.to_string()
     }
+}
+
+/// Largest byte index <= pos that is a char boundary.
+fn floor_char_boundary(s: &str, pos: usize) -> usize {
+    let pos = pos.min(s.len());
+    let mut i = pos;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Smallest byte index >= pos that is a char boundary.
+fn ceil_char_boundary(s: &str, pos: usize) -> usize {
+    let mut i = pos.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
 }
 
 /// Try to suggest a fix based on what was expected.

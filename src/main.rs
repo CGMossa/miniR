@@ -67,9 +67,14 @@ Type 'q()' to quit.
         .or_else(|_| env::var("HOME").map(|h| format!("{h}/.miniR_history")))
         .unwrap_or_else(|_| ".miniR_history".to_string())
         .into();
-    let history = Box::new(
-        FileBackedHistory::with_file(1000, history_path).expect("Error configuring history file"),
-    );
+    let history: Box<dyn reedline::History> = match FileBackedHistory::with_file(1000, history_path)
+    {
+        Ok(h) => Box::new(h),
+        Err(e) => {
+            eprintln!("Warning: could not open history file: {e}");
+            Box::new(FileBackedHistory::new(1000).expect("in-memory history"))
+        }
+    };
 
     // Fish-style history hints (gray italic)
     let hinter =
