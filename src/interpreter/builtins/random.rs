@@ -138,26 +138,30 @@ fn interp_runif(
 /// Random normal deviates.
 ///
 /// Generates n random values from a normal distribution.
-///
-/// @param n number of observations
-/// @param mean mean of the distribution (default 0)
-/// @param sd standard deviation (default 1)
-/// @return numeric vector of length n
-#[interpreter_builtin(min_args = 1)]
-fn interp_rnorm(
-    args: &[RValue],
-    named: &[(String, RValue)],
-    context: &BuiltinContext,
-) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let mean = extract_param(args, named, "mean", 1, 0.0);
-    let sd = extract_param(args, named, "sd", 2, 1.0);
-    let dist = rand_distr::Normal::new(mean, sd).map_err(RandomError::invalid_dist)?;
-    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
-        let mut rng = interp.rng().borrow_mut();
-        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
-    });
-    Ok(RValue::vec(Vector::Double(values.into())))
+#[derive(minir_macros::FromArgs)]
+#[builtin(name = "rnorm")]
+struct RnormArgs {
+    /// number of observations
+    n: i64,
+    /// mean of the distribution
+    #[default(0.0)]
+    mean: f64,
+    /// standard deviation
+    #[default(1.0)]
+    sd: f64,
+}
+
+impl crate::interpreter::value::Builtin for RnormArgs {
+    fn call(self, ctx: &BuiltinContext) -> Result<RValue, RError> {
+        let n = usize::try_from(self.n).map_err(|_| RandomError::NonNegative { param: "n" })?;
+        let dist =
+            rand_distr::Normal::new(self.mean, self.sd).map_err(RandomError::invalid_dist)?;
+        let values: Vec<Option<f64>> = ctx.with_interpreter(|interp| {
+            let mut rng = interp.rng().borrow_mut();
+            (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+        });
+        Ok(RValue::vec(Vector::Double(values.into())))
+    }
 }
 
 #[interpreter_builtin(min_args = 1)]
