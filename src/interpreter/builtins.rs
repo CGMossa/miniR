@@ -103,6 +103,17 @@ pub fn format_help(descriptor: &BuiltinDescriptor) -> String {
     out
 }
 
+/// Extract parameter names from a doc string's `@param name ...` lines.
+fn extract_param_names_from_doc(doc: &str) -> Vec<String> {
+    doc.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            line.strip_prefix("@param ")
+                .and_then(|rest| rest.split_whitespace().next().map(|name| name.to_string()))
+        })
+        .collect()
+}
+
 pub fn register_builtins(env: &Environment) {
     for descriptor in BUILTIN_REGISTRY {
         register_builtin_binding(env, descriptor.name, *descriptor);
@@ -3666,7 +3677,9 @@ fn builtin_q(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
 use crate::parser::ast::Expr;
 
 /// `formals(fn)` — return the formal parameter list of a function as a named list.
-/// For closures, returns param names with defaults (if any). For builtins, returns NULL.
+///
+/// For closures, returns param names with defaults. For trait-based builtins
+/// with `@param` docs, returns the parameter names. Otherwise returns NULL.
 #[builtin(min_args = 1)]
 fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -3684,22 +3697,26 @@ fn builtin_formals(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     };
                     let value = match &p.default {
                         Some(expr) => RValue::Language(Language::new(expr.clone())),
-                        None => {
-                            if p.is_dots {
-                                // ... has no default — represent as empty symbol
-                                RValue::Null
-                            } else {
-                                // Missing default — represent as empty symbol (R uses missing)
-                                RValue::Null
-                            }
-                        }
+                        None => RValue::Null,
                     };
                     (Some(name), value)
                 })
                 .collect();
             Ok(RValue::List(RList::new(entries)))
         }
-        Some(RValue::Function(RFunction::Builtin { .. })) => Ok(RValue::Null),
+        Some(RValue::Function(RFunction::Builtin { name, .. })) => {
+            if let Some(descriptor) = find_builtin(name) {
+                let param_names = extract_param_names_from_doc(descriptor.doc);
+                if !param_names.is_empty() {
+                    let entries: Vec<(Option<String>, RValue)> = param_names
+                        .into_iter()
+                        .map(|n| (Some(n), RValue::Null))
+                        .collect();
+                    return Ok(RValue::List(RList::new(entries)));
+                }
+            }
+            Ok(RValue::Null)
+        }
         _ => Err(RError::new(
             RErrorKind::Argument,
             "'fn' is not a function — formals() requires a function argument".to_string(),
