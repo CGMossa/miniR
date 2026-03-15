@@ -2376,3 +2376,64 @@ fn interp_summary(
         None => Ok(RValue::Null),
     }
 }
+
+// region: reg.finalizer
+
+/// Register a function to be called when an environment is garbage collected,
+/// or at interpreter exit if `onexit = TRUE`.
+///
+/// Since miniR uses Rc-based environments (no tracing GC), finalizers with
+/// `onexit = FALSE` are accepted silently but will never fire. When
+/// `onexit = TRUE`, the finalizer is stored on the Interpreter and executed
+/// during its Drop.
+///
+/// @param e an environment to attach the finalizer to
+/// @param f a function of one argument (the environment) to call
+/// @param onexit logical; if TRUE, run the finalizer at interpreter exit
+/// @return NULL, invisibly
+#[interpreter_builtin(name = "reg.finalizer", min_args = 2, max_args = 3)]
+fn interp_reg_finalizer(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
+
+    // e — must be an environment
+    let e = call_args.value("e", 0).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "reg.finalizer() requires an environment as its first argument".to_string(),
+        )
+    })?;
+    if !matches!(e, RValue::Environment(_)) {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "reg.finalizer() requires an environment as its first argument".to_string(),
+        ));
+    }
+
+    // f — must be a function
+    let f = call_args.value("f", 1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "reg.finalizer() requires a function as its second argument".to_string(),
+        )
+    })?;
+    let f = match_fun(f, context.env())?;
+
+    // onexit — logical, default FALSE
+    let onexit = call_args.logical_flag("onexit", 2, false);
+
+    if onexit {
+        context.with_interpreter(|interp| {
+            interp.finalizers.borrow_mut().push(f);
+        });
+    }
+    // When onexit is FALSE, we accept silently — no GC means it won't fire,
+    // but it shouldn't error either.
+
+    Ok(RValue::Null)
+}
+
+// endregion

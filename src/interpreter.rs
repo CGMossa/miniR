@@ -6,7 +6,7 @@ mod call_eval;
 pub mod coerce;
 mod control_flow;
 pub mod environment;
-mod indexing;
+pub(crate) mod indexing;
 mod ops;
 mod s3;
 pub mod value;
@@ -104,11 +104,29 @@ pub struct Interpreter {
     pub(crate) start_instant: std::time::Instant,
     /// Connection table — slots 0-2 are stdin/stdout/stderr, lazily initialised.
     pub(crate) connections: RefCell<Vec<builtins::connections::ConnectionInfo>>,
+    /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
+    /// interpreter is dropped.
+    pub(crate) finalizers: RefCell<Vec<RValue>>,
 }
 
 impl Default for Interpreter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for Interpreter {
+    fn drop(&mut self) {
+        let finalizers: Vec<RValue> = self.finalizers.borrow_mut().drain(..).collect();
+        if finalizers.is_empty() {
+            return;
+        }
+        let env = self.global_env.clone();
+        for f in &finalizers {
+            // Best-effort: errors during finalizer execution are silently ignored,
+            // matching R's behavior for on-exit finalizers.
+            let _ = self.call_function(f, &[RValue::Environment(env.clone())], &[], &env);
+        }
     }
 }
 
@@ -179,6 +197,7 @@ impl Interpreter {
             working_dir: RefCell::new(None),
             start_instant: std::time::Instant::now(),
             connections: RefCell::new(Vec::new()),
+            finalizers: RefCell::new(Vec::new()),
         }
     }
 
