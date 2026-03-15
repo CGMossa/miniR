@@ -717,6 +717,8 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
 
     let alias_tokens: Vec<_> = aliases.iter().map(|a| quote!(#a)).collect();
 
+    let reg_name = format_ident!("__BUILTIN_REG_TRAIT_{}", name.to_string().to_uppercase());
+
     Ok(quote! {
         impl crate::interpreter::value::FromArgs for #name {
             fn from_args(
@@ -738,6 +740,24 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 &INFO
             }
         }
+
+        // Auto-register into the builtin registry via linkme.
+        // The wrapper decodes args via FromArgs, then calls Builtin::call.
+        #[linkme::distributed_slice(crate::interpreter::builtins::BUILTIN_REGISTRY)]
+        static #reg_name: crate::interpreter::builtins::BuiltinDescriptor =
+            crate::interpreter::builtins::BuiltinDescriptor {
+                name: #r_name,
+                aliases: &[#(#alias_tokens),*],
+                implementation: crate::interpreter::builtins::BuiltinImplementation::Interpreter(
+                    |args, named, ctx| {
+                        let decoded = <#name as crate::interpreter::value::FromArgs>::from_args(args, named)?;
+                        <#name as crate::interpreter::value::Builtin>::call(decoded, ctx)
+                    }
+                ),
+                min_args: #min_args,
+                max_args: Some(#max_args),
+                doc: #full_doc,
+            };
     })
 }
 
