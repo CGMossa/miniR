@@ -1,4 +1,5 @@
-//! Indexing and replacement helpers for vectors, lists, matrices, and data frames.
+//! Read-side indexing helpers for vectors, lists, matrices, and data frames.
+//! Write-side (replacement) is in `assignment.rs`.
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
@@ -39,36 +40,6 @@ impl Interpreter {
         env: &Environment,
     ) -> Result<RValue, RFlow> {
         eval_dollar(self, object, member, env)
-    }
-
-    pub(super) fn eval_index_assign(
-        &self,
-        object: &Expr,
-        indices: &[Arg],
-        val: RValue,
-        env: &Environment,
-    ) -> Result<RValue, RFlow> {
-        eval_index_assign(self, object, indices, val, env)
-    }
-
-    pub(super) fn eval_index_double_assign(
-        &self,
-        object: &Expr,
-        indices: &[Arg],
-        val: RValue,
-        env: &Environment,
-    ) -> Result<RValue, RFlow> {
-        eval_index_double_assign(self, object, indices, val, env)
-    }
-
-    pub(super) fn eval_dollar_assign(
-        &self,
-        object: &Expr,
-        member: &str,
-        val: RValue,
-        env: &Environment,
-    ) -> Result<RValue, RFlow> {
-        eval_dollar_assign(self, object, member, val, env)
     }
 }
 
@@ -142,7 +113,7 @@ pub(super) fn eval_index(
     }
 }
 
-pub(super) fn eval_matrix_index(
+fn eval_matrix_index(
     interp: &Interpreter,
     obj: &RValue,
     indices: &[Arg],
@@ -255,7 +226,7 @@ pub(super) fn eval_matrix_index(
     Ok(RValue::Vector(rv))
 }
 
-pub(super) fn eval_list_2d_index(
+fn eval_list_2d_index(
     interp: &Interpreter,
     list: &RList,
     indices: &[Arg],
@@ -461,7 +432,7 @@ pub(crate) fn index_by_integer(
     }
 }
 
-pub(super) fn index_by_negative(
+fn index_by_negative(
     _interp: &Interpreter,
     v: &Vector,
     indices: &[Option<i64>],
@@ -501,7 +472,7 @@ pub(super) fn index_by_negative(
     }
 }
 
-pub(super) fn index_by_logical(
+fn index_by_logical(
     _interp: &Interpreter,
     v: &Vector,
     mask: &[Option<bool>],
@@ -631,232 +602,5 @@ pub(super) fn eval_dollar(
             .get(member)
             .ok_or_else(|| RError::new(RErrorKind::Name, member.to_string()).into()),
         _ => Ok(RValue::Null),
-    }
-}
-
-pub(super) fn eval_index_assign(
-    interp: &Interpreter,
-    object: &Expr,
-    indices: &[Arg],
-    val: RValue,
-    env: &Environment,
-) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
-    };
-
-    let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
-
-    if indices.is_empty() {
-        env.set(var_name, val.clone());
-        return Ok(val);
-    }
-
-    let idx_val = if let Some(val_expr) = &indices[0].value {
-        interp.eval_in(val_expr, env)?
-    } else {
-        return Ok(val);
-    };
-
-    match &mut obj {
-        RValue::Vector(v) => {
-            let idx_ints = match &idx_val {
-                RValue::Vector(iv) => iv.to_integers(),
-                _ => return Err(RError::new(RErrorKind::Index, "invalid index".to_string()).into()),
-            };
-
-            let new_vals = match &val {
-                RValue::Vector(vv) => vv.to_doubles(),
-                _ => {
-                    return Err(RError::new(
-                        RErrorKind::Type,
-                        "replacement value error".to_string(),
-                    )
-                    .into());
-                }
-            };
-
-            let mut doubles = v.to_doubles();
-            for (j, idx) in idx_ints.iter().enumerate() {
-                if let Some(i) = idx {
-                    let i = usize::try_from(*i).unwrap_or(0);
-                    if i > 0 {
-                        while doubles.len() < i {
-                            doubles.push(None);
-                        }
-                        doubles[i - 1] = new_vals
-                            .get(j % new_vals.len())
-                            .copied()
-                            .flatten()
-                            .map(Some)
-                            .unwrap_or(None);
-                    }
-                }
-            }
-            let new_obj = RValue::vec(Vector::Double(doubles.into()));
-            env.set(var_name, new_obj.clone());
-            Ok(val)
-        }
-        RValue::List(list) => {
-            match &idx_val {
-                RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
-                    let Vector::Character(names) = &rv.inner else {
-                        unreachable!()
-                    };
-                    if let Some(Some(name)) = names.first() {
-                        if let Some(entry) = list
-                            .values
-                            .iter_mut()
-                            .find(|(n, _)| n.as_ref() == Some(name))
-                        {
-                            entry.1 = val.clone();
-                        } else {
-                            list.values.push((Some(name.clone()), val.clone()));
-                        }
-                    }
-                }
-                RValue::Vector(iv) => {
-                    let i = usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
-                    if i > 0 && i <= list.values.len() {
-                        list.values[i - 1].1 = val.clone();
-                    }
-                }
-                _ => {}
-            }
-            env.set(var_name, obj);
-            Ok(val)
-        }
-        RValue::Null => {
-            match &idx_val {
-                RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
-                    let Vector::Character(names) = &rv.inner else {
-                        unreachable!()
-                    };
-                    let mut list = RList::new(vec![]);
-                    if let Some(Some(name)) = names.first() {
-                        list.values.push((Some(name.clone()), val.clone()));
-                    }
-                    env.set(var_name, RValue::List(list));
-                }
-                _ => {
-                    let idx = match &idx_val {
-                        RValue::Vector(iv) => {
-                            usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
-                        }
-                        _ => 0,
-                    };
-                    let mut doubles = vec![None; idx];
-                    if idx > 0 {
-                        if let RValue::Vector(vv) = &val {
-                            doubles[idx - 1] = vv.to_doubles().into_iter().next().flatten();
-                        }
-                    }
-                    env.set(var_name, RValue::vec(Vector::Double(doubles.into())));
-                }
-            }
-            Ok(val)
-        }
-        _ => Err(RError::new(RErrorKind::Index, "object is not subsettable".to_string()).into()),
-    }
-}
-
-pub(super) fn eval_index_double_assign(
-    interp: &Interpreter,
-    object: &Expr,
-    indices: &[Arg],
-    val: RValue,
-    env: &Environment,
-) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
-    };
-
-    let mut obj = env
-        .get(&var_name)
-        .unwrap_or(RValue::List(RList::new(vec![])));
-    let idx_val = if let Some(val_expr) = &indices[0].value {
-        interp.eval_in(val_expr, env)?
-    } else {
-        return Ok(val);
-    };
-
-    match &mut obj {
-        RValue::List(list) => {
-            match &idx_val {
-                RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
-                    let Vector::Character(names) = &rv.inner else {
-                        unreachable!()
-                    };
-                    if let Some(Some(name)) = names.first() {
-                        if let Some(entry) = list
-                            .values
-                            .iter_mut()
-                            .find(|(n, _)| n.as_ref() == Some(name))
-                        {
-                            entry.1 = val.clone();
-                        } else {
-                            list.values.push((Some(name.clone()), val.clone()));
-                        }
-                    }
-                }
-                RValue::Vector(iv) => {
-                    let i = usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0);
-                    if i > 0 {
-                        while list.values.len() < i {
-                            list.values.push((None, RValue::Null));
-                        }
-                        list.values[i - 1].1 = val.clone();
-                    }
-                }
-                _ => {}
-            }
-            env.set(var_name, obj);
-            Ok(val)
-        }
-        _ => eval_index_assign(interp, object, indices, val, env),
-    }
-}
-
-pub(super) fn eval_dollar_assign(
-    _interp: &Interpreter,
-    object: &Expr,
-    member: &str,
-    val: RValue,
-    env: &Environment,
-) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(RError::other("invalid assignment target".to_string()).into()),
-    };
-
-    let mut obj = env
-        .get(&var_name)
-        .unwrap_or(RValue::List(RList::new(vec![])));
-    match &mut obj {
-        RValue::List(list) => {
-            if let Some(entry) = list
-                .values
-                .iter_mut()
-                .find(|(n, _)| n.as_deref() == Some(member))
-            {
-                entry.1 = val.clone();
-            } else {
-                list.values.push((Some(member.to_string()), val.clone()));
-            }
-            env.set(var_name, obj);
-            Ok(val)
-        }
-        RValue::Null => {
-            let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env.set(var_name, RValue::List(list));
-            Ok(val)
-        }
-        _ => {
-            let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env.set(var_name, RValue::List(list));
-            Ok(val)
-        }
     }
 }
