@@ -9,10 +9,7 @@ use minir_macros::stub_builtin;
 
 // Apply family (apply, mapply, tapply, by — interp.rs)
 // Linear algebra (norm, solve, outer — math.rs; crossprod, tcrossprod — math.rs)
-stub_builtin!("qr", 1);
-stub_builtin!("svd", 1);
-stub_builtin!("eigen", 1);
-// det and chol are implemented in math.rs
+// qr, svd, eigen, det, chol are implemented in math.rs
 
 // Types (complex — math.rs; raw, rawShift, as.raw, is.raw — strings.rs)
 
