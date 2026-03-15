@@ -4,14 +4,8 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 
 ## Type Stability and Attributes (review #7/#8)
 
-This is the largest remaining correctness blocker. See `plans/type-stability.md`.
+See `plans/type-stability.md` for full context.
 
-- [ ] Assignment collapses types — `x[1] <- 2L` on integer vector produces double; replacement always goes through `to_doubles()`
-- [ ] Assignment strips attributes — `m[1] <- 9L` on matrix drops `dim`/`dimnames`
-- [ ] Arithmetic strips attributes — `m + 1` on matrix drops `dim`; `c(a=1, b=2)` loses names
-- [ ] Matrix subsetting collapses to double — `m[1, ]` on integer matrix returns double; character matrices return NA
-- [ ] Logical index recycling missing — `x[c(TRUE, FALSE)]` on length-4 vector returns only element 1 instead of 1 and 3
-- [ ] Mixed positive/negative indices not validated — `x[c(-1, 2)]` should error, currently returns wrong result
 - [ ] Matrix dimname indexing not supported — `m["r1", "c1"]` returns empty instead of looking up by dimnames
 - [ ] Data frame row-name preservation broken — `df[2:3, ]` resets row names to 1:2 instead of preserving selected names
 
