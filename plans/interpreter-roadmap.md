@@ -1,42 +1,50 @@
 # Interpreter Roadmap
 
-High-level roadmap for bringing miniR from “parses R” to “runs more real R code.”
+High-level roadmap for bringing miniR from "parses R" to "runs more real R code."
 
 ## Current State (2026-03-15)
 
 - Parsing is no longer the primary blocker: the grammar, AST, and custom parse errors are already in place.
 - The runtime already has attributes, matrices/arrays, factors, regex helpers, language objects, a basic `data.frame()`, and substantial metaprogramming support.
-- A scan of the checked-in `cran/` corpus (`analysis/cran-corpus-scan.md`) confirms that the remaining bottlenecks are semantic and runtime-heavy: package/namespace loading, native routine support, base package namespaces, object/data-model fidelity, graphics/I/O/date-time support, and the embedding model.
+- Call stack semantics, S3 dispatch, date/time, reentrancy, type stability, and argument matching are all shipped.
+- All builtins use explicit `BuiltinContext` — zero TLS calls remain in the builtin layer.
+- A scan of the checked-in `cran/` corpus (`analysis/cran-corpus-scan.md`) confirms that the remaining bottlenecks are semantic and runtime-heavy: package/namespace loading, native routine support, base package namespaces, object/data-model fidelity, graphics/I/O support, and help/documentation indexing.
+
+## Shipped
+
+- Call-stack semantics (sys.*, parent.frame, nargs, missing, on.exit)
+- S3 dispatch (UseMethod, NextMethod, print/format as generics)
+- Date/time (jiff-based: Date, POSIXct, POSIXlt, strptime, difftime)
+- Reentrancy (BuiltinContext, per-interpreter env vars/cwd, thread isolation)
+- Type stability (type-preserving indexing, assignment, arithmetic, attribute propagation)
+- Three-pass argument matching (exact, partial, positional, unused-arg errors)
+- Help system (?name from rustdoc comments, Builtin trait with FromArgs derive)
+- 370+ documented builtins
 
 ## Next Priorities
 
-1. Call-stack semantics
-   - Real call frames for closures
-   - `sys.*`, `parent.frame()`, `nargs()`, `missing()`, and `on.exit()` alignment
-
-2. Package and namespace runtime
+1. Package and namespace runtime
    - `library()`, `require()`, `requireNamespace()`, `loadNamespace()`, `::`, `:::`
    - `DESCRIPTION` / `NAMESPACE` handling, search path behavior, package hooks, datasets, and installed package assets (`data/`, `inst/`, `man/`, `inst/include`)
 
+2. Data-model fidelity
+   - Finish `data.frame` subsetting/coercion edge cases
+   - `as.vector()` and attribute propagation through combination operations
+
 3. Native extension loading
-   - compile `src/` trees, honor `LinkingTo:` / `inst/include`, and support `useDynLib()`
-   - registered routines, `DllInfo`-style library state, `.Call()` / `.External()` / `.C()` / `.Fortran()`, and C-callable registration
+   - Compile `src/` trees, honor `LinkingTo:` / `inst/include`, and support `useDynLib()`
+   - Registered routines, `DllInfo`-style library state, `.Call()` / `.External()` / `.C()` / `.Fortran()`, and C-callable registration
    - Interpreter-local native-library state for reentrant embedding
 
-4. Dispatch and object/data-model fidelity
-   - Keep S3 dispatch coherent inside package namespaces
-   - Add `methods` / S4 basics and finish `data.frame` / attribute semantics
+4. Base package namespaces beyond `base`
+   - Core package namespaces: `utils`, `stats`, `methods`, `graphics`, `grDevices`, `grid`, `tools`
 
 5. Expand the runtime surface
-   - Connections, serialization, filesystem/temp/env behavior, graphics, date/time support, and Rd/help indexing
-   - staged Rd parser/indexer for `help()` and `?topic`, not just a string lookup table
-   - Core package namespaces beyond `base`: `utils`, `stats`, `methods`, `graphics`, `grDevices`, `grid`, `tools`
+   - Connections, serialization, graphics, and Rd/help indexing
+   - Staged Rd parser/indexer for `help()` and `?topic`
 
-6. Reentrant embedding cleanup
-   - Move from a TLS-centric singleton usage pattern toward a true multi-instance public API
-
-7. Long-tail compatibility work
-   - Graphics depth, help/doc UX polish, linear algebra decompositions, package installation UX, and lower-frequency builtins
+6. Long-tail compatibility work
+   - S4 depth, graphics devices, linear algebra decompositions, package installation UX, and lower-frequency builtins
 
 ## Working Rules
 
