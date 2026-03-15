@@ -6,7 +6,7 @@ mod call_eval;
 pub mod coerce;
 mod control_flow;
 pub mod environment;
-mod indexing;
+pub(crate) mod indexing;
 mod ops;
 mod s3;
 pub mod value;
