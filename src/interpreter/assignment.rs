@@ -6,6 +6,86 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, AssignOp, Expr};
 
+// region: type-preserving replacement
+
+/// Replace elements in a vector at 1-based indices, preserving type when possible.
+/// If the replacement value's type differs, coerces both to the common type.
+fn replace_elements(
+    target: &Vector,
+    indices: &[Option<i64>],
+    replacement: &Vector,
+    max_idx: usize,
+) -> Vector {
+    macro_rules! replace_typed {
+        ($target_vals:expr, $repl_vals:expr, $variant:ident) => {{
+            let mut result = $target_vals.to_vec();
+            while result.len() < max_idx {
+                result.push(Default::default());
+            }
+            for (j, idx) in indices.iter().enumerate() {
+                if let Some(i) = idx {
+                    let i = usize::try_from(*i).unwrap_or(0);
+                    if i > 0 && i <= result.len() {
+                        result[i - 1] = $repl_vals
+                            .get(j % $repl_vals.len())
+                            .cloned()
+                            .unwrap_or_default();
+                    }
+                }
+            }
+            Vector::$variant(result.into())
+        }};
+    }
+
+    // Same-type fast path
+    match (target, replacement) {
+        (Vector::Integer(tv), Vector::Integer(rv)) => replace_typed!(tv, rv, Integer),
+        (Vector::Double(tv), Vector::Double(rv)) => replace_typed!(tv, rv, Double),
+        (Vector::Character(tv), Vector::Character(rv)) => replace_typed!(tv, rv, Character),
+        (Vector::Logical(tv), Vector::Logical(rv)) => replace_typed!(tv, rv, Logical),
+        (Vector::Complex(tv), Vector::Complex(rv)) => replace_typed!(tv, rv, Complex),
+        (Vector::Raw(tv), Vector::Raw(rv)) => {
+            let mut result = tv.to_vec();
+            while result.len() < max_idx {
+                result.push(0);
+            }
+            for (j, idx) in indices.iter().enumerate() {
+                if let Some(i) = idx {
+                    let i = usize::try_from(*i).unwrap_or(0);
+                    if i > 0 && i <= result.len() {
+                        result[i - 1] = rv.get(j % rv.len()).copied().unwrap_or(0);
+                    }
+                }
+            }
+            Vector::Raw(result)
+        }
+        // Type mismatch — coerce both to doubles
+        _ => {
+            let mut result = target.to_doubles();
+            let repl = replacement.to_doubles();
+            while result.len() < max_idx {
+                result.push(None);
+            }
+            for (j, idx) in indices.iter().enumerate() {
+                if let Some(i) = idx {
+                    let i = usize::try_from(*i).unwrap_or(0);
+                    if i > 0 && i <= result.len() {
+                        result[i - 1] = repl
+                            .get(j % repl.len())
+                            .copied()
+                            .flatten()
+                            .map(Some)
+                            .unwrap_or(None);
+                    }
+                }
+            }
+            Vector::Double(result.into())
+        }
+    }
+}
+
+// endregion
+
 // region: Interpreter delegation
 
 impl Interpreter {
@@ -131,8 +211,8 @@ fn eval_index_assign(
                 _ => return Err(RError::new(RErrorKind::Index, "invalid index".to_string()).into()),
             };
 
-            let new_vals = match &val {
-                RValue::Vector(vv) => vv.to_doubles(),
+            let val_vec = match &val {
+                RValue::Vector(vv) => vv,
                 _ => {
                     return Err(RError::new(
                         RErrorKind::Type,
@@ -142,25 +222,21 @@ fn eval_index_assign(
                 }
             };
 
-            let mut doubles = v.to_doubles();
-            for (j, idx) in idx_ints.iter().enumerate() {
-                if let Some(i) = idx {
-                    let i = usize::try_from(*i).unwrap_or(0);
-                    if i > 0 {
-                        while doubles.len() < i {
-                            doubles.push(None);
-                        }
-                        doubles[i - 1] = new_vals
-                            .get(j % new_vals.len())
-                            .copied()
-                            .flatten()
-                            .map(Some)
-                            .unwrap_or(None);
-                    }
-                }
+            // Determine max index to know if we need to extend
+            let max_idx = idx_ints
+                .iter()
+                .filter_map(|x| x.and_then(|i| usize::try_from(i).ok()))
+                .max()
+                .unwrap_or(0);
+
+            let new_vec = replace_elements(&v.inner, &idx_ints, &val_vec.inner, max_idx);
+
+            // Preserve attributes (dim, dimnames, class, names, etc.)
+            let mut rv = RVector::from(new_vec);
+            if let Some(attrs) = &v.attrs {
+                rv.attrs = Some(attrs.clone());
             }
-            let new_obj = RValue::vec(Vector::Double(doubles.into()));
-            env.set(var_name, new_obj.clone());
+            env.set(var_name, RValue::Vector(rv));
             Ok(val)
         }
         RValue::List(list) => {
