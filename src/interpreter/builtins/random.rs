@@ -94,6 +94,10 @@ fn extract_param(
 
 // region: set.seed
 
+/// Set the random number generator seed for reproducibility.
+///
+/// @param seed integer seed value
+/// @return NULL, invisibly
 #[interpreter_builtin(name = "set.seed", min_args = 1)]
 fn interp_set_seed(
     args: &[RValue],
@@ -115,6 +119,14 @@ fn interp_set_seed(
 
 // region: Continuous distributions
 
+/// Random uniform deviates.
+///
+/// Generates n random values from a uniform distribution.
+///
+/// @param n number of observations
+/// @param min lower limit of the distribution (default 0)
+/// @param max upper limit of the distribution (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_runif(
     args: &[RValue],
@@ -164,6 +176,13 @@ impl crate::interpreter::value::Builtin for RnormArgs {
     }
 }
 
+/// Random exponential deviates.
+///
+/// Generates n random values from an exponential distribution.
+///
+/// @param n number of observations
+/// @param rate rate parameter (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rexp(
     args: &[RValue],
@@ -180,6 +199,14 @@ fn interp_rexp(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random gamma deviates.
+///
+/// Generates n random values from a gamma distribution.
+///
+/// @param n number of observations
+/// @param shape shape parameter (default 1)
+/// @param rate rate parameter (default 1); scale = 1/rate
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rgamma(
     args: &[RValue],
@@ -198,6 +225,14 @@ fn interp_rgamma(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random beta deviates.
+///
+/// Generates n random values from a beta distribution.
+///
+/// @param n number of observations
+/// @param shape1 first shape parameter (default 1)
+/// @param shape2 second shape parameter (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rbeta(
     args: &[RValue],
@@ -215,6 +250,14 @@ fn interp_rbeta(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random Cauchy deviates.
+///
+/// Generates n random values from a Cauchy distribution.
+///
+/// @param n number of observations
+/// @param location location parameter (default 0)
+/// @param scale scale parameter (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rcauchy(
     args: &[RValue],
@@ -232,6 +275,14 @@ fn interp_rcauchy(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random Weibull deviates.
+///
+/// Generates n random values from a Weibull distribution.
+///
+/// @param n number of observations
+/// @param shape shape parameter (default 1)
+/// @param scale scale parameter (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rweibull(
     args: &[RValue],
@@ -249,6 +300,14 @@ fn interp_rweibull(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random log-normal deviates.
+///
+/// Generates n random values from a log-normal distribution.
+///
+/// @param n number of observations
+/// @param meanlog mean of the distribution on the log scale (default 0)
+/// @param sdlog standard deviation on the log scale (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rlnorm(
     args: &[RValue],
@@ -270,6 +329,14 @@ fn interp_rlnorm(
 
 // region: Discrete distributions
 
+/// Random binomial deviates.
+///
+/// Generates n random values from a binomial distribution.
+///
+/// @param n number of observations
+/// @param size number of trials (default 1)
+/// @param prob probability of success on each trial (default 0.5)
+/// @return integer vector of length n
 #[interpreter_builtin(min_args = 2)]
 fn interp_rbinom(
     args: &[RValue],
@@ -289,6 +356,13 @@ fn interp_rbinom(
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
+/// Random Poisson deviates.
+///
+/// Generates n random values from a Poisson distribution.
+///
+/// @param n number of observations
+/// @param lambda mean rate parameter (default 1)
+/// @return integer vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rpois(
     args: &[RValue],
@@ -307,6 +381,13 @@ fn interp_rpois(
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
+/// Random geometric deviates.
+///
+/// Generates n random values from a geometric distribution.
+///
+/// @param n number of observations
+/// @param prob probability of success (default 0.5)
+/// @return integer vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rgeom(
     args: &[RValue],
@@ -325,6 +406,13 @@ fn interp_rgeom(
     Ok(RValue::vec(Vector::Integer(values.into())))
 }
 
+/// Random chi-squared deviates.
+///
+/// Generates n random values from a chi-squared distribution.
+///
+/// @param n number of observations
+/// @param df degrees of freedom (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 2)]
 fn interp_rchisq(
     args: &[RValue],
@@ -341,6 +429,13 @@ fn interp_rchisq(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random Student's t deviates.
+///
+/// Generates n random values from a Student's t distribution.
+///
+/// @param n number of observations
+/// @param df degrees of freedom (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 2)]
 fn interp_rt(
     args: &[RValue],
@@ -357,6 +452,14 @@ fn interp_rt(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random F deviates.
+///
+/// Generates n random values from an F distribution.
+///
+/// @param n number of observations
+/// @param df1 numerator degrees of freedom (default 1)
+/// @param df2 denominator degrees of freedom (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 2)]
 fn interp_rf(
     args: &[RValue],
@@ -374,6 +477,15 @@ fn interp_rf(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random hypergeometric deviates.
+///
+/// Generates nn random values from a hypergeometric distribution.
+///
+/// @param nn number of observations
+/// @param m number of white balls in the urn
+/// @param n number of black balls in the urn
+/// @param k number of balls drawn from the urn
+/// @return integer vector of length nn
 #[interpreter_builtin(min_args = 4)]
 fn interp_rhyper(
     args: &[RValue],
@@ -398,6 +510,13 @@ fn interp_rhyper(
 
 // region: sample
 
+/// Random sampling with or without replacement.
+///
+/// @param x vector to sample from, or a positive integer n (sample from 1:n)
+/// @param size number of items to draw (default: length of x)
+/// @param replace if TRUE, sample with replacement (default FALSE)
+/// @param prob optional vector of probability weights
+/// @return vector of sampled elements
 #[interpreter_builtin(min_args = 1)]
 fn interp_sample(
     args: &[RValue],
