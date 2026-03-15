@@ -4,6 +4,7 @@ mod conditions;
 mod datetime;
 mod factors;
 mod interp;
+#[cfg(feature = "io")]
 pub mod io;
 pub mod math;
 mod pre_eval;

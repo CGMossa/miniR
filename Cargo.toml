@@ -55,7 +55,7 @@ derive_more = { version = "2.1", features = [
 ] }
 linkme = "0.3"
 ndarray = "0.17"
-csv = "1.4"
+csv = { version = "1.4", optional = true }
 regex = "1"
 tabled = "0.20"
 minir-macros = { path = "minir-macros" }
@@ -71,6 +71,7 @@ num-complex = "0.4"
 jiff = { version = "0.2", optional = true }
 
 [features]
-default = ["random", "datetime"]
+default = ["random", "datetime", "io"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
+io = ["dep:csv"]
