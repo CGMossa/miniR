@@ -5,6 +5,10 @@ use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use minir_macros::{builtin, interpreter_builtin};
 
+/// Signal an error condition and stop execution.
+///
+/// @param ... character strings concatenated into the error message, or a condition object
+/// @return does not return; signals an error
 #[builtin]
 fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     // If the first arg is already a condition object, re-signal it
@@ -32,6 +36,10 @@ fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     })
 }
 
+/// Signal a warning condition.
+///
+/// @param ... character strings concatenated into the warning message
+/// @return NULL, invisibly
 #[interpreter_builtin]
 fn interp_warning(
     args: &[RValue],
@@ -55,6 +63,10 @@ fn interp_warning(
     Ok(RValue::Null)
 }
 
+/// Print a diagnostic message to stderr.
+///
+/// @param ... character strings concatenated into the message
+/// @return NULL, invisibly
 #[interpreter_builtin]
 fn interp_message(
     args: &[RValue],
@@ -78,6 +90,12 @@ fn interp_message(
     Ok(RValue::Null)
 }
 
+/// Construct a simple condition object.
+///
+/// @param msg character string giving the condition message
+/// @param call the call associated with the condition (default NULL)
+/// @param class additional class to prepend to "condition"
+/// @return a condition list with message, call, and class attributes
 #[builtin(name = "simpleCondition", min_args = 1)]
 fn builtin_simple_condition(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let msg = args
@@ -110,6 +128,11 @@ fn builtin_simple_condition(args: &[RValue], named: &[(String, RValue)]) -> Resu
     Ok(RValue::List(list))
 }
 
+/// Construct a simple error condition object.
+///
+/// @param message character string giving the error message
+/// @param call the call associated with the error (default NULL)
+/// @return a condition list with class c("simpleError", "error", "condition")
 #[builtin(name = "simpleError", min_args = 1)]
 fn builtin_simple_error(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let msg = args
@@ -124,6 +147,11 @@ fn builtin_simple_error(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     ))
 }
 
+/// Construct a simple warning condition object.
+///
+/// @param message character string giving the warning message
+/// @param call the call associated with the warning (default NULL)
+/// @return a condition list with class c("simpleWarning", "warning", "condition")
 #[builtin(name = "simpleWarning", min_args = 1)]
 fn builtin_simple_warning(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let msg = args
@@ -138,6 +166,11 @@ fn builtin_simple_warning(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     ))
 }
 
+/// Construct a simple message condition object.
+///
+/// @param message character string giving the message
+/// @param call the call associated with the message (default NULL)
+/// @return a condition list with class c("simpleMessage", "message", "condition")
 #[builtin(name = "simpleMessage", min_args = 1)]
 fn builtin_simple_message(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let msg = args
@@ -152,6 +185,10 @@ fn builtin_simple_message(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     ))
 }
 
+/// Extract the message from a condition object.
+///
+/// @param c a condition object (list with "message" element)
+/// @return character string giving the condition message
 #[builtin(name = "conditionMessage", min_args = 1)]
 fn builtin_condition_message(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -170,6 +207,10 @@ fn builtin_condition_message(args: &[RValue], _: &[(String, RValue)]) -> Result<
     }
 }
 
+/// Extract the call from a condition object.
+///
+/// @param c a condition object (list with "call" element)
+/// @return the call associated with the condition, or NULL
 #[builtin(name = "conditionCall", min_args = 1)]
 fn builtin_condition_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -188,6 +229,10 @@ fn builtin_condition_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     }
 }
 
+/// Invoke a restart by name, transferring control to the corresponding handler.
+///
+/// @param r character string naming the restart to invoke
+/// @return does not return; transfers control to the restart handler
 #[builtin(name = "invokeRestart", min_args = 1)]
 fn builtin_invoke_restart(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let restart_name = args

@@ -539,6 +539,10 @@ fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, 
     CallArgs::new(args, named).string("file", 0)
 }
 
+/// Read a single R object from a miniRDS file.
+///
+/// @param file character scalar: path to the .rds file
+/// @return the deserialized R value
 #[interpreter_builtin(name = "readRDS", min_args = 1)]
 fn interp_read_rds(
     args: &[RValue],
@@ -549,6 +553,11 @@ fn interp_read_rds(
     read_minirds(&path, "readRDS", "saveRDS", context.interpreter())
 }
 
+/// Serialize a single R object to a miniRDS file.
+///
+/// @param object any R value to serialize
+/// @param file character scalar: path to write the .rds file
+/// @return NULL (invisibly)
 #[builtin(name = "saveRDS", min_args = 2)]
 fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
@@ -564,6 +573,11 @@ fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::Null)
 }
 
+/// Load a workspace file (saved with save()) into an environment.
+///
+/// @param file character scalar: path to the workspace file
+/// @param envir environment to load bindings into (default: calling environment)
+/// @return character vector of names of loaded objects
 #[interpreter_builtin(name = "load", min_args = 1)]
 fn interp_load(
     positional: &[RValue],
@@ -611,6 +625,13 @@ fn interp_load(
     Ok(RValue::vec(Vector::Character(loaded_names.into())))
 }
 
+/// Save named R objects to a workspace file in miniRDS format.
+///
+/// @param ... bare names of objects to save
+/// @param list character vector of additional object names
+/// @param file character scalar: path to write the workspace file
+/// @param envir environment to look up objects in (default: calling environment)
+/// @return NULL (invisibly)
 #[pre_eval_builtin(name = "save")]
 fn pre_eval_save(
     args: &[Arg],
@@ -639,6 +660,11 @@ fn pre_eval_save(
     Ok(RValue::Null)
 }
 
+/// Construct a platform-independent file path from components.
+///
+/// @param ... character scalars: path components to join
+/// @param fsep character scalar: path separator (default "/")
+/// @return character scalar containing the joined path
 #[builtin]
 fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let sep = CallArgs::new(args, named)
@@ -654,6 +680,10 @@ fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     )))
 }
 
+/// Test whether files exist at the given paths.
+///
+/// @param ... character scalars: file paths to check
+/// @return logical vector indicating existence of each file
 #[builtin(name = "file.exists", min_args = 1)]
 fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
@@ -669,6 +699,11 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Logical(results.into())))
 }
 
+/// Read text lines from a file.
+///
+/// @param con character scalar: file path to read from
+/// @param n integer scalar: maximum number of lines to read (-1 for all)
+/// @return character vector with one element per line
 #[builtin(name = "readLines", min_args = 1)]
 fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
@@ -689,6 +724,12 @@ fn builtin_read_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::vec(Vector::Character(lines.into())))
 }
 
+/// Write text lines to a file or stdout.
+///
+/// @param text character vector of lines to write
+/// @param con character scalar: file path (if omitted, writes to stdout)
+/// @param sep character scalar: line separator (default "\n")
+/// @return NULL (invisibly)
 #[builtin(name = "writeLines", min_args = 1)]
 fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
@@ -725,6 +766,12 @@ fn builtin_write_lines(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
     Ok(RValue::Null)
 }
 
+/// Read a CSV file into a data frame.
+///
+/// @param file character scalar: path to the CSV file
+/// @param header logical: does the file have a header row? (default TRUE)
+/// @param sep character scalar: field separator (default ",")
+/// @return data.frame with columns coerced to numeric where possible
 #[builtin(name = "read.csv", min_args = 1)]
 fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
@@ -837,6 +884,12 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::List(list))
 }
 
+/// Write a data frame to a CSV file.
+///
+/// @param x data frame or list to write
+/// @param file character scalar: output file path
+/// @param row.names logical: include row names? (default TRUE)
+/// @return NULL (invisibly)
 #[builtin(name = "write.csv", min_args = 1)]
 fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let data = args
@@ -920,6 +973,12 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     Ok(RValue::Null)
 }
 
+/// Read data from a file, splitting into tokens.
+///
+/// @param file character scalar: path to the file to read
+/// @param what example value determining the return type (default: character)
+/// @param sep character scalar: token separator (default: whitespace)
+/// @return vector of tokens coerced to the type of `what`
 #[builtin]
 fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = args
@@ -995,6 +1054,12 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Read a whitespace- or delimiter-separated table from a file.
+///
+/// @param file character scalar: path to the file
+/// @param header logical: does the file have a header row? (default FALSE)
+/// @param sep character scalar: field separator (default: whitespace)
+/// @return data.frame (list of columns) with columns coerced to numeric where possible
 #[builtin(name = "read.table", min_args = 1)]
 fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[0] {
@@ -1102,6 +1167,14 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::List(RList::new(columns)))
 }
 
+/// Write a data frame, list, or matrix to a text file.
+///
+/// @param x data frame, list, or matrix to write
+/// @param file character scalar: output file path
+/// @param sep character scalar: field separator (default " ")
+/// @param col.names logical: include column names? (default TRUE)
+/// @param quote logical: quote character fields? (default TRUE)
+/// @return NULL (invisibly)
 #[builtin(name = "write.table", min_args = 2)]
 fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[1] {

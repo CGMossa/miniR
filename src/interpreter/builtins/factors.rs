@@ -36,6 +36,13 @@ pub(super) fn rvalue_to_char_vec(x: &RValue) -> Result<Vec<Option<String>>, RErr
     }
 }
 
+/// Encode a vector as a factor (categorical variable).
+///
+/// @param x vector to encode
+/// @param levels character vector of allowed levels (default: sorted unique values)
+/// @param labels character vector of display labels for the levels (default: same as levels)
+/// @param ordered if TRUE, create an ordered factor
+/// @return an integer vector with "levels" and "class" attributes
 #[builtin]
 fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = args.first().cloned().unwrap_or(RValue::Null);

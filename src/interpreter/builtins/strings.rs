@@ -76,6 +76,12 @@ fn convert_replacement(repl: &str) -> String {
     result
 }
 
+/// Extract a substring from a character string.
+///
+/// @param x character string to extract from
+/// @param start integer starting position (1-indexed)
+/// @param stop integer ending position (inclusive)
+/// @return character scalar containing the substring
 #[builtin(min_args = 3, names = ["substring"])]
 fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
@@ -102,6 +108,10 @@ fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
+/// Convert strings to upper case.
+///
+/// @param x character vector to convert
+/// @return character vector with all characters in upper case
 #[builtin(min_args = 1)]
 fn builtin_toupper(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -122,6 +132,10 @@ fn builtin_toupper(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Convert strings to lower case.
+///
+/// @param x character vector to convert
+/// @return character vector with all characters in lower case
 #[builtin(min_args = 1)]
 fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -142,6 +156,11 @@ fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Remove leading and/or trailing whitespace from strings.
+///
+/// @param x character vector to trim
+/// @param which character scalar: "both", "left", or "right"
+/// @return character vector with whitespace removed
 #[builtin(min_args = 1)]
 fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let which = named
@@ -185,6 +204,14 @@ fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Replace all occurrences of a pattern in character strings.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param replacement character scalar: replacement text
+/// @param x character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return character vector with all matches replaced
 #[builtin(min_args = 3)]
 fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -223,6 +250,14 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Replace the first occurrence of a pattern in character strings.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param replacement character scalar: replacement text
+/// @param x character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return character vector with first match replaced
 #[builtin(min_args = 3)]
 fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -261,6 +296,13 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Test whether a pattern matches each element of a character vector.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param x character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return logical vector indicating which elements match
 #[builtin(min_args = 2)]
 fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -287,6 +329,14 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Search for pattern matches in a character vector.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param x character vector to search
+/// @param value logical: if TRUE, return matching elements instead of indices
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return integer vector of indices (default) or character vector of matching elements
 #[builtin(min_args = 2)]
 fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -330,6 +380,13 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Find the first match of a pattern in each element of a character vector.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param text character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return integer vector of match positions with "match.length" attribute
 #[builtin(min_args = 2)]
 fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -371,6 +428,13 @@ fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Find all matches of a pattern in each element of a character vector.
+///
+/// @param pattern character scalar: regular expression or fixed string
+/// @param text character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return list of integer vectors with match positions and "match.length" attributes
 #[builtin(min_args = 2)]
 fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -424,6 +488,11 @@ fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     }
 }
 
+/// Extract matched substrings from regexpr/gregexpr results.
+///
+/// @param x character vector that was searched
+/// @param m match data from regexpr() or gregexpr()
+/// @return character vector (for regexpr) or list (for gregexpr) of matched substrings
 #[builtin(min_args = 2)]
 fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = match args.first() {
@@ -760,6 +829,11 @@ fn parse_fmt_spec(chars: &[char]) -> Option<(FmtSpec, usize)> {
     }
 }
 
+/// Format strings using C-style format specifiers.
+///
+/// @param fmt character scalar: format string with %d, %f, %s, etc.
+/// @param ... values to substitute into the format string
+/// @return character scalar containing the formatted result
 #[builtin(min_args = 1)]
 fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let fmt = args
@@ -823,6 +897,13 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 
 // format() is in interp.rs (S3-dispatching interpreter builtin)
 
+/// Split a string by a pattern or fixed delimiter.
+///
+/// @param x character scalar to split
+/// @param split character scalar: pattern or fixed string to split on
+/// @param fixed logical: if TRUE, split is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return list containing a character vector of the split pieces
 #[builtin(min_args = 2)]
 fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
@@ -865,6 +946,11 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::List(RList::new(parts)))
 }
 
+/// Test whether strings start with a given prefix.
+///
+/// @param x character vector to test
+/// @param prefix character scalar: the prefix to look for
+/// @return logical vector indicating which elements start with the prefix
 #[builtin(name = "startsWith", min_args = 2)]
 fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let prefix = args
@@ -889,6 +975,11 @@ fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Test whether strings end with a given suffix.
+///
+/// @param x character vector to test
+/// @param suffix character scalar: the suffix to look for
+/// @return logical vector indicating which elements end with the suffix
 #[builtin(name = "endsWith", min_args = 2)]
 fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let suffix = args
@@ -913,6 +1004,12 @@ fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Translate characters in a string (character-by-character substitution).
+///
+/// @param old character scalar: characters to replace
+/// @param new character scalar: replacement characters (positionally matched)
+/// @param x character scalar: string to translate
+/// @return character scalar with characters substituted
 #[builtin(min_args = 3)]
 fn builtin_chartr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let old = args
@@ -942,6 +1039,10 @@ fn builtin_chartr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
+/// Make syntactically valid R names from character strings.
+///
+/// @param names character vector of names to sanitize
+/// @return character vector of syntactically valid names
 #[builtin(min_args = 1)]
 fn builtin_make_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -977,6 +1078,10 @@ fn builtin_make_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Make character strings unique by appending sequence numbers to duplicates.
+///
+/// @param names character vector of names to deduplicate
+/// @return character vector with duplicates disambiguated (e.g. "x", "x.1", "x.2")
 #[builtin(min_args = 1)]
 fn builtin_make_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1005,6 +1110,10 @@ fn builtin_make_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Extract the file name from a path.
+///
+/// @param path character scalar: a file path
+/// @return character scalar containing the base file name
 #[builtin(min_args = 1)]
 fn builtin_basename(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -1018,6 +1127,10 @@ fn builtin_basename(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Character(vec![Some(base)].into())))
 }
 
+/// Extract the directory part from a path.
+///
+/// @param path character scalar: a file path
+/// @return character scalar containing the directory component
 #[builtin(min_args = 1)]
 fn builtin_dirname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -1031,6 +1144,10 @@ fn builtin_dirname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(dir)].into())))
 }
 
+/// Convert an R expression or value to its string representation.
+///
+/// @param expr any R value or language object
+/// @return character scalar containing the deparsed representation
 #[builtin(min_args = 1)]
 fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = match args.first() {
@@ -1041,6 +1158,10 @@ fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
+/// Convert integer Unicode code points to a UTF-8 string.
+///
+/// @param x integer vector of Unicode code points
+/// @return character scalar containing the corresponding UTF-8 string
 #[builtin(name = "intToUtf8", min_args = 1)]
 fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let ints = match args.first() {
@@ -1076,6 +1197,10 @@ fn builtin_int_to_utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
+/// Convert a UTF-8 string to integer Unicode code points.
+///
+/// @param x character scalar to convert
+/// @return integer vector of Unicode code points
 #[builtin(name = "utf8ToInt", min_args = 1)]
 fn builtin_utf8_to_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
@@ -1091,6 +1216,10 @@ fn builtin_utf8_to_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Convert a character string to a raw (byte) vector.
+///
+/// @param x character scalar to convert
+/// @return raw vector of the string's UTF-8 bytes
 #[builtin(name = "charToRaw", min_args = 1)]
 fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
@@ -1101,6 +1230,10 @@ fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Raw(result)))
 }
 
+/// Convert a raw (byte) vector to a character string.
+///
+/// @param x raw vector to convert
+/// @return character scalar containing the UTF-8 string
 #[builtin(name = "rawToChar", min_args = 1)]
 fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let bytes = match args.first() {
@@ -1200,6 +1333,10 @@ fn builtin_is_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     Ok(RValue::vec(Vector::Logical(vec![Some(is_raw)].into())))
 }
 
+/// Convert a glob (wildcard) pattern to a regular expression.
+///
+/// @param pattern character scalar: a glob pattern with * and ? wildcards
+/// @return character scalar containing the equivalent anchored regex
 #[builtin(name = "glob2rx", min_args = 1)]
 fn builtin_glob2rx(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -1227,6 +1364,13 @@ fn builtin_glob2rx(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
+/// Match a pattern with capture groups against a character vector.
+///
+/// @param pattern character scalar: regular expression with optional capture groups
+/// @param text character vector to search
+/// @param fixed logical: if TRUE, pattern is a literal string
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return list of integer vectors with match and capture-group positions
 #[builtin(min_args = 2)]
 fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pattern = args
@@ -1284,6 +1428,10 @@ fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Write a deparsed representation of an R object to stdout.
+///
+/// @param x any R value or language object
+/// @return NULL (invisibly); output is printed to stdout
 #[builtin(min_args = 1)]
 fn builtin_dput(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = match args.first() {
@@ -1295,6 +1443,11 @@ fn builtin_dput(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     Ok(RValue::Null)
 }
 
+/// Convert a string to an integer using a specified base (radix).
+///
+/// @param x character scalar: the string to parse
+/// @param base integer scalar: the radix (default 10)
+/// @return integer scalar, or NA if parsing fails
 #[builtin(min_args = 1)]
 fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = args
@@ -1314,6 +1467,10 @@ fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Test whether character strings are non-empty.
+///
+/// @param x character vector to test
+/// @return logical vector: TRUE for non-empty strings, TRUE for NA
 #[builtin(min_args = 1)]
 fn builtin_nzchar(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1346,6 +1503,10 @@ fn builtin_nzchar(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Wrap strings in single (typographic) quotes.
+///
+/// @param x character vector to quote
+/// @return character vector with elements wrapped in single curly quotes
 #[builtin(name = "sQuote", min_args = 1)]
 fn builtin_squote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1372,6 +1533,10 @@ fn builtin_squote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Wrap strings in double (typographic) quotes.
+///
+/// @param x character vector to quote
+/// @return character vector with elements wrapped in double curly quotes
 #[builtin(name = "dQuote", min_args = 1)]
 fn builtin_dquote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {

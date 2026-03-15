@@ -465,6 +465,12 @@ fn automatic_row_names(count: usize) -> RValue {
     ))
 }
 
+/// Construct a data frame from named or unnamed column vectors.
+///
+/// @param ... vectors, factors, matrices, or data frames to combine as columns
+/// @param row.names character or integer vector of row names (optional)
+/// @param stringsAsFactors if TRUE, convert character columns to factors (default FALSE)
+/// @return a data frame (list with class "data.frame")
 #[pre_eval_builtin(name = "data.frame")]
 fn pre_eval_data_frame(
     args: &[Arg],
@@ -609,6 +615,14 @@ fn pre_eval_data_frame(
     Ok(RValue::List(list))
 }
 
+/// Evaluate an expression with error/warning/message handlers.
+///
+/// @param expr the expression to evaluate
+/// @param error handler function for error conditions (optional)
+/// @param warning handler function for warning conditions (optional)
+/// @param message handler function for message conditions (optional)
+/// @param finally expression to evaluate after expr, regardless of outcome (optional)
+/// @return the result of expr, or the return value of the matching handler
 #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
 fn pre_eval_try_catch(
     args: &[Arg],
@@ -730,6 +744,10 @@ fn pre_eval_try_catch(
     result
 }
 
+/// Evaluate an expression, catching errors and returning them as a string.
+///
+/// @param expr the expression to evaluate
+/// @return the result of expr on success, or the error message as a character string
 #[pre_eval_builtin(name = "try", min_args = 1)]
 fn pre_eval_try(
     args: &[Arg],
@@ -753,6 +771,14 @@ fn pre_eval_try(
     })
 }
 
+/// Evaluate an expression with calling handlers for conditions.
+///
+/// Unlike tryCatch, handlers run without unwinding the call stack, allowing
+/// the signaling code to resume execution after the handler returns.
+///
+/// @param expr the expression to evaluate
+/// @param ... named handlers: class = handler_function
+/// @return the result of expr
 #[pre_eval_builtin(name = "withCallingHandlers", min_args = 1)]
 fn pre_eval_with_calling_handlers(
     args: &[Arg],
@@ -796,6 +822,10 @@ fn pre_eval_with_calling_handlers(
     })
 }
 
+/// Evaluate an expression, suppressing all warning conditions.
+///
+/// @param expr the expression to evaluate
+/// @return the result of expr with warnings silenced
 #[pre_eval_builtin(name = "suppressWarnings", min_args = 1)]
 fn pre_eval_suppress_warnings(
     args: &[Arg],
@@ -833,6 +863,10 @@ fn pre_eval_suppress_warnings(
     })
 }
 
+/// Evaluate an expression, suppressing all message conditions.
+///
+/// @param expr the expression to evaluate
+/// @return the result of expr with messages silenced
 #[pre_eval_builtin(name = "suppressMessages", min_args = 1)]
 fn pre_eval_suppress_messages(
     args: &[Arg],
@@ -869,6 +903,11 @@ fn pre_eval_suppress_messages(
     })
 }
 
+/// Register an expression to be evaluated when the current function exits.
+///
+/// @param expr expression to evaluate on exit (or NULL to clear)
+/// @param add if TRUE, append to existing on.exit expressions; if FALSE, replace them
+/// @return NULL, invisibly
 #[pre_eval_builtin(name = "on.exit")]
 fn pre_eval_on_exit(
     args: &[Arg],
@@ -917,6 +956,10 @@ fn pre_eval_on_exit(
     Ok(RValue::Null)
 }
 
+/// Test whether a formal argument was supplied in the current function call.
+///
+/// @param x unquoted name of a formal argument
+/// @return TRUE if the argument was not supplied, FALSE otherwise
 #[pre_eval_builtin(name = "missing", min_args = 1)]
 fn pre_eval_missing(
     args: &[Arg],
@@ -970,6 +1013,10 @@ fn pre_eval_missing(
     Ok(RValue::vec(Vector::Logical(vec![Some(is_missing)].into())))
 }
 
+/// Return an unevaluated expression (language object).
+///
+/// @param expr any R expression (not evaluated)
+/// @return the expression as a language object
 #[pre_eval_builtin(name = "quote", min_args = 1)]
 fn pre_eval_quote(
     args: &[Arg],
@@ -982,6 +1029,10 @@ fn pre_eval_quote(
     }
 }
 
+/// Return an unevaluated expression with variables substituted from the environment.
+///
+/// @param expr any R expression (not evaluated)
+/// @return the expression with symbols replaced by their values from the calling environment
 #[pre_eval_builtin(name = "substitute", min_args = 1)]
 fn pre_eval_substitute(
     args: &[Arg],
@@ -1045,6 +1096,14 @@ fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
     }
 }
 
+/// Evaluate a quoted expression in a specified environment.
+///
+/// Equivalent to eval(quote(expr), envir). The expression is not evaluated
+/// in the calling environment before being passed to eval.
+///
+/// @param expr expression to evaluate (quoted, not evaluated first)
+/// @param envir environment in which to evaluate (default: calling environment)
+/// @return the result of evaluating expr in envir
 #[pre_eval_builtin(name = "evalq", min_args = 1)]
 fn pre_eval_evalq(
     args: &[Arg],
@@ -1091,6 +1150,10 @@ fn pre_eval_evalq(
         .map_err(RError::from)
 }
 
+/// Partial substitution: quote an expression, evaluating only .() splices.
+///
+/// @param expr expression to quote (not evaluated, except for .() sub-expressions)
+/// @return a language object with .() splices replaced by their evaluated values
 #[pre_eval_builtin(name = "bquote", min_args = 1)]
 fn pre_eval_bquote(
     args: &[Arg],
@@ -1175,6 +1238,10 @@ fn bquote_expr(
     }
 }
 
+/// Evaluate an expression and return the result with a visibility flag.
+///
+/// @param expr the expression to evaluate
+/// @return a list with components "value" (the result) and "visible" (logical)
 #[pre_eval_builtin(name = "withVisible", min_args = 1)]
 fn pre_eval_with_visible(
     args: &[Arg],
@@ -1217,6 +1284,10 @@ fn pre_eval_expression(
     Ok(RValue::List(RList::new(entries)))
 }
 
+/// Measure the wall-clock time to evaluate an expression.
+///
+/// @param expr the expression to time
+/// @return numeric vector c(user, system, elapsed) where user and system are 0 (wall-clock only)
 #[pre_eval_builtin(name = "system.time", min_args = 1)]
 fn pre_eval_system_time(
     args: &[Arg],

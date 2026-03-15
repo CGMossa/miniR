@@ -70,6 +70,11 @@ impl From<SystemError> for RError {
 
 // === File operations ===
 
+/// Copy a file from one path to another.
+///
+/// @param from character scalar: source file path
+/// @param to character scalar: destination file path
+/// @return logical scalar: TRUE on success
 #[builtin(name = "file.copy", min_args = 2)]
 fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let from = args
@@ -97,6 +102,10 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     }
 }
 
+/// Create empty files at the given paths.
+///
+/// @param ... character scalars: file paths to create
+/// @return logical vector: TRUE for each file successfully created
 #[builtin(name = "file.create", min_args = 1)]
 fn builtin_file_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
@@ -115,6 +124,10 @@ fn builtin_file_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     Ok(RValue::vec(Vector::Logical(results.into())))
 }
 
+/// Delete files at the given paths.
+///
+/// @param ... character scalars: file paths to remove
+/// @return logical vector: TRUE for each file successfully removed
 #[builtin(name = "file.remove", min_args = 1)]
 fn builtin_file_remove(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
@@ -133,6 +146,11 @@ fn builtin_file_remove(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     Ok(RValue::vec(Vector::Logical(results.into())))
 }
 
+/// Rename (move) a file.
+///
+/// @param from character scalar: current file path
+/// @param to character scalar: new file path
+/// @return logical scalar: TRUE on success
 #[builtin(name = "file.rename", min_args = 2)]
 fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let from = args
@@ -160,6 +178,10 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     }
 }
 
+/// Get the size of files in bytes.
+///
+/// @param ... character scalars: file paths to query
+/// @return double vector of file sizes (NA for non-existent files)
 #[builtin(name = "file.size", min_args = 1)]
 fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let results: Vec<Option<f64>> = args
@@ -175,6 +197,11 @@ fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::vec(Vector::Double(results.into())))
 }
 
+/// Delete files or directories.
+///
+/// @param x character scalar: path to remove
+/// @param recursive logical: if TRUE, remove directories recursively (default FALSE)
+/// @return integer scalar: 0 on success, 1 on failure
 #[builtin(min_args = 1)]
 fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -211,6 +238,10 @@ fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 
 // region: file.info
 
+/// Get detailed file metadata (size, type, permissions, timestamps).
+///
+/// @param ... character scalars: file paths to query
+/// @return data.frame with columns: size, isdir, mode, mtime, ctime, atime
 #[builtin(name = "file.info", min_args = 1)]
 fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let paths: Vec<String> = args
@@ -320,6 +351,10 @@ fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
 // === Directory operations ===
 
+/// Create a directory (recursively by default, diverging from R).
+///
+/// @param path character scalar: directory path to create
+/// @return logical scalar: TRUE on success
 #[builtin(name = "dir.create", min_args = 1)]
 fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -339,6 +374,10 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     }
 }
 
+/// Test whether directories exist at the given paths.
+///
+/// @param ... character scalars: directory paths to check
+/// @return logical vector indicating existence of each directory
 #[builtin(name = "dir.exists", min_args = 1)]
 fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
@@ -354,6 +393,11 @@ fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
     Ok(RValue::vec(Vector::Logical(results.into())))
 }
 
+/// List files in a directory, optionally filtering by pattern.
+///
+/// @param path character scalar: directory path (default ".")
+/// @param pattern character scalar: regex pattern to filter file names
+/// @return character vector of matching file names (sorted)
 #[builtin(name = "list.files", names = ["dir"])]
 fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -399,6 +443,9 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 
 // === Temp paths ===
 
+/// Get the path to the interpreter's per-session temporary directory.
+///
+/// @return character scalar: path to the temp directory
 #[interpreter_builtin]
 fn interp_tempdir(
     _args: &[RValue],
@@ -410,6 +457,12 @@ fn interp_tempdir(
     Ok(RValue::vec(Vector::Character(vec![Some(path)].into())))
 }
 
+/// Generate a unique temporary file path.
+///
+/// @param pattern character scalar: filename prefix (default "file")
+/// @param tmpdir character scalar: directory for the temp file (default: session temp dir)
+/// @param fileext character scalar: file extension (default "")
+/// @return character scalar: the generated temporary file path
 #[interpreter_builtin]
 fn interp_tempfile(
     args: &[RValue],
@@ -448,6 +501,10 @@ fn interp_tempfile(
 
 // === Glob ===
 
+/// Expand file system glob patterns to matching paths.
+///
+/// @param ... character scalars: glob patterns (e.g. "*.R", "src/**/*.rs")
+/// @return character vector of matching file paths
 #[builtin(name = "Sys.glob", min_args = 1)]
 fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let patterns: Vec<String> = args
@@ -477,6 +534,10 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 
 // === Path operations ===
 
+/// Normalize a file path to its canonical absolute form.
+///
+/// @param path character scalar: path to normalize
+/// @return character scalar: the canonical path (or the original if resolution fails)
 #[builtin(name = "normalizePath", min_args = 1)]
 fn builtin_normalize_path(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -498,6 +559,10 @@ fn builtin_normalize_path(args: &[RValue], _named: &[(String, RValue)]) -> Resul
     )))
 }
 
+/// Expand a tilde (~) prefix in a file path to the user's home directory.
+///
+/// @param path character scalar: path possibly starting with ~
+/// @return character scalar: the expanded path
 #[builtin(name = "path.expand", min_args = 1)]
 fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
@@ -524,6 +589,10 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 
 // === System operations ===
 
+/// Execute a shell command and return its exit code.
+///
+/// @param command character scalar: the shell command to run
+/// @return integer scalar: the process exit code
 #[builtin(min_args = 1)]
 fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let command = args
@@ -549,6 +618,11 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
 }
 
+/// Execute a command with arguments and return its exit code.
+///
+/// @param command character scalar: the program to run
+/// @param args character vector: command-line arguments
+/// @return integer scalar: the process exit code
 #[builtin(min_args = 1)]
 fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let command = args
@@ -580,6 +654,10 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
 }
 
+/// Set environment variables in the interpreter's private environment.
+///
+/// @param ... named character scalars: name=value pairs to set
+/// @return logical scalar: TRUE
 #[interpreter_builtin(name = "Sys.setenv")]
 fn interp_sys_setenv(
     _args: &[RValue],
@@ -598,6 +676,10 @@ fn interp_sys_setenv(
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
+/// Look up the full paths of programs on the system PATH.
+///
+/// @param names character vector: program names to search for
+/// @return character vector: full paths (empty string if not found)
 #[interpreter_builtin(name = "Sys.which", min_args = 1)]
 fn interp_sys_which(
     args: &[RValue],
@@ -630,6 +712,10 @@ fn interp_sys_which(
     Ok(RValue::vec(Vector::Character(results.into())))
 }
 
+/// Set the interpreter's working directory.
+///
+/// @param dir character scalar: path to the new working directory
+/// @return character scalar: the previous working directory
 #[interpreter_builtin(min_args = 1)]
 fn interp_setwd(
     args: &[RValue],
@@ -664,6 +750,10 @@ fn interp_setwd(
 
 // === Sleep ===
 
+/// Pause execution for a specified number of seconds.
+///
+/// @param time numeric scalar: seconds to sleep (values <= 0 are ignored)
+/// @return NULL (invisibly)
 #[builtin(name = "Sys.sleep", min_args = 1)]
 fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let time = args
@@ -685,6 +775,9 @@ fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
 // === System info ===
 
+/// Return system information (OS, machine, hostname, user).
+///
+/// @return named list with sysname, nodename, machine, login, and user
 #[builtin(name = "Sys.info")]
 fn builtin_sys_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let sysname = if cfg!(target_os = "macos") {
@@ -749,12 +842,18 @@ fn builtin_sys_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     Ok(RValue::List(list))
 }
 
+/// Get the current timezone from the TZ environment variable.
+///
+/// @return character scalar: timezone string (defaults to "UTC")
 #[builtin(name = "Sys.timezone")]
 fn builtin_sys_timezone(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let tz = std::env::var("TZ").unwrap_or_else(|_| "UTC".to_string());
     Ok(RValue::vec(Vector::Character(vec![Some(tz)].into())))
 }
 
+/// Report which optional features are available in this interpreter.
+///
+/// @return named logical vector of capability flags (jpeg, png, etc.)
 #[builtin]
 fn builtin_capabilities(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let caps = vec![
@@ -789,6 +888,9 @@ fn builtin_capabilities(_args: &[RValue], _named: &[(String, RValue)]) -> Result
     Ok(RValue::Vector(rv))
 }
 
+/// Report localization information (encoding support).
+///
+/// @return named list with MBCS, UTF-8, and Latin-1 flags
 #[builtin]
 fn builtin_l10n_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![
@@ -809,6 +911,9 @@ fn builtin_l10n_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 
 // region: proc.time
 
+/// Get elapsed (wall-clock) time since the interpreter started.
+///
+/// @return named double vector: c(user.self, sys.self, elapsed)
 #[interpreter_builtin(name = "proc.time")]
 fn interp_proc_time(
     _args: &[RValue],
@@ -837,6 +942,9 @@ fn interp_proc_time(
 
 // endregion
 
+/// Return session information (miniR version, platform, locale).
+///
+/// @return named list with R.version, platform, and locale
 #[builtin(name = "sessionInfo")]
 fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![
