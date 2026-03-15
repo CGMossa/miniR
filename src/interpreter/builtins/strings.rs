@@ -537,73 +537,281 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Parsed format specifier from a `sprintf` format string.
+struct FmtSpec {
+    flags: String,
+    width: Option<usize>,
+    precision: Option<usize>,
+    specifier: char,
+}
+
+impl FmtSpec {
+    /// Apply width and flags to an already-formatted value string.
+    fn pad(&self, formatted: &str) -> String {
+        let width = match self.width {
+            Some(w) => w,
+            None => return formatted.to_string(),
+        };
+        if formatted.len() >= width {
+            return formatted.to_string();
+        }
+        let pad_char = if self.flags.contains('0') && !self.flags.contains('-') {
+            '0'
+        } else {
+            ' '
+        };
+        if self.flags.contains('-') {
+            // left-align
+            format!("{:<width$}", formatted, width = width)
+        } else if pad_char == '0' {
+            // zero-pad: preserve leading sign/minus
+            if let Some(rest) = formatted.strip_prefix('-') {
+                let pad_len = width.saturating_sub(rest.len() + 1);
+                format!("-{}{}", "0".repeat(pad_len), rest)
+            } else {
+                let pad_len = width.saturating_sub(formatted.len());
+                format!("{}{}", "0".repeat(pad_len), formatted)
+            }
+        } else {
+            // right-align with spaces
+            format!("{:>width$}", formatted, width = width)
+        }
+    }
+
+    /// Format an integer value according to this specifier.
+    fn format_int(&self, v: i64) -> String {
+        let raw = if self.flags.contains('+') && v >= 0 {
+            format!("+{}", v)
+        } else {
+            v.to_string()
+        };
+        self.pad(&raw)
+    }
+
+    /// Format a float value according to this specifier.
+    fn format_float(&self, v: f64) -> String {
+        let prec = self.precision.unwrap_or(6);
+        let raw = match self.specifier {
+            'f' => {
+                let s = format!("{:.prec$}", v, prec = prec);
+                if self.flags.contains('+') && v >= 0.0 && !v.is_nan() {
+                    format!("+{}", s)
+                } else {
+                    s
+                }
+            }
+            'e' | 'E' => {
+                let s = format_scientific(v, prec, self.specifier == 'E');
+                if self.flags.contains('+') && v >= 0.0 && !v.is_nan() {
+                    format!("+{}", s)
+                } else {
+                    s
+                }
+            }
+            'g' | 'G' => {
+                let s = format_g(v, prec, self.specifier == 'G');
+                if self.flags.contains('+') && v >= 0.0 && !v.is_nan() {
+                    format!("+{}", s)
+                } else {
+                    s
+                }
+            }
+            _ => format!("{}", v),
+        };
+        self.pad(&raw)
+    }
+
+    /// Format a string value according to this specifier.
+    fn format_str(&self, v: &str) -> String {
+        let truncated = match self.precision {
+            Some(prec) => &v[..v.len().min(prec)],
+            None => v,
+        };
+        self.pad(truncated)
+    }
+}
+
+/// Format a float in scientific notation matching R's output (two-digit exponent minimum).
+fn format_scientific(v: f64, prec: usize, upper: bool) -> String {
+    if v.is_nan() {
+        return "NaN".to_string();
+    }
+    if v.is_infinite() {
+        return if v > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+    let e_char = if upper { 'E' } else { 'e' };
+    if v == 0.0 {
+        return format!("{:.prec$}{}{}", 0.0, e_char, "+00", prec = prec);
+    }
+    let abs_v = v.abs();
+    let exp = abs_v.log10().floor() as i32;
+    let mantissa = v / 10f64.powi(exp);
+    format!("{:.prec$}{}{:+03}", mantissa, e_char, exp, prec = prec)
+}
+
+/// Format using %g/%G: use shorter of %f and %e, removing trailing zeros.
+fn format_g(v: f64, prec: usize, upper: bool) -> String {
+    if v.is_nan() {
+        return "NaN".to_string();
+    }
+    if v.is_infinite() {
+        return if v > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+    let prec = if prec == 0 { 1 } else { prec };
+    if v == 0.0 {
+        return "0".to_string();
+    }
+    let abs_v = v.abs();
+    let exp = abs_v.log10().floor() as i32;
+    // Use %e if exponent < -4 or >= precision
+    if exp < -4 || exp >= i32::try_from(prec).unwrap_or(i32::MAX) {
+        let sig_prec = prec.saturating_sub(1);
+        let s = format_scientific(v, sig_prec, upper);
+        // Remove trailing zeros in mantissa before the 'e'
+        if let Some(e_pos) = s.find(if upper { 'E' } else { 'e' }) {
+            let mantissa_part = s[..e_pos].trim_end_matches('0').trim_end_matches('.');
+            format!("{}{}", mantissa_part, &s[e_pos..])
+        } else {
+            s
+        }
+    } else {
+        // Use %f with enough decimal places
+        let decimal_places = if exp >= 0 {
+            prec.saturating_sub(usize::try_from(exp + 1).unwrap_or(0))
+        } else {
+            prec + usize::try_from(-exp - 1).unwrap_or(0)
+        };
+        let s = format!("{:.prec$}", v, prec = decimal_places);
+        // Remove trailing zeros after decimal point
+        if s.contains('.') {
+            let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+            trimmed.to_string()
+        } else {
+            s
+        }
+    }
+}
+
+/// Parse a format specifier starting after '%'. Returns (FmtSpec, chars consumed).
+fn parse_fmt_spec(chars: &[char]) -> Option<(FmtSpec, usize)> {
+    let mut i = 0;
+
+    // Parse flags
+    let mut flags = String::new();
+    while i < chars.len() && "-+ 0#".contains(chars[i]) {
+        flags.push(chars[i]);
+        i += 1;
+    }
+
+    // Parse width
+    let mut width = None;
+    let width_start = i;
+    while i < chars.len() && chars[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i > width_start {
+        width = chars[width_start..i]
+            .iter()
+            .collect::<String>()
+            .parse()
+            .ok();
+    }
+
+    // Parse precision
+    let mut precision = None;
+    if i < chars.len() && chars[i] == '.' {
+        i += 1;
+        let prec_start = i;
+        while i < chars.len() && chars[i].is_ascii_digit() {
+            i += 1;
+        }
+        precision = Some(
+            chars[prec_start..i]
+                .iter()
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0),
+        );
+    }
+
+    // Parse conversion specifier
+    if i < chars.len() {
+        let specifier = chars[i];
+        i += 1;
+        Some((
+            FmtSpec {
+                flags,
+                width,
+                precision,
+                specifier,
+            },
+            i,
+        ))
+    } else {
+        None
+    }
+}
+
 #[builtin(min_args = 1)]
 fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // Very simplified sprintf - handles %d, %f, %s, %e, %g
     let fmt = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    let result = fmt.clone();
     let mut arg_idx = 1;
-
-    let mut i = 0;
-    let chars: Vec<char> = result.chars().collect();
+    let chars: Vec<char> = fmt.chars().collect();
     let mut output = String::new();
+    let mut i = 0;
 
     while i < chars.len() {
         if chars[i] == '%' && i + 1 < chars.len() {
             i += 1;
-            // Skip flags, width, precision
-            while i < chars.len() && "-+ 0#".contains(chars[i]) {
+            // Handle %%
+            if chars[i] == '%' {
+                output.push('%');
                 i += 1;
+                continue;
             }
-            while i < chars.len() && chars[i].is_ascii_digit() {
-                i += 1;
-            }
-            if i < chars.len() && chars[i] == '.' {
-                i += 1;
-                while i < chars.len() && chars[i].is_ascii_digit() {
-                    i += 1;
-                }
-            }
-            if i < chars.len() {
-                let spec = chars[i];
-                match spec {
+            if let Some((spec, consumed)) = parse_fmt_spec(&chars[i..]) {
+                i += consumed;
+                match spec.specifier {
                     'd' | 'i' => {
-                        if let Some(v) = args
+                        let v = args
                             .get(arg_idx)
                             .and_then(|v| v.as_vector()?.as_integer_scalar())
-                        {
-                            output.push_str(&v.to_string());
-                        }
+                            .unwrap_or(0);
+                        output.push_str(&spec.format_int(v));
                         arg_idx += 1;
                     }
-                    'f' | 'e' | 'g' => {
-                        if let Some(v) = args
+                    'f' | 'e' | 'E' | 'g' | 'G' => {
+                        let v = args
                             .get(arg_idx)
                             .and_then(|v| v.as_vector()?.as_double_scalar())
-                        {
-                            output.push_str(&format!("{}", v));
-                        }
+                            .unwrap_or(0.0);
+                        output.push_str(&spec.format_float(v));
                         arg_idx += 1;
                     }
                     's' => {
-                        if let Some(v) = args
+                        let v = args
                             .get(arg_idx)
                             .and_then(|v| v.as_vector()?.as_character_scalar())
-                        {
-                            output.push_str(&v);
-                        }
+                            .unwrap_or_default();
+                        output.push_str(&spec.format_str(&v));
                         arg_idx += 1;
                     }
-                    '%' => output.push('%'),
                     _ => {
                         output.push('%');
-                        output.push(spec);
+                        output.push(spec.specifier);
                     }
                 }
-                i += 1;
             }
         } else {
             output.push(chars[i]);
@@ -616,7 +824,7 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 // format() is in interp.rs (S3-dispatching interpreter builtin)
 
 #[builtin(min_args = 2)]
-fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -625,8 +833,10 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
+    let (fixed, ignore_case) = get_regex_opts(named);
 
     let parts: Vec<(Option<String>, RValue)> = if split.is_empty() {
+        // Empty split: split into individual characters (same for fixed and regex)
         s.chars()
             .map(|c| {
                 (
@@ -635,7 +845,8 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                 )
             })
             .collect()
-    } else {
+    } else if fixed && !ignore_case {
+        // Fixed literal split (no regex), case-sensitive
         vec![(
             None,
             RValue::vec(Vector::Character(
@@ -645,6 +856,11 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
                     .into(),
             )),
         )]
+    } else {
+        // Regex split (or fixed with ignore.case, which uses regex::escape)
+        let re = build_regex(&split, fixed, ignore_case)?;
+        let pieces: Vec<Option<String>> = re.split(&s).map(|p| Some(p.to_string())).collect();
+        vec![(None, RValue::vec(Vector::Character(pieces.into())))]
     };
     Ok(RValue::List(RList::new(parts)))
 }
