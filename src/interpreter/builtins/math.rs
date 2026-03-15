@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
 
 use derive_more::{Display, Error};
-use ndarray::{Array2, ShapeBuilder};
+use ndarray::{Array1, Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
-use minir_macros::builtin;
+use crate::interpreter::BuiltinContext;
+use crate::parser::ast::Expr;
+use minir_macros::{builtin, interpreter_builtin};
 
 type DimNameVec = Vec<Option<String>>;
 type MatrixDimNames = (Option<DimNameVec>, Option<DimNameVec>);
@@ -2977,4 +2979,496 @@ fn builtin_as_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         }
     }
 }
+// endregion
+
+// region: Linear models (lm, summary.lm, coef)
+
+/// Extract a named column from a data frame (RList) as a Vec<Option<f64>>.
+fn df_column_doubles(list: &RList, name: &str) -> Result<Vec<Option<f64>>, RError> {
+    for (col_name, col_val) in &list.values {
+        if col_name.as_deref() == Some(name) {
+            return match col_val {
+                RValue::Vector(rv) => Ok(rv.to_doubles()),
+                _ => Err(RError::new(
+                    RErrorKind::Type,
+                    format!(
+                        "column '{}' is not a numeric vector — lm() requires numeric columns",
+                        name
+                    ),
+                )),
+            };
+        }
+    }
+    Err(RError::new(
+        RErrorKind::Name,
+        format!(
+            "column '{}' not found in data frame. Available columns: {}",
+            name,
+            list.values
+                .iter()
+                .filter_map(|(n, _)| n.as_deref())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ))
+}
+
+/// Extract the response and predictor names from a formula expression.
+///
+/// For `y ~ x`, returns `("y", vec!["x"])`.
+/// For `y ~ x1 + x2`, returns `("y", vec!["x1", "x2"])`.
+fn parse_formula_terms(expr: &Expr) -> Result<(String, Vec<String>), RError> {
+    match expr {
+        Expr::Formula { lhs, rhs } => {
+            let response = lhs
+                .as_ref()
+                .and_then(|e| match e.as_ref() {
+                    Expr::Symbol(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "lm() formula must have a response variable on the left side of ~"
+                            .to_string(),
+                    )
+                })?;
+            let rhs_expr = rhs.as_ref().ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "lm() formula must have predictor(s) on the right side of ~".to_string(),
+                )
+            })?;
+            let mut predictors = Vec::new();
+            collect_additive_terms(rhs_expr, &mut predictors)?;
+            if predictors.is_empty() {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "lm() formula must have at least one predictor on the right side of ~"
+                        .to_string(),
+                ));
+            }
+            Ok((response, predictors))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "lm() requires a formula as its first argument (e.g. y ~ x)".to_string(),
+        )),
+    }
+}
+
+/// Recursively collect symbol names from additive terms (x1 + x2 + x3).
+fn collect_additive_terms(expr: &Expr, out: &mut Vec<String>) -> Result<(), RError> {
+    match expr {
+        Expr::Symbol(s) => {
+            out.push(s.clone());
+            Ok(())
+        }
+        Expr::BinaryOp {
+            op: crate::parser::ast::BinaryOp::Add,
+            lhs,
+            rhs,
+        } => {
+            collect_additive_terms(lhs, out)?;
+            collect_additive_terms(rhs, out)?;
+            Ok(())
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "lm() formula terms must be symbols or sums of symbols, got: {:?}",
+                expr
+            ),
+        )),
+    }
+}
+
+/// Fit a linear model using ordinary least squares.
+///
+/// Supports simple and multiple linear regression with formula syntax.
+/// The formula `y ~ x` fits a simple regression; `y ~ x1 + x2` fits
+/// multiple regression. An intercept is always included.
+///
+/// @param formula a formula specifying the model (e.g. y ~ x)
+/// @param data a data frame containing the variables in the formula
+/// @return a list of class "lm" with components: coefficients, residuals,
+///         fitted.values, and call
+#[interpreter_builtin(min_args = 1)]
+fn interp_lm(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Extract formula (first arg or named "formula")
+    let formula_val = super::find_arg(args, named, "formula", 0).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "lm() requires a formula argument".to_string(),
+        )
+    })?;
+
+    let formula_expr = match formula_val {
+        RValue::Language(lang) => &*lang.inner,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "lm() first argument must be a formula (e.g. y ~ x), got a non-formula value"
+                    .to_string(),
+            ))
+        }
+    };
+
+    let (response_name, predictor_names) = parse_formula_terms(formula_expr)?;
+
+    // Extract data frame (second arg or named "data")
+    let data_val = super::find_arg(args, named, "data", 1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "lm() requires a 'data' argument — pass a data frame containing the model variables"
+                .to_string(),
+        )
+    })?;
+
+    let data_list = match data_val {
+        RValue::List(list) => list,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "lm() 'data' argument must be a data frame".to_string(),
+            ))
+        }
+    };
+
+    // Extract response vector
+    let y_raw = df_column_doubles(data_list, &response_name)?;
+    let n = y_raw.len();
+    if n == 0 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "lm() requires at least one observation".to_string(),
+        ));
+    }
+
+    let p = predictor_names.len(); // number of predictors (not counting intercept)
+
+    // Check for NA values in response
+    let y: Vec<f64> = y_raw
+        .into_iter()
+        .map(|v| {
+            v.ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "NA values in response variable '{}' — lm() does not yet support na.action",
+                        response_name
+                    ),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Build design matrix X: n x (p+1), first column is intercept (all 1s)
+    let ncol = p + 1;
+    let mut x_data = vec![0.0; n * ncol];
+    // Column 0: intercept
+    for item in x_data.iter_mut().take(n) {
+        *item = 1.0; // column-major: element (i, 0)
+    }
+    // Columns 1..=p: predictors
+    for (j, pred_name) in predictor_names.iter().enumerate() {
+        let col_raw = df_column_doubles(data_list, pred_name)?;
+        if col_raw.len() != n {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "predictor '{}' has {} observations but response '{}' has {} — they must match",
+                    pred_name,
+                    col_raw.len(),
+                    response_name,
+                    n
+                ),
+            ));
+        }
+        for (i, val) in col_raw.into_iter().enumerate() {
+            let v = val.ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "NA values in predictor '{}' — lm() does not yet support na.action",
+                        pred_name
+                    ),
+                )
+            })?;
+            x_data[i + (j + 1) * n] = v; // column-major: element (i, j+1)
+        }
+    }
+
+    let x = Array2::from_shape_vec((n, ncol).f(), x_data)
+        .map_err(|source| -> RError { MathError::Shape { source }.into() })?;
+    let y_arr = Array1::from_vec(y);
+
+    // Compute beta = (X'X)^{-1} X'y via normal equations
+    let xt = x.t();
+    let xtx = xt.dot(&x);
+    let xty = xt.dot(&y_arr);
+
+    // Solve X'X * beta = X'y using Gaussian elimination
+    let beta = solve_linear_system(&xtx, &xty)?;
+
+    // Compute fitted values and residuals
+    let fitted: Vec<f64> = (0..n)
+        .map(|i| {
+            let mut val = 0.0;
+            for j in 0..ncol {
+                val += x[[i, j]] * beta[j];
+            }
+            val
+        })
+        .collect();
+
+    let residuals: Vec<f64> = (0..n).map(|i| y_arr[i] - fitted[i]).collect();
+
+    // Build coefficient names: (Intercept), pred1, pred2, ...
+    let mut coef_names: Vec<Option<String>> = Vec::with_capacity(ncol);
+    coef_names.push(Some("(Intercept)".to_string()));
+    for name in &predictor_names {
+        coef_names.push(Some(name.clone()));
+    }
+
+    // Build named coefficient vector
+    let coef_doubles: Vec<Option<f64>> = beta.iter().copied().map(Some).collect();
+    let mut coef_rv = RVector::from(Vector::Double(coef_doubles.into()));
+    coef_rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(coef_names.into())),
+    );
+
+    // Build fitted.values vector
+    let fitted_doubles: Vec<Option<f64>> = fitted.into_iter().map(Some).collect();
+
+    // Build residuals vector
+    let residual_doubles: Vec<Option<f64>> = residuals.into_iter().map(Some).collect();
+
+    // Build result list with class "lm"
+    let mut result = RList::new(vec![
+        (Some("coefficients".to_string()), RValue::Vector(coef_rv)),
+        (
+            Some("residuals".to_string()),
+            RValue::vec(Vector::Double(residual_doubles.into())),
+        ),
+        (
+            Some("fitted.values".to_string()),
+            RValue::vec(Vector::Double(fitted_doubles.into())),
+        ),
+        (Some("call".to_string()), RValue::Null),
+    ]);
+    result.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("lm".to_string())].into())),
+    );
+
+    Ok(RValue::List(result))
+}
+
+/// Solve a linear system A * x = b using Gaussian elimination with partial pivoting.
+/// A must be square (ncol x ncol), b must have length ncol.
+fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Result<Vec<f64>, RError> {
+    let n = a.nrows();
+    if n != a.ncols() || n != b.len() {
+        return Err(RError::new(
+            RErrorKind::Other,
+            "internal error: solve_linear_system dimension mismatch".to_string(),
+        ));
+    }
+    if n == 0 {
+        return Ok(vec![]);
+    }
+
+    // Build augmented matrix [A | b]
+    let mut aug = Array2::<f64>::zeros((n, n + 1));
+    for i in 0..n {
+        for j in 0..n {
+            aug[[i, j]] = a[[i, j]];
+        }
+        aug[[i, n]] = b[i];
+    }
+
+    // Forward elimination with partial pivoting
+    for col in 0..n {
+        // Find pivot
+        let mut max_row = col;
+        let mut max_val = aug[[col, col]].abs();
+        for row in (col + 1)..n {
+            let val = aug[[row, col]].abs();
+            if val > max_val {
+                max_val = val;
+                max_row = row;
+            }
+        }
+
+        if max_val < 1e-12 {
+            return Err(RError::new(
+                RErrorKind::Other,
+                "lm() design matrix is singular or nearly singular — \
+                 check for collinear predictors or constant columns"
+                    .to_string(),
+            ));
+        }
+
+        // Swap rows
+        if max_row != col {
+            for k in 0..=n {
+                let tmp = aug[[col, k]];
+                aug[[col, k]] = aug[[max_row, k]];
+                aug[[max_row, k]] = tmp;
+            }
+        }
+
+        // Eliminate below
+        for row in (col + 1)..n {
+            let factor = aug[[row, col]] / aug[[col, col]];
+            for k in col..=n {
+                aug[[row, k]] -= factor * aug[[col, k]];
+            }
+        }
+    }
+
+    // Back substitution
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut sum = aug[[i, n]];
+        for j in (i + 1)..n {
+            sum -= aug[[i, j]] * x[j];
+        }
+        x[i] = sum / aug[[i, i]];
+    }
+
+    Ok(x)
+}
+
+/// Print a summary of a linear model.
+///
+/// Displays the coefficients table for an lm object.
+///
+/// @param object an lm object (result of lm())
+/// @return the object, invisibly
+#[builtin(name = "summary.lm", min_args = 1)]
+fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let obj = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "summary.lm() requires an lm object".to_string(),
+        )
+    })?;
+
+    let list = match obj {
+        RValue::List(l) => l,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "summary.lm() requires an lm object (a list with class 'lm')".to_string(),
+            ))
+        }
+    };
+
+    // Extract coefficients
+    let coefs = list
+        .values
+        .iter()
+        .find(|(n, _)| n.as_deref() == Some("coefficients"))
+        .map(|(_, v)| v);
+
+    println!("Call:");
+    println!("lm(formula = ...)");
+    println!();
+
+    if let Some(RValue::Vector(rv)) = coefs {
+        let values = rv.to_doubles();
+        let names: Vec<String> = rv
+            .get_attr("names")
+            .and_then(|n| match n {
+                RValue::Vector(nv) => match &nv.inner {
+                    Vector::Character(c) => {
+                        Some(c.iter().map(|s| s.clone().unwrap_or_default()).collect())
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        println!("Coefficients:");
+        let max_name_len = names.iter().map(|n| n.len()).max().unwrap_or(0).max(8);
+        println!("{:>width$}  Estimate", "", width = max_name_len);
+        for (i, val) in values.iter().enumerate() {
+            let name = names.get(i).map(|s| s.as_str()).unwrap_or("???");
+            let estimate = val.map_or("NA".to_string(), |v| format!("{:.6}", v));
+            println!("{:>width$}  {}", name, estimate, width = max_name_len);
+        }
+    }
+
+    // Extract residuals for a brief summary
+    let residuals = list
+        .values
+        .iter()
+        .find(|(n, _)| n.as_deref() == Some("residuals"))
+        .map(|(_, v)| v);
+
+    if let Some(RValue::Vector(rv)) = residuals {
+        let vals: Vec<f64> = rv.to_doubles().into_iter().flatten().collect();
+        if !vals.is_empty() {
+            let mut sorted = vals.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let min = sorted[0];
+            let max = sorted[sorted.len() - 1];
+            let median = if sorted.len().is_multiple_of(2) {
+                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+            } else {
+                sorted[sorted.len() / 2]
+            };
+            println!();
+            println!(
+                "Residuals: Min = {:.4}, Median = {:.4}, Max = {:.4}",
+                min, median, max
+            );
+        }
+    }
+
+    Ok(obj.clone())
+}
+
+/// Extract coefficients from a model object.
+///
+/// Extracts the `$coefficients` component from a fitted model (e.g. lm).
+///
+/// @param object a fitted model object with a coefficients component
+/// @return a named numeric vector of coefficients
+#[builtin(min_args = 1)]
+fn builtin_coef(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let obj = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "coef() requires a model object".to_string(),
+        )
+    })?;
+
+    match obj {
+        RValue::List(list) => {
+            for (name, val) in &list.values {
+                if name.as_deref() == Some("coefficients") {
+                    return Ok(val.clone());
+                }
+            }
+            Err(RError::new(
+                RErrorKind::Name,
+                "object does not have a 'coefficients' component".to_string(),
+            ))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Type,
+            "coef() requires a list-like model object (e.g. result of lm())".to_string(),
+        )),
+    }
+}
+
 // endregion

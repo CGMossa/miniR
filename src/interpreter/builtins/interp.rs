@@ -2317,3 +2317,62 @@ fn interp_by(
         "by() requires a vector, list, or data frame as 'data'".to_string(),
     ))
 }
+
+/// Summarize an object (S3 generic).
+///
+/// Dispatches to summary.lm, summary.data.frame, etc. when a method exists.
+/// Falls back to printing the object's structure.
+///
+/// @param object the object to summarize
+/// @return a summary of the object
+#[interpreter_builtin(min_args = 1)]
+fn interp_summary(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Try S3 dispatch (summary.lm, summary.data.frame, etc.)
+    if let Some(result) = try_s3_dispatch("summary", args, named, context)? {
+        return Ok(result);
+    }
+    // Default: for vectors, compute basic summary statistics
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let doubles = rv.to_doubles();
+            let vals: Vec<f64> = doubles.into_iter().flatten().collect();
+            if vals.is_empty() {
+                return Ok(RValue::Null);
+            }
+            let min = vals.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let sum: f64 = vals.iter().sum();
+            let mean = sum / vals.len() as f64;
+            let mut sorted = vals;
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let median = if sorted.len().is_multiple_of(2) {
+                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+            } else {
+                sorted[sorted.len() / 2]
+            };
+
+            let mut result_rv = RVector::from(Vector::Double(
+                vec![Some(min), Some(median), Some(mean), Some(max)].into(),
+            ));
+            result_rv.set_attr(
+                "names".to_string(),
+                RValue::vec(Vector::Character(
+                    vec![
+                        Some("Min.".to_string()),
+                        Some("Median".to_string()),
+                        Some("Mean".to_string()),
+                        Some("Max.".to_string()),
+                    ]
+                    .into(),
+                )),
+            );
+            Ok(RValue::Vector(result_rv))
+        }
+        Some(other) => Ok(other.clone()),
+        None => Ok(RValue::Null),
+    }
+}
