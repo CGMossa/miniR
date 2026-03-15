@@ -262,6 +262,9 @@ fn eval_list_2d_index(
         return Ok(RValue::Null);
     }
 
+    // Extract `drop` named argument (defaults to TRUE in R)
+    let drop = extract_drop_arg(interp, indices, env)?;
+
     let col_idx = if let Some(val_expr) = &indices[1].value {
         Some(interp.eval_in(val_expr, env)?)
     } else {
@@ -306,13 +309,16 @@ fn eval_list_2d_index(
         None
     };
 
+    // Number of rows in the data frame (from first column)
+    let nrows = selected_cols.first().map(|(_, v)| v.length()).unwrap_or(0);
+
     if row_idx.is_none() {
-        if col_idx.is_some() && selected_cols.len() == 1 {
+        // No row subsetting — drop single column to vector if drop=TRUE
+        if drop && col_idx.is_some() && selected_cols.len() == 1 {
             return Ok(selected_cols.into_iter().next().unwrap().1);
         }
 
         let col_names: Vec<Option<String>> = selected_cols.iter().map(|(n, _)| n.clone()).collect();
-        let nrows = selected_cols.first().map(|(_, v)| v.length()).unwrap_or(0);
         let mut result = RList::new(selected_cols);
         result.set_attr(
             "class".to_string(),
@@ -324,31 +330,20 @@ fn eval_list_2d_index(
             "names".to_string(),
             RValue::vec(Vector::Character(col_names.into())),
         );
-        let row_names: Vec<Option<i64>> =
-            (1..=i64::try_from(nrows).unwrap_or(0)).map(Some).collect();
-        result.set_attr(
-            "row.names".to_string(),
-            RValue::vec(Vector::Integer(row_names.into())),
+        let row_names_attr = subset_row_names(
+            list,
+            &(1..=i64::try_from(nrows).unwrap_or(0))
+                .map(Some)
+                .collect::<Vec<_>>(),
         );
+        result.set_attr("row.names".to_string(), row_names_attr);
         return Ok(RValue::List(result));
     }
 
-    let int_rows: Vec<Option<i64>> = match &row_idx {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
-            let Vector::Logical(lv) = &rv.inner else {
-                unreachable!()
-            };
-            lv.iter()
-                .enumerate()
-                .filter(|(_, v)| v.unwrap_or(false))
-                .filter_map(|(i, _)| i64::try_from(i).ok().map(|i| Some(i + 1)))
-                .collect()
-        }
-        Some(RValue::Vector(rv)) => rv.to_integers(),
-        _ => vec![],
-    };
+    let int_rows: Vec<Option<i64>> = resolve_df_row_index(&row_idx, nrows, list)?;
 
-    if selected_cols.len() == 1 {
+    // Drop single column to vector when drop=TRUE (R default)
+    if drop && selected_cols.len() == 1 {
         if let RValue::Vector(rv) = &selected_cols[0].1 {
             return index_by_integer(interp, &rv.inner, &int_rows);
         }
@@ -380,6 +375,121 @@ fn eval_list_2d_index(
     let row_names_attr = subset_row_names(list, &int_rows);
     result.set_attr("row.names".to_string(), row_names_attr);
     Ok(RValue::List(result))
+}
+
+/// Extract the `drop` named argument from index args (3rd+ position).
+/// Returns `true` if `drop` is not specified (R default).
+fn extract_drop_arg(
+    interp: &Interpreter,
+    indices: &[Arg],
+    env: &Environment,
+) -> Result<bool, RFlow> {
+    for arg in indices.iter().skip(2) {
+        if arg.name.as_deref() == Some("drop") {
+            if let Some(val_expr) = &arg.value {
+                let val = interp.eval_in(val_expr, env)?;
+                if let Some(rv) = val.as_vector() {
+                    if let Some(b) = rv.as_logical_scalar() {
+                        return Ok(b);
+                    }
+                }
+            }
+            return Ok(true);
+        }
+    }
+    Ok(true) // default: drop = TRUE
+}
+
+/// Resolve data frame row indices, handling positive integers, negative integers,
+/// logical masks, and character row names. Returns 1-based positive indices.
+fn resolve_df_row_index(
+    row_idx: &Option<RValue>,
+    nrows: usize,
+    list: &RList,
+) -> Result<Vec<Option<i64>>, RFlow> {
+    match row_idx {
+        None => Ok((1..=i64::try_from(nrows).unwrap_or(0)).map(Some).collect()),
+        Some(RValue::Vector(rv)) => {
+            match &rv.inner {
+                // Logical mask
+                Vector::Logical(lv) => Ok(lv
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.unwrap_or(false))
+                    .filter_map(|(i, _)| i64::try_from(i).ok().map(|i| Some(i + 1)))
+                    .collect()),
+                // Character: look up in row.names
+                Vector::Character(names) => {
+                    let row_names = get_row_names_vec(list);
+                    let mut result = Vec::new();
+                    for name in names.iter() {
+                        match name {
+                            Some(n) => {
+                                let pos = row_names
+                                    .iter()
+                                    .position(|rn| rn.as_deref() == Some(n.as_str()));
+                                match pos {
+                                    Some(p) => result.push(Some(i64::try_from(p + 1)?)),
+                                    None => {
+                                        return Err(RError::new(
+                                            RErrorKind::Index,
+                                            format!("undefined row selected: '{n}'"),
+                                        )
+                                        .into());
+                                    }
+                                }
+                            }
+                            None => result.push(None),
+                        }
+                    }
+                    Ok(result)
+                }
+                // Numeric: handle positive and negative
+                _ => {
+                    let ints = rv.to_integers();
+                    // Filter zeros
+                    let nonzero: Vec<Option<i64>> = ints
+                        .iter()
+                        .filter(|x| !matches!(x, Some(0)))
+                        .copied()
+                        .collect();
+                    let has_pos = nonzero.iter().any(|x| x.map(|i| i > 0).unwrap_or(false));
+                    let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
+                    if has_pos && has_neg {
+                        return Err(RError::new(
+                            RErrorKind::Index,
+                            "can't mix positive and negative subscripts".to_string(),
+                        )
+                        .into());
+                    }
+                    if has_neg {
+                        // Negative indexing: exclude those rows
+                        let exclude: Vec<usize> = nonzero
+                            .iter()
+                            .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
+                            .collect();
+                        Ok((1..=nrows)
+                            .filter(|i| !exclude.contains(i))
+                            .filter_map(|i| i64::try_from(i).ok().map(Some))
+                            .collect())
+                    } else {
+                        Ok(nonzero)
+                    }
+                }
+            }
+        }
+        _ => Ok(vec![]),
+    }
+}
+
+/// Get row.names from a data frame list as character vector.
+fn get_row_names_vec(list: &RList) -> Vec<Option<String>> {
+    if let Some(rn_attr) = list.get_attr("row.names") {
+        if let Some(rn_vec) = rn_attr.as_vector() {
+            return rn_vec.to_characters();
+        }
+    }
+    vec![]
 }
 
 pub(crate) fn index_by_integer(
