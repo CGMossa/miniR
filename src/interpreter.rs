@@ -100,6 +100,8 @@ pub struct Interpreter {
     /// Per-interpreter working directory override.
     /// If None, falls through to the process working directory.
     pub(crate) working_dir: RefCell<Option<std::path::PathBuf>>,
+    /// Instant when the interpreter was created, used by proc.time() for elapsed time.
+    pub(crate) start_instant: std::time::Instant,
 }
 
 impl Default for Interpreter {
@@ -173,6 +175,7 @@ impl Interpreter {
             temp_counter: std::cell::Cell::new(0),
             env_vars: RefCell::new(std::collections::HashMap::new()),
             working_dir: RefCell::new(None),
+            start_instant: std::time::Instant::now(),
         }
     }
 
