@@ -1379,16 +1379,34 @@ fn builtin_range(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
 }
 
 #[builtin(min_args = 1)]
-fn builtin_diff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_diff(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let lag = named
+        .iter()
+        .find(|(n, _)| n == "lag")
+        .map(|(_, v)| v)
+        .or(args.get(1))
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1);
+    let lag = usize::try_from(lag).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("'lag' must be a positive integer, got {lag}"),
+        )
+    })?;
+    if lag == 0 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "'lag' must be a positive integer, got 0".to_string(),
+        ));
+    }
     match args.first() {
         Some(RValue::Vector(v)) => {
             let vals = v.to_doubles();
-            if vals.len() < 2 {
+            if vals.len() <= lag {
                 return Ok(RValue::vec(Vector::Double(vec![].into())));
             }
-            let result: Vec<Option<f64>> = vals
-                .windows(2)
-                .map(|w| match (w[0], w[1]) {
+            let result: Vec<Option<f64>> = (lag..vals.len())
+                .map(|i| match (vals[i - lag], vals[i]) {
                     (Some(a), Some(b)) => Some(b - a),
                     _ => None,
                 })
