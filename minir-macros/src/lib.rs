@@ -98,8 +98,8 @@ fn emit_builtin_registration(
 
 fn validate_signature(input: &ItemFn, kind: BuiltinKind) -> syn::Result<()> {
     let expected_len = match kind {
-        BuiltinKind::Builtin | BuiltinKind::PreEval => 2,
-        BuiltinKind::Interpreter => 3,
+        BuiltinKind::Builtin => 2,
+        BuiltinKind::Interpreter | BuiltinKind::PreEval => 3,
     };
 
     if input.sig.inputs.len() != expected_len {
@@ -146,7 +146,9 @@ fn signature_arg_matches(kind: BuiltinKind, index: usize, ty: &Type) -> bool {
             is_ref_to_slice_of_string_rvalue_pairs(ty)
         }
         (BuiltinKind::PreEval, 1) => is_ref_to_named(ty, "Environment"),
-        (BuiltinKind::Interpreter, 2) => is_ref_to_named(ty, "BuiltinContext"),
+        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 2) => {
+            is_ref_to_named(ty, "BuiltinContext")
+        }
         (BuiltinKind::PreEval, 0) => is_ref_to_slice_of_named(ty, "Arg"),
         _ => false,
     }
@@ -156,7 +158,7 @@ fn expected_parameter_description(kind: BuiltinKind, index: usize) -> &'static s
     match (kind, index) {
         (BuiltinKind::Builtin, 0) | (BuiltinKind::Interpreter, 0) => "`&[RValue]`",
         (BuiltinKind::Builtin, 1) | (BuiltinKind::Interpreter, 1) => "`&[(String, RValue)]`",
-        (BuiltinKind::Interpreter, 2) => "`&BuiltinContext`",
+        (BuiltinKind::Interpreter, 2) | (BuiltinKind::PreEval, 2) => "`&BuiltinContext`",
         (BuiltinKind::PreEval, 1) => "`&Environment`",
         (BuiltinKind::PreEval, 0) => "`&[Arg]`",
         _ => "the expected builtin parameter type",

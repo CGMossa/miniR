@@ -92,17 +92,22 @@ pub(crate) fn call_function_with_call(
         RValue::Function(RFunction::Builtin {
             name,
             implementation,
+            min_args,
             max_args,
-            ..
-        }) => call_builtin(
-            interp,
-            name,
-            implementation,
-            *max_args,
-            positional,
-            named,
-            env,
-        ),
+        }) => {
+            let actual_args = positional.len() + named.len();
+            Interpreter::ensure_builtin_min_arity(name, *min_args, actual_args)
+                .map_err(RFlow::from)?;
+            call_builtin(
+                interp,
+                name,
+                implementation,
+                *max_args,
+                positional,
+                named,
+                env,
+            )
+        }
         RValue::Function(RFunction::Closure {
             params,
             body,
@@ -168,7 +173,8 @@ fn try_call_special_builtin(
 
     if let BuiltinImplementation::PreEval(handler) = implementation {
         Interpreter::ensure_builtin_max_arity(name, *max_args, args.len()).map_err(RFlow::from)?;
-        return handler(args, env).map_err(Into::into).map(Some);
+        let ctx = BuiltinContext::new(interp, env);
+        return handler(args, env, &ctx).map_err(Into::into).map(Some);
     }
 
     Ok(None)
