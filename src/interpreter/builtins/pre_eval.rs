@@ -1,12 +1,12 @@
 //! Pre-eval builtins — functions that intercept before argument evaluation.
 //! Each is auto-registered via `#[pre_eval_builtin]`.
-//! The interpreter is accessed via the thread-local `with_interpreter()`.
+//! The interpreter is accessed via the `BuiltinContext` passed at dispatch time.
 
 use std::collections::BTreeSet;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
-use crate::interpreter::with_interpreter;
+use crate::interpreter::BuiltinContext;
 use crate::parser::ast::{Arg, Expr};
 use minir_macros::pre_eval_builtin;
 
@@ -466,13 +466,17 @@ fn automatic_row_names(count: usize) -> RValue {
 }
 
 #[pre_eval_builtin(name = "data.frame")]
-fn pre_eval_data_frame(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_data_frame(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let mut explicit_row_names = None;
     let mut strings_as_factors = false;
     let mut columns = Vec::new();
     let mut unnamed_index = 0usize;
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for arg in args {
             let Some(name) = arg.name.as_deref() else {
                 continue;
@@ -606,7 +610,11 @@ fn pre_eval_data_frame(args: &[Arg], env: &Environment) -> Result<RValue, RError
 }
 
 #[pre_eval_builtin(name = "tryCatch", min_args = 1)]
-fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_try_catch(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     use crate::interpreter::ConditionHandler;
 
     // First unnamed arg is the expression to evaluate
@@ -618,7 +626,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
     // Collect named handlers and finally expression
     let mut handlers: Vec<(String, RValue)> = Vec::new();
     let mut finally_expr = None;
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for arg in args {
             match arg.name.as_deref() {
                 Some("finally") => {
@@ -671,7 +679,7 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
         .collect();
 
     // Install non-error handlers if any, then evaluate
-    let result = with_interpreter(|interp| {
+    let result = context.with_interpreter(|interp| {
         if !unwind_handlers.is_empty() {
             interp.condition_handlers.borrow_mut().push(unwind_handlers);
         }
@@ -716,19 +724,23 @@ fn pre_eval_try_catch(args: &[Arg], env: &Environment) -> Result<RValue, RError>
 
     // Run finally block if present
     if let Some(ref fin) = finally_expr {
-        with_interpreter(|interp| interp.eval_in(fin, env).map_err(RError::from))?;
+        context.with_interpreter(|interp| interp.eval_in(fin, env).map_err(RError::from))?;
     }
 
     result
 }
 
 #[pre_eval_builtin(name = "try", min_args = 1)]
-fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_try(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let expr = args
         .iter()
         .find(|a| a.name.is_none())
         .and_then(|a| a.value.as_ref());
-    with_interpreter(|interp| match expr {
+    context.with_interpreter(|interp| match expr {
         Some(e) => match interp.eval_in(e, env).map_err(RError::from) {
             Ok(val) => Ok(val),
             Err(err) => {
@@ -742,7 +754,11 @@ fn pre_eval_try(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
 }
 
 #[pre_eval_builtin(name = "withCallingHandlers", min_args = 1)]
-fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_with_calling_handlers(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     use crate::interpreter::ConditionHandler;
 
     let expr = args
@@ -752,7 +768,7 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
 
     // Collect named handlers (class = handler_function)
     let mut handler_set: Vec<ConditionHandler> = Vec::new();
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         for arg in args {
             if let Some(class) = &arg.name {
                 if let Some(ref val_expr) = arg.value {
@@ -769,7 +785,7 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
     })?;
 
     // Push handler set onto the stack, evaluate, then pop
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
         let result = match expr {
             Some(e) => interp.eval_in(e, env).map_err(RError::from),
@@ -781,7 +797,11 @@ fn pre_eval_with_calling_handlers(args: &[Arg], env: &Environment) -> Result<RVa
 }
 
 #[pre_eval_builtin(name = "suppressWarnings", min_args = 1)]
-fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_suppress_warnings(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     use crate::interpreter::ConditionHandler;
 
     let expr = args
@@ -805,7 +825,7 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
         env: env.clone(),
     }];
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
         let result = interp.eval_in(expr, env).map_err(RError::from);
         interp.condition_handlers.borrow_mut().pop();
@@ -814,7 +834,11 @@ fn pre_eval_suppress_warnings(args: &[Arg], env: &Environment) -> Result<RValue,
 }
 
 #[pre_eval_builtin(name = "suppressMessages", min_args = 1)]
-fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_suppress_messages(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     use crate::interpreter::ConditionHandler;
 
     let expr = args
@@ -837,7 +861,7 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
         env: env.clone(),
     }];
 
-    with_interpreter(|interp| {
+    context.with_interpreter(|interp| {
         interp.condition_handlers.borrow_mut().push(handler_set);
         let result = interp.eval_in(expr, env).map_err(RError::from);
         interp.condition_handlers.borrow_mut().pop();
@@ -846,11 +870,15 @@ fn pre_eval_suppress_messages(args: &[Arg], env: &Environment) -> Result<RValue,
 }
 
 #[pre_eval_builtin(name = "on.exit")]
-fn pre_eval_on_exit(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_on_exit(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let expr = args.first().and_then(|a| a.value.as_ref()).cloned();
 
     // Check add= argument (default FALSE — replace existing on.exit)
-    let add = with_interpreter(|interp| -> Result<bool, RError> {
+    let add = context.with_interpreter(|interp| -> Result<bool, RError> {
         // Check named add= first
         for arg in args.iter().skip(1) {
             if arg.name.as_deref() == Some("add") {
@@ -890,13 +918,17 @@ fn pre_eval_on_exit(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
 }
 
 #[pre_eval_builtin(name = "missing", min_args = 1)]
-fn pre_eval_missing(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_missing(
+    args: &[Arg],
+    _env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let expr = args
         .first()
         .and_then(|a| a.value.as_ref())
         .ok_or_else(|| RError::other("'missing(x)' did not find an argument".to_string()))?;
 
-    let is_missing = with_interpreter(|interp| {
+    let is_missing = context.with_interpreter(|interp| {
         let frame = interp
             .current_call_frame()
             .ok_or_else(|| RError::other("'missing(x)' did not find an argument".to_string()))?;
@@ -939,7 +971,11 @@ fn pre_eval_missing(args: &[Arg], _env: &Environment) -> Result<RValue, RError> 
 }
 
 #[pre_eval_builtin(name = "quote", min_args = 1)]
-fn pre_eval_quote(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_quote(
+    args: &[Arg],
+    _env: &Environment,
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
     match args.first().and_then(|a| a.value.as_ref()) {
         Some(expr) => Ok(RValue::Language(Language::new(expr.clone()))),
         None => Ok(RValue::Null),
@@ -947,7 +983,11 @@ fn pre_eval_quote(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
 }
 
 #[pre_eval_builtin(name = "substitute", min_args = 1)]
-fn pre_eval_substitute(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_substitute(
+    args: &[Arg],
+    env: &Environment,
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let expr = match args.first().and_then(|a| a.value.as_ref()) {
         Some(e) => e.clone(),
         None => return Ok(RValue::Null),
@@ -1006,7 +1046,11 @@ fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
 }
 
 #[pre_eval_builtin(name = "evalq", min_args = 1)]
-fn pre_eval_evalq(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_evalq(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     // evalq(expr, envir) is equivalent to eval(quote(expr), envir)
     // First arg is the expression to quote-then-eval
     let expr = match args.first().and_then(|a| a.value.as_ref()) {
@@ -1015,7 +1059,7 @@ fn pre_eval_evalq(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     };
 
     // Determine evaluation environment from second arg or named envir=
-    let eval_env = with_interpreter(|interp| -> Result<Option<Environment>, RError> {
+    let eval_env = context.with_interpreter(|interp| -> Result<Option<Environment>, RError> {
         // Check named envir= first
         for arg in args.iter().skip(1) {
             if arg.name.as_deref() == Some("envir") {
@@ -1042,22 +1086,33 @@ fn pre_eval_evalq(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
     })?;
 
     let target_env = eval_env.unwrap_or_else(|| env.clone());
-    with_interpreter(|interp| interp.eval_in(expr, &target_env)).map_err(RError::from)
+    context
+        .with_interpreter(|interp| interp.eval_in(expr, &target_env))
+        .map_err(RError::from)
 }
 
 #[pre_eval_builtin(name = "bquote", min_args = 1)]
-fn pre_eval_bquote(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_bquote(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     // bquote(expr) is like quote() but evaluates anything wrapped in .()
     let expr = match args.first().and_then(|a| a.value.as_ref()) {
         Some(e) => e.clone(),
         None => return Ok(RValue::Null),
     };
-    let result = bquote_expr(&expr, env)?;
+    let interp = context.interpreter();
+    let result = bquote_expr(&expr, env, interp)?;
     Ok(RValue::Language(Language::new(result)))
 }
 
 /// Walk an AST for bquote: evaluate .() splice expressions, leave everything else quoted.
-fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
+fn bquote_expr(
+    expr: &Expr,
+    env: &Environment,
+    interp: &crate::interpreter::Interpreter,
+) -> Result<Expr, RError> {
     match expr {
         // Check for .(expr) — a call to `.` with one argument
         Expr::Call { func, args } => {
@@ -1065,20 +1120,20 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
                 if name == "." && args.len() == 1 {
                     // Evaluate the inner expression
                     if let Some(ref inner) = args[0].value {
-                        let val = with_interpreter(|interp| interp.eval_in(inner, env))?;
+                        let val = interp.eval_in(inner, env).map_err(RError::from)?;
                         return Ok(rvalue_to_expr(&val));
                     }
                 }
             }
             // Not a .() call — recurse into func and args
-            let new_func = Box::new(bquote_expr(func, env)?);
+            let new_func = Box::new(bquote_expr(func, env, interp)?);
             let new_args: Result<Vec<Arg>, RError> = args
                 .iter()
                 .map(|a| {
                     Ok(Arg {
                         name: a.name.clone(),
                         value: match &a.value {
-                            Some(v) => Some(bquote_expr(v, env)?),
+                            Some(v) => Some(bquote_expr(v, env, interp)?),
                             None => None,
                         },
                     })
@@ -1091,28 +1146,28 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
         }
         Expr::BinaryOp { op, lhs, rhs } => Ok(Expr::BinaryOp {
             op: *op,
-            lhs: Box::new(bquote_expr(lhs, env)?),
-            rhs: Box::new(bquote_expr(rhs, env)?),
+            lhs: Box::new(bquote_expr(lhs, env, interp)?),
+            rhs: Box::new(bquote_expr(rhs, env, interp)?),
         }),
         Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
             op: *op,
-            operand: Box::new(bquote_expr(operand, env)?),
+            operand: Box::new(bquote_expr(operand, env, interp)?),
         }),
         Expr::If {
             condition,
             then_body,
             else_body,
         } => Ok(Expr::If {
-            condition: Box::new(bquote_expr(condition, env)?),
-            then_body: Box::new(bquote_expr(then_body, env)?),
+            condition: Box::new(bquote_expr(condition, env, interp)?),
+            then_body: Box::new(bquote_expr(then_body, env, interp)?),
             else_body: match else_body {
-                Some(e) => Some(Box::new(bquote_expr(e, env)?)),
+                Some(e) => Some(Box::new(bquote_expr(e, env, interp)?)),
                 None => None,
             },
         }),
         Expr::Block(exprs) => {
             let new_exprs: Result<Vec<Expr>, RError> =
-                exprs.iter().map(|e| bquote_expr(e, env)).collect();
+                exprs.iter().map(|e| bquote_expr(e, env, interp)).collect();
             Ok(Expr::Block(new_exprs?))
         }
         // Everything else stays as-is
@@ -1121,13 +1176,17 @@ fn bquote_expr(expr: &Expr, env: &Environment) -> Result<Expr, RError> {
 }
 
 #[pre_eval_builtin(name = "withVisible", min_args = 1)]
-fn pre_eval_with_visible(args: &[Arg], env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_with_visible(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let expr = args
         .first()
         .and_then(|a| a.value.as_ref())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
 
-    let value = with_interpreter(|interp| interp.eval_in(expr, env))?;
+    let value = context.with_interpreter(|interp| interp.eval_in(expr, env))?;
 
     // We don't track visibility yet, so always TRUE
     Ok(RValue::List(RList::new(vec![
@@ -1142,7 +1201,11 @@ fn pre_eval_with_visible(args: &[Arg], env: &Environment) -> Result<RValue, RErr
 /// `expression(...)` — construct an expression object from unevaluated arguments.
 /// Returns a list of Language objects, each wrapping the unevaluated expression.
 #[pre_eval_builtin(name = "expression")]
-fn pre_eval_expression(args: &[Arg], _env: &Environment) -> Result<RValue, RError> {
+fn pre_eval_expression(
+    args: &[Arg],
+    _env: &Environment,
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let entries: Vec<(Option<String>, RValue)> = args
         .iter()
         .filter_map(|a| {
@@ -1152,6 +1215,25 @@ fn pre_eval_expression(args: &[Arg], _env: &Environment) -> Result<RValue, RErro
         })
         .collect();
     Ok(RValue::List(RList::new(entries)))
+}
+
+#[pre_eval_builtin(name = "system.time", min_args = 1)]
+fn pre_eval_system_time(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let expr = args
+        .first()
+        .and_then(|a| a.value.as_ref())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
+    let start = std::time::Instant::now();
+    let _result = context.with_interpreter(|interp| interp.eval_in(expr, env));
+    let elapsed = start.elapsed().as_secs_f64();
+    // Returns c(user, system, elapsed) — we only measure wall clock
+    Ok(RValue::vec(Vector::Double(
+        vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
+    )))
 }
 
 /// Convert an RValue back to an AST expression (for substitute).
