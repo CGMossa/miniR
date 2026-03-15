@@ -99,13 +99,13 @@ fn build_help(pair: Pair<Rule>) -> Expr {
     if first.as_rule() == Rule::help_expr {
         // Unary: "?foo" → help("foo")
         let topic = extract_help_topic(&first);
-        return Expr::Call {
+        Expr::Call {
             func: Box::new(Expr::Symbol("help".to_string())),
             args: vec![Arg {
                 name: None,
                 value: Some(Expr::String(topic)),
             }],
-        };
+        }
     } else {
         // Binary: expr ~ "?" ~ expr — just evaluate the LHS
         let lhs = build_expr(first);

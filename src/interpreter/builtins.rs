@@ -81,15 +81,14 @@ pub fn format_help(descriptor: &BuiltinDescriptor) -> String {
     } else {
         for line in descriptor.doc.lines() {
             let line = line.trim();
-            if line.starts_with("@param ") {
-                let rest = &line[7..];
+            if let Some(rest) = line.strip_prefix("@param ") {
                 if let Some((param, desc)) = rest.split_once(' ') {
                     out.push_str(&format!("  {:<12} {}\n", param, desc));
                 } else {
                     out.push_str(&format!("  {}\n", rest));
                 }
-            } else if line.starts_with("@return ") {
-                out.push_str(&format!("\nReturns: {}\n", &line[8..]));
+            } else if let Some(ret) = line.strip_prefix("@return ") {
+                out.push_str(&format!("\nReturns: {ret}\n"));
             } else if !line.is_empty() {
                 out.push_str(&format!("{}\n", line));
             }
@@ -97,10 +96,7 @@ pub fn format_help(descriptor: &BuiltinDescriptor) -> String {
     }
 
     if !descriptor.aliases.is_empty() {
-        out.push_str(&format!(
-            "\nAliases: {}\n",
-            descriptor.aliases.join(", ")
-        ));
+        out.push_str(&format!("\nAliases: {}\n", descriptor.aliases.join(", ")));
     }
     out
 }
