@@ -24,7 +24,8 @@ use crate::parser::ast::{Arg, Expr, Param};
 pub type BuiltinFn = fn(&[RValue], &[(String, RValue)]) -> Result<RValue, RError>;
 pub type InterpreterBuiltinFn =
     for<'a> fn(&[RValue], &[(String, RValue)], &BuiltinContext<'a>) -> Result<RValue, RError>;
-pub type PreEvalBuiltinFn = fn(&[Arg], &Environment) -> Result<RValue, RError>;
+pub type PreEvalBuiltinFn =
+    for<'a> fn(&[Arg], &Environment, &BuiltinContext<'a>) -> Result<RValue, RError>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BuiltinImplementation {
@@ -472,6 +473,70 @@ pub fn format_r_complex(c: num_complex::Complex64) -> String {
         format!("{}+{}i", re, format_r_double(c.im))
     } else {
         format!("{}{}i", re, format_r_double(c.im))
+    }
+}
+
+impl From<RVector> for RValue {
+    fn from(rv: RVector) -> Self {
+        RValue::Vector(rv)
+    }
+}
+
+impl From<RList> for RValue {
+    fn from(list: RList) -> Self {
+        RValue::List(list)
+    }
+}
+
+impl<'a> TryFrom<&'a RValue> for &'a RVector {
+    type Error = RError;
+    fn try_from(value: &'a RValue) -> Result<Self, Self::Error> {
+        match value {
+            RValue::Vector(rv) => Ok(rv),
+            other => Err(RError::new(
+                RErrorKind::Type,
+                format!("expected vector, got {}", other.type_name()),
+            )),
+        }
+    }
+}
+
+impl TryFrom<RValue> for RVector {
+    type Error = RError;
+    fn try_from(value: RValue) -> Result<Self, Self::Error> {
+        match value {
+            RValue::Vector(rv) => Ok(rv),
+            other => Err(RError::new(
+                RErrorKind::Type,
+                format!("expected vector, got {}", other.type_name()),
+            )),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a RValue> for &'a RList {
+    type Error = RError;
+    fn try_from(value: &'a RValue) -> Result<Self, Self::Error> {
+        match value {
+            RValue::List(l) => Ok(l),
+            other => Err(RError::new(
+                RErrorKind::Type,
+                format!("expected list, got {}", other.type_name()),
+            )),
+        }
+    }
+}
+
+impl TryFrom<RValue> for RList {
+    type Error = RError;
+    fn try_from(value: RValue) -> Result<Self, Self::Error> {
+        match value {
+            RValue::List(l) => Ok(l),
+            other => Err(RError::new(
+                RErrorKind::Type,
+                format!("expected list, got {}", other.type_name()),
+            )),
+        }
     }
 }
 
