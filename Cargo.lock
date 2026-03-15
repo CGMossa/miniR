@@ -688,6 +688,7 @@ dependencies = [
  "regex",
  "tabled",
  "temp-dir",
+ "unicode-width",
 ]
 
 [[package]]

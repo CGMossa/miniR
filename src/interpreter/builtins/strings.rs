@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::interpreter::value::*;
 use derive_more::{Display, Error};
 use minir_macros::builtin;
@@ -616,12 +618,16 @@ struct FmtSpec {
 
 impl FmtSpec {
     /// Apply width and flags to an already-formatted value string.
+    ///
+    /// Uses `UnicodeWidthStr::width()` so that CJK characters and emoji
+    /// (which occupy two terminal columns) are measured correctly.
     fn pad(&self, formatted: &str) -> String {
         let width = match self.width {
             Some(w) => w,
             None => return formatted.to_string(),
         };
-        if formatted.len() >= width {
+        let display_width = UnicodeWidthStr::width(formatted);
+        if display_width >= width {
             return formatted.to_string();
         }
         let pad_char = if self.flags.contains('0') && !self.flags.contains('-') {
@@ -629,21 +635,21 @@ impl FmtSpec {
         } else {
             ' '
         };
+        let pad_len = width.saturating_sub(display_width);
         if self.flags.contains('-') {
-            // left-align
-            format!("{:<width$}", formatted, width = width)
+            // left-align: content then spaces
+            format!("{}{}", formatted, " ".repeat(pad_len))
         } else if pad_char == '0' {
             // zero-pad: preserve leading sign/minus
             if let Some(rest) = formatted.strip_prefix('-') {
-                let pad_len = width.saturating_sub(rest.len() + 1);
+                let pad_len = width.saturating_sub(UnicodeWidthStr::width(rest) + 1);
                 format!("-{}{}", "0".repeat(pad_len), rest)
             } else {
-                let pad_len = width.saturating_sub(formatted.len());
                 format!("{}{}", "0".repeat(pad_len), formatted)
             }
         } else {
             // right-align with spaces
-            format!("{:>width$}", formatted, width = width)
+            format!("{}{}", " ".repeat(pad_len), formatted)
         }
     }
 
