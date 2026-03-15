@@ -2854,18 +2854,7 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
-#[builtin(name = "environment")]
-fn builtin_environment(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Function(RFunction::Closure { env, .. })) => {
-            Ok(RValue::Environment(env.clone()))
-        }
-        Some(_) => Ok(RValue::Null),
-        // No args: should return the current env, but we don't have it here
-        // This is handled by the interpreter builtin for the no-arg case
-        None => Ok(RValue::Null),
-    }
-}
+// `environment()` is an interpreter builtin in interp.rs (needs BuiltinContext for no-arg case)
 
 #[builtin(name = "new.env")]
 fn builtin_new_env(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
