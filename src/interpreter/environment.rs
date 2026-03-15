@@ -59,20 +59,32 @@ impl Environment {
     }
 
     /// Super-assignment: assign in parent environment (<<-)
+    ///
+    /// Walks up the environment chain looking for an existing binding.
+    /// If found, overwrites it in place. If not found, creates the binding
+    /// in the global environment (not base) — R treats global as the
+    /// creation boundary for `<<-`.
     pub fn set_super(&self, name: String, value: RValue) {
         let inner = self.inner.borrow();
         if let Some(ref parent) = inner.parent {
-            // Walk up to find where it's defined
             if parent.has_local(&name) {
+                parent.set(name, value);
+            } else if parent.is_global() {
+                // Reached global without finding the binding — create it here
                 parent.set(name, value);
             } else {
                 parent.set_super(name, value);
             }
         } else {
-            // At global scope, just set it here
+            // No parent at all (we ARE global or base) — set locally
             drop(inner);
             self.set(name, value);
         }
+    }
+
+    /// Returns true if this is the global environment.
+    fn is_global(&self) -> bool {
+        self.inner.borrow().name.as_deref() == Some("R_GlobalEnv")
     }
 
     pub fn has_local(&self, name: &str) -> bool {
