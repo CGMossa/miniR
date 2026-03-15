@@ -26,9 +26,6 @@ stub_builtin!("requireNamespace", 1);
 stub_builtin!("installed.packages");
 stub_builtin!("install.packages");
 
-// Regex
-stub_builtin!("reg.finalizer", 2);
-
 // Connections (file, open, close, isOpen, readLines, writeLines — connections.rs)
 stub_builtin!("url", 1);
 
