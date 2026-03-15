@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn bind_preserves_matrix_dimnames_in_common_cases() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"m1 <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("x", "y")))
+    let mut s = Session::new();
+    s.eval_source(
+        r#"m1 <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("x", "y")))
 m2 <- matrix(5:8, nrow = 2, dimnames = list(c("r1", "r2"), c("u", "v")))
 
 cb <- cbind(m1, m2)
@@ -24,13 +23,6 @@ unnamed <- matrix(1:4, nrow = 2)
 named_rows <- matrix(5:8, nrow = 2, dimnames = list(c("a", "b"), c("u", "v")))
 stopifnot(identical(rownames(cbind(unnamed, named_rows)), c("a", "b")))
 stopifnot(identical(colnames(rbind(unnamed, named_rows)), c("u", "v")))"#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(
-        output.status.success(),
-        "process failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    )
+    .expect("bind dimnames tests failed");
 }

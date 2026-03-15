@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn data_frame_recycles_and_honors_row_names() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"recycled <- data.frame(x = c("A", "B"), y = "C")
+    let mut s = Session::new();
+    s.eval_source(
+        r#"recycled <- data.frame(x = c("A", "B"), y = "C")
 stopifnot(
   nrow(recycled) == 2L,
   identical(recycled$y, c("C", "C")),
@@ -40,29 +39,20 @@ stopifnot(identical(names(from_list), c("a", "b")))
 
 factored <- data.frame(x = c("b", "a"), stringsAsFactors = TRUE)
 stopifnot(is.factor(factored$x))"#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(
-        output.status.success(),
-        "process failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    )
+    .expect("data frame tests failed");
 }
 
 #[test]
 fn data_frame_rejects_incompatible_row_counts() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args(["-e", "data.frame(x = 1:3, y = 1:2)"])
-        .output()
-        .expect("failed to run miniR");
+    let mut s = Session::new();
+    let err = s
+        .eval_source("data.frame(x = 1:3, y = 1:2)")
+        .expect_err("data.frame with incompatible row counts should fail");
 
-    assert!(!output.status.success(), "command unexpectedly succeeded");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("arguments imply differing number of rows"),
-        "unexpected stderr: {stderr}"
+        err.to_string()
+            .contains("arguments imply differing number of rows"),
+        "unexpected error: {err}"
     );
 }

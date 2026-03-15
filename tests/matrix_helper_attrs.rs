@@ -1,11 +1,10 @@
-use std::process::Command;
+use r::Session;
 
 #[test]
 fn matrix_helpers_preserve_matrix_class_and_common_labels() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"x <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("x", "y")))
+    let mut s = Session::new();
+    s.eval_source(
+        r#"x <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("x", "y")))
 y <- matrix(5:8, nrow = 2, dimnames = list(c("a", "b"), c("u", "v")))
 
 cp <- crossprod(x, y)
@@ -44,13 +43,6 @@ stopifnot(
   identical(dim(lt), c(2L, 2L)),
   identical(dim(ut), c(2L, 2L))
 )"#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(
-        output.status.success(),
-        "process failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    )
+    .expect("matrix helper attrs tests failed");
 }

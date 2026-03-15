@@ -1,12 +1,11 @@
-use std::process::Command;
+use r::Session;
 
 /// End-to-end smoke test covering ops, assignment, indexing, and datetime.
 #[test]
 fn smoke_test_ops_assignment_indexing_datetime() {
-    let output = Command::new(env!("CARGO_BIN_EXE_r"))
-        .args([
-            "-e",
-            r#"
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
 # Arithmetic (ops.rs)
 stopifnot(1 + 2 == 3)
 stopifnot(3 * 4 == 12)
@@ -84,21 +83,7 @@ stopifnot(lt$sec == 45)
 
 # S3 dispatch for print/format
 stopifnot(format(as.Date("2024-12-25")) == "2024-12-25")
-
-cat("smoke test passed\n")
 "#,
-        ])
-        .output()
-        .expect("failed to run miniR");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
-        "smoke test failed:\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert!(
-        stdout.contains("smoke test passed"),
-        "missing completion marker:\nstdout: {stdout}\nstderr: {stderr}"
-    );
+    )
+    .expect("smoke test failed");
 }
