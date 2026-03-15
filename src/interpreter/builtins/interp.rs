@@ -78,6 +78,97 @@ fn language_or_null(expr: Option<crate::parser::ast::Expr>) -> RValue {
     }
 }
 
+// region: S3-dispatching generics (print, format)
+
+/// Get explicit class attributes from an RValue.
+/// Returns an empty vec for objects without a class attribute.
+fn explicit_classes(val: &RValue) -> Vec<String> {
+    match val {
+        RValue::Vector(rv) => rv.class().unwrap_or_default(),
+        RValue::List(list) => {
+            if let Some(RValue::Vector(rv)) = list.get_attr("class") {
+                if let Vector::Character(classes) = &rv.inner {
+                    classes.iter().filter_map(|c| c.clone()).collect()
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
+        }
+        RValue::Language(lang) => lang.class().unwrap_or_default(),
+        _ => vec![],
+    }
+}
+
+/// Try S3 dispatch for a generic function. Returns `Ok(Some(result))` if a
+/// method was found and called, `Ok(None)` if no method exists (caller should
+/// fall through to default behavior).
+fn try_s3_dispatch(
+    generic: &str,
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<Option<RValue>, RError> {
+    let Some(val) = args.first() else {
+        return Ok(None);
+    };
+    let classes = explicit_classes(val);
+    if classes.is_empty() {
+        return Ok(None);
+    }
+    let env = context.env();
+    for class in &classes {
+        let method_name = format!("{generic}.{class}");
+        if let Some(method) = env.get(&method_name) {
+            let result = context
+                .with_interpreter(|interp| interp.call_function(&method, args, named, env))?;
+            return Ok(Some(result));
+        }
+    }
+    Ok(None)
+}
+
+#[interpreter_builtin(min_args = 1)]
+fn interp_print(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Try S3 dispatch (print.Date, print.POSIXct, print.data.frame, etc.)
+    if let Some(result) = try_s3_dispatch("print", args, named, context)? {
+        return Ok(result);
+    }
+    // Default print
+    if let Some(val) = args.first() {
+        println!("{}", val);
+    }
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+#[interpreter_builtin(min_args = 1)]
+fn interp_format(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Try S3 dispatch (format.Date, format.POSIXct, etc.)
+    if let Some(result) = try_s3_dispatch("format", args, named, context)? {
+        return Ok(result);
+    }
+    // Default format
+    match args.first() {
+        Some(val) => Ok(RValue::vec(Vector::Character(
+            vec![Some(format!("{}", val))].into(),
+        ))),
+        None => Ok(RValue::vec(Vector::Character(
+            vec![Some(String::new())].into(),
+        ))),
+    }
+}
+
+// endregion
+
 #[interpreter_builtin(name = "sapply", min_args = 2)]
 fn interp_sapply(
     args: &[RValue],
@@ -561,19 +652,7 @@ fn interp_source(
     context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
-#[interpreter_builtin(name = "system.time", min_args = 1)]
-fn interp_system_time(
-    positional: &[RValue],
-    _named: &[(String, RValue)],
-    _context: &BuiltinContext,
-) -> Result<RValue, RError> {
-    let start = std::time::Instant::now();
-    let _result = positional.first().cloned().unwrap_or(RValue::Null);
-    let elapsed = start.elapsed().as_secs_f64();
-    Ok(RValue::vec(Vector::Double(
-        vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
-    )))
-}
+// system.time() is in pre_eval.rs — it must time unevaluated expressions
 
 // --- Operator builtins: R operators as first-class functions ---
 // These allow `Reduce("+", 1:10)`, `sapply(x, "-")`, `do.call("*", list(3,4))`, etc.
