@@ -190,27 +190,16 @@ fn eval_matrix_index(
         None
     };
 
-    let rows: Vec<usize> = match &row_idx {
-        None => (0..nrow).collect(),
-        Some(RValue::Vector(rv)) => rv
-            .to_integers()
-            .iter()
-            .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
-            .collect(),
-        _ => return Err(RError::new(RErrorKind::Index, "invalid row index".to_string()).into()),
+    // Get dimnames for character index resolution
+    let dimnames = match obj {
+        RValue::Vector(rv) => rv.get_attr("dimnames"),
+        _ => None,
     };
+    let row_names = extract_dim_names(dimnames, 0);
+    let col_names = extract_dim_names(dimnames, 1);
 
-    let cols: Vec<usize> = match &col_idx {
-        None => (0..ncol).collect(),
-        Some(RValue::Vector(rv)) => rv
-            .to_integers()
-            .iter()
-            .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
-            .collect(),
-        _ => {
-            return Err(RError::new(RErrorKind::Index, "invalid column index".to_string()).into());
-        }
-    };
+    let rows: Vec<usize> = resolve_dim_index(&row_idx, nrow, &row_names)?;
+    let cols: Vec<usize> = resolve_dim_index(&col_idx, ncol, &col_names)?;
 
     // Collect flat indices in column-major order
     let flat_indices: Vec<usize> = cols
@@ -376,7 +365,6 @@ fn eval_list_2d_index(
         }
     }
     let col_names: Vec<Option<String>> = result_cols.iter().map(|(n, _)| n.clone()).collect();
-    let nrows = result_cols.first().map(|(_, v)| v.length()).unwrap_or(0);
     let mut result = RList::new(result_cols);
     result.set_attr(
         "class".to_string(),
@@ -388,11 +376,9 @@ fn eval_list_2d_index(
         "names".to_string(),
         RValue::vec(Vector::Character(col_names.into())),
     );
-    let row_names: Vec<Option<i64>> = (1..=i64::try_from(nrows).unwrap_or(0)).map(Some).collect();
-    result.set_attr(
-        "row.names".to_string(),
-        RValue::vec(Vector::Integer(row_names.into())),
-    );
+    // Preserve selected row names from the original data frame
+    let row_names_attr = subset_row_names(list, &int_rows);
+    result.set_attr("row.names".to_string(), row_names_attr);
     Ok(RValue::List(result))
 }
 
@@ -529,6 +515,90 @@ fn index_by_logical(
         Vector::Logical(vals) => mask_vec!(vals, Logical),
         Vector::Complex(vals) => mask_vec!(vals, Complex),
         Vector::Character(vals) => mask_vec!(vals, Character),
+    }
+}
+
+/// Resolve a row or column index against dimension size and optional dimnames.
+/// Returns 0-based indices.
+fn resolve_dim_index(
+    idx: &Option<RValue>,
+    dim_size: usize,
+    dim_names: &Option<Vec<String>>,
+) -> Result<Vec<usize>, RFlow> {
+    match idx {
+        None => Ok((0..dim_size).collect()),
+        Some(RValue::Vector(rv)) => {
+            // Character indices: look up in dimnames
+            if matches!(rv.inner, Vector::Character(_)) {
+                let names = dim_names.as_ref().ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Index,
+                        "subscript out of bounds (no dimnames to match against)".to_string(),
+                    )
+                })?;
+                let chars = rv.inner.to_characters();
+                let mut result = Vec::new();
+                for ch in chars.into_iter().flatten() {
+                    let pos = names.iter().position(|n| n == &ch).ok_or_else(|| {
+                        RError::new(
+                            RErrorKind::Index,
+                            format!("subscript out of bounds: '{ch}'"),
+                        )
+                    })?;
+                    result.push(pos);
+                }
+                return Ok(result);
+            }
+            // Numeric indices
+            Ok(rv
+                .to_integers()
+                .iter()
+                .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
+                .collect())
+        }
+        _ => Err(RError::new(RErrorKind::Index, "invalid subscript type".to_string()).into()),
+    }
+}
+
+/// Subset row.names from a data frame list using 1-based integer indices.
+/// If the original has row names, select the corresponding ones.
+/// Otherwise generate fresh 1-based row names.
+fn subset_row_names(list: &RList, int_rows: &[Option<i64>]) -> RValue {
+    if let Some(rn_attr) = list.get_attr("row.names") {
+        if let Some(rn_vec) = rn_attr.as_vector() {
+            let orig = rn_vec.to_characters();
+            let selected: Vec<Option<String>> = int_rows
+                .iter()
+                .map(|idx| {
+                    idx.and_then(|i| {
+                        let i = usize::try_from(i - 1).ok()?;
+                        orig.get(i).cloned().flatten()
+                    })
+                })
+                .collect();
+            return RValue::vec(Vector::Character(selected.into()));
+        }
+    }
+    // Fallback: generate 1-based row names
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(int_rows.len()).unwrap_or(0))
+        .map(Some)
+        .collect();
+    RValue::vec(Vector::Integer(row_names.into()))
+}
+
+/// Extract a dimnames component (row names at index 0, col names at index 1).
+fn extract_dim_names(dimnames: Option<&RValue>, dim: usize) -> Option<Vec<String>> {
+    let RValue::List(list) = dimnames? else {
+        return None;
+    };
+    let (_, val) = list.values.get(dim)?;
+    let vec = val.as_vector()?;
+    let chars = vec.to_characters();
+    let names: Vec<String> = chars.into_iter().flatten().collect();
+    if names.is_empty() {
+        None
+    } else {
+        Some(names)
     }
 }
 
