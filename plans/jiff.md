@@ -2,6 +2,10 @@
 
 > `jiff` 0.2 — Datetime library by BurntSushi.
 > <https://github.com/BurntSushi/jiff>
+>
+> **Note:** The crates.io vendored version omits examples and tests.
+> See the full repo at <https://github.com/BurntSushi/jiff/tree/master>
+> for usage examples and test cases.
 
 ## What it does
 
