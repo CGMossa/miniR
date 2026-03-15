@@ -32,54 +32,118 @@ impl From<MathError> for RError {
 
 // === Math functions ===
 
+/// Absolute value.
+///
+/// @param x numeric vector
+/// @return numeric vector of absolute values
 #[builtin(min_args = 1)]
 fn builtin_abs(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::abs)
 }
+
+/// Square root.
+///
+/// @param x numeric vector
+/// @return numeric vector of square roots
 #[builtin(min_args = 1)]
 fn builtin_sqrt(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::sqrt)
 }
+
+/// Exponential function (e^x).
+///
+/// @param x numeric vector
+/// @return numeric vector of e raised to each element
 #[builtin(min_args = 1)]
 fn builtin_exp(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::exp)
 }
+
+/// Natural logarithm.
+///
+/// @param x numeric vector
+/// @return numeric vector of natural logarithms
 #[builtin(min_args = 1)]
 fn builtin_log(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::ln)
 }
+
+/// Base-2 logarithm.
+///
+/// @param x numeric vector
+/// @return numeric vector of base-2 logarithms
 #[builtin(min_args = 1)]
 fn builtin_log2(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::log2)
 }
+
+/// Base-10 logarithm.
+///
+/// @param x numeric vector
+/// @return numeric vector of base-10 logarithms
 #[builtin(min_args = 1)]
 fn builtin_log10(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::log10)
 }
+
+/// Ceiling (smallest integer not less than x).
+///
+/// @param x numeric vector
+/// @return numeric vector rounded up to integers
 #[builtin(min_args = 1)]
 fn builtin_ceiling(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::ceil)
 }
+
+/// Floor (largest integer not greater than x).
+///
+/// @param x numeric vector
+/// @return numeric vector rounded down to integers
 #[builtin(min_args = 1)]
 fn builtin_floor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::floor)
 }
+
+/// Truncation (round toward zero).
+///
+/// @param x numeric vector
+/// @return numeric vector truncated toward zero
 #[builtin(min_args = 1)]
 fn builtin_trunc(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::trunc)
 }
+
+/// Sine (in radians).
+///
+/// @param x numeric vector
+/// @return numeric vector of sines
 #[builtin(min_args = 1)]
 fn builtin_sin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::sin)
 }
+
+/// Cosine (in radians).
+///
+/// @param x numeric vector
+/// @return numeric vector of cosines
 #[builtin(min_args = 1)]
 fn builtin_cos(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::cos)
 }
+
+/// Tangent (in radians).
+///
+/// @param x numeric vector
+/// @return numeric vector of tangents
 #[builtin(min_args = 1)]
 fn builtin_tan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::tan)
 }
+
+/// Sign of each element (-1, 0, or 1).
+///
+/// @param x numeric vector
+/// @return numeric vector of signs
 #[builtin(min_args = 1)]
 fn builtin_sign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     math_unary(args, f64::signum)
@@ -87,6 +151,11 @@ fn builtin_sign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 
 use super::math_unary_op as math_unary;
 
+/// Round to the specified number of decimal places.
+///
+/// @param x numeric vector
+/// @param digits number of decimal places (default 0)
+/// @return numeric vector of rounded values
 #[builtin(min_args = 1)]
 fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let digits = named
@@ -112,6 +181,11 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Round to the specified number of significant digits.
+///
+/// @param x numeric vector
+/// @param digits number of significant digits (default 6)
+/// @return numeric vector rounded to significant digits
 #[builtin(min_args = 1)]
 fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let digits = named
@@ -148,6 +222,11 @@ fn builtin_signif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 
 // === Parallel min/max ===
 
+/// Parallel (element-wise) minimum across vectors.
+///
+/// @param ... numeric vectors (recycled to common length)
+/// @param na.rm logical; if TRUE, remove NAs before comparison
+/// @return numeric vector of element-wise minima
 #[builtin(min_args = 1)]
 fn builtin_pmin(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -156,6 +235,11 @@ fn builtin_pmin(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     parallel_minmax(args, na_rm, false)
 }
 
+/// Parallel (element-wise) maximum across vectors.
+///
+/// @param ... numeric vectors (recycled to common length)
+/// @param na.rm logical; if TRUE, remove NAs before comparison
+/// @return numeric vector of element-wise maxima
 #[builtin(min_args = 1)]
 fn builtin_pmax(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -219,6 +303,10 @@ fn parallel_minmax(args: &[RValue], na_rm: bool, is_max: bool) -> Result<RValue,
 
 // === Cumulative logical ===
 
+/// Cumulative all: TRUE while all preceding elements are TRUE.
+///
+/// @param x logical vector
+/// @return logical vector of cumulative conjunction
 #[builtin(min_args = 1)]
 fn builtin_cumall(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -244,6 +332,10 @@ fn builtin_cumall(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Cumulative any: TRUE once any preceding element is TRUE.
+///
+/// @param x logical vector
+/// @return logical vector of cumulative disjunction
 #[builtin(min_args = 1)]
 fn builtin_cumany(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -344,21 +436,40 @@ fn bitwise_binary_op(args: &[RValue], op: fn(i64, i64) -> i64) -> Result<RValue,
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Bitwise AND.
+///
+/// @param a integer vector
+/// @param b integer vector
+/// @return integer vector of bitwise AND results
 #[builtin(name = "bitwAnd", min_args = 2)]
 fn builtin_bitw_and(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     bitwise_binary_op(args, |a, b| a & b)
 }
 
+/// Bitwise OR.
+///
+/// @param a integer vector
+/// @param b integer vector
+/// @return integer vector of bitwise OR results
 #[builtin(name = "bitwOr", min_args = 2)]
 fn builtin_bitw_or(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     bitwise_binary_op(args, |a, b| a | b)
 }
 
+/// Bitwise XOR.
+///
+/// @param a integer vector
+/// @param b integer vector
+/// @return integer vector of bitwise XOR results
 #[builtin(name = "bitwXor", min_args = 2)]
 fn builtin_bitw_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     bitwise_binary_op(args, |a, b| a ^ b)
 }
 
+/// Bitwise NOT (ones' complement).
+///
+/// @param a integer vector
+/// @return integer vector of bitwise-negated values
 #[builtin(name = "bitwNot", min_args = 1)]
 fn builtin_bitw_not(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let ints = args
@@ -375,11 +486,21 @@ fn builtin_bitw_not(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Bitwise left shift.
+///
+/// @param a integer vector
+/// @param n number of positions to shift
+/// @return integer vector of left-shifted values
 #[builtin(name = "bitwShiftL", min_args = 2)]
 fn builtin_bitw_shift_l(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     bitwise_binary_op_fallible(args, |a, n| Ok(a << u32::try_from(n)?))
 }
 
+/// Bitwise right shift.
+///
+/// @param a integer vector
+/// @param n number of positions to shift
+/// @return integer vector of right-shifted values
 #[builtin(name = "bitwShiftR", min_args = 2)]
 fn builtin_bitw_shift_r(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     bitwise_binary_op_fallible(args, |a, n| Ok(a >> u32::try_from(n)?))
@@ -387,6 +508,11 @@ fn builtin_bitw_shift_r(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 
 // === Triangular matrix extraction ===
 
+/// Lower triangle of a matrix.
+///
+/// @param x a matrix
+/// @param diag logical; include the diagonal? (default FALSE)
+/// @return logical matrix with TRUE in the lower triangle
 #[builtin(name = "lower.tri", min_args = 1)]
 fn builtin_lower_tri(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let diag_incl = named
@@ -398,6 +524,11 @@ fn builtin_lower_tri(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     tri_matrix(args, diag_incl, true)
 }
 
+/// Upper triangle of a matrix.
+///
+/// @param x a matrix
+/// @param diag logical; include the diagonal? (default FALSE)
+/// @return logical matrix with TRUE in the upper triangle
 #[builtin(name = "upper.tri", min_args = 1)]
 fn builtin_upper_tri(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let diag_incl = named
@@ -464,6 +595,14 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
 
 // === Diagonal matrix ===
 
+/// Diagonal of a matrix, or construct a diagonal matrix.
+///
+/// If x is a matrix, extracts the diagonal. If x is a scalar n, creates an
+/// n-by-n identity matrix. If x is a vector, creates a diagonal matrix with
+/// x on the diagonal.
+///
+/// @param x a matrix, scalar, or vector
+/// @return diagonal vector or diagonal matrix
 #[builtin(min_args = 1)]
 fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -522,6 +661,11 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// Sum of all elements.
+///
+/// @param ... numeric vectors
+/// @param na.rm logical; if TRUE, remove NAs before summing
+/// @return scalar double
 #[builtin(min_args = 0)]
 fn builtin_sum(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -542,6 +686,11 @@ fn builtin_sum(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Double(vec![Some(total)].into())))
 }
 
+/// Product of all elements.
+///
+/// @param ... numeric vectors
+/// @param na.rm logical; if TRUE, remove NAs before multiplying
+/// @return scalar double
 #[builtin(min_args = 0)]
 fn builtin_prod(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -562,6 +711,11 @@ fn builtin_prod(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Double(vec![Some(total)].into())))
 }
 
+/// Maximum value across all arguments.
+///
+/// @param ... numeric vectors
+/// @param na.rm logical; if TRUE, remove NAs
+/// @return scalar double (or -Inf if no values)
 #[builtin(min_args = 0)]
 fn builtin_max(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -589,6 +743,11 @@ fn builtin_max(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     )))
 }
 
+/// Minimum value across all arguments.
+///
+/// @param ... numeric vectors
+/// @param na.rm logical; if TRUE, remove NAs
+/// @return scalar double (or Inf if no values)
 #[builtin(min_args = 0)]
 fn builtin_min(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -616,6 +775,11 @@ fn builtin_min(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     )))
 }
 
+/// Arithmetic mean.
+///
+/// @param x numeric vector
+/// @param na.rm logical; if TRUE, remove NAs before averaging
+/// @return scalar double
 #[builtin(min_args = 1)]
 fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named.iter().any(|(n, v)| {
@@ -647,6 +811,10 @@ fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Median value.
+///
+/// @param x numeric vector
+/// @return scalar double
 #[builtin(min_args = 1)]
 fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -668,6 +836,10 @@ fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Sample variance (Bessel-corrected, divides by n-1).
+///
+/// @param x numeric vector
+/// @return scalar double
 #[builtin(min_args = 1)]
 fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -685,6 +857,10 @@ fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Sample standard deviation (square root of var).
+///
+/// @param x numeric vector
+/// @return scalar double
 #[builtin(min_args = 1)]
 fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     match builtin_var(args, named)? {
@@ -701,6 +877,10 @@ fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Cumulative sum.
+///
+/// @param x numeric vector
+/// @return numeric vector of running sums
 #[builtin(min_args = 1)]
 fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -725,6 +905,10 @@ fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Cumulative product.
+///
+/// @param x numeric vector
+/// @return numeric vector of running products
 #[builtin(min_args = 1)]
 fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -749,6 +933,10 @@ fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Cumulative maximum.
+///
+/// @param x numeric vector
+/// @return numeric vector of running maxima
 #[builtin(min_args = 1)]
 fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -773,6 +961,10 @@ fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Cumulative minimum.
+///
+/// @param x numeric vector
+/// @return numeric vector of running minima
 #[builtin(min_args = 1)]
 fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -797,6 +989,13 @@ fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Generate a regular sequence.
+///
+/// @param from starting value (default 1)
+/// @param to ending value (default 1)
+/// @param by increment (default 1 or -1)
+/// @param length.out desired length of the sequence
+/// @return numeric vector
 #[builtin(min_args = 0, names = ["seq.int"])]
 fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let from = named
@@ -864,6 +1063,10 @@ fn builtin_seq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Double(result.into())))
 }
 
+/// Generate 1:n as an integer vector.
+///
+/// @param length.out the desired length
+/// @return integer vector 1, 2, ..., n
 #[builtin(name = "seq_len", min_args = 1)]
 fn builtin_seq_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
@@ -874,6 +1077,10 @@ fn builtin_seq_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Generate 1:length(along.with) as an integer vector.
+///
+/// @param along.with the object whose length determines the sequence
+/// @return integer vector 1, 2, ..., length(along.with)
 #[builtin(name = "seq_along", min_args = 1)]
 fn builtin_seq_along(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args.first().map(|v| v.length()).unwrap_or(0);
@@ -882,6 +1089,11 @@ fn builtin_seq_along(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Replicate elements of a vector.
+///
+/// @param x a vector
+/// @param times number of times to repeat (default 1)
+/// @return vector with elements repeated
 #[builtin(min_args = 1)]
 fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let times = named
@@ -949,6 +1161,10 @@ fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Reverse a vector.
+///
+/// @param x a vector
+/// @return vector with elements in reverse order
 #[builtin(min_args = 1)]
 fn builtin_rev(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -991,6 +1207,11 @@ fn builtin_rev(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Sort a vector.
+///
+/// @param x a vector
+/// @param decreasing logical; sort in descending order? (default FALSE)
+/// @return sorted vector
 #[builtin(min_args = 1)]
 fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let decreasing = named
@@ -1032,6 +1253,10 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Permutation which rearranges a vector into ascending order.
+///
+/// @param x a vector
+/// @return integer vector of 1-based indices
 #[builtin(min_args = 1)]
 fn builtin_order(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1053,6 +1278,10 @@ fn builtin_order(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 }
 
+/// Remove duplicate elements, preserving first occurrence order.
+///
+/// @param x a vector
+/// @return vector of unique elements
 #[builtin(min_args = 1)]
 fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1219,6 +1448,10 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
     }
 }
 
+/// Indices of TRUE elements.
+///
+/// @param x logical vector
+/// @return integer vector of 1-based indices where x is TRUE
 #[builtin(min_args = 1)]
 fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1243,6 +1476,10 @@ fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 }
 
+/// Index of the minimum element.
+///
+/// @param x numeric vector
+/// @return scalar integer (1-based index)
 #[builtin(min_args = 1)]
 fn builtin_which_min(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1266,6 +1503,10 @@ fn builtin_which_min(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Index of the maximum element.
+///
+/// @param x numeric vector
+/// @return scalar integer (1-based index)
 #[builtin(min_args = 1)]
 fn builtin_which_max(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1289,6 +1530,11 @@ fn builtin_which_max(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Append elements to a vector.
+///
+/// @param x a vector
+/// @param values values to append
+/// @return concatenated character vector
 #[builtin(min_args = 2)]
 fn builtin_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match (args.first(), args.get(1)) {
@@ -1301,6 +1547,11 @@ fn builtin_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Return the first n elements of a vector.
+///
+/// @param x a vector
+/// @param n number of elements to return (default 6)
+/// @return vector of the first n elements
 #[builtin(min_args = 1)]
 fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = named
@@ -1329,6 +1580,11 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Return the last n elements of a vector.
+///
+/// @param x a vector
+/// @param n number of elements to return (default 6)
+/// @return vector of the last n elements
 #[builtin(min_args = 1)]
 fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = named
@@ -1357,6 +1613,10 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Range (minimum and maximum) of all values.
+///
+/// @param ... numeric vectors
+/// @return numeric vector of length 2: c(min, max)
 #[builtin(min_args = 0)]
 fn builtin_range(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let mut min = f64::INFINITY;
@@ -1378,6 +1638,11 @@ fn builtin_range(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     )))
 }
 
+/// Lagged differences.
+///
+/// @param x numeric vector
+/// @param lag the lag to use (default 1)
+/// @return numeric vector of length(x) - lag
 #[builtin(min_args = 1)]
 fn builtin_diff(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let lag = named
@@ -1420,6 +1685,11 @@ fn builtin_diff(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Replicate elements to a specified length.
+///
+/// @param x a vector
+/// @param length.out desired output length
+/// @return vector of the specified length, recycling x as needed
 #[builtin(name = "rep_len", min_args = 2)]
 fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1491,6 +1761,11 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Replicate elements a specified number of times.
+///
+/// @param x a vector
+/// @param times number of times to repeat
+/// @return vector with elements repeated
 #[builtin(min_args = 2)]
 fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -2096,6 +2371,12 @@ fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> 
 
 // region: Complex number builtins
 
+/// Construct complex numbers from real and imaginary parts.
+///
+/// @param real numeric vector of real parts
+/// @param imaginary numeric vector of imaginary parts
+/// @param length.out desired output length
+/// @return complex vector
 #[builtin(name = "complex")]
 fn builtin_complex(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let real = named
@@ -2140,6 +2421,10 @@ fn builtin_complex(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::vec(Vector::Complex(result.into())))
 }
 
+/// Extract the real part of complex numbers.
+///
+/// @param z complex or numeric vector
+/// @return numeric vector of real parts
 #[builtin(name = "Re", min_args = 1)]
 fn builtin_re(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
@@ -2158,6 +2443,10 @@ fn builtin_re(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
     }
 }
 
+/// Extract the imaginary part of complex numbers.
+///
+/// @param z complex or numeric vector
+/// @return numeric vector of imaginary parts (0 for reals)
 #[builtin(name = "Im", min_args = 1)]
 fn builtin_im(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
@@ -2177,6 +2466,10 @@ fn builtin_im(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
     }
 }
 
+/// Modulus (absolute value) of complex numbers.
+///
+/// @param z complex or numeric vector
+/// @return numeric vector of moduli
 #[builtin(name = "Mod", min_args = 1)]
 fn builtin_mod_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
@@ -2196,6 +2489,10 @@ fn builtin_mod_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Argument (phase angle) of complex numbers, in radians.
+///
+/// @param z complex or numeric vector
+/// @return numeric vector of arguments (0 for non-negative reals, pi for negative)
 #[builtin(name = "Arg", min_args = 1)]
 fn builtin_arg(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
@@ -2219,6 +2516,10 @@ fn builtin_arg(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Complex conjugate.
+///
+/// @param z complex or numeric vector
+/// @return complex vector of conjugates (identity for reals)
 #[builtin(name = "Conj", min_args = 1)]
 fn builtin_conj(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
@@ -2238,6 +2539,10 @@ fn builtin_conj(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// Test if an object is of complex type.
+///
+/// @param x any R value
+/// @return scalar logical
 #[builtin(name = "is.complex", min_args = 1)]
 fn builtin_is_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = matches!(
@@ -2247,6 +2552,10 @@ fn builtin_is_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+/// Coerce to complex type.
+///
+/// @param x numeric or complex vector
+/// @return complex vector
 #[builtin(name = "as.complex", min_args = 1)]
 fn builtin_as_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let v = args
