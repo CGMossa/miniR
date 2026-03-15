@@ -662,6 +662,27 @@ fn interp_setwd(
     })
 }
 
+// === Sleep ===
+
+#[builtin(name = "Sys.sleep", min_args = 1)]
+fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let time = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'time' must be a numeric value".to_string(),
+            )
+        })?;
+
+    if time > 0.0 {
+        std::thread::sleep(std::time::Duration::from_secs_f64(time));
+    }
+
+    Ok(RValue::Null)
+}
+
 // === System info ===
 
 #[builtin(name = "Sys.info")]
