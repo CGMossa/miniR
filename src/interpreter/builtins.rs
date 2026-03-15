@@ -1571,14 +1571,6 @@ fn builtin_proc_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     )))
 }
 
-#[builtin(name = "Sys.sleep", min_args = 1)]
-fn builtin_sys_sleep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if let Some(secs) = args.first().and_then(|v| v.as_vector()?.as_double_scalar()) {
-        std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-    }
-    Ok(RValue::Null)
-}
-
 #[builtin]
 fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let prompt = args
