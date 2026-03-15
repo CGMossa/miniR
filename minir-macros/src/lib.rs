@@ -304,6 +304,9 @@ impl BuiltinKind {
 
 /// Attribute macro for builtin R function definitions.
 ///
+/// **Deprecated:** Prefer `#[derive(FromArgs)]` + `impl Builtin` for new builtins.
+/// This macro remains for existing builtins during migration.
+///
 /// Auto-registers the function in the builtin registry via linkme.
 /// The R name is inferred from the function name (`builtin_is_null` → `"is.null"`),
 /// or can be overridden with `name = "..."`.
@@ -591,6 +594,208 @@ impl syn::parse::Parse for StubArgs {
         })
     }
 }
+
+// region: FromArgs derive macro
+
+/// Derive macro for decoding R call arguments into a typed struct.
+///
+/// Each field becomes an R parameter. Field names map to named R arguments.
+/// Fields are matched by name first (with partial matching), then positionally.
+///
+/// Supported field types: `f64`, `i64`, `bool`, `String`, `Option<T>` (optional params).
+/// Use `#[default(value)]` for parameters with default values.
+///
+/// # Example
+///
+/// ```ignore
+/// /// Random normal deviates.
+/// #[derive(FromArgs)]
+/// #[builtin(name = "rnorm")]
+/// struct RnormArgs {
+///     /// number of observations
+///     n: i64,
+///     /// mean of the distribution
+///     #[default(0.0)]
+///     mean: f64,
+///     /// standard deviation
+///     #[default(1.0)]
+///     sd: f64,
+/// }
+/// ```
+#[proc_macro_derive(FromArgs, attributes(default, builtin))]
+pub fn derive_from_args(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::DeriveInput);
+    match emit_from_args(&input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+
+    let syn::Data::Struct(data) = &input.data else {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "FromArgs can only be derived for structs",
+        ));
+    };
+    let syn::Fields::Named(fields) = &data.fields else {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "FromArgs requires named fields",
+        ));
+    };
+
+    // Extract #[builtin(name = "...")] from struct attrs
+    let r_name =
+        extract_builtin_name(&input.attrs).unwrap_or_else(|| name.to_string().to_lowercase());
+
+    // Extract aliases
+    let aliases = extract_builtin_aliases(&input.attrs);
+
+    // Extract struct-level doc comment
+    let struct_doc = extract_doc_from_attrs(&input.attrs);
+
+    // Process fields
+    let mut field_decoders = Vec::new();
+    let mut field_names_str = Vec::new();
+    let mut field_docs = Vec::new();
+    let mut min_args = 0usize;
+
+    for field in &fields.named {
+        let field_name = field.ident.as_ref().unwrap();
+        let field_name_str = field_name.to_string();
+        let field_ty = &field.ty;
+        let field_doc = extract_doc_from_attrs(&field.attrs);
+        let default_val = extract_default_attr(field)?;
+
+        field_names_str.push(field_name_str.clone());
+        if !field_doc.is_empty() {
+            field_docs.push(format!("@param {} {}", field_name_str, field_doc));
+        }
+
+        let decoder = if let Some(default_expr) = default_val {
+            // Optional param with default
+            quote! {
+                let #field_name: #field_ty = {
+                    let raw = crate::interpreter::value::find_arg(
+                        args, named, #field_name_str, #min_args
+                    );
+                    match raw {
+                        Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?,
+                        None => #default_expr,
+                    }
+                };
+            }
+        } else {
+            // Required param
+            let decoder = quote! {
+                let #field_name: #field_ty = {
+                    let raw = crate::interpreter::value::find_arg(
+                        args, named, #field_name_str, #min_args
+                    ).ok_or_else(|| crate::interpreter::value::RError::new(
+                        crate::interpreter::value::RErrorKind::Argument,
+                        format!("argument '{}' is missing, with no default", #field_name_str),
+                    ))?;
+                    crate::interpreter::value::coerce_arg::<#field_ty>(raw, #field_name_str)?
+                };
+            };
+            min_args += 1;
+            decoder
+        };
+        field_decoders.push(decoder);
+    }
+
+    let field_idents: Vec<_> = fields.named.iter().map(|f| &f.ident).collect();
+    let max_args = fields.named.len();
+
+    // Build doc string: struct doc + field @param docs
+    let mut full_doc_parts = vec![struct_doc.clone()];
+    full_doc_parts.extend(field_docs);
+    let full_doc = full_doc_parts.join("\n");
+
+    let alias_tokens: Vec<_> = aliases.iter().map(|a| quote!(#a)).collect();
+
+    Ok(quote! {
+        impl crate::interpreter::value::FromArgs for #name {
+            fn from_args(
+                args: &[crate::interpreter::value::RValue],
+                named: &[(String, crate::interpreter::value::RValue)],
+            ) -> Result<Self, crate::interpreter::value::RError> {
+                #(#field_decoders)*
+                Ok(#name { #(#field_idents),* })
+            }
+
+            fn info() -> &'static crate::interpreter::value::BuiltinInfo {
+                static INFO: crate::interpreter::value::BuiltinInfo = crate::interpreter::value::BuiltinInfo {
+                    name: #r_name,
+                    aliases: &[#(#alias_tokens),*],
+                    min_args: #min_args,
+                    max_args: Some(#max_args),
+                    doc: #full_doc,
+                };
+                &INFO
+            }
+        }
+    })
+}
+
+fn extract_builtin_name(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs {
+        if attr.path().is_ident("builtin") {
+            let mut name = None;
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("name") {
+                    let value = meta.value()?;
+                    let s: LitStr = value.parse()?;
+                    name = Some(s.value());
+                }
+                Ok(())
+            });
+            return name;
+        }
+    }
+    None
+}
+
+fn extract_builtin_aliases(_attrs: &[syn::Attribute]) -> Vec<String> {
+    // Aliases can be added later via #[builtin(names = ["alias1", "alias2"])]
+    Vec::new()
+}
+
+fn extract_doc_from_attrs(attrs: &[syn::Attribute]) -> String {
+    attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("doc") {
+                if let syn::Meta::NameValue(meta) = &attr.meta {
+                    if let syn::Expr::Lit(lit) = &meta.value {
+                        if let syn::Lit::Str(s) = &lit.lit {
+                            return Some(s.value());
+                        }
+                    }
+                }
+            }
+            None
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn extract_default_attr(field: &syn::Field) -> syn::Result<Option<TokenStream2>> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("default") {
+            let tokens: TokenStream2 = attr.parse_args()?;
+            return Ok(Some(tokens));
+        }
+    }
+    Ok(None)
+}
+
+// endregion
 
 #[cfg(test)]
 mod tests {
