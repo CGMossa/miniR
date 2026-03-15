@@ -21,8 +21,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Disable vendored sources for CI
-        run: rm -f .cargo/config.toml
+      - name: Vendor dependencies
+        run: |
+          cargo vendor vendor/
+          mkdir -p .cargo
+          printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s/vendor"\n' "$PWD" > .cargo/config.toml
 
       - name: cargo fmt --check
         run: cargo fmt --check
