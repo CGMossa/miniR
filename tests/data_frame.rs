@@ -31,7 +31,7 @@ stopifnot(
 from_matrix <- data.frame(matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("x", "y"))))
 stopifnot(
   identical(names(from_matrix), c("x", "y")),
-  identical(from_matrix$y, c(3, 4)),
+  identical(from_matrix$y, c(3L, 4L)),
   identical(row.names(from_matrix), c("r1", "r2"))
 )
 
