@@ -135,6 +135,14 @@ fn interp_runif(
     Ok(RValue::vec(Vector::Double(values.into())))
 }
 
+/// Random normal deviates.
+///
+/// Generates n random values from a normal distribution.
+///
+/// @param n number of observations
+/// @param mean mean of the distribution (default 0)
+/// @param sd standard deviation (default 1)
+/// @return numeric vector of length n
 #[interpreter_builtin(min_args = 1)]
 fn interp_rnorm(
     args: &[RValue],

@@ -41,6 +41,8 @@ pub struct BuiltinDescriptor {
     pub implementation: BuiltinImplementation,
     pub min_args: usize,
     pub max_args: Option<usize>,
+    /// Raw doc string extracted from rustdoc comments (may contain @param/@title tags).
+    pub doc: &'static str,
 }
 
 /// Attribute map — every R object can carry named attributes
