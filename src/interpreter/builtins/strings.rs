@@ -590,17 +590,7 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(output)].into())))
 }
 
-#[builtin(min_args = 1)]
-fn builtin_format(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(val) => Ok(RValue::vec(Vector::Character(
-            vec![Some(format!("{}", val))].into(),
-        ))),
-        None => Ok(RValue::vec(Vector::Character(
-            vec![Some(String::new())].into(),
-        ))),
-    }
-}
+// format() is in interp.rs (S3-dispatching interpreter builtin)
 
 #[builtin(min_args = 2)]
 fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
