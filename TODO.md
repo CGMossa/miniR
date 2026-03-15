@@ -2,13 +2,6 @@
 
 This file tracks behavior that is still stubbed, placeholder, or materially simplified.
 
-## Type Stability and Attributes (review #7/#8)
-
-See `plans/type-stability.md` for full context.
-
-- [ ] Matrix dimname indexing not supported — `m["r1", "c1"]` returns empty instead of looking up by dimnames
-- [ ] Data frame row-name preservation broken — `df[2:3, ]` resets row names to 1:2 instead of preserving selected names
-
 ## Simplified Data and Object Semantics
 
 - [ ] `data.frame(...)` — subsetting edge cases, coercions, and fuller R-compatible behavior still need work
