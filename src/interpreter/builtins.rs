@@ -1,5 +1,7 @@
 mod args;
 mod conditions;
+#[cfg(feature = "datetime")]
+mod datetime;
 mod factors;
 mod interp;
 pub mod io;
@@ -326,13 +328,7 @@ pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
-#[builtin(min_args = 1)]
-fn builtin_print(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    if let Some(val) = args.first() {
-        println!("{}", val);
-    }
-    Ok(args.first().cloned().unwrap_or(RValue::Null))
-}
+// print() is in interp.rs (S3-dispatching interpreter builtin)
 
 #[builtin]
 fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
