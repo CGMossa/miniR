@@ -869,6 +869,22 @@ fn interp_next_method(
         .map_err(RError::from)
 }
 
+#[interpreter_builtin(name = "environment")]
+fn interp_environment(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    match positional.first() {
+        Some(RValue::Function(RFunction::Closure { env, .. })) => {
+            Ok(RValue::Environment(env.clone()))
+        }
+        Some(_) => Ok(RValue::Null),
+        // No args: return the current (calling) environment
+        None => Ok(RValue::Environment(context.env().clone())),
+    }
+}
+
 #[interpreter_builtin(name = "as.environment", min_args = 1)]
 fn interp_as_environment(
     positional: &[RValue],
