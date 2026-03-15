@@ -1817,11 +1817,16 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .map(|(_, v)| v)
         .or(args.get(4));
 
-    let data_vec = match &data {
-        RValue::Vector(v) => v.to_doubles(),
-        _ => vec![Some(f64::NAN)],
+    let data_inner = match &data {
+        RValue::Vector(v) => &v.inner,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "data must be a vector".to_string(),
+            ));
+        }
     };
-    let data_len = data_vec.len();
+    let data_len = data_inner.len();
 
     let (nrow, ncol) = match (nrow_arg, ncol_arg) {
         (Some(r), Some(c)) => (usize::try_from(r)?, usize::try_from(c)?),
@@ -1837,21 +1842,17 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     };
 
     let total = nrow * ncol;
-    let mut mat = Vec::with_capacity(total);
-    if byrow {
-        for i in 0..nrow {
-            for j in 0..ncol {
-                let idx = (i * ncol + j) % data_len;
-                mat.push(data_vec[idx]);
-            }
-        }
+    // Build index mapping: source index for each element in the result
+    let indices: Vec<usize> = if byrow {
+        (0..nrow)
+            .flat_map(|i| (0..ncol).map(move |j| (i * ncol + j) % data_len))
+            .collect()
     } else {
-        for idx in 0..total {
-            mat.push(data_vec[idx % data_len]);
-        }
-    }
+        (0..total).map(|idx| idx % data_len).collect()
+    };
 
-    let mut rv = RVector::from(Vector::Double(mat.into()));
+    let mat_vec = data_inner.select_indices(&indices);
+    let mut rv = RVector::from(mat_vec);
     rv.set_attr(
         "class".to_string(),
         RValue::vec(Vector::Character(
