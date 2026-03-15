@@ -19,10 +19,14 @@ Early development. The current tree already has:
 - R's condition system (`tryCatch()`, `withCallingHandlers()`, suppressors, condition constructors)
 - CSV/table reading and writing, text-based `readRDS()` / `saveRDS()` / `save()` / `load()`, filesystem/system helpers, and a `reedline` REPL
 
+A scan of the checked-in `cran/` corpus (`analysis/cran-corpus-scan.md`, 222 `DESCRIPTION`-bearing packages plus base/recommended package dirs) shows that the remaining blockers are mostly runtime and package-system work, not parser work.
+
 Major gaps that still need work:
 
-- Connections, GNU-R-compatible binary serialization, and package loading
-- Date/time support, S4, graphics, and broader CRAN runtime compatibility
+- Package and namespace runtime: `library()` / `require()` / `loadNamespace()`, `::` / `:::`, `DESCRIPTION` / `NAMESPACE`, package hooks, datasets, installed package assets, and base/recommended package namespaces beyond `base`
+- Native package support: compiling C/C++/Fortran `src/`, honoring `LinkingTo:` and `inst/include`, `useDynLib()`, registered routines, `.Call()` / `.External()` / `.C()` / `.Fortran()`, and compiled extension loading
+- Package docs/help incorporation: indexing `man/*.Rd`, `inst/doc/`, and vignette assets, with a staged Rd parser for `help()` / `?topic`, so packages are installed as packages rather than only as executable `R/` trees
+- Runtime fidelity needed by the CRAN corpus: fuller `data.frame` / attribute semantics, graphics (`graphics`, `grDevices`, `grid`), connections and serialization, date/time/time zones, and `methods` / S4
 
 ## Building
 
