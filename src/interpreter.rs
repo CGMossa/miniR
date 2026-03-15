@@ -102,6 +102,8 @@ pub struct Interpreter {
     pub(crate) working_dir: RefCell<Option<std::path::PathBuf>>,
     /// Instant when the interpreter was created, used by proc.time() for elapsed time.
     pub(crate) start_instant: std::time::Instant,
+    /// Connection table — slots 0-2 are stdin/stdout/stderr, lazily initialised.
+    pub(crate) connections: RefCell<Vec<builtins::connections::ConnectionInfo>>,
 }
 
 impl Default for Interpreter {
@@ -176,6 +178,7 @@ impl Interpreter {
             env_vars: RefCell::new(std::collections::HashMap::new()),
             working_dir: RefCell::new(None),
             start_instant: std::time::Instant::now(),
+            connections: RefCell::new(Vec::new()),
         }
     }
 
