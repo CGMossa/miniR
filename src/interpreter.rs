@@ -12,6 +12,8 @@ mod s3;
 pub mod value;
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
@@ -107,6 +109,9 @@ pub struct Interpreter {
     /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
     /// interpreter is dropped.
     pub(crate) finalizers: RefCell<Vec<RValue>>,
+    /// Flag set by the SIGINT handler; checked at loop boundaries to interrupt
+    /// long-running computations without killing the process.
+    interrupted: Arc<AtomicBool>,
 }
 
 impl Default for Interpreter {
@@ -198,6 +203,22 @@ impl Interpreter {
             start_instant: std::time::Instant::now(),
             connections: RefCell::new(Vec::new()),
             finalizers: RefCell::new(Vec::new()),
+            interrupted: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Return a clone of the interrupt flag so the SIGINT handler can set it.
+    pub fn interrupt_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.interrupted)
+    }
+
+    /// Check the interrupt flag; if set, clear it and return an interrupt error.
+    pub(crate) fn check_interrupt(&self) -> Result<(), RFlow> {
+        if self.interrupted.load(Ordering::Relaxed) {
+            self.interrupted.store(false, Ordering::Relaxed);
+            Err(RFlow::Error(RError::interrupt()))
+        } else {
+            Ok(())
         }
     }
 
@@ -385,6 +406,7 @@ impl Interpreter {
             Expr::Block(exprs) => {
                 let mut result = RValue::Null;
                 for expr in exprs {
+                    self.check_interrupt()?;
                     result = self.eval_in(expr, env)?;
                 }
                 Ok(result)
@@ -399,6 +421,7 @@ impl Interpreter {
             Expr::Program(exprs) => {
                 let mut result = RValue::Null;
                 for expr in exprs {
+                    self.check_interrupt()?;
                     result = self.eval_in(expr, env)?;
                 }
                 Ok(result)

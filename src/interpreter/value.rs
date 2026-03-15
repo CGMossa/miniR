@@ -899,6 +899,7 @@ pub enum RErrorKind {
     Name,
     Index,
     Parse,
+    Interrupt,
     Other,
 }
 
@@ -1021,6 +1022,22 @@ impl RError {
         RError::new(RErrorKind::Other, message)
     }
 
+    /// Create an interrupt error (Ctrl+C during computation).
+    pub fn interrupt() -> Self {
+        RError::new(RErrorKind::Interrupt, "Ctrl+C: computation interrupted")
+    }
+
+    /// Returns true if this error represents a user interrupt (Ctrl+C).
+    pub fn is_interrupt(&self) -> bool {
+        matches!(
+            self,
+            RError::Standard {
+                kind: RErrorKind::Interrupt,
+                ..
+            }
+        )
+    }
+
     /// Return the error kind (or None for Condition).
     #[allow(dead_code)]
     pub fn kind(&self) -> Option<RErrorKind> {
@@ -1072,6 +1089,7 @@ impl fmt::Display for RError {
                     RErrorKind::Name => "Error",
                     RErrorKind::Index => "Error in indexing",
                     RErrorKind::Parse => "Error in parse",
+                    RErrorKind::Interrupt => return write!(f, "Interrupted"),
                     RErrorKind::Other => "Error",
                 };
                 // Name errors have a special format
