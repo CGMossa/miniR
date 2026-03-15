@@ -1,6 +1,7 @@
 mod args;
 mod coercion;
 mod conditions;
+pub mod connections;
 #[cfg(feature = "datetime")]
 mod datetime;
 mod factors;

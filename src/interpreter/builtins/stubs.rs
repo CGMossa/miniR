@@ -29,11 +29,8 @@ stub_builtin!("install.packages");
 // Regex
 stub_builtin!("reg.finalizer", 2);
 
-// Connections
+// Connections (file, open, close, isOpen, readLines, writeLines — connections.rs)
 stub_builtin!("url", 1);
-stub_builtin!("connection", 1);
-stub_builtin!("close", 1);
-stub_builtin!("open", 1);
 
 // Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
 stub_builtin!("arity", 1);
