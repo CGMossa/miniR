@@ -23,7 +23,7 @@ jobs:
 
       - name: Vendor dependencies
         run: |
-          cargo vendor vendor/
+          cargo vendor "$PWD/vendor"
           mkdir -p .cargo
           printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s/vendor"\n' "$PWD" > .cargo/config.toml
 
