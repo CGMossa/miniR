@@ -16,6 +16,8 @@ use std::num::TryFromIntError;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::interpreter::coerce;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::BuiltinContext;
@@ -851,14 +853,14 @@ pub fn format_vector(v: &Vector) -> String {
 
     while pos < elements.len() {
         let label = format!("[{}]", pos + 1);
-        let label_width = label.len();
+        let label_width = UnicodeWidthStr::width(label.as_str());
         let mut line = format!("{} ", label);
         let mut current_width = label_width + 1;
         let line_start = pos;
 
         while pos < elements.len() {
             let elem = &elements[pos];
-            let elem_width = elem.len() + 1; // +1 for space
+            let elem_width = UnicodeWidthStr::width(elem.as_str()) + 1; // +1 for space
             if current_width + elem_width > max_width && pos > line_start {
                 break;
             }
