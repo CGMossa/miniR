@@ -261,6 +261,13 @@ mod tests {
 
 // === Builtin implementations ===
 
+/// Combine values into a vector or list.
+///
+/// Coerces all arguments to a common type and concatenates them.
+/// Named arguments become element names on the result.
+///
+/// @param ... values to combine
+/// @return vector or list containing all input elements
 #[builtin]
 pub fn builtin_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     // Collect (optional_name, value) pairs
@@ -456,6 +463,14 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 
 // print() is in interp.rs (S3-dispatching interpreter builtin)
 
+/// Concatenate and print objects to stdout.
+///
+/// Converts each argument to character and writes them separated by `sep`.
+/// Unlike `print()`, does not add a trailing newline unless the output contains one.
+///
+/// @param ... objects to concatenate and print
+/// @param sep separator string between elements (default: " ")
+/// @return NULL (invisibly)
 #[builtin]
 fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let sep = named
@@ -506,6 +521,16 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::Null)
 }
 
+/// Concatenate strings with a separator.
+///
+/// Converts arguments to character, recycles to the longest length,
+/// and joins corresponding elements with `sep`. Optionally collapses
+/// the result into a single string using `collapse`.
+///
+/// @param ... objects to paste together
+/// @param sep separator between arguments (default: " ")
+/// @param collapse optional string to join result elements
+/// @return character vector (length 1 if collapse is set)
 #[builtin]
 fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let sep = named
@@ -569,6 +594,13 @@ fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Concatenate strings with no separator.
+///
+/// Equivalent to `paste(..., sep = "")`.
+///
+/// @param ... objects to paste together
+/// @param collapse optional string to join result elements
+/// @return character vector
 #[builtin]
 fn builtin_paste0(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mut new_named = named.to_vec();
@@ -581,6 +613,10 @@ fn builtin_paste0(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     builtin_paste(args, &new_named)
 }
 
+/// Get the length of an object.
+///
+/// @param x object to measure
+/// @return integer scalar
 #[builtin(min_args = 1)]
 fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let len = args.first().map(|v| v.length()).unwrap_or(0);
@@ -589,6 +625,10 @@ fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
     )))
 }
 
+/// Count the number of characters in each element of a character vector.
+///
+/// @param x character vector
+/// @return integer vector of string lengths
 #[builtin(min_args = 1)]
 fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -606,24 +646,45 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Test if an object is NULL.
+///
+/// Also registered as stubs for is.ordered, is.call, is.symbol,
+/// is.name, is.expression, and is.pairlist (all return FALSE for now).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist"])]
 fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Null));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is an environment.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(name = "is.environment", min_args = 1)]
 fn builtin_is_environment(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Environment(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a language object (unevaluated expression).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(name = "is.language", min_args = 1)]
 fn builtin_is_language(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Language(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test which elements are NA (missing values).
+///
+/// For doubles, NaN is also considered NA.
+///
+/// @param x vector to test
+/// @return logical vector of the same length
 #[builtin(min_args = 1)]
 fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -645,6 +706,10 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Test if an object is numeric (integer or double).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(
@@ -654,12 +719,20 @@ fn builtin_is_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a character vector.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a logical vector.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r =
@@ -667,6 +740,10 @@ fn builtin_is_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is an integer vector.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r =
@@ -674,6 +751,10 @@ fn builtin_is_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a double (real-valued) vector.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r =
@@ -681,12 +762,25 @@ fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a function.
+///
+/// Also aliased as `is.primitive`.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1, names = ["is.primitive"])]
 fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Function(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a vector with no attributes other than names.
+///
+/// Returns TRUE for atomic vectors and lists that have no attributes
+/// beyond "names".
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     // R's is.vector returns TRUE only if the vector has no attributes other than "names"
@@ -704,12 +798,22 @@ fn builtin_is_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a list.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::List(_)));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Coerce an object to double (numeric).
+///
+/// Also aliased as `as.double`.
+///
+/// @param x object to coerce
+/// @return double vector
 #[builtin(min_args = 1, names = ["as.double"])]
 fn builtin_as_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -719,6 +823,12 @@ fn builtin_as_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Coerce an object to integer.
+///
+/// Doubles are truncated toward zero.
+///
+/// @param x object to coerce
+/// @return integer vector
 #[builtin(min_args = 1)]
 fn builtin_as_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -728,6 +838,10 @@ fn builtin_as_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Coerce an object to character (string).
+///
+/// @param x object to coerce
+/// @return character vector
 #[builtin(min_args = 1)]
 fn builtin_as_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -737,6 +851,10 @@ fn builtin_as_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     }
 }
 
+/// Coerce an object to logical.
+///
+/// @param x object to coerce
+/// @return logical vector
 #[builtin(min_args = 1)]
 fn builtin_as_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -746,6 +864,10 @@ fn builtin_as_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Get the names attribute of an object.
+///
+/// @param x object whose names to retrieve
+/// @return character vector of names, or NULL if unnamed
 #[builtin(min_args = 1)]
 fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -758,6 +880,11 @@ fn builtin_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 }
 
+/// Set the names attribute of an object.
+///
+/// @param x object to modify
+/// @param value character vector of new names, or NULL to remove
+/// @return the modified object
 #[builtin(name = "names<-", min_args = 2)]
 fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let names_val = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -1017,6 +1144,10 @@ fn bind_dimnames_value(
     ])))
 }
 
+/// Get the row names of a data frame or matrix.
+///
+/// @param x data frame, matrix, or object with dimnames
+/// @return character vector of row names, or NULL
 #[builtin(name = "row.names", names = ["rownames"], min_args = 1)]
 fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1036,6 +1167,10 @@ fn builtin_row_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Get the column names of a data frame or matrix.
+///
+/// @param x data frame, matrix, or object with dimnames
+/// @return character vector of column names, or NULL
 #[builtin(name = "colnames", min_args = 1)]
 fn builtin_col_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1062,6 +1197,11 @@ fn builtin_col_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Set the row names of a data frame or matrix.
+///
+/// @param x data frame, matrix, or object with dimnames
+/// @param value character vector of new row names, or NULL
+/// @return the modified object
 #[builtin(name = "rownames<-", names = ["row.names<-"], min_args = 2)]
 fn builtin_row_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let row_names = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -1095,6 +1235,11 @@ fn builtin_row_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     }
 }
 
+/// Set the column names of a data frame or matrix.
+///
+/// @param x data frame, matrix, or object with dimnames
+/// @param value character vector of new column names, or NULL
+/// @return the modified object
 #[builtin(name = "colnames<-", min_args = 2)]
 fn builtin_col_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let col_names = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -1128,6 +1273,11 @@ fn builtin_col_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     }
 }
 
+/// Set the class attribute of an object.
+///
+/// @param x object to modify
+/// @param value character vector of class names, or NULL to remove
+/// @return the modified object
 #[builtin(name = "class<-", min_args = 2)]
 fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_val = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -1163,6 +1313,13 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Get the internal type of an object.
+///
+/// Returns the low-level type name (e.g., "double", "integer", "character",
+/// "logical", "list", "closure", "builtin", "NULL").
+///
+/// @param x object to inspect
+/// @return character scalar
 #[builtin(min_args = 1)]
 fn builtin_typeof(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let t = args.first().map(|v| v.type_name()).unwrap_or("NULL");
@@ -1171,6 +1328,13 @@ fn builtin_typeof(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     )))
 }
 
+/// Get the class of an object.
+///
+/// Returns the explicit class attribute if set, otherwise the implicit
+/// class based on the object's type (e.g., "numeric", "character", "list").
+///
+/// @param x object to inspect
+/// @return character vector of class names
 #[builtin(min_args = 1)]
 fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     // Check for explicit class attribute on vectors
@@ -1213,6 +1377,12 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     )))
 }
 
+/// Get the mode (storage type) of an object.
+///
+/// Similar to `typeof()` but maps integer and double to "numeric".
+///
+/// @param x object to inspect
+/// @return character scalar
 #[builtin(min_args = 1)]
 fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let m = match args.first() {
@@ -1237,6 +1407,12 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     )))
 }
 
+/// Display the compact internal structure of an object.
+///
+/// Prints type, length, and a preview of the first few elements.
+///
+/// @param x object to inspect
+/// @return NULL (invisibly)
 #[builtin(min_args = 1)]
 fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1311,6 +1487,11 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Test if two objects are exactly identical.
+///
+/// @param x first object
+/// @param y second object
+/// @return logical scalar
 #[builtin(min_args = 2)]
 fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1323,6 +1504,15 @@ fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+/// Test near-equality of two objects within a tolerance.
+///
+/// For numeric vectors, checks that all corresponding elements differ by
+/// at most `tolerance`. Returns TRUE or a descriptive character string.
+///
+/// @param target first object
+/// @param current second object
+/// @param tolerance maximum allowed difference (default: 1.5e-8)
+/// @return TRUE if equal, or character string describing the difference
 #[builtin(min_args = 2)]
 fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let tolerance = named
@@ -1366,6 +1556,11 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     }
 }
 
+/// Test if any values are TRUE.
+///
+/// @param ... logical vectors to test
+/// @param na.rm if TRUE, remove NA values before testing
+/// @return logical scalar
 #[builtin]
 fn builtin_any(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named
@@ -1388,6 +1583,11 @@ fn builtin_any(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
+/// Test if all values are TRUE.
+///
+/// @param ... logical vectors to test
+/// @param na.rm if TRUE, remove NA values before testing
+/// @return logical scalar
 #[builtin]
 fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = named
@@ -1412,6 +1612,11 @@ fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
+/// Exclusive OR of two logical values.
+///
+/// @param x first logical value
+/// @param y second logical value
+/// @return logical scalar
 #[builtin(min_args = 2)]
 fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1428,6 +1633,12 @@ fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Construct a list from the given arguments.
+///
+/// Named arguments become named elements of the list.
+///
+/// @param ... values to include in the list
+/// @return list
 #[builtin]
 fn builtin_list(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mut values: Vec<(Option<String>, RValue)> = Vec::new();
@@ -1440,6 +1651,11 @@ fn builtin_list(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::List(RList::new(values)))
 }
 
+/// Create a vector of a given mode and length.
+///
+/// @param mode type of vector ("numeric", "integer", "character", "logical", "list")
+/// @param length number of elements (default: 0)
+/// @return vector initialized with default values for the mode
 #[builtin(min_args = 1)]
 fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let mode = args
@@ -1467,6 +1683,12 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Coerce an object to a list.
+///
+/// Atomic vectors are split into single-element list entries.
+///
+/// @param x object to coerce
+/// @return list
 #[builtin(min_args = 1)]
 fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1505,6 +1727,12 @@ fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Flatten a list into an atomic vector.
+///
+/// Recursively combines list elements using the same coercion rules as `c()`.
+///
+/// @param x list to flatten
+/// @return atomic vector
 #[builtin(min_args = 1)]
 fn builtin_unlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1520,11 +1748,21 @@ fn builtin_unlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Return a value invisibly (suppresses auto-printing).
+///
+/// @param x value to return
+/// @return x (invisibly)
 #[builtin(min_args = 1)]
 fn builtin_invisible(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// Vectorized conditional: select elements from yes or no based on test.
+///
+/// @param test logical condition
+/// @param yes value to use when test is TRUE
+/// @param no value to use when test is FALSE
+/// @return value from yes or no depending on test
 #[builtin(min_args = 3)]
 fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 3 {
@@ -1541,6 +1779,14 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Find positions of first matches of x in table.
+///
+/// For each element of x, returns the position of its first match in table,
+/// or NA if no match is found.
+///
+/// @param x values to look up
+/// @param table values to match against
+/// @return integer vector of match positions (1-indexed)
 #[builtin(min_args = 2, names = ["pmatch", "charmatch"])]
 fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1572,6 +1818,12 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
+/// Replace values in a vector at specified indices.
+///
+/// @param x vector to modify
+/// @param list indices at which to replace (1-indexed)
+/// @param values replacement values (recycled if shorter)
+/// @return modified vector
 #[builtin(min_args = 3)]
 fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 3 {
@@ -1610,11 +1862,23 @@ fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Get or set global options.
+///
+/// Currently a stub that returns an empty list.
+///
+/// @param ... option names to query, or name=value pairs to set
+/// @return list of previous option values
 #[builtin]
 fn builtin_options(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![])))
 }
 
+/// Get the value of a named global option.
+///
+/// Supports "digits", "warn", and "OutDec". Returns NULL for unknown options.
+///
+/// @param name option name to query
+/// @return the option's value, or NULL
 #[builtin(name = "getOption", min_args = 1)]
 fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let name = args
@@ -1633,6 +1897,10 @@ fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 // Sys.time() is in datetime.rs; proc.time() is in system.rs
 
+/// Read a line of user input from stdin.
+///
+/// @param prompt string to display before reading input
+/// @return character scalar of the input (without trailing newline)
 #[builtin]
 fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let prompt = args
@@ -1647,6 +1915,10 @@ fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     )))
 }
 
+/// Get an environment variable from the interpreter's environment.
+///
+/// @param x name of the environment variable
+/// @return character scalar with the variable's value, or "" if unset
 #[interpreter_builtin(name = "Sys.getenv")]
 fn interp_sys_getenv(
     args: &[RValue],
@@ -1665,6 +1937,13 @@ fn interp_sys_getenv(
 
 // (file.path, file.exists, readLines, writeLines, read.csv, write.csv — io.rs)
 
+/// Load a package (stub).
+///
+/// Prints a warning that the package is not available and returns FALSE.
+/// Also aliased as `library`.
+///
+/// @param package name of the package to load
+/// @return logical FALSE
 #[builtin(name = "require", min_args = 1, names = ["library"])]
 fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let pkg = args
@@ -1678,6 +1957,11 @@ fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
+/// Get the version of the R implementation.
+///
+/// Returns a list with major, minor, language, and engine fields.
+///
+/// @return named list of version information
 #[builtin(name = "R.Version", names = ["version"])]
 fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![
@@ -1702,6 +1986,10 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     ])))
 }
 
+/// Test if an object is recursive (list or environment).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     // R's is.recursive: TRUE for lists and environments
@@ -1712,6 +2000,10 @@ fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is atomic (vector or NULL).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     // R's is.atomic: TRUE for atomic vectors and NULL
@@ -1719,6 +2011,10 @@ fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test which elements are finite (not Inf, -Inf, NaN, or NA).
+///
+/// @param x numeric vector to test
+/// @return logical vector of the same length
 #[builtin(min_args = 1)]
 fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1744,6 +2040,10 @@ fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Test which elements are infinite (Inf or -Inf).
+///
+/// @param x numeric vector to test
+/// @return logical vector of the same length
 #[builtin(min_args = 1)]
 fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1770,6 +2070,12 @@ fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Test which elements are NaN (not-a-number).
+///
+/// Unlike `is.na()`, this returns FALSE for NA values that are not NaN.
+///
+/// @param x numeric vector to test
+/// @return logical vector of the same length
 #[builtin(min_args = 1)]
 fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1796,6 +2102,11 @@ fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Set difference: elements in x that are not in y.
+///
+/// @param x character vector
+/// @param y character vector
+/// @return character vector of elements in x but not y
 #[builtin(min_args = 2)]
 fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1816,6 +2127,11 @@ fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(result.into())))
 }
 
+/// Set intersection: elements present in both x and y.
+///
+/// @param x character vector
+/// @param y character vector
+/// @return character vector of common elements
 #[builtin(min_args = 2)]
 fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1836,6 +2152,11 @@ fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Character(result.into())))
 }
 
+/// Set union: unique elements from both x and y.
+///
+/// @param x character vector
+/// @param y character vector
+/// @return character vector of all unique elements
 #[builtin(min_args = 2)]
 fn builtin_union(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1861,6 +2182,12 @@ fn builtin_union(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     Ok(RValue::vec(Vector::Character(result.into())))
 }
 
+/// Identify duplicate elements in a vector.
+///
+/// Returns TRUE for elements that have already appeared earlier in the vector.
+///
+/// @param x vector to check
+/// @return logical vector of the same length
 #[builtin(min_args = 1)]
 fn builtin_duplicated(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -1885,6 +2212,9 @@ fn builtin_duplicated(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Get the interpreter's current working directory.
+///
+/// @return character scalar with the absolute path
 #[interpreter_builtin]
 fn interp_getwd(
     _args: &[RValue],
@@ -1896,6 +2226,12 @@ fn interp_getwd(
     Ok(RValue::vec(Vector::Character(vec![Some(cwd)].into())))
 }
 
+/// Create a double vector of zeros with the given length.
+///
+/// Also aliased as `double`.
+///
+/// @param length number of elements (default: 0)
+/// @return double vector initialized to 0.0
 #[builtin(names = ["double"])]
 fn builtin_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
@@ -1907,6 +2243,10 @@ fn builtin_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Double(vec![Some(0.0); n].into())))
 }
 
+/// Create an integer vector of zeros with the given length.
+///
+/// @param length number of elements (default: 0)
+/// @return integer vector initialized to 0
 #[builtin]
 fn builtin_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
@@ -1918,6 +2258,10 @@ fn builtin_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Integer(vec![Some(0); n].into())))
 }
 
+/// Create a logical vector of FALSE values with the given length.
+///
+/// @param length number of elements (default: 0)
+/// @return logical vector initialized to FALSE
 #[builtin]
 fn builtin_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
@@ -1929,6 +2273,10 @@ fn builtin_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(false); n].into())))
 }
 
+/// Create a character vector of empty strings with the given length.
+///
+/// @param length number of elements (default: 0)
+/// @return character vector initialized to ""
 #[builtin]
 fn builtin_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
@@ -1942,6 +2290,16 @@ fn builtin_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     )))
 }
 
+/// Create a matrix from the given data.
+///
+/// Fills column-by-column by default. Use `byrow = TRUE` for row-major fill.
+///
+/// @param data vector of values to fill the matrix
+/// @param nrow number of rows
+/// @param ncol number of columns
+/// @param byrow if TRUE, fill by rows instead of columns
+/// @param dimnames list of row and column name vectors
+/// @return matrix (vector with dim and class attributes)
 #[builtin]
 fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let data = args
@@ -2029,6 +2387,10 @@ fn builtin_matrix(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::Vector(rv))
 }
 
+/// Get the dimensions of a matrix, array, or data frame.
+///
+/// @param x object to query
+/// @return integer vector of dimensions, or NULL if none
 #[builtin(min_args = 1)]
 fn builtin_dim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2047,6 +2409,11 @@ fn builtin_dim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     }
 }
 
+/// Set the dimensions of an object, converting it to a matrix or array.
+///
+/// @param x vector to reshape
+/// @param value integer vector of new dimensions, or NULL to remove
+/// @return the reshaped object
 #[builtin(name = "dim<-", min_args = 2)]
 fn builtin_dim_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let dim_val = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -2071,6 +2438,10 @@ fn builtin_dim_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Get the number of rows of a matrix, array, or data frame.
+///
+/// @param x object to query
+/// @return integer scalar, or NULL for objects without dimensions
 #[builtin(min_args = 1)]
 fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2099,6 +2470,10 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// Get the number of columns of a matrix, array, or data frame.
+///
+/// @param x object to query
+/// @return integer scalar, or NULL for objects without dimensions
 #[builtin(min_args = 1)]
 fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2127,6 +2502,12 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// Get the number of rows, treating non-matrix vectors as 1-column matrices.
+///
+/// Unlike `nrow()`, returns the vector length instead of NULL for plain vectors.
+///
+/// @param x object to query
+/// @return integer scalar
 #[builtin(name = "NROW", min_args = 1)]
 fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2167,6 +2548,12 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Get the number of columns, treating non-matrix vectors as 1-column.
+///
+/// Unlike `ncol()`, returns 1 instead of NULL for plain vectors.
+///
+/// @param x object to query
+/// @return integer scalar
 #[builtin(name = "NCOL", min_args = 1)]
 fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2198,6 +2585,10 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 
 // t() is in math.rs (type-preserving implementation)
 
+/// Remove names and dimnames from an object.
+///
+/// @param obj object to strip names from
+/// @return the object with names and dimnames attributes removed
 #[builtin(min_args = 1)]
 fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2220,6 +2611,10 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
+/// Get the dimension names of a matrix, array, or data frame.
+///
+/// @param x object to query
+/// @return list of character vectors (one per dimension), or NULL
 #[builtin(min_args = 1)]
 fn builtin_dimnames(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2232,6 +2627,11 @@ fn builtin_dimnames(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Set the dimension names of a matrix, array, or data frame.
+///
+/// @param x object to modify
+/// @param value list of character vectors (one per dimension), or NULL
+/// @return the modified object
 #[builtin(name = "dimnames<-", min_args = 2)]
 fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let dimnames_val = args.get(1).cloned().unwrap_or(RValue::Null);
@@ -2263,6 +2663,12 @@ fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     }
 }
 
+/// Create a multi-dimensional array.
+///
+/// @param data vector of values to fill the array (recycled if needed)
+/// @param dim integer vector of dimensions
+/// @param dimnames list of dimension name vectors
+/// @return array (vector with dim and class attributes)
 #[builtin]
 fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     // array(data = NA, dim = length(data), dimnames = NULL)
@@ -2357,6 +2763,12 @@ fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::Vector(rv))
 }
 
+/// Bind vectors or matrices by rows.
+///
+/// Combines arguments row-wise into a matrix. Vectors become single rows.
+///
+/// @param ... vectors or matrices to bind
+/// @return matrix
 #[builtin(min_args = 1)]
 fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.is_empty() {
@@ -2495,6 +2907,12 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     Ok(RValue::Vector(rv))
 }
 
+/// Bind vectors or matrices by columns.
+///
+/// Combines arguments column-wise into a matrix. Vectors become single columns.
+///
+/// @param ... vectors or matrices to bind
+/// @return matrix
 #[builtin(min_args = 1)]
 fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.is_empty() {
@@ -2633,6 +3051,11 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     Ok(RValue::Vector(rv))
 }
 
+/// Get a single attribute of an object.
+///
+/// @param x object to inspect
+/// @param which name of the attribute to retrieve
+/// @return the attribute value, or NULL if not set
 #[builtin(min_args = 2)]
 fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let which = args
@@ -2653,6 +3076,12 @@ fn builtin_attr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// Set a single attribute on an object.
+///
+/// @param x object to modify
+/// @param which name of the attribute to set
+/// @param value new attribute value, or NULL to remove it
+/// @return the modified object
 #[builtin(name = "attr<-", min_args = 3)]
 fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let which = args
@@ -2698,6 +3127,10 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     }
 }
 
+/// Get all attributes of an object as a named list.
+///
+/// @param x object to inspect
+/// @return named list of attributes, or NULL if none
 #[builtin(min_args = 1)]
 fn builtin_attributes(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let attrs = match args.first() {
@@ -2718,6 +3151,14 @@ fn builtin_attributes(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Set attributes on an object in a single call.
+///
+/// Named arguments become attributes on the object. The special names
+/// ".Names" and "names" set the names attribute.
+///
+/// @param .Data object to modify
+/// @param ... name=value pairs to set as attributes
+/// @return the modified object
 #[builtin(min_args = 1)]
 fn builtin_structure(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let base = args.first().cloned().unwrap_or(RValue::Null);
@@ -2763,6 +3204,13 @@ fn builtin_structure(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     }
 }
 
+/// Test if an object inherits from one or more classes.
+///
+/// Checks the object's class vector for any matches with the given class names.
+///
+/// @param x object to test
+/// @param what character vector of class names to check
+/// @return logical scalar
 #[builtin(min_args = 2)]
 fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let what = args
@@ -2834,18 +3282,30 @@ fn has_class(val: &RValue, class_name: &str) -> bool {
     false
 }
 
+/// Test if an object is a factor.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_factor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "factor"));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a data frame.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_data_frame(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "data.frame"));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is a matrix (has dim attribute of length 2).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| {
@@ -2864,12 +3324,21 @@ fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test if an object is an array.
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = args.first().is_some_and(|v| has_class(v, "array"));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
+/// Test set membership: is each element of x in table?
+///
+/// @param el values to test
+/// @param table values to match against
+/// @return logical vector of the same length as el
 #[builtin(min_args = 2)]
 fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -2900,6 +3369,10 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 // `environment()` is an interpreter builtin in interp.rs (needs BuiltinContext for no-arg case)
 
+/// Create a new environment.
+///
+/// @param parent parent environment (or NULL for an empty environment)
+/// @return new environment
 #[builtin(name = "new.env")]
 fn builtin_new_env(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let parent_val = named
@@ -2920,6 +3393,10 @@ fn builtin_new_env(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     }
 }
 
+/// Get the name of an environment.
+///
+/// @param env environment to query
+/// @return character scalar (empty string for anonymous environments)
 #[builtin(name = "environmentName", min_args = 1)]
 fn builtin_environment_name(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let name = match args.first() {
@@ -2929,6 +3406,10 @@ fn builtin_environment_name(args: &[RValue], _: &[(String, RValue)]) -> Result<R
     Ok(RValue::vec(Vector::Character(vec![Some(name)].into())))
 }
 
+/// Get the parent (enclosing) environment of an environment.
+///
+/// @param env environment to query
+/// @return the parent environment, or NULL for the empty environment
 #[builtin(name = "parent.env", min_args = 1)]
 fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -2943,6 +3424,12 @@ fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Test if x is a single TRUE value.
+///
+/// Returns TRUE only if x is a length-1 logical vector equal to TRUE (not NA).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(name = "isTRUE", min_args = 1)]
 fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
@@ -2957,6 +3444,12 @@ fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+/// Test if x is a single FALSE value.
+///
+/// Returns TRUE only if x is a length-1 logical vector equal to FALSE (not NA).
+///
+/// @param x object to test
+/// @return logical scalar
 #[builtin(name = "isFALSE", min_args = 1)]
 fn builtin_is_false(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let result = match args.first() {
@@ -2971,6 +3464,13 @@ fn builtin_is_false(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+/// Assert that all arguments are TRUE, stopping with an error otherwise.
+///
+/// Checks each argument in order. If any element is FALSE or NA,
+/// raises an error identifying the failing argument.
+///
+/// @param ... logical conditions that must all be TRUE
+/// @return NULL (invisibly) if all conditions pass
 #[builtin]
 fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     for (i, arg) in args.iter().enumerate() {
@@ -3016,6 +3516,10 @@ fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::Null)
 }
 
+/// Coerce an object to a vector, stripping all attributes.
+///
+/// @param x object to coerce
+/// @return the object with all attributes removed
 #[builtin(min_args = 1)]
 fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -3034,6 +3538,10 @@ fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Remove the class attribute from an object.
+///
+/// @param x object to unclass
+/// @return the object with its class attribute removed
 #[builtin(min_args = 1)]
 fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
@@ -3056,6 +3564,14 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
+/// Match an argument to a set of candidate values.
+///
+/// Performs exact and then partial matching against the choices vector.
+/// If arg is NULL, returns the first choice (the default).
+///
+/// @param arg character scalar to match
+/// @param choices character vector of allowed values
+/// @return the matched value
 #[builtin(name = "match.arg", min_args = 1)]
 fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let arg = args.first().cloned().unwrap_or(RValue::Null);
@@ -3135,6 +3651,9 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     }
 }
 
+/// Terminate the R session.
+///
+/// Also aliased as `quit`.
 #[builtin(names = ["quit"])]
 fn builtin_q(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     std::process::exit(0);
