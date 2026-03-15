@@ -143,7 +143,30 @@ fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 }
 
 #[builtin(min_args = 1)]
-fn builtin_trimws(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let which = named
+        .iter()
+        .find(|(n, _)| n == "which")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            args.get(1)
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
+        .unwrap_or_else(|| "both".to_string());
+    let trim_fn: fn(&str) -> &str = match which.as_str() {
+        "both" => str::trim,
+        "left" => str::trim_start,
+        "right" => str::trim_end,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "invalid 'which' argument: {:?} — must be \"both\", \"left\", or \"right\"",
+                    which
+                ),
+            ))
+        }
+    };
     match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -151,7 +174,7 @@ fn builtin_trimws(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             };
             let result: Vec<Option<String>> = vals
                 .iter()
-                .map(|s| s.as_ref().map(|s| s.trim().to_string()))
+                .map(|s| s.as_ref().map(|s| trim_fn(s).to_string()))
                 .collect();
             Ok(RValue::vec(Vector::Character(result.into())))
         }
@@ -628,32 +651,50 @@ fn builtin_strsplit(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 
 #[builtin(name = "startsWith", min_args = 2)]
 fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
     let prefix = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    Ok(RValue::vec(Vector::Logical(
-        vec![Some(x.starts_with(&prefix))].into(),
-    )))
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|s| s.as_ref().map(|s| s.starts_with(prefix.as_str())))
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
 }
 
 #[builtin(name = "endsWith", min_args = 2)]
 fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
     let suffix = args
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    Ok(RValue::vec(Vector::Logical(
-        vec![Some(x.ends_with(&suffix))].into(),
-    )))
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|s| s.as_ref().map(|s| s.ends_with(suffix.as_str())))
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
 }
 
 #[builtin(min_args = 3)]

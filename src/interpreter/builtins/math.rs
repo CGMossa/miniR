@@ -1944,6 +1944,136 @@ fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     set_matrix_attrs(&mut rv, nx, ny, names_attr(&args[0]), names_attr(&args[1]))?;
     Ok(RValue::Vector(rv))
 }
+/// `det(x)` — matrix determinant via Gaussian elimination with partial pivoting.
+#[builtin(min_args = 1)]
+fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let n = a.nrows();
+    if n != a.ncols() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("'x' must be a square matrix, got {}x{}", n, a.ncols()),
+        ));
+    }
+    if n == 0 {
+        return Ok(RValue::vec(Vector::Double(vec![Some(1.0)].into())));
+    }
+
+    let mut m = a;
+    let mut det = 1.0;
+    for col in 0..n {
+        // Partial pivot
+        let mut max_row = col;
+        let mut max_val = m[[col, col]].abs();
+        for row in (col + 1)..n {
+            let val = m[[row, col]].abs();
+            if val > max_val {
+                max_val = val;
+                max_row = row;
+            }
+        }
+        if max_val < 1e-15 {
+            return Ok(RValue::vec(Vector::Double(vec![Some(0.0)].into())));
+        }
+        if max_row != col {
+            for j in 0..n {
+                let tmp = m[[col, j]];
+                m[[col, j]] = m[[max_row, j]];
+                m[[max_row, j]] = tmp;
+            }
+            det = -det;
+        }
+        det *= m[[col, col]];
+        for row in (col + 1)..n {
+            let factor = m[[row, col]] / m[[col, col]];
+            for j in col..n {
+                m[[row, j]] -= factor * m[[col, j]];
+            }
+        }
+    }
+    Ok(RValue::vec(Vector::Double(vec![Some(det)].into())))
+}
+
+/// `chol(x)` — Cholesky decomposition (upper triangular R such that x = R'R).
+#[builtin(min_args = 1)]
+fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let n = a.nrows();
+    if n != a.ncols() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("'x' must be a square matrix, got {}x{}", n, a.ncols()),
+        ));
+    }
+
+    let mut r = Array2::<f64>::zeros((n, n));
+    for i in 0..n {
+        for j in i..n {
+            let mut sum = a[[i, j]];
+            for k in 0..i {
+                sum -= r[[k, i]] * r[[k, j]];
+            }
+            if i == j {
+                if sum <= 0.0 {
+                    return Err(RError::other(
+                        "the leading minor of order ".to_string()
+                            + &(i + 1).to_string()
+                            + " is not positive — matrix is not positive definite",
+                    ));
+                }
+                r[[i, j]] = sum.sqrt();
+            } else {
+                r[[i, j]] = sum / r[[i, i]];
+            }
+        }
+    }
+    Ok(array2_to_rvalue(&r))
+}
+
+/// `t(x)` — matrix transpose.
+#[builtin(min_args = 1)]
+fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().unwrap_or(&RValue::Null);
+    let rv = match x {
+        RValue::Vector(rv) => rv,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "argument is not a matrix".to_string(),
+            ))
+        }
+    };
+
+    let (nrow, ncol) = match rv.get_attr("dim") {
+        Some(RValue::Vector(dim_rv)) => {
+            let dims = dim_rv.to_integers();
+            if dims.len() >= 2 {
+                (
+                    usize::try_from(dims[0].unwrap_or(0))?,
+                    usize::try_from(dims[1].unwrap_or(0))?,
+                )
+            } else {
+                // Treat as column vector
+                (rv.inner.len(), 1)
+            }
+        }
+        _ => (rv.inner.len(), 1), // Treat as column vector
+    };
+
+    // Build transposed flat indices: original[i,j] = flat[j*nrow + i] → transposed[j,i] = flat[i*ncol + j]
+    let indices: Vec<usize> = (0..nrow)
+        .flat_map(|i| (0..ncol).map(move |j| j * nrow + i))
+        .collect();
+    let transposed = rv.inner.select_indices(&indices);
+
+    let mut out = RVector::from(transposed);
+
+    // Swap dimnames
+    let (row_names, col_names) = matrix_dimnames(x);
+    set_matrix_attrs(&mut out, ncol, nrow, col_names, row_names)?;
+    Ok(RValue::Vector(out))
+}
+
 // endregion
 
 // region: Complex number builtins
