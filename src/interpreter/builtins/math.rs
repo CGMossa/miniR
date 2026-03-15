@@ -2323,6 +2323,409 @@ fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     Ok(array2_to_rvalue(&r))
 }
 
+// region: QR, SVD, Eigen decompositions
+
+/// `qr(x)` — QR decomposition via Householder reflections.
+///
+/// Returns a list with class "qr" containing:
+/// - `$qr`: the compact QR matrix (R stored in upper triangle, Householder
+///    vectors in lower triangle)
+/// - `$rank`: integer rank estimate
+/// - `$pivot`: integer vector 1:ncol (no column pivoting)
+#[builtin(min_args = 1)]
+fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let m = a.nrows();
+    let n = a.ncols();
+
+    // Work on a mutable copy — will hold the compact QR representation
+    let mut qr = a;
+    let k = m.min(n);
+
+    for j in 0..k {
+        // Compute the norm of the j-th column below the diagonal
+        let mut col_norm_sq = 0.0;
+        for i in j..m {
+            col_norm_sq += qr[[i, j]] * qr[[i, j]];
+        }
+        let col_norm = col_norm_sq.sqrt();
+
+        if col_norm < 1e-15 {
+            continue;
+        }
+
+        // Choose sign to avoid cancellation
+        let sign = if qr[[j, j]] >= 0.0 { 1.0 } else { -1.0 };
+        let alpha = -sign * col_norm;
+
+        // Householder vector v = x - alpha*e1, stored in-place below diagonal
+        qr[[j, j]] -= alpha;
+
+        // Normalise the Householder vector for numerical stability
+        let mut v_norm_sq = 0.0;
+        for i in j..m {
+            v_norm_sq += qr[[i, j]] * qr[[i, j]];
+        }
+        if v_norm_sq < 1e-30 {
+            qr[[j, j]] = alpha;
+            continue;
+        }
+        let inv_v_norm_sq = 1.0 / v_norm_sq;
+
+        // Apply Householder reflection to remaining columns:
+        // A[j:m, j+1:n] -= 2 * v * (v^T A) / (v^T v)
+        for col in (j + 1)..n {
+            let mut dot = 0.0;
+            for i in j..m {
+                dot += qr[[i, j]] * qr[[i, col]];
+            }
+            let factor = 2.0 * dot * inv_v_norm_sq;
+            for i in j..m {
+                qr[[i, col]] -= factor * qr[[i, j]];
+            }
+        }
+
+        // Store the diagonal element of R
+        qr[[j, j]] = alpha;
+    }
+
+    // Estimate rank from diagonal of R
+    let tol = f64::EPSILON * (m.max(n) as f64) * {
+        let mut max_diag = 0.0f64;
+        for i in 0..k {
+            max_diag = max_diag.max(qr[[i, i]].abs());
+        }
+        max_diag
+    };
+    let mut rank = 0i64;
+    for i in 0..k {
+        if qr[[i, i]].abs() > tol {
+            rank += 1;
+        }
+    }
+
+    // Pivot vector: 1:ncol (no pivoting)
+    let pivot: Vec<Option<i64>> = (1..=i64::try_from(n)?).map(Some).collect();
+
+    let qr_val = array2_to_rvalue(&qr);
+
+    let mut list = RList::new(vec![
+        (Some("qr".to_string()), qr_val),
+        (
+            Some("rank".to_string()),
+            RValue::vec(Vector::Integer(vec![Some(rank)].into())),
+        ),
+        (
+            Some("pivot".to_string()),
+            RValue::vec(Vector::Integer(pivot.into())),
+        ),
+    ]);
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("qr".to_string())].into())),
+    );
+    Ok(RValue::List(list))
+}
+
+/// `svd(x)` — Singular Value Decomposition via one-sided Jacobi rotations.
+///
+/// Returns a list with:
+/// - `$d`: numeric vector of singular values (descending)
+/// - `$u`: left singular vectors (m x min(m,n) matrix)
+/// - `$v`: right singular vectors (n x min(m,n) matrix)
+#[builtin(min_args = 1)]
+fn builtin_svd(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let m = a.nrows();
+    let n = a.ncols();
+
+    if m == 0 || n == 0 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "0 extent dimensions are not allowed".to_string(),
+        ));
+    }
+
+    // Work on B = A^T A (n x n) for one-sided Jacobi
+    let at = a.t();
+    let mut b = at.dot(&a);
+
+    // V accumulates right singular vectors (n x n)
+    let mut v = Array2::<f64>::zeros((n, n));
+    for i in 0..n {
+        v[[i, i]] = 1.0;
+    }
+
+    // Jacobi iterations on B = A^T A to diagonalize it
+    let max_iter = 100 * n * n;
+    let tol = 1e-12;
+    for _ in 0..max_iter {
+        let mut off_diag = 0.0;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                off_diag += b[[i, j]] * b[[i, j]];
+            }
+        }
+        if off_diag.sqrt()
+            < tol * {
+                let mut diag_norm = 0.0;
+                for i in 0..n {
+                    diag_norm += b[[i, i]] * b[[i, i]];
+                }
+                diag_norm.sqrt()
+            }
+        {
+            break;
+        }
+
+        for p in 0..n {
+            for q in (p + 1)..n {
+                let b_pq = b[[p, q]];
+                if b_pq.abs() < 1e-15 {
+                    continue;
+                }
+                let b_pp = b[[p, p]];
+                let b_qq = b[[q, q]];
+
+                // Compute Jacobi rotation angle
+                let tau = (b_qq - b_pp) / (2.0 * b_pq);
+                let t = if tau >= 0.0 {
+                    1.0 / (tau + (1.0 + tau * tau).sqrt())
+                } else {
+                    -1.0 / (-tau + (1.0 + tau * tau).sqrt())
+                };
+                let c = 1.0 / (1.0 + t * t).sqrt();
+                let s = t * c;
+
+                // Apply rotation to B: B <- J^T B J
+                // Update rows p and q of B
+                for i in 0..n {
+                    let b_ip = b[[i, p]];
+                    let b_iq = b[[i, q]];
+                    b[[i, p]] = c * b_ip - s * b_iq;
+                    b[[i, q]] = s * b_ip + c * b_iq;
+                }
+                // Update columns p and q of B
+                for j in 0..n {
+                    let b_pj = b[[p, j]];
+                    let b_qj = b[[q, j]];
+                    b[[p, j]] = c * b_pj - s * b_qj;
+                    b[[q, j]] = s * b_pj + c * b_qj;
+                }
+
+                // Accumulate in V
+                for i in 0..n {
+                    let v_ip = v[[i, p]];
+                    let v_iq = v[[i, q]];
+                    v[[i, p]] = c * v_ip - s * v_iq;
+                    v[[i, q]] = s * v_ip + c * v_iq;
+                }
+            }
+        }
+    }
+
+    // Singular values are sqrt of diagonal of B (eigenvalues of A^T A)
+    let k = m.min(n);
+    let mut sigma: Vec<f64> = (0..n).map(|i| b[[i, i]].max(0.0).sqrt()).collect();
+
+    // Sort singular values in descending order and permute V accordingly
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a_idx, &b_idx| {
+        sigma[b_idx]
+            .partial_cmp(&sigma[a_idx])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let sorted_sigma: Vec<f64> = order.iter().map(|&i| sigma[i]).collect();
+    sigma = sorted_sigma;
+
+    let mut v_sorted = Array2::<f64>::zeros((n, n));
+    for (new_j, &old_j) in order.iter().enumerate() {
+        for i in 0..n {
+            v_sorted[[i, new_j]] = v[[i, old_j]];
+        }
+    }
+
+    // Compute U = A V Sigma^{-1} (only first k columns)
+    let mut u = Array2::<f64>::zeros((m, k));
+    for j in 0..k {
+        if sigma[j] > 1e-15 {
+            let inv_sigma = 1.0 / sigma[j];
+            for i in 0..m {
+                let mut sum = 0.0;
+                for l in 0..n {
+                    sum += a[[i, l]] * v_sorted[[l, j]];
+                }
+                u[[i, j]] = sum * inv_sigma;
+            }
+        }
+    }
+
+    // Truncate to min(m,n) singular values and V columns
+    let d_vals: Vec<Option<f64>> = sigma[..k].iter().copied().map(Some).collect();
+
+    let mut v_out = Array2::<f64>::zeros((n, k));
+    for j in 0..k {
+        for i in 0..n {
+            v_out[[i, j]] = v_sorted[[i, j]];
+        }
+    }
+
+    Ok(RValue::List(RList::new(vec![
+        (
+            Some("d".to_string()),
+            RValue::vec(Vector::Double(d_vals.into())),
+        ),
+        (Some("u".to_string()), array2_to_rvalue(&u)),
+        (Some("v".to_string()), array2_to_rvalue(&v_out)),
+    ])))
+}
+
+/// `eigen(x)` — Eigenvalue decomposition for symmetric matrices via Jacobi
+/// iteration.
+///
+/// Returns a list with:
+/// - `$values`: numeric vector of eigenvalues (descending)
+/// - `$vectors`: matrix of eigenvectors (columns)
+///
+/// Currently only supports real symmetric matrices. Non-symmetric input
+/// produces an informative error.
+#[builtin(min_args = 1)]
+fn builtin_eigen(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let n = a.nrows();
+    if n != a.ncols() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "non-square matrix in 'eigen': {}x{} — eigen() requires a square matrix",
+                n,
+                a.ncols()
+            ),
+        ));
+    }
+
+    if n == 0 {
+        return Ok(RValue::List(RList::new(vec![
+            (
+                Some("values".to_string()),
+                RValue::vec(Vector::Double(vec![].into())),
+            ),
+            (
+                Some("vectors".to_string()),
+                array2_to_rvalue(&Array2::<f64>::zeros((0, 0))),
+            ),
+        ])));
+    }
+
+    // Check symmetry
+    let sym_tol = 1e-10;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if (a[[i, j]] - a[[j, i]]).abs() > sym_tol * (a[[i, j]].abs() + a[[j, i]].abs() + 1.0) {
+                return Err(RError::other(
+                    "only real symmetric matrices are supported in eigen() currently — \
+                     the input matrix is not symmetric. Consider using (x + t(x))/2 \
+                     if you want to symmetrize it."
+                        .to_string(),
+                ));
+            }
+        }
+    }
+
+    // Jacobi eigenvalue algorithm for symmetric matrices
+    let mut s = a;
+    let mut eigvecs = Array2::<f64>::zeros((n, n));
+    for i in 0..n {
+        eigvecs[[i, i]] = 1.0;
+    }
+
+    let max_iter = 100 * n * n;
+    let tol = 1e-12;
+
+    for _ in 0..max_iter {
+        // Find largest off-diagonal element
+        let mut off_diag = 0.0;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                off_diag += s[[i, j]] * s[[i, j]];
+            }
+        }
+        if off_diag.sqrt() < tol {
+            break;
+        }
+
+        for p in 0..n {
+            for q in (p + 1)..n {
+                let s_pq = s[[p, q]];
+                if s_pq.abs() < 1e-15 {
+                    continue;
+                }
+
+                let tau = (s[[q, q]] - s[[p, p]]) / (2.0 * s_pq);
+                let t = if tau >= 0.0 {
+                    1.0 / (tau + (1.0 + tau * tau).sqrt())
+                } else {
+                    -1.0 / (-tau + (1.0 + tau * tau).sqrt())
+                };
+                let c = 1.0 / (1.0 + t * t).sqrt();
+                let sv = t * c;
+
+                // Apply Givens rotation
+                for i in 0..n {
+                    let s_ip = s[[i, p]];
+                    let s_iq = s[[i, q]];
+                    s[[i, p]] = c * s_ip - sv * s_iq;
+                    s[[i, q]] = sv * s_ip + c * s_iq;
+                }
+                for j in 0..n {
+                    let s_pj = s[[p, j]];
+                    let s_qj = s[[q, j]];
+                    s[[p, j]] = c * s_pj - sv * s_qj;
+                    s[[q, j]] = sv * s_pj + c * s_qj;
+                }
+
+                // Accumulate eigenvectors
+                for i in 0..n {
+                    let v_ip = eigvecs[[i, p]];
+                    let v_iq = eigvecs[[i, q]];
+                    eigvecs[[i, p]] = c * v_ip - sv * v_iq;
+                    eigvecs[[i, q]] = sv * v_ip + c * v_iq;
+                }
+            }
+        }
+    }
+
+    // Extract eigenvalues from diagonal
+    let mut eigen_pairs: Vec<(f64, usize)> = (0..n).map(|i| (s[[i, i]], i)).collect();
+    // Sort descending by eigenvalue
+    eigen_pairs.sort_by(|a_pair, b_pair| {
+        b_pair
+            .0
+            .partial_cmp(&a_pair.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let values: Vec<Option<f64>> = eigen_pairs.iter().map(|&(val, _)| Some(val)).collect();
+
+    let mut vectors = Array2::<f64>::zeros((n, n));
+    for (new_j, &(_, old_j)) in eigen_pairs.iter().enumerate() {
+        for i in 0..n {
+            vectors[[i, new_j]] = eigvecs[[i, old_j]];
+        }
+    }
+
+    Ok(RValue::List(RList::new(vec![
+        (
+            Some("values".to_string()),
+            RValue::vec(Vector::Double(values.into())),
+        ),
+        (Some("vectors".to_string()), array2_to_rvalue(&vectors)),
+    ])))
+}
+
+// endregion
+
 /// `t(x)` — matrix transpose.
 #[builtin(min_args = 1)]
 fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
