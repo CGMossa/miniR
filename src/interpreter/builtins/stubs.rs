@@ -12,8 +12,7 @@ use minir_macros::stub_builtin;
 stub_builtin!("qr", 1);
 stub_builtin!("svd", 1);
 stub_builtin!("eigen", 1);
-stub_builtin!("det", 1);
-stub_builtin!("chol", 1);
+// det and chol are implemented in math.rs
 
 // Types (complex — math.rs; raw, rawShift, as.raw, is.raw — strings.rs)
 

@@ -2097,64 +2097,7 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
-#[builtin(min_args = 1)]
-fn builtin_t(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(rv)) => {
-            let dims = match get_dim_ints(rv.get_attr("dim")) {
-                Some(d) if d.len() >= 2 => (
-                    usize::try_from(d[0].unwrap_or(0))?,
-                    usize::try_from(d[1].unwrap_or(0))?,
-                ),
-                _ => return Ok(args[0].clone()),
-            };
-            let (nrow, ncol) = dims;
-            let data = rv.to_doubles();
-            let mut transposed = vec![Some(0.0f64); nrow * ncol];
-            for i in 0..nrow {
-                for j in 0..ncol {
-                    transposed[j * nrow + i] = data
-                        .get(i + j * nrow)
-                        .copied()
-                        .flatten()
-                        .map(Some)
-                        .unwrap_or(None);
-                }
-            }
-            let mut result = RVector::from(Vector::Double(transposed.into()));
-            result.set_attr(
-                "class".to_string(),
-                RValue::vec(Vector::Character(
-                    vec![Some("matrix".to_string()), Some("array".to_string())].into(),
-                )),
-            );
-            result.set_attr(
-                "dim".to_string(),
-                RValue::vec(Vector::Integer(
-                    vec![Some(i64::try_from(ncol)?), Some(i64::try_from(nrow)?)].into(),
-                )),
-            );
-            if let Some(RValue::List(dimnames)) = rv.get_attr("dimnames") {
-                let row_names = dimnames
-                    .values
-                    .first()
-                    .map(|(_, value)| value.clone())
-                    .unwrap_or(RValue::Null);
-                let col_names = dimnames
-                    .values
-                    .get(1)
-                    .map(|(_, value)| value.clone())
-                    .unwrap_or(RValue::Null);
-                result.set_attr(
-                    "dimnames".to_string(),
-                    RValue::List(RList::new(vec![(None, col_names), (None, row_names)])),
-                );
-            }
-            Ok(RValue::Vector(result))
-        }
-        _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
-    }
-}
+// t() is in math.rs (type-preserving implementation)
 
 #[builtin(min_args = 1)]
 fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
