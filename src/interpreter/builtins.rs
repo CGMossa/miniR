@@ -56,6 +56,55 @@ pub fn math_unary_op(args: &[RValue], f: fn(f64) -> f64) -> Result<RValue, RErro
     }
 }
 
+/// Look up a builtin descriptor by R name or alias.
+pub fn find_builtin(name: &str) -> Option<&'static BuiltinDescriptor> {
+    BUILTIN_REGISTRY
+        .iter()
+        .find(|d| d.name == name || d.aliases.contains(&name))
+}
+
+/// Format a builtin's doc string for display.
+/// Convention: first line = title, rest = description/params.
+pub fn format_help(descriptor: &BuiltinDescriptor) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("{}\n", descriptor.name));
+    out.push_str(&"─".repeat(descriptor.name.len().max(20)));
+    out.push('\n');
+
+    if descriptor.doc.is_empty() {
+        out.push_str(&format!(
+            "  .Primitive(\"{}\")  [{} arg{}]\n",
+            descriptor.name,
+            descriptor.min_args,
+            if descriptor.min_args == 1 { "" } else { "s" }
+        ));
+    } else {
+        for line in descriptor.doc.lines() {
+            let line = line.trim();
+            if line.starts_with("@param ") {
+                let rest = &line[7..];
+                if let Some((param, desc)) = rest.split_once(' ') {
+                    out.push_str(&format!("  {:<12} {}\n", param, desc));
+                } else {
+                    out.push_str(&format!("  {}\n", rest));
+                }
+            } else if line.starts_with("@return ") {
+                out.push_str(&format!("\nReturns: {}\n", &line[8..]));
+            } else if !line.is_empty() {
+                out.push_str(&format!("{}\n", line));
+            }
+        }
+    }
+
+    if !descriptor.aliases.is_empty() {
+        out.push_str(&format!(
+            "\nAliases: {}\n",
+            descriptor.aliases.join(", ")
+        ));
+    }
+    out
+}
+
 pub fn register_builtins(env: &Environment) {
     for descriptor in BUILTIN_REGISTRY {
         register_builtin_binding(env, descriptor.name, *descriptor);
@@ -382,6 +431,31 @@ fn collect_c_names(entries: &[(Option<String>, RValue)]) -> Vec<Option<String>> 
         }
     }
     names
+}
+
+/// Display help for a function.
+///
+/// @param topic name of the function to look up
+#[builtin(min_args = 1)]
+fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let name = match args.first() {
+        Some(RValue::Vector(rv)) => rv.as_character_scalar().unwrap_or_default(),
+        Some(RValue::Function(RFunction::Builtin { name, .. })) => name.clone(),
+        _ => String::new(),
+    };
+    if name.is_empty() {
+        return Ok(RValue::Null);
+    }
+    match find_builtin(&name) {
+        Some(descriptor) => {
+            println!("{}", format_help(descriptor));
+            Ok(RValue::Null)
+        }
+        None => {
+            println!("No documentation for '{name}'");
+            Ok(RValue::Null)
+        }
+    }
 }
 
 // print() is in interp.rs (S3-dispatching interpreter builtin)

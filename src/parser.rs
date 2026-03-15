@@ -92,13 +92,20 @@ fn build_expr(pair: Pair<Rule>) -> Expr {
     }
 }
 
-// "?" help (unary or binary — just evaluates and returns the expression for now)
+// "?" help — convert to help("topic") call
 fn build_help(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
     let first = inner.next().unwrap();
     if first.as_rule() == Rule::help_expr {
-        // Unary: "?" ~ assign_eq_expr — just evaluate the expr
-        build_expr(first)
+        // Unary: "?foo" → help("foo")
+        let topic = extract_help_topic(&first);
+        return Expr::Call {
+            func: Box::new(Expr::Symbol("help".to_string())),
+            args: vec![Arg {
+                name: None,
+                value: Some(Expr::String(topic)),
+            }],
+        };
     } else {
         // Binary: expr ~ "?" ~ expr — just evaluate the LHS
         let lhs = build_expr(first);
@@ -108,6 +115,16 @@ fn build_help(pair: Pair<Rule>) -> Expr {
         }
         lhs
     }
+}
+
+/// Extract the topic name from a help expression for `?foo`.
+/// Walks down to find the innermost symbol or string.
+fn extract_help_topic(pair: &Pair<Rule>) -> String {
+    let text = pair.as_str().trim();
+    // Strip leading ? if present
+    let text = text.strip_prefix('?').unwrap_or(text).trim();
+    // If it's a simple identifier or string, use it directly
+    text.to_string()
 }
 
 // "=" assignment (right-associative)

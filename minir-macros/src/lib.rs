@@ -31,6 +31,7 @@ fn descriptor_literal(
     implementation: TokenStream2,
     min_args: usize,
     max_args: Option<usize>,
+    doc: &str,
 ) -> TokenStream2 {
     let max_args = match max_args {
         Some(max_args) => quote!(Some(#max_args)),
@@ -44,8 +45,32 @@ fn descriptor_literal(
             implementation: #implementation,
             min_args: #min_args,
             max_args: #max_args,
+            doc: #doc,
         }
     }
+}
+
+/// Extract doc comments (`///` or `#[doc = "..."]`) from a function's attributes.
+fn extract_doc_string(input: &ItemFn) -> String {
+    input
+        .attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("doc") {
+                if let syn::Meta::NameValue(meta) = &attr.meta {
+                    if let syn::Expr::Lit(lit) = &meta.value {
+                        if let syn::Lit::Str(s) = &lit.lit {
+                            return Some(s.value());
+                        }
+                    }
+                }
+            }
+            None
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 fn emit_descriptor_registration(reg_name: &syn::Ident, descriptor: TokenStream2) -> TokenStream2 {
@@ -73,6 +98,7 @@ fn emit_builtin_registration(
     let max_args = attr_args.max_args.map(|value| value as usize);
     let implementation = kind.registry_ctor(fn_name);
 
+    let doc = extract_doc_string(input);
     let reg_name = format_ident!("__{}_{}", reg_prefix, fn_name.to_string().to_uppercase());
     let descriptor = descriptor_literal(
         &r_name,
@@ -80,6 +106,7 @@ fn emit_builtin_registration(
         implementation,
         min_args,
         max_args,
+        &doc,
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
     let alias_docs = attr_args
@@ -381,6 +408,7 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
         quote!(crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident)),
         min_args,
         None,
+        "",
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
@@ -426,6 +454,7 @@ pub fn stub_builtin(input: TokenStream) -> TokenStream {
         quote!(crate::interpreter::builtins::BuiltinImplementation::Eager(#fn_ident)),
         min_args,
         None,
+        "",
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
