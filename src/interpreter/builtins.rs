@@ -1,4 +1,5 @@
 mod args;
+mod coercion;
 mod conditions;
 #[cfg(feature = "datetime")]
 mod datetime;
@@ -14,6 +15,7 @@ pub mod strings;
 mod stubs;
 pub mod system;
 mod tables;
+mod types;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
@@ -644,224 +646,6 @@ fn builtin_nchar(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Integer(vec![None].into()))),
-    }
-}
-
-/// Test if an object is NULL.
-///
-/// Also registered as stubs for is.ordered, is.call, is.symbol,
-/// is.name, is.expression, and is.pairlist (all return FALSE for now).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist"])]
-fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Null));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is an environment.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(name = "is.environment", min_args = 1)]
-fn builtin_is_environment(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Environment(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a language object (unevaluated expression).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(name = "is.language", min_args = 1)]
-fn builtin_is_language(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Language(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test which elements are NA (missing values).
-///
-/// For doubles, NaN is also considered NA.
-///
-/// @param x vector to test
-/// @return logical vector of the same length
-#[builtin(min_args = 1)]
-fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = match &v.inner {
-                Vector::Raw(vals) => vals.iter().map(|_| Some(false)).collect(),
-                Vector::Logical(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
-                Vector::Integer(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
-                Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| Some(x.is_none() || x.map(|f| f.is_nan()).unwrap_or(false)))
-                    .collect(),
-                Vector::Complex(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
-                Vector::Character(vals) => vals.iter().map(|x| Some(x.is_none())).collect(),
-            };
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    }
-}
-
-/// Test if an object is numeric (integer or double).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(
-        args.first(),
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Double(_) | Vector::Integer(_))
-    );
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a character vector.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a logical vector.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r =
-        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is an integer vector.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r =
-        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Integer(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a double (real-valued) vector.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r =
-        matches!(args.first(), Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Double(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a function.
-///
-/// Also aliased as `is.primitive`.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1, names = ["is.primitive"])]
-fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Function(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a vector with no attributes other than names.
-///
-/// Returns TRUE for atomic vectors and lists that have no attributes
-/// beyond "names".
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // R's is.vector returns TRUE only if the vector has no attributes other than "names"
-    let r = match args.first() {
-        Some(RValue::Vector(rv)) => match &rv.attrs {
-            None => true,
-            Some(attrs) => attrs.keys().all(|k| k == "names"),
-        },
-        Some(RValue::List(l)) => match &l.attrs {
-            None => true,
-            Some(attrs) => attrs.keys().all(|k| k == "names"),
-        },
-        _ => false,
-    };
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a list.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::List(_)));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Coerce an object to double (numeric).
-///
-/// Also aliased as `as.double`.
-///
-/// @param x object to coerce
-/// @return double vector
-#[builtin(min_args = 1, names = ["as.double"])]
-fn builtin_as_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Double(v.to_doubles().into()))),
-        Some(RValue::Null) => Ok(RValue::vec(Vector::Double(vec![].into()))),
-        _ => Ok(RValue::vec(Vector::Double(vec![None].into()))),
-    }
-}
-
-/// Coerce an object to integer.
-///
-/// Doubles are truncated toward zero.
-///
-/// @param x object to coerce
-/// @return integer vector
-#[builtin(min_args = 1)]
-fn builtin_as_integer(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Integer(v.to_integers().into()))),
-        Some(RValue::Null) => Ok(RValue::vec(Vector::Integer(vec![].into()))),
-        _ => Ok(RValue::vec(Vector::Integer(vec![None].into()))),
-    }
-}
-
-/// Coerce an object to character (string).
-///
-/// @param x object to coerce
-/// @return character vector
-#[builtin(min_args = 1)]
-fn builtin_as_character(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Character(v.to_characters().into()))),
-        Some(RValue::Null) => Ok(RValue::vec(Vector::Character(vec![].into()))),
-        _ => Ok(RValue::vec(Vector::Character(vec![None].into()))),
-    }
-}
-
-/// Coerce an object to logical.
-///
-/// @param x object to coerce
-/// @return logical vector
-#[builtin(min_args = 1)]
-fn builtin_as_logical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => Ok(RValue::vec(Vector::Logical(v.to_logicals().into()))),
-        Some(RValue::Null) => Ok(RValue::vec(Vector::Logical(vec![].into()))),
-        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
     }
 }
 
@@ -1684,50 +1468,6 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     }
 }
 
-/// Coerce an object to a list.
-///
-/// Atomic vectors are split into single-element list entries.
-///
-/// @param x object to coerce
-/// @return list
-#[builtin(min_args = 1)]
-fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::List(l)) => Ok(RValue::List(l.clone())),
-        Some(RValue::Vector(v)) => {
-            let values: Vec<(Option<String>, RValue)> = match &v.inner {
-                Vector::Raw(vals) => vals
-                    .iter()
-                    .map(|&x| (None, RValue::vec(Vector::Raw(vec![x]))))
-                    .collect(),
-                Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Double(vec![*x].into()))))
-                    .collect(),
-                Vector::Integer(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Integer(vec![*x].into()))))
-                    .collect(),
-                Vector::Logical(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Logical(vec![*x].into()))))
-                    .collect(),
-                Vector::Complex(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Complex(vec![*x].into()))))
-                    .collect(),
-                Vector::Character(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Character(vec![x.clone()].into()))))
-                    .collect(),
-            };
-            Ok(RValue::List(RList::new(values)))
-        }
-        Some(RValue::Null) => Ok(RValue::List(RList::new(vec![]))),
-        _ => Ok(RValue::List(RList::new(vec![]))),
-    }
-}
-
 /// Flatten a list into an atomic vector.
 ///
 /// Recursively combines list elements using the same coercion rules as `c()`.
@@ -1985,122 +1725,6 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             )),
         ),
     ])))
-}
-
-/// Test if an object is recursive (list or environment).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // R's is.recursive: TRUE for lists and environments
-    let r = matches!(
-        args.first(),
-        Some(RValue::List(_)) | Some(RValue::Environment(_))
-    );
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is atomic (vector or NULL).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_atomic(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // R's is.atomic: TRUE for atomic vectors and NULL
-    let r = matches!(args.first(), Some(RValue::Vector(_)) | Some(RValue::Null));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test which elements are finite (not Inf, -Inf, NaN, or NA).
-///
-/// @param x numeric vector to test
-/// @return logical vector of the same length
-#[builtin(min_args = 1)]
-fn builtin_is_finite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = match &v.inner {
-                Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| Some(x.map(|f| f.is_finite()).unwrap_or(false)))
-                    .collect(),
-                // Non-NA integers and logicals are always finite
-                Vector::Integer(vals) => vals.iter().map(|x| Some(x.is_some())).collect(),
-                Vector::Logical(vals) => vals.iter().map(|x| Some(x.is_some())).collect(),
-                _ => {
-                    return Err(RError::new(
-                        RErrorKind::Argument,
-                        "default method not implemented for type".to_string(),
-                    ))
-                }
-            };
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    }
-}
-
-/// Test which elements are infinite (Inf or -Inf).
-///
-/// @param x numeric vector to test
-/// @return logical vector of the same length
-#[builtin(min_args = 1)]
-fn builtin_is_infinite(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = match &v.inner {
-                Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| Some(x.map(|f| f.is_infinite()).unwrap_or(false)))
-                    .collect(),
-                // Integers and logicals are never infinite
-                Vector::Integer(_) | Vector::Logical(_) => {
-                    vec![Some(false); v.inner.len()]
-                }
-                _ => {
-                    return Err(RError::new(
-                        RErrorKind::Argument,
-                        "default method not implemented for type".to_string(),
-                    ))
-                }
-            };
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    }
-}
-
-/// Test which elements are NaN (not-a-number).
-///
-/// Unlike `is.na()`, this returns FALSE for NA values that are not NaN.
-///
-/// @param x numeric vector to test
-/// @return logical vector of the same length
-#[builtin(min_args = 1)]
-fn builtin_is_nan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => {
-            let result: Vec<Option<bool>> = match &v.inner {
-                Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| Some(x.map(|f| f.is_nan()).unwrap_or(false)))
-                    .collect(),
-                // Integers and logicals are never NaN
-                Vector::Integer(_) | Vector::Logical(_) => {
-                    vec![Some(false); v.inner.len()]
-                }
-                _ => {
-                    return Err(RError::new(
-                        RErrorKind::Argument,
-                        "default method not implemented for type".to_string(),
-                    ))
-                }
-            };
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    }
 }
 
 /// Set difference: elements in x that are not in y.
@@ -3268,7 +2892,7 @@ pub(crate) fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>
     }
 }
 
-fn has_class(val: &RValue, class_name: &str) -> bool {
+pub(crate) fn has_class(val: &RValue, class_name: &str) -> bool {
     let class_attr = match val {
         RValue::Vector(rv) => rv.get_attr("class"),
         RValue::List(l) => l.get_attr("class"),
@@ -3281,91 +2905,6 @@ fn has_class(val: &RValue, class_name: &str) -> bool {
         }
     }
     false
-}
-
-/// Test if an object is a factor.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_factor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| has_class(v, "factor"));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a data frame.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_data_frame(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| has_class(v, "data.frame"));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is a matrix (has dim attribute of length 2).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| {
-        // Check class attribute
-        if has_class(v, "matrix") {
-            return true;
-        }
-        // A matrix is any object with a dim attribute of length 2
-        let dim_attr = match v {
-            RValue::Vector(rv) => rv.get_attr("dim"),
-            RValue::List(l) => l.get_attr("dim"),
-            _ => None,
-        };
-        get_dim_ints(dim_attr).is_some_and(|d| d.len() == 2)
-    });
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test if an object is an array.
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(min_args = 1)]
-fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| has_class(v, "array"));
-    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
-}
-
-/// Test set membership: is each element of x in table?
-///
-/// @param el values to test
-/// @param table values to match against
-/// @return logical vector of the same length as el
-#[builtin(min_args = 2)]
-fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
-    }
-    let x = match &args[0] {
-        RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    };
-    let table = match &args[1] {
-        RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    };
-    let result: Vec<Option<bool>> = x
-        .iter()
-        .map(|xi| {
-            Some(
-                xi.as_ref()
-                    .is_some_and(|xi| table.iter().any(|t| t.as_ref() == Some(xi))),
-            )
-        })
-        .collect();
-    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 // `environment()` is an interpreter builtin in interp.rs (needs BuiltinContext for no-arg case)
@@ -3425,46 +2964,6 @@ fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-/// Test if x is a single TRUE value.
-///
-/// Returns TRUE only if x is a length-1 logical vector equal to TRUE (not NA).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(name = "isTRUE", min_args = 1)]
-fn builtin_is_true(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let result = match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
-            let Vector::Logical(v) = &rv.inner else {
-                unreachable!()
-            };
-            v.len() == 1 && v[0] == Some(true)
-        }
-        _ => false,
-    };
-    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
-}
-
-/// Test if x is a single FALSE value.
-///
-/// Returns TRUE only if x is a length-1 logical vector equal to FALSE (not NA).
-///
-/// @param x object to test
-/// @return logical scalar
-#[builtin(name = "isFALSE", min_args = 1)]
-fn builtin_is_false(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let result = match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
-            let Vector::Logical(v) = &rv.inner else {
-                unreachable!()
-            };
-            v.len() == 1 && v[0] == Some(false)
-        }
-        _ => false,
-    };
-    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
-}
-
 /// Assert that all arguments are TRUE, stopping with an error otherwise.
 ///
 /// Checks each argument in order. If any element is FALSE or NA,
@@ -3515,28 +3014,6 @@ fn builtin_stopifnot(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         }
     }
     Ok(RValue::Null)
-}
-
-/// Coerce an object to a vector, stripping all attributes.
-///
-/// @param x object to coerce
-/// @return the object with all attributes removed
-#[builtin(min_args = 1)]
-fn builtin_as_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(v)) => {
-            let mut v = v.clone();
-            v.attrs = None;
-            Ok(RValue::Vector(v))
-        }
-        Some(RValue::List(items)) => {
-            let mut items = items.clone();
-            items.attrs = None;
-            Ok(RValue::List(items))
-        }
-        Some(RValue::Null) => Ok(RValue::Null),
-        _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
-    }
 }
 
 /// Remove the class attribute from an object.
