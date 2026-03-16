@@ -110,6 +110,9 @@ pub struct Interpreter {
     pub(crate) collections: RefCell<Vec<builtins::collections::CollectionObject>>,
     /// Connection table — slots 0-2 are stdin/stdout/stderr, lazily initialised.
     pub(crate) connections: RefCell<Vec<builtins::connections::ConnectionInfo>>,
+    /// TCP stream handles, keyed by connection ID. Stored separately from
+    /// `ConnectionInfo` because `TcpStream` is not `Clone`.
+    pub(crate) tcp_streams: RefCell<std::collections::HashMap<usize, std::net::TcpStream>>,
     /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
     /// interpreter is dropped.
     pub(crate) finalizers: RefCell<Vec<RValue>>,
@@ -210,6 +213,7 @@ impl Interpreter {
             #[cfg(feature = "collections")]
             collections: RefCell::new(Vec::new()),
             connections: RefCell::new(Vec::new()),
+            tcp_streams: RefCell::new(std::collections::HashMap::new()),
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),
             options: RefCell::new(Self::default_options()),
