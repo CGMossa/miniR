@@ -535,9 +535,15 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     if name.is_empty() {
         return Ok(RValue::Null);
     }
-    match find_builtin(&name) {
-        Some(descriptor) => {
-            println!("{}", format_help(descriptor));
+    // Support namespace::name syntax (e.g. "base::sum")
+    let descriptor = if let Some((ns, n)) = name.split_once("::") {
+        find_builtin_ns(ns, n)
+    } else {
+        find_builtin(&name)
+    };
+    match descriptor {
+        Some(d) => {
+            println!("{}", format_help(d));
             Ok(RValue::Null)
         }
         None => {
