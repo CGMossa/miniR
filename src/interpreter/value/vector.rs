@@ -204,7 +204,16 @@ impl Vector {
                 .iter()
                 .map(|x| x.map(|c| c.re != 0.0 || c.im != 0.0))
                 .collect(),
-            Vector::Character(_) => vec![None; self.len()],
+            Vector::Character(v) => v
+                .iter()
+                .map(|x| {
+                    x.as_ref().and_then(|s| match s.trim() {
+                        "TRUE" | "T" => Some(true),
+                        "FALSE" | "F" => Some(false),
+                        _ => None,
+                    })
+                })
+                .collect(),
         }
     }
 
