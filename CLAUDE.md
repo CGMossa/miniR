@@ -134,6 +134,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - After adding a new dependency, run `cargo tree -p <dep>` to discover its transitive dependencies that might be useful for the interpreter, and write plans for any relevant ones
 - Use `just vendor` to re-vendor — never run `cargo vendor` directly (the `justfile` preserves README.md and writes .cargo/config.toml)
 - The vendor directory uses an absolute path in `.cargo/config.toml` — this is required because subagents and worktrees run from different working directories
+- **Adding new dependencies**: `.cargo/config.toml` replaces crates-io with the vendor dir, so `cargo add` and `cargo update` fail for new crates. Workaround: (1) add the dep to `Cargo.toml` manually, (2) temporarily `mv .cargo/config.toml .cargo/config.toml.bak`, (3) run `cargo update`, (4) `mv .cargo/config.toml.bak .cargo/config.toml`, (5) `just vendor-force` to vendor the new crate
 
 ## Tool Rules
 
