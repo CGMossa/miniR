@@ -1403,6 +1403,8 @@ fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
 }
 
+// is.element() is in types.rs
+
 /// Test near-equality of two objects within a tolerance.
 ///
 /// For numeric vectors, checks that all corresponding elements differ by
@@ -1511,25 +1513,45 @@ fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
-/// Exclusive OR of two logical values.
+/// Exclusive OR: vectorized element-wise XOR of two logical vectors.
 ///
-/// @param x first logical value
-/// @param y second logical value
-/// @return logical scalar
+/// Returns TRUE when exactly one of x and y is TRUE, FALSE otherwise.
+/// Recycles the shorter argument.
+///
+/// @param x logical vector
+/// @param y logical vector
+/// @return logical vector
 #[builtin(min_args = 2)]
 fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
             RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
-    }
-    let a = args[0].as_vector().and_then(|v| v.as_logical_scalar());
-    let b = args[1].as_vector().and_then(|v| v.as_logical_scalar());
-    match (a, b) {
-        (Some(a), Some(b)) => Ok(RValue::vec(Vector::Logical(vec![Some(a ^ b)].into()))),
-        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
-    }
+            "xor() requires logical arguments".to_string(),
+        )
+    })?;
+    let y = args.get(1).and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "xor() requires logical arguments".to_string(),
+        )
+    })?;
+
+    let x_log = x.to_logicals();
+    let y_log = y.to_logicals();
+    let max_len = x_log.len().max(y_log.len());
+
+    let result: Vec<Option<bool>> = (0..max_len)
+        .map(|i| {
+            let a = x_log[i % x_log.len()];
+            let b = y_log[i % y_log.len()];
+            match (a, b) {
+                (Some(a), Some(b)) => Some(a ^ b),
+                _ => None,
+            }
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Construct a list from the given arguments.
@@ -3673,15 +3695,7 @@ fn builtin_use_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 
 // `expression()` is a pre-eval builtin — see builtins/pre_eval.rs
 
-/// `Recall(...)` — recursive self-call. Requires a call stack to know the current
-/// function. Not yet implemented since we don't track a call stack.
-#[builtin(name = "Recall")]
-fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::other(
-        "Recall() is not yet available — it requires call stack tracking, which is not yet implemented. \
-         As a workaround, give your function a name and call it directly for recursion.",
-    ))
-}
+// `Recall(...)` is an interpreter builtin — see builtins/interp.rs
 
 // region: locale, gc, debugging stubs
 

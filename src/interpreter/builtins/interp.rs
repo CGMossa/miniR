@@ -345,8 +345,13 @@ fn eval_apply(
 
 /// Call a function with arguments supplied as a list.
 ///
+/// Named elements in the list are passed as named arguments to the function.
+/// The `quote` parameter is accepted but currently ignored (all args are already
+/// evaluated when passed via a list).
+///
 /// @param what function or character string naming the function
 /// @param args list of arguments to pass to the function
+/// @param quote logical: whether to quote arguments (default FALSE, accepted but ignored)
 /// @return the result of the function call
 #[interpreter_builtin(name = "do.call", min_args = 2)]
 fn interp_do_call(
@@ -354,18 +359,33 @@ fn interp_do_call(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // Filter out the `quote` and `envir` named args (they are for do.call itself)
+    let extra_named: Vec<(String, RValue)> = named
+        .iter()
+        .filter(|(n, _)| n != "quote" && n != "envir")
+        .cloned()
+        .collect();
+
     let env = context.env();
     if positional.len() >= 2 {
         let f = match_fun(&positional[0], env)?;
         return context.with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
-                let args: Vec<RValue> = l.values.iter().map(|(_, v)| v.clone()).collect();
+                // Separate named and positional args from the list
+                let mut pos_args: Vec<RValue> = Vec::new();
+                let mut named_args: Vec<(String, RValue)> = extra_named;
+                for (name, val) in &l.values {
+                    match name {
+                        Some(n) if !n.is_empty() => named_args.push((n.clone(), val.clone())),
+                        _ => pos_args.push(val.clone()),
+                    }
+                }
                 interp
-                    .call_function(&f, &args, named, env)
+                    .call_function(&f, &pos_args, &named_args, env)
                     .map_err(RError::from)
             }
             _ => interp
-                .call_function(&f, &positional[1..], named, env)
+                .call_function(&f, &positional[1..], &extra_named, env)
                 .map_err(RError::from),
         });
     }
@@ -3009,6 +3029,90 @@ fn rapply_replace(
             .call_function(f, std::slice::from_ref(x), &[], env)
             .map_err(RError::from)?),
     }
+}
+
+// endregion
+
+// region: Recall and parent.env<-
+
+/// Recursive self-call: re-invoke the currently executing function with new arguments.
+///
+/// Recall looks up the call stack to find the enclosing user-defined function
+/// and calls it again with the supplied arguments.
+///
+/// @param ... arguments to pass to the re-invoked function
+/// @return the result of re-calling the current function
+#[interpreter_builtin(name = "Recall")]
+fn interp_recall(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.with_interpreter(|interp| {
+        // Walk the call stack to find the nearest user-defined (closure) function
+        let frames = interp.call_stack.borrow();
+        let closure_frame = frames.iter().rev().find(|frame| {
+            matches!(
+                &frame.function,
+                RValue::Function(RFunction::Closure { .. })
+            )
+        });
+        match closure_frame {
+            Some(frame) => {
+                let func = frame.function.clone();
+                let env = frame.env.clone();
+                drop(frames); // release borrow before calling
+                interp
+                    .call_function(&func, positional, named, &env)
+                    .map_err(RError::from)
+            }
+            None => {
+                drop(frames);
+                Err(RError::other(
+                    "Recall() called from outside a function — there is no enclosing function to re-invoke"
+                        .to_string(),
+                ))
+            }
+        }
+    })
+}
+
+/// Set the parent environment of an environment.
+///
+/// This is the replacement function for `parent.env(e)`.
+/// Usage: `parent.env(e) <- value`
+///
+/// @param e environment whose parent to set
+/// @param value the new parent environment
+/// @return the modified environment (invisibly)
+#[interpreter_builtin(name = "parent.env<-", min_args = 2)]
+fn interp_parent_env_assign(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = match positional.first() {
+        Some(RValue::Environment(e)) => e,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "`parent.env<-` requires an environment as its first argument".to_string(),
+            ))
+        }
+    };
+    let new_parent = match positional.get(1) {
+        Some(RValue::Environment(e)) => Some(e.clone()),
+        Some(RValue::Null) => None,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "`parent.env<-` requires an environment (or NULL) as the replacement value"
+                    .to_string(),
+            ))
+        }
+    };
+    env.set_parent(new_parent);
+    Ok(RValue::Environment(env.clone()))
 }
 
 // endregion

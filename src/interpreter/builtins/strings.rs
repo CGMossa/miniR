@@ -1616,3 +1616,126 @@ fn builtin_strrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 }
 
 // endregion
+
+// region: strtrim, encoding
+
+/// Trim character strings to a specified display width.
+///
+/// @param x character vector
+/// @param width integer vector of maximum widths
+/// @return character vector with strings trimmed to width
+#[builtin(min_args = 2)]
+fn builtin_strtrim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "strtrim() requires a character 'x' argument".to_string(),
+        )
+    })?;
+    let width_vec = args.get(1).and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "strtrim() requires an integer 'width' argument".to_string(),
+        )
+    })?;
+
+    let chars = x.to_characters();
+    let widths = width_vec.to_integers();
+    let max_len = chars.len().max(widths.len());
+
+    let result: Vec<Option<String>> = (0..max_len)
+        .map(|i| {
+            let s = &chars[i % chars.len()];
+            let w = widths[i % widths.len()];
+            match (s, w) {
+                (Some(s), Some(w)) => {
+                    let width = usize::try_from(w.max(0)).unwrap_or(0);
+                    let mut trimmed = String::new();
+                    let mut current_width = 0;
+                    for c in s.chars() {
+                        let char_width = UnicodeWidthStr::width(c.to_string().as_str());
+                        if current_width + char_width > width {
+                            break;
+                        }
+                        trimmed.push(c);
+                        current_width += char_width;
+                    }
+                    Some(trimmed)
+                }
+                _ => None,
+            }
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Return the encoding of character strings.
+///
+/// miniR uses UTF-8 internally for all strings.
+///
+/// @param x character vector
+/// @return character vector of encoding names ("UTF-8" for non-NA strings, NA for NA)
+#[builtin(name = "Encoding", min_args = 1)]
+fn builtin_encoding(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "Encoding() requires a character argument".to_string(),
+        )
+    })?;
+
+    let chars = x.to_characters();
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .map(|s| {
+            // miniR always uses UTF-8 internally; report "unknown" for ASCII-only strings
+            // and "UTF-8" for strings with non-ASCII characters (matching R behavior).
+            s.as_ref().map(|s| {
+                if s.bytes().all(|b| b.is_ascii()) {
+                    "unknown".to_string()
+                } else {
+                    "UTF-8".to_string()
+                }
+            })
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Convert strings to UTF-8.
+///
+/// In miniR, all strings are already UTF-8, so this is essentially a pass-through.
+///
+/// @param x character vector
+/// @return character vector (unchanged, since miniR is always UTF-8)
+#[builtin(min_args = 1)]
+fn builtin_enc2utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(v @ RValue::Vector(_)) => Ok(v.clone()),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "enc2utf8() requires a character argument".to_string(),
+        )),
+    }
+}
+
+/// Convert strings to native encoding.
+///
+/// In miniR, the native encoding is UTF-8, so this is a pass-through.
+///
+/// @param x character vector
+/// @return character vector (unchanged, since miniR native encoding is UTF-8)
+#[builtin(min_args = 1)]
+fn builtin_enc2native(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(v @ RValue::Vector(_)) => Ok(v.clone()),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "enc2native() requires a character argument".to_string(),
+        )),
+    }
+}
+
+// endregion

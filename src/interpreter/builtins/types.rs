@@ -338,37 +338,46 @@ fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
-/// Test set membership: is each element of x in table?
+/// Test set membership: is each element of el in table?
+///
+/// Equivalent to `el %in% table`. For character vectors, compares as strings;
+/// for numeric vectors, compares as doubles (handling NaN correctly).
 ///
 /// @param el values to test
 /// @param table values to match against
 /// @return logical vector of the same length as el
 #[builtin(min_args = 2)]
 fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
+    let left = args.first().unwrap_or(&RValue::Null);
+    let right = args.get(1).unwrap_or(&RValue::Null);
+    match (left, right) {
+        (RValue::Vector(lv), RValue::Vector(rv)) => {
+            // If either side is character, compare as strings
+            if matches!(lv.inner, Vector::Character(_)) || matches!(rv.inner, Vector::Character(_))
+            {
+                let table = rv.to_characters();
+                let vals = lv.to_characters();
+                let result: Vec<Option<bool>> =
+                    vals.iter().map(|x| Some(table.contains(x))).collect();
+                return Ok(RValue::vec(Vector::Logical(result.into())));
+            }
+            // Otherwise compare as doubles (handles int/double/logical correctly)
+            let table = rv.to_doubles();
+            let vals = lv.to_doubles();
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|x| match x {
+                    Some(v) => Some(table.iter().any(|t| match t {
+                        Some(t) => (*t == *v) || (t.is_nan() && v.is_nan()),
+                        None => false,
+                    })),
+                    None => Some(table.iter().any(|t| t.is_none())),
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
+        }
+        _ => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     }
-    let x = match &args[0] {
-        RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    };
-    let table = match &args[1] {
-        RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    };
-    let result: Vec<Option<bool>> = x
-        .iter()
-        .map(|xi| {
-            Some(
-                xi.as_ref()
-                    .is_some_and(|xi| table.iter().any(|t| t.as_ref() == Some(xi))),
-            )
-        })
-        .collect();
-    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Test if x is a single TRUE value.

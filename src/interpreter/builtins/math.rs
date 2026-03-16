@@ -1453,30 +1453,123 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 
 /// Indices of TRUE elements.
 ///
+/// When `arr.ind = TRUE` and x has a dim attribute (is a matrix), returns a
+/// two-column integer matrix with row and column indices instead of linear indices.
+///
 /// @param x logical vector
-/// @return integer vector of 1-based indices where x is TRUE
+/// @param arr.ind logical: if TRUE, return array indices for matrices
+/// @return integer vector of 1-based indices (or matrix if arr.ind = TRUE)
 #[builtin(min_args = 1)]
-fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_which(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let arr_ind = named
+        .iter()
+        .find(|(n, _)| n == "arr.ind")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_logical_scalar()))
+        .unwrap_or(false);
+
     match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
             let Vector::Logical(vals) = &rv.inner else {
                 unreachable!()
             };
-            let result: Vec<Option<i64>> = vals
+            let linear_indices: Vec<i64> = vals
                 .iter()
                 .enumerate()
                 .filter_map(|(i, v)| {
                     if *v == Some(true) {
-                        Some(Some(i64::try_from(i).unwrap_or(0) + 1))
+                        Some(i64::try_from(i).unwrap_or(0) + 1)
                     } else {
                         None
                     }
                 })
                 .collect();
+
+            // If arr.ind = TRUE and x is a matrix, convert to row/col indices
+            if arr_ind {
+                if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
+                    if let Vector::Integer(d) = &dim_rv.inner {
+                        if d.len() >= 2 {
+                            let nrow = usize::try_from(d[0].unwrap_or(0)).unwrap_or(0);
+                            return array_ind_matrix(&linear_indices, nrow);
+                        }
+                    }
+                }
+            }
+
+            let result: Vec<Option<i64>> = linear_indices.into_iter().map(Some).collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Integer(vec![].into()))),
     }
+}
+
+/// Convert linear indices to row/column array subscripts.
+///
+/// @param ind integer vector of 1-based linear indices
+/// @param .dim integer vector of matrix dimensions
+/// @return integer matrix with one column per dimension
+#[builtin(name = "arrayInd", min_args = 2)]
+fn builtin_array_ind(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ind_vec = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "arrayInd() requires an integer 'ind' argument".to_string(),
+        )
+    })?;
+
+    let dim_vec = named
+        .iter()
+        .find(|(n, _)| n == ".dim")
+        .map(|(_, v)| v)
+        .or(args.get(1))
+        .and_then(|v| v.as_vector())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "arrayInd() requires a '.dim' argument".to_string(),
+            )
+        })?;
+
+    let indices = ind_vec.to_integers();
+    let dims = dim_vec.to_integers();
+
+    if dims.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "arrayInd() requires at least 2 dimensions".to_string(),
+        ));
+    }
+
+    let nrow = usize::try_from(dims[0].unwrap_or(0)).unwrap_or(0);
+    let linear: Vec<i64> = indices.iter().filter_map(|x| *x).collect();
+    array_ind_matrix(&linear, nrow)
+}
+
+/// Helper: convert 1-based linear indices to a 2-column (row, col) matrix.
+fn array_ind_matrix(linear_indices: &[i64], nrow: usize) -> Result<RValue, RError> {
+    let n = linear_indices.len();
+    let mut data: Vec<Option<i64>> = Vec::with_capacity(n * 2);
+
+    // Column-major: first all rows, then all cols
+    for &idx in linear_indices {
+        let zero_based = usize::try_from(idx - 1).unwrap_or(0);
+        let row = (zero_based % nrow) + 1;
+        data.push(Some(i64::try_from(row).unwrap_or(0)));
+    }
+    for &idx in linear_indices {
+        let zero_based = usize::try_from(idx - 1).unwrap_or(0);
+        let col = (zero_based / nrow) + 1;
+        data.push(Some(i64::try_from(col).unwrap_or(0)));
+    }
+
+    let mut result = RVector::from(Vector::Integer(data.into()));
+    let nrow_i64 = i64::try_from(n).unwrap_or(0);
+    result.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(vec![Some(nrow_i64), Some(2)].into())),
+    );
+    Ok(RValue::Vector(result))
 }
 
 /// Index of the minimum element.
