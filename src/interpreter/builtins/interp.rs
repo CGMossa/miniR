@@ -727,6 +727,53 @@ fn interp_source(
     context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
+/// Read and evaluate an R source file in a specified environment.
+///
+/// Like `source()`, but evaluates the expressions in the given environment
+/// rather than the global environment. This is useful for loading code into
+/// a specific namespace or local environment.
+///
+/// @param file path to the R source file
+/// @param envir environment in which to evaluate (default: base environment)
+/// @return the result of evaluating the last expression in the file (invisibly)
+#[interpreter_builtin(name = "sys.source", min_args = 1)]
+fn interp_sys_source(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let path = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
+
+    // Get environment from named 'envir' argument or second positional
+    let env = named
+        .iter()
+        .find(|(n, _)| n == "envir")
+        .map(|(_, v)| v)
+        .or_else(|| positional.get(1));
+
+    let source = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            let bytes = std::fs::read(&path)
+                .map_err(|e2| RError::other(format!("cannot open file '{}': {}", path, e2)))?;
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+        Err(e) => return Err(RError::other(format!("cannot open file '{}': {}", path, e))),
+    };
+
+    let ast = crate::parser::parse_program(&source)
+        .map_err(|e| RError::other(format!("parse error in '{}': {}", path, e)))?;
+
+    match env {
+        Some(RValue::Environment(target_env)) => context
+            .with_interpreter(|interp| interp.eval_in(&ast, target_env).map_err(RError::from)),
+        _ => context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from)),
+    }
+}
+
 // system.time() is in pre_eval.rs — it must time unevaluated expressions
 
 // --- Operator builtins: R operators as first-class functions ---

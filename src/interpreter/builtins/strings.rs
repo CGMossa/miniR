@@ -1568,3 +1568,51 @@ fn builtin_dquote(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         _ => Ok(RValue::vec(Vector::Character(vec![None].into()))),
     }
 }
+
+// region: strrep
+
+/// Repeat each element of a character vector a specified number of times.
+///
+/// @param x a character vector
+/// @param times an integer vector of repetition counts (recycled)
+/// @return a character vector with each element repeated
+#[builtin(min_args = 2)]
+fn builtin_strrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "strrep() requires a character vector as first argument".to_string(),
+        )
+    })?;
+    let times = args.get(1).and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "strrep() requires an integer 'times' argument".to_string(),
+        )
+    })?;
+
+    let chars = x.to_characters();
+    let ints = times.to_integers();
+    let max_len = chars.len().max(ints.len());
+
+    let result: Vec<Option<String>> = (0..max_len)
+        .map(|i| {
+            let s = &chars[i % chars.len()];
+            let n = ints[i % ints.len()];
+            match (s, n) {
+                (Some(s), Some(n)) => {
+                    if n < 0 {
+                        None // invalid repetition count
+                    } else {
+                        Some(s.repeat(usize::try_from(n).unwrap_or(0)))
+                    }
+                }
+                _ => None,
+            }
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
