@@ -3,6 +3,7 @@
 
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
+use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin};
 
 /// Signal an error condition and stop execution.
@@ -27,7 +28,6 @@ fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             RValue::Vector(vec) => vec.as_character_scalar().unwrap_or_default(),
             other => format!("{}", other),
         })
-        .collect::<Vec<_>>()
         .join("");
     let condition = make_condition(&msg, &["simpleError", "error", "condition"]);
     Err(RError::Condition {
@@ -52,7 +52,6 @@ fn interp_warning(
             RValue::Vector(vec) => vec.as_character_scalar().unwrap_or_default(),
             other => format!("{}", other),
         })
-        .collect::<Vec<_>>()
         .join("");
     let condition = make_condition(&msg, &["simpleWarning", "warning", "condition"]);
     let muffled = context
@@ -79,7 +78,6 @@ fn interp_message(
             RValue::Vector(vec) => vec.as_character_scalar().unwrap_or_default(),
             other => format!("{}", other),
         })
-        .collect::<Vec<_>>()
         .join("");
     let condition = make_condition(&msg, &["simpleMessage", "message", "condition"]);
     let muffled = context
