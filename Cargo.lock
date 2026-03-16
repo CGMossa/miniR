@@ -688,6 +688,7 @@ dependencies = [
  "rand_distr",
  "reedline",
  "regex",
+ "sha2",
  "signal-hook",
  "tabled",
  "temp-dir",
