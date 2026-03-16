@@ -1625,6 +1625,99 @@ fn builtin_order(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     }
 }
 
+/// Return the ranks of values in a numeric vector.
+///
+/// Computes the sample ranks of the values. Ties are handled according to
+/// the `ties.method` argument: "average" (default) assigns the mean rank,
+/// "first" preserves the original order, "min" uses the minimum rank, and
+/// "max" uses the maximum rank.
+///
+/// @param x numeric vector to rank
+/// @param ties.method character string: "average", "first", "min", or "max"
+/// @return double vector of ranks (1-based)
+#[builtin(min_args = 1)]
+fn builtin_rank(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ties_method = named
+        .iter()
+        .find(|(n, _)| n == "ties.method")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "average".to_string());
+
+    let vals = match args.first() {
+        Some(RValue::Vector(v)) => v.to_doubles(),
+        _ => return Ok(RValue::Null),
+    };
+
+    let n = vals.len();
+    if n == 0 {
+        return Ok(RValue::vec(Vector::Double(Vec::new().into())));
+    }
+
+    // Build (value, original_index) pairs and sort by value.
+    // NA values sort last (matching R's na.last = TRUE default).
+    let mut indexed: Vec<(Option<f64>, usize)> = vals.iter().copied().zip(0..n).collect();
+    indexed.sort_by(|a, b| match (a.0, b.0) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, _) => std::cmp::Ordering::Greater,
+        (_, None) => std::cmp::Ordering::Less,
+        (Some(va), Some(vb)) => va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal),
+    });
+
+    // Assign ranks based on ties method
+    let mut ranks = vec![0.0f64; n];
+    match ties_method.as_str() {
+        "first" => {
+            for (rank_minus_1, &(_, orig_idx)) in indexed.iter().enumerate() {
+                ranks[orig_idx] = (rank_minus_1 + 1) as f64;
+            }
+        }
+        "min" | "max" | "average" => {
+            let mut i = 0;
+            while i < n {
+                // Find the run of tied values
+                let mut j = i + 1;
+                while j < n {
+                    let same = match (indexed[i].0, indexed[j].0) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => a == b,
+                        _ => false,
+                    };
+                    if !same {
+                        break;
+                    }
+                    j += 1;
+                }
+                // Ranks for this tied group are i+1 .. j (1-based)
+                let rank = match ties_method.as_str() {
+                    "min" => (i + 1) as f64,
+                    "max" => j as f64,
+                    _ => {
+                        // "average": mean of ranks i+1 .. j
+                        let sum: f64 = ((i + 1)..=j).map(|r| r as f64).sum();
+                        sum / (j - i) as f64
+                    }
+                };
+                for item in indexed.iter().take(j).skip(i) {
+                    ranks[item.1] = rank;
+                }
+                i = j;
+            }
+        }
+        other => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                "ties.method must be one of \"average\", \"first\", \"min\", or \"max\", not {:?}",
+                other
+            ),
+            ))
+        }
+    }
+
+    let result: Vec<Option<f64>> = ranks.into_iter().map(Some).collect();
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
 /// Remove duplicate elements, preserving first occurrence order.
 ///
 /// @param x a vector

@@ -2807,6 +2807,198 @@ fn builtin_array(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::Vector(rv))
 }
 
+/// Transpose or permute the dimensions of an array.
+///
+/// For 2D arrays (matrices), this is equivalent to `t()`. For higher-dimensional
+/// arrays, `perm` specifies the new ordering of dimensions. By default, `perm`
+/// reverses the dimensions (i.e. for a 3D array with dims (a,b,c), the default
+/// permutation is c(3,2,1) giving dims (c,b,a)).
+///
+/// @param a an array (vector with dim attribute)
+/// @param perm integer vector specifying the new dimension order (1-based)
+/// @return array with permuted dimensions
+#[builtin(min_args = 1)]
+fn builtin_aperm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "aperm() requires an array argument".to_string(),
+        )
+    })?;
+
+    let rv = match x {
+        RValue::Vector(rv) => rv,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "aperm() requires an array (a vector with dim attribute)".to_string(),
+            ))
+        }
+    };
+
+    // Extract dimensions
+    let dims: Vec<usize> = match get_dim_ints(rv.get_attr("dim")) {
+        Some(dim_ints) => dim_ints
+            .iter()
+            .map(|x| usize::try_from(x.unwrap_or(0)))
+            .collect::<Result<Vec<_>, _>>()?,
+        None => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "aperm() requires an array with a 'dim' attribute".to_string(),
+            ))
+        }
+    };
+
+    let ndim = dims.len();
+
+    // Parse perm argument: either named or positional
+    let perm_arg = named
+        .iter()
+        .find(|(n, _)| n == "perm")
+        .map(|(_, v)| v)
+        .or(args.get(1));
+
+    // perm is 1-based in R, convert to 0-based
+    let perm: Vec<usize> = match perm_arg {
+        Some(val) => {
+            let ints = match val.as_vector() {
+                Some(v) => v.to_integers(),
+                None => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "'perm' must be a numeric vector".to_string(),
+                    ))
+                }
+            };
+            if ints.len() != ndim {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "'perm' must have length {} (matching the number of dimensions), got {}",
+                        ndim,
+                        ints.len()
+                    ),
+                ));
+            }
+            let mut p = Vec::with_capacity(ndim);
+            for &v in &ints {
+                let idx = usize::try_from(v.unwrap_or(0))?;
+                if idx < 1 || idx > ndim {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        format!("perm values must be between 1 and {}, got {}", ndim, idx),
+                    ));
+                }
+                p.push(idx - 1);
+            }
+            p
+        }
+        None => {
+            // Default: reverse dimensions
+            (0..ndim).rev().collect()
+        }
+    };
+
+    // Validate perm is a valid permutation (all dimensions appear exactly once)
+    let mut seen = vec![false; ndim];
+    for &p in &perm {
+        if seen[p] {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "perm must be a permutation of 1:n where n is the number of dimensions".to_string(),
+            ));
+        }
+        seen[p] = true;
+    }
+
+    let total: usize = dims.iter().product();
+    let data = rv.to_doubles();
+
+    // Compute new dimensions
+    let new_dims: Vec<usize> = perm.iter().map(|&p| dims[p]).collect();
+
+    // Compute strides for original array (column-major / Fortran order)
+    let mut old_strides = vec![1usize; ndim];
+    for d in 1..ndim {
+        old_strides[d] = old_strides[d - 1] * dims[d - 1];
+    }
+
+    // Compute strides for new array
+    let mut new_strides = vec![1usize; ndim];
+    for d in 1..ndim {
+        new_strides[d] = new_strides[d - 1] * new_dims[d - 1];
+    }
+
+    // Permute: for each position in the new array, compute the corresponding
+    // position in the old array
+    let mut result = vec![None; total];
+    for (new_flat, slot) in result.iter_mut().enumerate() {
+        // Decompose new_flat into new multi-index
+        let mut remainder = new_flat;
+        let mut new_idx = vec![0usize; ndim];
+        for d in (0..ndim).rev() {
+            new_idx[d] = remainder / new_strides[d];
+            remainder %= new_strides[d];
+        }
+
+        // Map to old multi-index via inverse permutation
+        let mut old_flat = 0;
+        for d in 0..ndim {
+            old_flat += new_idx[d] * old_strides[perm[d]];
+        }
+
+        *slot = data[old_flat];
+    }
+
+    let mut out = RVector::from(Vector::Double(result.into()));
+
+    // Set dim attribute
+    out.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            new_dims
+                .iter()
+                .map(|&d| i64::try_from(d).map(Some))
+                .collect::<Result<Vec<_>, _>>()?
+                .into(),
+        )),
+    );
+
+    // Set class attribute
+    if new_dims.len() == 2 {
+        out.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(
+                vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+            )),
+        );
+    } else {
+        out.set_attr(
+            "class".to_string(),
+            RValue::vec(Vector::Character(vec![Some("array".to_string())].into())),
+        );
+    }
+
+    // Permute dimnames if present
+    if let Some(RValue::List(dimnames_list)) = rv.get_attr("dimnames") {
+        let mut new_dimnames_vals = Vec::with_capacity(ndim);
+        for &p in &perm {
+            if p < dimnames_list.values.len() {
+                new_dimnames_vals.push(dimnames_list.values[p].clone());
+            } else {
+                new_dimnames_vals.push((None, RValue::Null));
+            }
+        }
+        out.set_attr(
+            "dimnames".to_string(),
+            RValue::List(RList::new(new_dimnames_vals)),
+        );
+    }
+
+    Ok(RValue::Vector(out))
+}
+
 /// Bind vectors or matrices by rows.
 ///
 /// Combines arguments row-wise into a matrix. Vectors become single rows.
