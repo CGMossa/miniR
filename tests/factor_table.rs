@@ -59,21 +59,24 @@ fn as_character_returns_labels() {
         r#"
 f <- factor(c("b", "a", "c"))
 
-# as.character on a factor should reconstruct labels from levels + codes.
-# If not implemented yet, tryCatch and verify the codes are at least correct.
-ok <- tryCatch({
-    labels <- as.character(f)
-    identical(labels, c("b", "a", "c"))
-}, error = function(e) FALSE)
+# as.character on a factor should reconstruct labels from levels + codes
+labels <- as.character(f)
+stopifnot(identical(labels, c("b", "a", "c")))
 
-if (!isTRUE(ok)) {
-    # Fallback: verify the factor structure is correct
-    stopifnot(identical(levels(f), c("a", "b", "c")))
-    stopifnot(identical(as.integer(f), c(2L, 1L, 3L)))
-}
+# Also test with explicit level order
+f2 <- factor(c("x", "y", "z"), levels = c("z", "y", "x"))
+labels2 <- as.character(f2)
+stopifnot(identical(labels2, c("x", "y", "z")))
+
+# Factor with NA
+f3 <- factor(c("a", NA, "b"))
+labels3 <- as.character(f3)
+stopifnot(labels3[1] == "a")
+stopifnot(is.na(labels3[2]))
+stopifnot(labels3[3] == "b")
 "#,
     )
-    .expect("as.character() on factor should return labels (or fallback to codes check)");
+    .expect("as.character() on factor should return labels");
 }
 
 #[test]
