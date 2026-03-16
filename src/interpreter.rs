@@ -104,6 +104,10 @@ pub struct Interpreter {
     pub(crate) working_dir: RefCell<Option<std::path::PathBuf>>,
     /// Instant when the interpreter was created, used by proc.time() for elapsed time.
     pub(crate) start_instant: std::time::Instant,
+    /// Collection objects (HashMap, BTreeMap, HashSet, BinaryHeap, VecDeque).
+    /// Each collection is addressed by its index in this Vec.
+    #[cfg(feature = "collections")]
+    pub(crate) collections: RefCell<Vec<builtins::collections::CollectionObject>>,
     /// Connection table — slots 0-2 are stdin/stdout/stderr, lazily initialised.
     pub(crate) connections: RefCell<Vec<builtins::connections::ConnectionInfo>>,
     /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
@@ -203,6 +207,8 @@ impl Interpreter {
             env_vars: RefCell::new(std::collections::HashMap::new()),
             working_dir: RefCell::new(None),
             start_instant: std::time::Instant::now(),
+            #[cfg(feature = "collections")]
+            collections: RefCell::new(Vec::new()),
             connections: RefCell::new(Vec::new()),
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),

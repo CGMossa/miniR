@@ -1,5 +1,7 @@
 mod args;
 mod coercion;
+#[cfg(feature = "collections")]
+pub mod collections;
 mod conditions;
 pub mod connections;
 #[cfg(feature = "datetime")]
