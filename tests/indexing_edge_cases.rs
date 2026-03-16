@@ -28,22 +28,11 @@ x <- c(10, 20, 30)
 result <- x[NA]
 
 # In R, x[NA] (scalar logical NA) returns c(NA, NA, NA) — same length as x.
-# Our interpreter may return length-0 (filtering NAs) or length-1 NA.
-# Use tryCatch to accept either correct R behavior or the current behavior.
-ok <- tryCatch({
-    stopifnot(length(result) == 3)
-    stopifnot(all(is.na(result)))
-    TRUE
-}, error = function(e) FALSE)
-
-if (!isTRUE(ok)) {
-    # Current behavior: NA indices are dropped, yielding length-0.
-    # At minimum, verify it doesn't crash and returns something.
-    stopifnot(is.numeric(result) || is.logical(result) || length(result) == 0)
-}
+stopifnot(length(result) == 3)
+stopifnot(all(is.na(result)))
 "#,
     )
-    .expect("NA index should not crash");
+    .expect("NA index should return NAs with same length as input");
 }
 
 #[test]
@@ -68,23 +57,21 @@ x <- c(a = 1, b = 2, c = 3)
 # Verify the named vector was created correctly
 stopifnot(identical(names(x), c("a", "b", "c")))
 
-# Character indexing on named vectors may not be implemented yet
-ok <- tryCatch({
-    stopifnot(x["b"] == 2)
-    stopifnot(x["a"] == 1)
-    stopifnot(x["c"] == 3)
-    TRUE
-}, error = function(e) FALSE)
+# Character indexing on named vectors
+stopifnot(x["b"] == 2)
+stopifnot(x["a"] == 1)
+stopifnot(x["c"] == 3)
 
-# If character indexing isn't supported, at least verify positional access works
-if (!isTRUE(ok)) {
-    stopifnot(x[1] == 1)
-    stopifnot(x[2] == 2)
-    stopifnot(x[3] == 3)
-}
+# Multiple character indices
+result <- x[c("c", "a")]
+stopifnot(result[1] == 3)
+stopifnot(result[2] == 1)
+
+# Non-existent name returns NA
+stopifnot(is.na(x["z"]))
 "#,
     )
-    .expect("named vector indexing should work (by name or position)");
+    .expect("named vector indexing by character should work");
 }
 
 #[test]
