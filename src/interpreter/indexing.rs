@@ -117,6 +117,26 @@ pub(super) fn eval_index(
                 if let Vector::Logical(mask) = &idx_vec.inner {
                     return index_by_logical(interp, v, mask);
                 }
+
+                // Character indexing: look up names attribute to resolve positions
+                if let Vector::Character(idx_names) = &idx_vec.inner {
+                    let names_attr = v.get_attr("names").and_then(|a| a.as_vector());
+                    let name_strs: Vec<Option<String>> =
+                        names_attr.map(|nv| nv.to_characters()).unwrap_or_default();
+                    let positions: Vec<Option<i64>> = idx_names
+                        .iter()
+                        .map(|idx_name| {
+                            idx_name.as_ref().and_then(|name| {
+                                name_strs
+                                    .iter()
+                                    .position(|n| n.as_deref() == Some(name.as_str()))
+                                    .and_then(|p| i64::try_from(p + 1).ok())
+                            })
+                        })
+                        .collect();
+                    return index_by_integer(interp, v, &positions);
+                }
+
                 let indices = idx_vec.to_integers();
                 // Drop zeros (R ignores them), then check sign consistency
                 let nonzero: Vec<Option<i64>> = indices
@@ -609,35 +629,37 @@ fn index_by_logical(
     mask: &[Option<bool>],
 ) -> Result<RValue, RFlow> {
     let vlen = v.len();
-    // Recycle mask to target length (R's behavior)
-    let test = |i: usize| -> bool {
-        if mask.is_empty() {
-            return false;
-        }
-        mask[i % mask.len()].unwrap_or(false)
-    };
+    if mask.is_empty() {
+        // Empty mask selects nothing
+        return Ok(RValue::vec(v.select_indices(&[])));
+    }
+
+    // Recycle mask to vector length.
+    // For each position: Some(true) -> include element, Some(false) -> skip,
+    // None (NA) -> include NA.
+    let recycled_mask = |i: usize| -> Option<bool> { mask[i % mask.len()] };
 
     macro_rules! mask_vec {
         ($vals:expr, $variant:ident) => {{
-            let result: Vec<_> = $vals
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| test(*i))
-                .map(|(_, v)| v.clone())
+            let result: Vec<_> = (0..vlen)
+                .filter_map(|i| match recycled_mask(i) {
+                    Some(true) => Some($vals.get(i).cloned().unwrap_or(None)),
+                    Some(false) => None,
+                    None => Some(None), // NA in mask -> NA in result
+                })
                 .collect();
             Ok(RValue::vec(Vector::$variant(result.into())))
         }};
     }
 
-    // If mask is longer than vector, R extends with NA — we just iterate up to vlen
-    let _ = vlen;
     match v {
         Vector::Raw(vals) => {
-            let result: Vec<u8> = vals
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| test(*i))
-                .map(|(_, &v)| v)
+            let result: Vec<u8> = (0..vlen)
+                .filter_map(|i| match recycled_mask(i) {
+                    Some(true) => Some(vals.get(i).copied().unwrap_or(0)),
+                    Some(false) => None,
+                    None => Some(0u8), // Raw has no NA representation
+                })
                 .collect();
             Ok(RValue::vec(Vector::Raw(result)))
         }
