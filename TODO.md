@@ -15,4 +15,4 @@ This file tracks behavior that is still stubbed, placeholder, or materially simp
 ## Developer Experience
 
 - [ ] Add tokei for file size tracking and refactoring detection
-- [ ] Add a vendor patch workflow for intentional edits under `vendor/`
+- [x] Add a vendor patch workflow for intentional edits under `vendor/`

@@ -30,6 +30,7 @@ vendor:
     printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "{{root}}/vendor"\n' > "{{root}}/.cargo/config.toml"
     printf '# vendor\n\nVendored Rust crate dependencies (managed by `cargo vendor`).\n\nRun `just vendor` to update.\n' > "{{root}}/vendor/README.md"
     echo "$CURRENT_HASH" > "$HASH_FILE"
+    just vendor-apply-patches
 
 # Find minimum supported Rust version (requires cargo-msrv)
 find-msrv:
@@ -57,6 +58,52 @@ vendor-force:
         \( -name 'Cargo.toml' -o -name 'Cargo.lock' \) -print \
         | sort | xargs cat | md5)
     echo "$CURRENT_HASH" > "$HASH_FILE"
+    just vendor-apply-patches
+
+# Show local modifications to vendored crates (diffs against a fresh cargo vendor)
+vendor-diff:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    FRESH=$(mktemp -d)
+    trap 'rm -rf "$FRESH"' EXIT
+    echo "Vendoring to temp dir for comparison..."
+    CARGO_SOURCE_CRATES_IO_REPLACE_WITH="" CARGO_SOURCE_VENDORED_SOURCES_DIRECTORY="" \
+        cargo vendor "$FRESH" 2>/dev/null
+    diff -rq "{{root}}/vendor/" "$FRESH/" \
+        --exclude='.cargo-checksum.json' \
+        --exclude='.cargo-lock-hash' \
+        --exclude='README.md' \
+        --exclude='.gitignore' \
+        | grep -v "^Only in $FRESH" || echo "No local modifications found."
+
+# Apply patches from vendor-patches/ to vendored crates
+vendor-apply-patches:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PATCH_ROOT="{{root}}/vendor-patches"
+    if [ ! -d "$PATCH_ROOT" ]; then
+        exit 0
+    fi
+    FOUND=false
+    for patch_dir in "$PATCH_ROOT"/*/; do
+        [ -d "$patch_dir" ] || continue
+        crate=$(basename "$patch_dir")
+        if [ ! -d "{{root}}/vendor/$crate" ]; then
+            echo "warning: vendor-patches/$crate has no matching vendor/$crate"
+            continue
+        fi
+        for patch in "$patch_dir"*.patch; do
+            [ -f "$patch" ] || continue
+            FOUND=true
+            echo "applying $patch to vendor/$crate"
+            (cd "{{root}}/vendor/$crate" && patch -p1 < "$patch")
+        done
+        # recalculate checksums for patched crate
+        "{{root}}/scripts/fix-vendor-checksum.sh" "{{root}}/vendor/$crate"
+    done
+    if [ "$FOUND" = false ]; then
+        echo "No vendor patches to apply."
+    fi
 
 # Update Cargo.lock from crates.io, bypassing vendor source replacement
 update *args:
