@@ -72,9 +72,11 @@ num-complex = "0.4"
 signal-hook = "0.3"
 unicode-width = "0.2"
 jiff = { version = "0.2", optional = true }
+serde_json = { version = "1", optional = true }
 
 [features]
-default = ["random", "datetime", "io"]
+default = ["random", "datetime", "io", "json"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
+json = ["dep:serde_json"]
