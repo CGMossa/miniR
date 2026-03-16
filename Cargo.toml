@@ -74,7 +74,8 @@ unicode-width = "0.2"
 jiff = { version = "0.2", optional = true }
 
 [features]
-default = ["random", "datetime", "io"]
+default = ["random", "datetime", "io", "collections"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
+collections = []
