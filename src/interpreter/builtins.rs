@@ -14,6 +14,7 @@ mod pre_eval;
 #[cfg(feature = "random")]
 mod random;
 mod s4;
+mod stats;
 pub mod strings;
 mod stubs;
 pub mod system;
