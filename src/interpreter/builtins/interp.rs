@@ -6,7 +6,7 @@ use super::CallArgs;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
-use crate::parser::ast::{BinaryOp, UnaryOp};
+use crate::parser::ast::{Arg, BinaryOp, Expr, Param, UnaryOp};
 use minir_macros::interpreter_builtin;
 
 /// Extract `fail_fast` from named args and return the remaining named args.
@@ -2594,6 +2594,421 @@ fn interp_get_option(
             .cloned()
             .unwrap_or(default))
     })
+}
+
+// endregion
+
+// region: match.call, Find, Position, Negate, rapply
+
+/// Return the call expression with arguments matched to formal parameters.
+///
+/// Reconstructs the call as if all arguments were named according to the
+/// function's formal parameter list. Useful for programming on the language.
+///
+/// @param definition the function whose formals to match against (default: parent function)
+/// @param call the call to match (default: parent's call)
+/// @return language object with matched arguments
+#[interpreter_builtin(name = "match.call")]
+fn interp_match_call(
+    _positional: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.with_interpreter(|interp| {
+        let frame = interp
+            .current_call_frame()
+            .ok_or_else(|| RError::other("match.call() must be called from within a function"))?;
+
+        // Get the formals from the function
+        let params: Vec<Param> = match &frame.function {
+            RValue::Function(RFunction::Closure { params, .. }) => params.clone(),
+            _ => Vec::new(),
+        };
+
+        // Get the original call expression
+        let call_expr = frame
+            .call
+            .ok_or_else(|| RError::other("match.call() requires a call expression on the stack"))?;
+
+        // Extract the function name from the call
+        let func_expr = match &call_expr {
+            Expr::Call { func, .. } => (**func).clone(),
+            _ => return Ok(RValue::Language(Language::new(call_expr))),
+        };
+
+        // Reconstruct with matched argument names
+        let positional = &frame.supplied_positional;
+        let named = &frame.supplied_named;
+
+        // Simplified 3-pass matching to figure out which positional maps to which formal
+        let formal_names: Vec<&str> = params
+            .iter()
+            .filter(|p| !p.is_dots)
+            .map(|p| p.name.as_str())
+            .collect();
+
+        let mut named_to_formal: std::collections::HashMap<usize, &str> =
+            std::collections::HashMap::new();
+        let mut matched_formals: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        // Pass 1: exact name match
+        for (i, (arg_name, _)) in named.iter().enumerate() {
+            if let Some(&formal) = formal_names.iter().find(|&&f| f == arg_name) {
+                if !matched_formals.contains(formal) {
+                    matched_formals.insert(formal);
+                    named_to_formal.insert(i, formal);
+                }
+            }
+        }
+
+        // Pass 2: partial match
+        for (i, (arg_name, _)) in named.iter().enumerate() {
+            if named_to_formal.contains_key(&i) {
+                continue;
+            }
+            let candidates: Vec<&str> = formal_names
+                .iter()
+                .filter(|&&f| !matched_formals.contains(f) && f.starts_with(arg_name.as_str()))
+                .copied()
+                .collect();
+            if candidates.len() == 1 {
+                matched_formals.insert(candidates[0]);
+                named_to_formal.insert(i, candidates[0]);
+            }
+        }
+
+        // Build reverse map
+        let formal_to_named: std::collections::HashMap<&str, usize> = named_to_formal
+            .iter()
+            .map(|(&idx, &formal)| (formal, idx))
+            .collect();
+
+        // Reconstruct args in formal order
+        let mut result_args: Vec<Arg> = Vec::new();
+        let mut pos_idx = 0usize;
+
+        for param in &params {
+            if param.is_dots {
+                // Collect remaining positional
+                while pos_idx < positional.len() {
+                    result_args.push(Arg {
+                        name: None,
+                        value: Some(rvalue_to_expr(&positional[pos_idx])),
+                    });
+                    pos_idx += 1;
+                }
+                // Collect unmatched named
+                for (i, (name, val)) in named.iter().enumerate() {
+                    if !named_to_formal.contains_key(&i) {
+                        result_args.push(Arg {
+                            name: Some(name.clone()),
+                            value: Some(rvalue_to_expr(val)),
+                        });
+                    }
+                }
+                continue;
+            }
+
+            if let Some(&named_idx) = formal_to_named.get(param.name.as_str()) {
+                result_args.push(Arg {
+                    name: Some(param.name.clone()),
+                    value: Some(rvalue_to_expr(&named[named_idx].1)),
+                });
+            } else if pos_idx < positional.len() {
+                result_args.push(Arg {
+                    name: Some(param.name.clone()),
+                    value: Some(rvalue_to_expr(&positional[pos_idx])),
+                });
+                pos_idx += 1;
+            }
+            // Skip unmatched formals with defaults
+        }
+
+        let matched_call = Expr::Call {
+            func: Box::new(func_expr),
+            args: result_args,
+        };
+        Ok(RValue::Language(Language::new(matched_call)))
+    })
+}
+
+/// Convert an RValue to an Expr for use in match.call() reconstructed calls.
+fn rvalue_to_expr(val: &RValue) -> Expr {
+    match val {
+        RValue::Null => Expr::Null,
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Double(d) if d.len() == 1 => match d[0] {
+                Some(v) if v.is_infinite() && v > 0.0 => Expr::Inf,
+                Some(v) if v.is_nan() => Expr::NaN,
+                Some(v) => Expr::Double(v),
+                None => Expr::Na(crate::parser::ast::NaType::Real),
+            },
+            Vector::Integer(i) if i.len() == 1 => match i[0] {
+                Some(v) => Expr::Integer(v),
+                None => Expr::Na(crate::parser::ast::NaType::Integer),
+            },
+            Vector::Logical(l) if l.len() == 1 => match l[0] {
+                Some(v) => Expr::Bool(v),
+                None => Expr::Na(crate::parser::ast::NaType::Logical),
+            },
+            Vector::Character(c) if c.len() == 1 => match &c[0] {
+                Some(v) => Expr::String(v.clone()),
+                None => Expr::Na(crate::parser::ast::NaType::Character),
+            },
+            _ => Expr::Symbol(format!("{}", val)),
+        },
+        RValue::Language(lang) => (*lang.inner).clone(),
+        _ => Expr::Symbol(format!("{}", val)),
+    }
+}
+
+/// Find the first element of a vector for which a predicate returns TRUE.
+///
+/// @param f predicate function returning a logical scalar
+/// @param x vector or list to search
+/// @param right if TRUE, search from right to left
+/// @return the first matching element, or NULL if none found
+#[interpreter_builtin(name = "Find", min_args = 2)]
+fn interp_find(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if positional.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "Find requires 2 arguments: f and x".to_string(),
+        ));
+    }
+    let env = context.env();
+    let f = match_fun(&positional[0], env)?;
+    let x = &positional[1];
+
+    let right = named
+        .iter()
+        .find(|(n, _)| n == "right")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let items: Vec<RValue> = rvalue_to_items(x);
+
+    context.with_interpreter(|interp| {
+        let iter: Box<dyn Iterator<Item = &RValue>> = if right {
+            Box::new(items.iter().rev())
+        } else {
+            Box::new(items.iter())
+        };
+
+        for item in iter {
+            let result = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
+            if result
+                .as_vector()
+                .and_then(|v| v.as_logical_scalar())
+                .unwrap_or(false)
+            {
+                return Ok(item.clone());
+            }
+        }
+        Ok(RValue::Null)
+    })
+}
+
+/// Find the position (1-based index) of the first element where a predicate is TRUE.
+///
+/// @param f predicate function returning a logical scalar
+/// @param x vector or list to search
+/// @param right if TRUE, search from right to left
+/// @return scalar integer position, or NULL if none found
+#[interpreter_builtin(name = "Position", min_args = 2)]
+fn interp_position(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if positional.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "Position requires 2 arguments: f and x".to_string(),
+        ));
+    }
+    let env = context.env();
+    let f = match_fun(&positional[0], env)?;
+    let x = &positional[1];
+
+    let right = named
+        .iter()
+        .find(|(n, _)| n == "right")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let items: Vec<RValue> = rvalue_to_items(x);
+
+    context.with_interpreter(|interp| {
+        let indices: Box<dyn Iterator<Item = usize>> = if right {
+            Box::new((0..items.len()).rev())
+        } else {
+            Box::new(0..items.len())
+        };
+
+        for i in indices {
+            let result = interp.call_function(&f, std::slice::from_ref(&items[i]), &[], env)?;
+            if result
+                .as_vector()
+                .and_then(|v| v.as_logical_scalar())
+                .unwrap_or(false)
+            {
+                let pos = i64::try_from(i + 1).map_err(RError::from)?;
+                return Ok(RValue::vec(Vector::Integer(vec![Some(pos)].into())));
+            }
+        }
+        Ok(RValue::Null)
+    })
+}
+
+/// Negate a predicate function, returning a new function that returns the
+/// logical complement of the original.
+///
+/// @param f predicate function
+/// @return a new closure that calls f and negates the result
+#[interpreter_builtin(name = "Negate", min_args = 1)]
+fn interp_negate(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+    let f = match_fun(&positional[0], env)?;
+
+    // Create an environment that captures the original function
+    let closure_env = Environment::new_child(env);
+    closure_env.set(".negate_f".to_string(), f);
+
+    // Build: function(...) !.negate_f(...)
+    let body = Expr::UnaryOp {
+        op: UnaryOp::Not,
+        operand: Box::new(Expr::Call {
+            func: Box::new(Expr::Symbol(".negate_f".to_string())),
+            args: vec![Arg {
+                name: None,
+                value: Some(Expr::Dots),
+            }],
+        }),
+    };
+
+    Ok(RValue::Function(RFunction::Closure {
+        params: vec![Param {
+            name: "...".to_string(),
+            default: None,
+            is_dots: true,
+        }],
+        body,
+        env: closure_env,
+    }))
+}
+
+/// Recursively apply a function to all non-list elements of a (nested) list.
+///
+/// @param object a list (possibly nested)
+/// @param f function to apply to non-list elements
+/// @param how one of "unlist" (default), "replace", or "list"
+/// @return depends on `how`: "unlist" returns a flat vector, "replace" returns a list
+///   with the same structure, "list" returns a flat list of results
+#[interpreter_builtin(name = "rapply", min_args = 2)]
+fn interp_rapply(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if positional.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "rapply requires at least 2 arguments: object and f".to_string(),
+        ));
+    }
+    let env = context.env();
+    let object = &positional[0];
+    let f = match_fun(&positional[1], env)?;
+
+    let how = named
+        .iter()
+        .find(|(n, _)| n == "how")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            positional
+                .get(2)
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
+        .unwrap_or_else(|| "unlist".to_string());
+
+    context.with_interpreter(|interp| match how.as_str() {
+        "replace" => rapply_replace(interp, object, &f, env),
+        "list" => {
+            let mut results = Vec::new();
+            rapply_collect(interp, object, &f, env, &mut results)?;
+            Ok(RValue::List(RList::new(
+                results.into_iter().map(|v| (None, v)).collect(),
+            )))
+        }
+        _ => {
+            // "unlist" (default)
+            let mut results = Vec::new();
+            rapply_collect(interp, object, &f, env, &mut results)?;
+            if results.is_empty() {
+                return Ok(RValue::Null);
+            }
+            // Try to simplify to a vector via c()
+            crate::interpreter::builtins::builtin_c(&results, &[])
+        }
+    })
+}
+
+/// Helper: collect results of applying f to all leaf (non-list) elements.
+fn rapply_collect(
+    interp: &crate::interpreter::Interpreter,
+    x: &RValue,
+    f: &RValue,
+    env: &Environment,
+    out: &mut Vec<RValue>,
+) -> Result<(), RError> {
+    match x {
+        RValue::List(list) => {
+            for (_, val) in &list.values {
+                rapply_collect(interp, val, f, env, out)?;
+            }
+        }
+        _ => {
+            let result = interp
+                .call_function(f, std::slice::from_ref(x), &[], env)
+                .map_err(RError::from)?;
+            out.push(result);
+        }
+    }
+    Ok(())
+}
+
+/// Helper: recursively apply f, preserving list structure ("replace" mode).
+fn rapply_replace(
+    interp: &crate::interpreter::Interpreter,
+    x: &RValue,
+    f: &RValue,
+    env: &Environment,
+) -> Result<RValue, RError> {
+    match x {
+        RValue::List(list) => {
+            let new_vals: Vec<(Option<String>, RValue)> = list
+                .values
+                .iter()
+                .map(|(name, val)| {
+                    let new_val = rapply_replace(interp, val, f, env)?;
+                    Ok((name.clone(), new_val))
+                })
+                .collect::<Result<Vec<_>, RError>>()?;
+            Ok(RValue::List(RList::new(new_vals)))
+        }
+        _ => Ok(interp
+            .call_function(f, std::slice::from_ref(x), &[], env)
+            .map_err(RError::from)?),
+    }
 }
 
 // endregion

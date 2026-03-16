@@ -98,10 +98,15 @@ impl Environment {
 
     /// Register an expression to run when this frame exits (on.exit).
     /// If `add` is false (default), replaces existing on.exit expressions.
-    pub fn push_on_exit(&self, expr: Expr, add: bool) {
+    /// If `after` is true (default), appends after existing; if false, prepends before.
+    pub fn push_on_exit(&self, expr: Expr, add: bool, after: bool) {
         let mut inner = self.inner.borrow_mut();
         if add {
-            inner.on_exit.push(expr);
+            if after {
+                inner.on_exit.push(expr);
+            } else {
+                inner.on_exit.insert(0, expr);
+            }
         } else {
             inner.on_exit = vec![expr];
         }

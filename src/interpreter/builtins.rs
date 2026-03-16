@@ -1921,84 +1921,320 @@ fn builtin_r_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     ])))
 }
 
+/// Canonical string key for set operations — works across numeric and character types.
+fn set_key(val: &Option<String>) -> String {
+    match val {
+        Some(s) => s.clone(),
+        None => "NA".to_string(),
+    }
+}
+
+/// Determine whether set operations should work in numeric or character mode.
+/// Returns the result type based on input types: numeric inputs stay numeric.
+fn set_op_extract(
+    x: &RValue,
+    y: &RValue,
+) -> (
+    Vec<Option<String>>,
+    Vec<Option<String>>,
+    bool, /* numeric */
+) {
+    let x_vec = x.as_vector();
+    let y_vec = y.as_vector();
+    let is_numeric = matches!(
+        (x_vec, y_vec),
+        (
+            Some(Vector::Integer(_) | Vector::Double(_)),
+            Some(Vector::Integer(_) | Vector::Double(_))
+        )
+    );
+    let xc = x_vec.map(|v| v.to_characters()).unwrap_or_default();
+    let yc = y_vec.map(|v| v.to_characters()).unwrap_or_default();
+    (xc, yc, is_numeric)
+}
+
+/// Reconstruct a numeric vector from character representations produced by set operations.
+fn set_result_numeric(chars: Vec<Option<String>>) -> RValue {
+    // Try integer first, fall back to double
+    let as_ints: Option<Vec<Option<i64>>> = chars
+        .iter()
+        .map(|c| match c {
+            None => Some(None),
+            Some(s) => s.parse::<i64>().ok().map(Some),
+        })
+        .collect();
+    if let Some(ints) = as_ints {
+        return RValue::vec(Vector::Integer(ints.into()));
+    }
+    let doubles: Vec<Option<f64>> = chars
+        .iter()
+        .map(|c| c.as_ref().and_then(|s| s.parse::<f64>().ok()))
+        .collect();
+    RValue::vec(Vector::Double(doubles.into()))
+}
+
 /// Set difference: elements in x that are not in y.
 ///
-/// @param x character vector
-/// @param y character vector
-/// @return character vector of elements in x but not y
+/// Works on character, integer, and double vectors. For numeric inputs,
+/// returns a numeric vector; for character inputs, returns a character vector.
+///
+/// @param x vector
+/// @param y vector
+/// @return vector of elements in x but not y
 #[builtin(min_args = 2)]
 fn builtin_setdiff(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
+    let (x, y, numeric) = set_op_extract(&args[0], &args[1]);
+    let y_keys: std::collections::HashSet<String> = y.iter().map(set_key).collect();
+    let result: Vec<Option<String>> = x
+        .into_iter()
+        .filter(|xi| !y_keys.contains(&set_key(xi)))
+        .collect();
+    if numeric {
+        Ok(set_result_numeric(result))
+    } else {
+        Ok(RValue::vec(Vector::Character(result.into())))
     }
-    let x = args[0]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let y = args[1]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let result: Vec<Option<String>> = x.into_iter().filter(|xi| !y.contains(xi)).collect();
-    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Set intersection: elements present in both x and y.
 ///
-/// @param x character vector
-/// @param y character vector
-/// @return character vector of common elements
+/// Works on character, integer, and double vectors. For numeric inputs,
+/// returns a numeric vector; for character inputs, returns a character vector.
+///
+/// @param x vector
+/// @param y vector
+/// @return vector of common elements
 #[builtin(min_args = 2)]
 fn builtin_intersect(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
+    let (x, y, numeric) = set_op_extract(&args[0], &args[1]);
+    let y_keys: std::collections::HashSet<String> = y.iter().map(set_key).collect();
+    let result: Vec<Option<String>> = x
+        .into_iter()
+        .filter(|xi| y_keys.contains(&set_key(xi)))
+        .collect();
+    if numeric {
+        Ok(set_result_numeric(result))
+    } else {
+        Ok(RValue::vec(Vector::Character(result.into())))
     }
-    let x = args[0]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let y = args[1]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let result: Vec<Option<String>> = x.into_iter().filter(|xi| y.contains(xi)).collect();
-    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Set union: unique elements from both x and y.
 ///
-/// @param x character vector
-/// @param y character vector
-/// @return character vector of all unique elements
+/// Works on character, integer, and double vectors. For numeric inputs,
+/// returns a numeric vector; for character inputs, returns a character vector.
+///
+/// @param x vector
+/// @param y vector
+/// @return vector of all unique elements
 #[builtin(min_args = 2)]
 fn builtin_union(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    if args.len() < 2 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "need 2 arguments".to_string(),
-        ));
-    }
-    let x = args[0]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let y = args[1]
-        .as_vector()
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-    let mut result = x;
-    for yi in y {
-        if !result.contains(&yi) {
-            result.push(yi);
+    let (x, y, numeric) = set_op_extract(&args[0], &args[1]);
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for xi in x.into_iter().chain(y) {
+        let key = set_key(&xi);
+        if seen.insert(key) {
+            result.push(xi);
         }
     }
-    Ok(RValue::vec(Vector::Character(result.into())))
+    if numeric {
+        Ok(set_result_numeric(result))
+    } else {
+        Ok(RValue::vec(Vector::Character(result.into())))
+    }
+}
+
+/// Bin continuous values into intervals, returning a factor with interval labels.
+///
+/// @param x numeric vector of values to bin
+/// @param breaks numeric vector of cut points (must be sorted, length >= 2)
+/// @param labels optional character vector of labels (length = length(breaks) - 1)
+/// @param include.lowest if TRUE, the lowest break is inclusive on the left
+/// @param right if TRUE (default), intervals are (a,b]; if FALSE, [a,b)
+/// @return integer vector with factor class and interval-label levels
+#[builtin(min_args = 2)]
+fn builtin_cut(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+
+    let x_vals = ca
+        .value("x", 0)
+        .and_then(|v| v.as_vector().map(|v| v.to_doubles()))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'x' must be a numeric vector".to_string(),
+            )
+        })?;
+    let breaks = ca
+        .value("breaks", 1)
+        .and_then(|v| v.as_vector().map(|v| v.to_doubles()))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'breaks' must be a numeric vector".to_string(),
+            )
+        })?;
+
+    let breaks: Vec<f64> = breaks.into_iter().flatten().collect();
+    if breaks.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "'breaks' must have at least 2 values".to_string(),
+        ));
+    }
+
+    let right = ca.logical_flag("right", 4, true);
+    let include_lowest = ca.logical_flag("include.lowest", 5, false);
+
+    let custom_labels: Option<Vec<String>> = ca.value("labels", 2).and_then(|v| {
+        v.as_vector().and_then(|vec| {
+            let chars = vec.to_characters();
+            chars.into_iter().collect::<Option<Vec<String>>>()
+        })
+    });
+
+    let n_intervals = breaks.len() - 1;
+
+    // Generate default interval labels
+    let labels: Vec<String> = if let Some(ref cl) = custom_labels {
+        if cl.len() != n_intervals {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "lengths of 'breaks' and 'labels' differ: {} breaks produce {} intervals but {} labels given",
+                    breaks.len(),
+                    n_intervals,
+                    cl.len()
+                ),
+            ));
+        }
+        cl.clone()
+    } else {
+        (0..n_intervals)
+            .map(|i| {
+                let lo = breaks[i];
+                let hi = breaks[i + 1];
+                if right {
+                    format!("({},{}]", format_r_double_cut(lo), format_r_double_cut(hi))
+                } else {
+                    format!("[{},{})", format_r_double_cut(lo), format_r_double_cut(hi))
+                }
+            })
+            .collect()
+    };
+
+    // Bin each value
+    let codes: Vec<Option<i64>> = x_vals
+        .iter()
+        .map(|x| {
+            let val = match x {
+                Some(v) if v.is_finite() => *v,
+                _ => return None, // NA or non-finite -> NA
+            };
+            for i in 0..n_intervals {
+                let lo = breaks[i];
+                let hi = breaks[i + 1];
+                let in_bin = if right {
+                    let lower_ok = if include_lowest && i == 0 {
+                        val >= lo
+                    } else {
+                        val > lo
+                    };
+                    lower_ok && val <= hi
+                } else {
+                    let upper_ok = if include_lowest && i == n_intervals - 1 {
+                        val <= hi
+                    } else {
+                        val < hi
+                    };
+                    val >= lo && upper_ok
+                };
+                if in_bin {
+                    return Some(i64::try_from(i + 1).unwrap_or(0));
+                }
+            }
+            None // outside all breaks
+        })
+        .collect();
+
+    let mut rv = RVector::from(Vector::Integer(codes.into()));
+    rv.set_attr(
+        "levels".to_string(),
+        RValue::vec(Vector::Character(
+            labels.into_iter().map(Some).collect::<Vec<_>>().into(),
+        )),
+    );
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("factor".to_string())].into())),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// Format a double for cut() labels — avoid trailing zeros but keep precision.
+fn format_r_double_cut(x: f64) -> String {
+    if x == x.floor() && x.abs() < 1e15 {
+        format!("{}", x as i64)
+    } else {
+        format!("{}", x)
+    }
+}
+
+/// Find the interval index containing each element of x.
+///
+/// For a sorted vector `vec` of length N, returns an integer vector of the same
+/// length as `x`, where each value is in 0..N indicating which interval the
+/// corresponding x value falls into (0 = before vec[0], N = after vec[N-1]).
+///
+/// @param x numeric vector
+/// @param vec sorted numeric vector of break points
+/// @return integer vector of interval indices
+#[builtin(name = "findInterval", min_args = 2)]
+fn builtin_find_interval(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+
+    let x_vals = ca
+        .value("x", 0)
+        .and_then(|v| v.as_vector().map(|v| v.to_doubles()))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'x' must be a numeric vector".to_string(),
+            )
+        })?;
+    let vec_vals: Vec<f64> = ca
+        .value("vec", 1)
+        .and_then(|v| v.as_vector().map(|v| v.to_doubles()))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'vec' must be a numeric vector".to_string(),
+            )
+        })?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let result: Vec<Option<i64>> = x_vals
+        .iter()
+        .map(|x| {
+            let val = (*x)?;
+            // Binary search: find largest index i where vec_vals[i] <= val
+            let mut lo = 0usize;
+            let mut hi = vec_vals.len();
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2;
+                if vec_vals[mid] <= val {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            Some(i64::try_from(lo).unwrap_or(0))
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
 /// Identify duplicate elements in a vector.

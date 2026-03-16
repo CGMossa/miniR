@@ -907,6 +907,7 @@ fn pre_eval_suppress_messages(
 ///
 /// @param expr expression to evaluate on exit (or NULL to clear)
 /// @param add if TRUE, append to existing on.exit expressions; if FALSE, replace them
+/// @param after if TRUE (default), append after existing; if FALSE, prepend before existing
 /// @return NULL, invisibly
 #[pre_eval_builtin(name = "on.exit")]
 fn pre_eval_on_exit(
@@ -916,37 +917,78 @@ fn pre_eval_on_exit(
 ) -> Result<RValue, RError> {
     let expr = args.first().and_then(|a| a.value.as_ref()).cloned();
 
-    // Check add= argument (default FALSE — replace existing on.exit)
-    let add = context.with_interpreter(|interp| -> Result<bool, RError> {
-        // Check named add= first
+    // Evaluate add= and after= arguments
+    let (add, after) = context.with_interpreter(|interp| -> Result<(bool, bool), RError> {
+        let mut add = false;
+        let mut after = true;
+
         for arg in args.iter().skip(1) {
-            if arg.name.as_deref() == Some("add") {
-                if let Some(ref val_expr) = arg.value {
-                    let val = interp.eval_in(val_expr, env)?;
-                    return Ok(val
-                        .as_vector()
-                        .and_then(|v| v.as_logical_scalar())
-                        .unwrap_or(false));
+            match arg.name.as_deref() {
+                Some("add") => {
+                    if let Some(ref val_expr) = arg.value {
+                        let val = interp.eval_in(val_expr, env)?;
+                        add = val
+                            .as_vector()
+                            .and_then(|v| v.as_logical_scalar())
+                            .unwrap_or(false);
+                    }
+                }
+                Some("after") => {
+                    if let Some(ref val_expr) = arg.value {
+                        let val = interp.eval_in(val_expr, env)?;
+                        after = val
+                            .as_vector()
+                            .and_then(|v| v.as_logical_scalar())
+                            .unwrap_or(true);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Check positional args if named args were not found
+        let has_named_add = args
+            .iter()
+            .skip(1)
+            .any(|a| a.name.as_deref() == Some("add"));
+        let has_named_after = args
+            .iter()
+            .skip(1)
+            .any(|a| a.name.as_deref() == Some("after"));
+
+        if !has_named_add {
+            if let Some(arg) = args.get(1) {
+                if arg.name.is_none() {
+                    if let Some(ref val_expr) = arg.value {
+                        let val = interp.eval_in(val_expr, env)?;
+                        add = val
+                            .as_vector()
+                            .and_then(|v| v.as_logical_scalar())
+                            .unwrap_or(false);
+                    }
                 }
             }
         }
-        // Check second positional arg
-        if let Some(arg) = args.get(1) {
-            if arg.name.is_none() {
-                if let Some(ref val_expr) = arg.value {
-                    let val = interp.eval_in(val_expr, env)?;
-                    return Ok(val
-                        .as_vector()
-                        .and_then(|v| v.as_logical_scalar())
-                        .unwrap_or(false));
+
+        if !has_named_after {
+            if let Some(arg) = args.get(2) {
+                if arg.name.is_none() {
+                    if let Some(ref val_expr) = arg.value {
+                        let val = interp.eval_in(val_expr, env)?;
+                        after = val
+                            .as_vector()
+                            .and_then(|v| v.as_logical_scalar())
+                            .unwrap_or(true);
+                    }
                 }
             }
         }
-        Ok(false)
+
+        Ok((add, after))
     })?;
 
     match expr {
-        Some(e) => env.push_on_exit(e, add),
+        Some(e) => env.push_on_exit(e, add, after),
         None => {
             // on.exit() with no args clears on.exit handlers
             env.take_on_exit();
