@@ -6,6 +6,8 @@ mod conditions;
 pub mod connections;
 #[cfg(feature = "datetime")]
 mod datetime;
+#[cfg(feature = "digest")]
+mod digest;
 mod factors;
 mod graphics;
 mod interp;
@@ -1528,11 +1530,14 @@ fn builtin_all(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
-/// Exclusive OR of two logical values.
+/// Vectorized exclusive OR.
 ///
-/// @param x first logical value
-/// @param y second logical value
-/// @return logical scalar
+/// Computes element-wise XOR of two logical vectors, recycling the shorter.
+/// Returns NA where either input is NA.
+///
+/// @param x first logical vector
+/// @param y second logical vector
+/// @return logical vector
 #[builtin(min_args = 2)]
 fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
@@ -1541,12 +1546,36 @@ fn builtin_xor(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
             "need 2 arguments".to_string(),
         ));
     }
-    let a = args[0].as_vector().and_then(|v| v.as_logical_scalar());
-    let b = args[1].as_vector().and_then(|v| v.as_logical_scalar());
-    match (a, b) {
-        (Some(a), Some(b)) => Ok(RValue::vec(Vector::Logical(vec![Some(a ^ b)].into()))),
-        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
-    }
+    let a_vec = match &args[0] {
+        RValue::Vector(v) => v.to_logicals(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'x' must be coercible to logical".to_string(),
+            ))
+        }
+    };
+    let b_vec = match &args[1] {
+        RValue::Vector(v) => v.to_logicals(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'y' must be coercible to logical".to_string(),
+            ))
+        }
+    };
+    let len = a_vec.len().max(b_vec.len());
+    let result: Vec<Option<bool>> = (0..len)
+        .map(|i| {
+            let a = a_vec[i % a_vec.len()];
+            let b = b_vec[i % b_vec.len()];
+            match (a, b) {
+                (Some(a), Some(b)) => Some(a ^ b),
+                _ => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Construct a list from the given arguments.
@@ -3589,6 +3618,39 @@ fn builtin_parent_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             "not an environment".to_string(),
         )),
     }
+}
+
+/// Set the parent (enclosing) environment.
+///
+/// This is a replacement function: `parent.env(e) <- value` sets the parent
+/// of environment `e` to `value`.
+///
+/// @param env environment whose parent to change
+/// @param value new parent environment
+/// @return the modified environment (invisibly)
+#[builtin(name = "parent.env<-", min_args = 2)]
+fn builtin_parent_env_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let env = match args.first() {
+        Some(RValue::Environment(e)) => e.clone(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+    let new_parent = match args.get(1) {
+        Some(RValue::Environment(p)) => Some(p.clone()),
+        Some(RValue::Null) => None,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "'value' must be an environment or NULL".to_string(),
+            ))
+        }
+    };
+    env.set_parent(new_parent);
+    Ok(RValue::Environment(env))
 }
 
 /// Assert that all arguments are TRUE, stopping with an error otherwise.

@@ -1890,26 +1890,72 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 
 /// Indices of TRUE elements.
 ///
-/// @param x logical vector
-/// @return integer vector of 1-based indices where x is TRUE
+/// When `arr.ind = TRUE` and the input has a `dim` attribute (matrix),
+/// returns a matrix of row/column subscripts instead of linear indices.
+///
+/// @param x logical vector or matrix
+/// @param arr.ind if TRUE, return matrix subscripts for array input
+/// @return integer vector of 1-based indices, or integer matrix of subscripts
 #[builtin(min_args = 1)]
-fn builtin_which(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_which(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let arr_ind = named
+        .iter()
+        .find(|(n, _)| n == "arr.ind")
+        .and_then(|(_, v)| v.as_vector().and_then(|v| v.as_logical_scalar()))
+        .unwrap_or(false);
+
     match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Logical(_)) => {
-            let Vector::Logical(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<i64>> = vals
+        Some(RValue::Vector(rv)) => {
+            let logicals = rv.to_logicals();
+            let true_indices: Vec<i64> = logicals
                 .iter()
                 .enumerate()
                 .filter_map(|(i, v)| {
                     if *v == Some(true) {
-                        Some(Some(i64::try_from(i).unwrap_or(0) + 1))
+                        Some(i64::try_from(i).unwrap_or(0) + 1)
                     } else {
                         None
                     }
                 })
                 .collect();
+
+            // Check for arr.ind with matrix dim attribute
+            if arr_ind {
+                if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
+                    let dims = dim_rv.to_doubles();
+                    if dims.len() >= 2 {
+                        let n = true_indices.len();
+                        let ndim = dims.len();
+                        let dim_sizes: Vec<i64> =
+                            dims.iter().map(|d| d.unwrap_or(0.0) as i64).collect();
+                        let mut result: Vec<Option<i64>> = vec![None; n * ndim];
+
+                        for (idx_pos, &linear_1based) in true_indices.iter().enumerate() {
+                            let mut linear = linear_1based - 1;
+                            for d in 0..ndim {
+                                let subscript = linear % dim_sizes[d];
+                                result[d * n + idx_pos] = Some(subscript + 1);
+                                linear /= dim_sizes[d];
+                            }
+                        }
+
+                        let mut result_rv = RVector::from(Vector::Integer(result.into()));
+                        result_rv.set_attr(
+                            "dim".to_string(),
+                            RValue::vec(Vector::Integer(
+                                vec![
+                                    Some(i64::try_from(n).unwrap_or(0)),
+                                    Some(i64::try_from(ndim).unwrap_or(0)),
+                                ]
+                                .into(),
+                            )),
+                        );
+                        return Ok(RValue::Vector(result_rv));
+                    }
+                }
+            }
+
+            let result: Vec<Option<i64>> = true_indices.into_iter().map(Some).collect();
             Ok(RValue::vec(Vector::Integer(result.into())))
         }
         _ => Ok(RValue::vec(Vector::Integer(vec![].into()))),
@@ -3826,6 +3872,95 @@ fn builtin_coef(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             "coef() requires a list-like model object (e.g. result of lm())".to_string(),
         )),
     }
+}
+
+// endregion
+
+// region: arrayInd
+
+/// Convert linear indices to array (row, col) subscripts.
+///
+/// Given a vector of 1-based linear indices and a dimension vector,
+/// returns a matrix of subscripts (one row per index, one column per dim).
+///
+/// @param ind integer vector of linear indices (1-based)
+/// @param .dim integer vector of dimensions (e.g. c(nrow, ncol))
+/// @return integer matrix of subscripts
+#[builtin(name = "arrayInd", min_args = 2)]
+fn builtin_array_ind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let indices = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_doubles(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "'ind' must be a numeric vector".to_string(),
+            ))
+        }
+    };
+    let dims = match args.get(1) {
+        Some(RValue::Vector(rv)) => rv.to_doubles(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "'.dim' must be a numeric vector".to_string(),
+            ))
+        }
+    };
+
+    if dims.len() < 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "'.dim' must have at least 2 elements for matrix subscripts".to_string(),
+        ));
+    }
+
+    let dim_sizes: Vec<i64> = dims
+        .iter()
+        .map(|d| match d {
+            Some(v) => Ok(*v as i64),
+            None => Err(RError::new(
+                RErrorKind::Argument,
+                "NA in '.dim'".to_string(),
+            )),
+        })
+        .collect::<Result<_, _>>()?;
+
+    let ndim = dims.len();
+    let n = indices.len();
+    // Result stored column-major: all rows for dim1, then all rows for dim2, ...
+    let mut result: Vec<Option<i64>> = vec![None; n * ndim];
+
+    for (idx_pos, ind_val) in indices.iter().enumerate() {
+        match ind_val {
+            Some(v) => {
+                let mut linear = *v as i64 - 1; // convert to 0-based
+                for d in 0..ndim {
+                    let subscript = linear % dim_sizes[d];
+                    result[d * n + idx_pos] = Some(subscript + 1); // back to 1-based
+                    linear /= dim_sizes[d];
+                }
+            }
+            None => {
+                for d in 0..ndim {
+                    result[d * n + idx_pos] = None;
+                }
+            }
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Integer(result.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![
+                Some(i64::try_from(n).unwrap_or(0)),
+                Some(i64::try_from(ndim).unwrap_or(0)),
+            ]
+            .into(),
+        )),
+    );
+
+    Ok(RValue::Vector(rv))
 }
 
 // endregion

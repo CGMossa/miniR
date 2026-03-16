@@ -166,6 +166,11 @@ impl Environment {
         self.inner.borrow().parent.clone()
     }
 
+    /// Set the parent (enclosing) environment.
+    pub fn set_parent(&self, parent: Option<Environment>) {
+        self.inner.borrow_mut().parent = parent;
+    }
+
     /// Look up a name, skipping non-function values (like R's findFun).
     /// This implements R's behavior where `c(1,2)` still calls the `c` function
     /// even if `c` has been assigned a non-function value in the current env.

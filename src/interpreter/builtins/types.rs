@@ -338,7 +338,10 @@ fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
-/// Test set membership: is each element of x in table?
+/// Test set membership: is each element of el in table?
+///
+/// Uses numeric comparison for numeric vectors (matching `%in%` behavior),
+/// and string comparison when either side is character.
 ///
 /// @param el values to test
 /// @param table values to match against
@@ -351,21 +354,38 @@ fn builtin_is_element(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             "need 2 arguments".to_string(),
         ));
     }
-    let x = match &args[0] {
-        RValue::Vector(v) => v.to_characters(),
+    let (lv, rv) = match (&args[0], &args[1]) {
+        (RValue::Vector(l), RValue::Vector(r)) => (l, r),
         _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
     };
-    let table = match &args[1] {
-        RValue::Vector(v) => v.to_characters(),
-        _ => return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
-    };
-    let result: Vec<Option<bool>> = x
+
+    // Character comparison when either side is character
+    if matches!(lv.inner, Vector::Character(_)) || matches!(rv.inner, Vector::Character(_)) {
+        let table = rv.to_characters();
+        let vals = lv.to_characters();
+        let result: Vec<Option<bool>> = vals
+            .iter()
+            .map(|xi| {
+                Some(
+                    xi.as_ref()
+                        .is_some_and(|xi| table.iter().any(|t| t.as_ref() == Some(xi))),
+                )
+            })
+            .collect();
+        return Ok(RValue::vec(Vector::Logical(result.into())));
+    }
+
+    // Numeric comparison (handles int/double/logical via doubles)
+    let table = rv.to_doubles();
+    let vals = lv.to_doubles();
+    let result: Vec<Option<bool>> = vals
         .iter()
-        .map(|xi| {
-            Some(
-                xi.as_ref()
-                    .is_some_and(|xi| table.iter().any(|t| t.as_ref() == Some(xi))),
-            )
+        .map(|x| match x {
+            Some(v) => Some(table.iter().any(|t| match t {
+                Some(t) => (*t == *v) || (t.is_nan() && v.is_nan()),
+                None => false,
+            })),
+            None => Some(table.iter().any(|t| t.is_none())),
         })
         .collect();
     Ok(RValue::vec(Vector::Logical(result.into())))

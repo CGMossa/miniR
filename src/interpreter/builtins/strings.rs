@@ -2004,3 +2004,148 @@ fn insert_marks(s: &str, big_mark: &str, small_mark: &str) -> String {
 }
 
 // endregion
+
+// region: encoding builtins
+
+/// Report the encoding of character strings.
+///
+/// Returns "unknown" for pure-ASCII strings, "UTF-8" for non-ASCII.
+/// miniR is UTF-8 everywhere, so this simply checks for non-ASCII bytes.
+///
+/// @param x character vector
+/// @return character vector of encoding names
+#[builtin(name = "Encoding", min_args = 1)]
+fn builtin_encoding(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let chars = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_characters(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not a character vector".to_string(),
+            ))
+        }
+    };
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .map(|s| match s {
+            Some(s) => {
+                if s.is_ascii() {
+                    Some("unknown".to_string())
+                } else {
+                    Some("UTF-8".to_string())
+                }
+            }
+            None => Some("unknown".to_string()),
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Convert character vector to UTF-8 encoding (passthrough in miniR).
+///
+/// Since miniR uses UTF-8 everywhere, this is a no-op that returns its input.
+///
+/// @param x character vector
+/// @return character vector (unchanged)
+#[builtin(min_args = 1)]
+fn builtin_enc2utf8(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(v @ RValue::Vector(_)) => Ok(v.clone()),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not a character vector".to_string(),
+        )),
+    }
+}
+
+/// Convert character vector to native encoding (passthrough in miniR).
+///
+/// Since miniR uses UTF-8 everywhere, this is a no-op that returns its input.
+///
+/// @param x character vector
+/// @return character vector (unchanged)
+#[builtin(min_args = 1)]
+fn builtin_enc2native(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(v @ RValue::Vector(_)) => Ok(v.clone()),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not a character vector".to_string(),
+        )),
+    }
+}
+
+// endregion
+
+// region: strtrim
+
+/// Trim character strings to a specified display width.
+///
+/// Truncates each string to at most `width` display columns. Multi-byte
+/// characters and wide characters (CJK) are measured by their terminal width.
+///
+/// @param x character vector
+/// @param width integer vector of maximum widths (recycled)
+/// @return character vector of trimmed strings
+#[builtin(min_args = 2)]
+fn builtin_strtrim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let chars = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_characters(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "non-character argument".to_string(),
+            ))
+        }
+    };
+    let widths = match args.get(1) {
+        Some(RValue::Vector(rv)) => rv.to_doubles(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "'width' must be numeric".to_string(),
+            ))
+        }
+    };
+    if widths.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "invalid 'width' argument — must be a positive number".to_string(),
+        ));
+    }
+
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let w = widths[i % widths.len()];
+            match (s, w) {
+                (Some(s), Some(w)) => {
+                    let max_w = w.max(0.0) as usize;
+                    Some(trim_to_width(s, max_w))
+                }
+                (None, _) => None,
+                (_, None) => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Trim a string to at most `max_width` display columns.
+fn trim_to_width(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let mut result = String::new();
+    let mut current_width = 0;
+    for ch in s.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if current_width + ch_width > max_width {
+            break;
+        }
+        result.push(ch);
+        current_width += ch_width;
+    }
+    result
+}
+
+// endregion
