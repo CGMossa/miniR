@@ -486,9 +486,13 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 ///
 /// Converts each argument to character and writes them separated by `sep`.
 /// Unlike `print()`, does not add a trailing newline unless the output contains one.
+/// When `file` is specified, writes to that file instead of stdout. When `append`
+/// is TRUE, appends to the file rather than overwriting.
 ///
 /// @param ... objects to concatenate and print
 /// @param sep separator string between elements (default: " ")
+/// @param file a connection or file name to write to (default: "" meaning stdout)
+/// @param append logical; if TRUE, append to file (default: FALSE)
 /// @return NULL (invisibly)
 #[builtin]
 fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -497,6 +501,17 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .find(|(n, _)| n == "sep")
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
         .unwrap_or_else(|| " ".to_string());
+
+    let file = named
+        .iter()
+        .find(|(n, _)| n == "file")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
+
+    let append = named
+        .iter()
+        .find(|(n, _)| n == "append")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
 
     let parts: Vec<String> = args
         .iter()
@@ -536,7 +551,27 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         })
         .collect();
 
-    print!("{}", parts.join(&sep));
+    let output = parts.join(&sep);
+
+    match file {
+        Some(ref path) if !path.is_empty() => {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            let mut f = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .append(append)
+                .truncate(!append)
+                .open(path)
+                .map_err(|e| RError::other(format!("cannot open file '{}': {}", path, e)))?;
+            f.write_all(output.as_bytes())
+                .map_err(|e| RError::other(format!("error writing to '{}': {}", path, e)))?;
+        }
+        _ => {
+            print!("{}", output);
+        }
+    }
+
     Ok(RValue::Null)
 }
 
@@ -1558,13 +1593,13 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Find positions of first matches of x in table.
 ///
-/// For each element of x, returns the position of its first match in table,
+/// For each element of x, returns the position of its first exact match in table,
 /// or NA if no match is found.
 ///
 /// @param x values to look up
 /// @param table values to match against
 /// @return integer vector of match positions (1-indexed)
-#[builtin(min_args = 2, names = ["pmatch", "charmatch"])]
+#[builtin(min_args = 2)]
 fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
         return Err(RError::new(
@@ -1589,6 +1624,105 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
                     .iter()
                     .position(|t| t.as_ref() == Some(xi))
                     .map(|p| i64::try_from(p).map(|v| v + 1).unwrap_or(0))
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+/// Partial string matching — find unique partial matches of x in table.
+///
+/// For each element of x, returns the position of its unique partial match in table
+/// (i.e. the table element that starts with x). Returns NA if no match or if
+/// multiple table entries match (ambiguous). Exact matches are preferred.
+///
+/// @param x values to look up (partial strings)
+/// @param table values to match against
+/// @return integer vector of match positions (1-indexed), or NA for no/ambiguous match
+#[builtin(min_args = 2)]
+fn builtin_pmatch(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = match args.first() {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
+    };
+    let table = match args.get(1) {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
+    };
+
+    let result: Vec<Option<i64>> = x
+        .iter()
+        .map(|xi| {
+            xi.as_ref().and_then(|xi| {
+                // First try exact match
+                if let Some(pos) = table.iter().position(|t| t.as_deref() == Some(xi.as_str())) {
+                    return Some(i64::try_from(pos).map(|v| v + 1).unwrap_or(0));
+                }
+                // Then try unique partial match (prefix)
+                let matches: Vec<usize> = table
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| {
+                        t.as_ref()
+                            .map(|t| t.starts_with(xi.as_str()))
+                            .unwrap_or(false)
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                if matches.len() == 1 {
+                    Some(i64::try_from(matches[0]).map(|v| v + 1).unwrap_or(0))
+                } else {
+                    None // no match or ambiguous
+                }
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
+}
+
+/// Character partial matching — like pmatch but returns 0 for ambiguous matches.
+///
+/// For each element of x, returns the position of its unique partial match in table.
+/// Returns NA for no match, and 0 for ambiguous matches (multiple partial matches).
+///
+/// @param x values to look up
+/// @param table values to match against
+/// @return integer vector of match positions (1-indexed), 0 for ambiguous, NA for no match
+#[builtin(min_args = 2)]
+fn builtin_charmatch(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = match args.first() {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
+    };
+    let table = match args.get(1) {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
+    };
+
+    let result: Vec<Option<i64>> = x
+        .iter()
+        .map(|xi| {
+            xi.as_ref().and_then(|xi| {
+                // First check for exact match
+                if let Some(pos) = table.iter().position(|t| t.as_deref() == Some(xi.as_str())) {
+                    return Some(i64::try_from(pos).map(|v| v + 1).unwrap_or(0));
+                }
+                // Then try partial match (prefix)
+                let matches: Vec<usize> = table
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| {
+                        t.as_ref()
+                            .map(|t| t.starts_with(xi.as_str()))
+                            .unwrap_or(false)
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                match matches.len() {
+                    0 => None,                                                        // no match -> NA
+                    1 => Some(i64::try_from(matches[0]).map(|v| v + 1).unwrap_or(0)), // unique match
+                    _ => Some(0), // ambiguous -> 0
+                }
             })
         })
         .collect();
