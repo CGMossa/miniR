@@ -13,6 +13,8 @@ mod graphics;
 mod interp;
 #[cfg(feature = "io")]
 pub mod io;
+#[cfg(feature = "json")]
+mod json;
 pub mod math;
 mod pre_eval;
 #[cfg(feature = "random")]
