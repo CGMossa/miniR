@@ -32,6 +32,7 @@ fn descriptor_literal(
     min_args: usize,
     max_args: Option<usize>,
     doc: &str,
+    namespace: &str,
 ) -> TokenStream2 {
     let max_args = match max_args {
         Some(max_args) => quote!(Some(#max_args)),
@@ -46,6 +47,7 @@ fn descriptor_literal(
             min_args: #min_args,
             max_args: #max_args,
             doc: #doc,
+            namespace: #namespace,
         }
     }
 }
@@ -107,6 +109,7 @@ fn emit_builtin_registration(
         min_args,
         max_args,
         &doc,
+        &attr_args.namespace,
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
     let alias_docs = attr_args
@@ -412,6 +415,7 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
         min_args,
         None,
         "",
+        "base",
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
@@ -458,6 +462,7 @@ pub fn stub_builtin(input: TokenStream) -> TokenStream {
         min_args,
         None,
         "",
+        "base",
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
@@ -481,6 +486,7 @@ struct BuiltinAttr {
     names: Vec<String>,
     min_args: u64,
     max_args: Option<u64>,
+    namespace: String,
 }
 
 impl syn::parse::Parse for BuiltinAttr {
@@ -489,6 +495,7 @@ impl syn::parse::Parse for BuiltinAttr {
         let mut names = Vec::new();
         let mut min_args = 0u64;
         let mut max_args = None;
+        let mut namespace = "base".to_string();
 
         while !input.is_empty() {
             let key: syn::Ident = input.parse()?;
@@ -518,6 +525,10 @@ impl syn::parse::Parse for BuiltinAttr {
                     let lit: LitInt = input.parse()?;
                     max_args = Some(lit.base10_parse()?);
                 }
+                "namespace" => {
+                    let lit: LitStr = input.parse()?;
+                    namespace = lit.value();
+                }
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -545,6 +556,7 @@ impl syn::parse::Parse for BuiltinAttr {
             names,
             min_args,
             max_args,
+            namespace,
         })
     }
 }
@@ -716,6 +728,7 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
     let full_doc = full_doc_parts.join("\n");
 
     let alias_tokens: Vec<_> = aliases.iter().map(|a| quote!(#a)).collect();
+    let namespace = extract_builtin_namespace(&input.attrs);
 
     let reg_name = format_ident!("__BUILTIN_REG_TRAIT_{}", name.to_string().to_uppercase());
 
@@ -758,6 +771,7 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 min_args: #min_args,
                 max_args: Some(#max_args),
                 doc: #full_doc,
+                namespace: #namespace,
             };
     })
 }
@@ -778,6 +792,26 @@ fn extract_builtin_name(attrs: &[syn::Attribute]) -> Option<String> {
         }
     }
     None
+}
+
+fn extract_builtin_namespace(attrs: &[syn::Attribute]) -> String {
+    for attr in attrs {
+        if attr.path().is_ident("builtin") {
+            let mut ns = None;
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("namespace") {
+                    let value = meta.value()?;
+                    let s: LitStr = value.parse()?;
+                    ns = Some(s.value());
+                }
+                Ok(())
+            });
+            if let Some(ns) = ns {
+                return ns;
+            }
+        }
+    }
+    "base".to_string()
 }
 
 fn extract_builtin_aliases(attrs: &[syn::Attribute]) -> Vec<String> {

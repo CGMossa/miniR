@@ -108,10 +108,28 @@ impl Interpreter {
         name: &str,
         env: &Environment,
     ) -> Result<RValue, RFlow> {
-        let _ns = self.eval_in(namespace, env)?;
+        // Extract namespace name from the expression
+        let ns_name = match namespace {
+            crate::parser::ast::Expr::Symbol(s) => s.as_str(),
+            _ => "",
+        };
+
+        // Check builtin registry for namespace::name
+        if !ns_name.is_empty() {
+            if let Some(descriptor) = crate::interpreter::builtins::find_builtin_ns(ns_name, name) {
+                return Ok(RValue::Function(RFunction::Builtin {
+                    name: descriptor.name.to_string(),
+                    implementation: descriptor.implementation,
+                    min_args: descriptor.min_args,
+                    max_args: descriptor.max_args,
+                }));
+            }
+        }
+
+        // Fall back to environment lookup
         env.get(name)
             .or_else(|| self.global_env.get(name))
-            .ok_or_else(|| RError::new(RErrorKind::Name, format!("{}::{}", "pkg", name)).into())
+            .ok_or_else(|| RError::new(RErrorKind::Name, format!("{}::{}", ns_name, name)).into())
     }
 
     pub(super) fn eval_for(

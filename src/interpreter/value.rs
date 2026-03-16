@@ -52,6 +52,8 @@ pub struct BuiltinDescriptor {
     pub max_args: Option<usize>,
     /// Raw doc string extracted from rustdoc comments (may contain @param/@title tags).
     pub doc: &'static str,
+    /// Namespace this builtin belongs to (e.g. "base", "stats", "utils", "collections").
+    pub namespace: &'static str,
 }
 
 /// Attribute map — every R object can carry named attributes

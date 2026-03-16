@@ -75,12 +75,20 @@ pub fn find_builtin(name: &str) -> Option<&'static BuiltinDescriptor> {
         .find(|d| d.name == name || d.aliases.contains(&name))
 }
 
+/// Look up a builtin by namespace::name (e.g. "stats::cor").
+pub fn find_builtin_ns(namespace: &str, name: &str) -> Option<&'static BuiltinDescriptor> {
+    BUILTIN_REGISTRY
+        .iter()
+        .find(|d| d.namespace == namespace && (d.name == name || d.aliases.contains(&name)))
+}
+
 /// Format a builtin's doc string for display.
 /// Convention: first line = title, rest = description/params.
 pub fn format_help(descriptor: &BuiltinDescriptor) -> String {
     let mut out = String::new();
-    out.push_str(&format!("{}\n", descriptor.name));
-    out.push_str(&"─".repeat(descriptor.name.len().max(20)));
+    let header = format!("{}::{}", descriptor.namespace, descriptor.name);
+    out.push_str(&format!("{header}\n"));
+    out.push_str(&"─".repeat(header.len().max(20)));
     out.push('\n');
 
     if descriptor.doc.is_empty() {
