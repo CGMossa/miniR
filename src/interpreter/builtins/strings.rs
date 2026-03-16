@@ -2149,3 +2149,216 @@ fn trim_to_width(s: &str, max_width: usize) -> String {
 }
 
 // endregion
+
+// region: URLencode, URLdecode, casefold, encodeString, substr<-
+
+/// Percent-encode a URL string per RFC 3986.
+///
+/// @param URL character string to encode
+/// @param reserved if TRUE (default), also encode reserved characters
+/// @return percent-encoded character string
+#[builtin(name = "URLencode", min_args = 1)]
+fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let reserved = named
+        .iter()
+        .find(|(k, _)| k == "reserved")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let unreserved = |b: u8| -> bool {
+        b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~'
+    };
+    let is_reserved = |b: u8| -> bool {
+        matches!(
+            b,
+            b':' | b'/'
+                | b'?'
+                | b'#'
+                | b'['
+                | b']'
+                | b'@'
+                | b'!'
+                | b'$'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'='
+        )
+    };
+
+    let mut encoded = String::new();
+    for &b in s.as_bytes() {
+        if unreserved(b) || (!reserved && is_reserved(b)) {
+            encoded.push(b as char);
+        } else {
+            encoded.push_str(&format!("%{:02X}", b));
+        }
+    }
+    Ok(RValue::vec(Vector::Character(vec![Some(encoded)].into())))
+}
+
+/// Decode a percent-encoded URL string.
+///
+/// @param URL percent-encoded character string
+/// @return decoded character string
+#[builtin(name = "URLdecode", min_args = 1)]
+fn builtin_urldecode(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let mut bytes = Vec::new();
+    let mut chars = s.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next().unwrap_or(b'0');
+            let lo = chars.next().unwrap_or(b'0');
+            let hex = [hi, lo];
+            if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&hex).unwrap_or("00"), 16) {
+                bytes.push(val);
+            }
+        } else if b == b'+' {
+            bytes.push(b' ');
+        } else {
+            bytes.push(b);
+        }
+    }
+    let decoded = String::from_utf8_lossy(&bytes).into_owned();
+    Ok(RValue::vec(Vector::Character(vec![Some(decoded)].into())))
+}
+
+/// Convert case of a character vector.
+///
+/// @param x character vector
+/// @param upper if TRUE, convert to uppercase; if FALSE (default), to lowercase
+/// @return character vector with converted case
+#[builtin(min_args = 1)]
+fn builtin_casefold(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let upper = named
+        .iter()
+        .find(|(k, _)| k == "upper")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let result: Vec<Option<String>> = rv
+                .to_characters()
+                .into_iter()
+                .map(|opt| {
+                    opt.map(|s| {
+                        if upper {
+                            s.to_uppercase()
+                        } else {
+                            s.to_lowercase()
+                        }
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+/// Encode a character string with optional quoting and escape handling.
+///
+/// @param x character vector
+/// @param quote quote character to wrap each string in (default none)
+/// @param na.encode if TRUE (default), encode NA as "NA"
+/// @return character vector with encoded strings
+#[builtin(name = "encodeString", min_args = 1)]
+fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let quote = named
+        .iter()
+        .find(|(k, _)| k == "quote")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    match args.first() {
+        Some(RValue::Vector(rv)) => {
+            let result: Vec<Option<String>> = rv
+                .to_characters()
+                .into_iter()
+                .map(|opt| {
+                    opt.map(|s| {
+                        let escaped = s
+                            .replace('\\', "\\\\")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t");
+                        let escaped = if !quote.is_empty() {
+                            escaped.replace(&quote, &format!("\\{quote}"))
+                        } else {
+                            escaped
+                        };
+                        if quote.is_empty() {
+                            escaped
+                        } else {
+                            format!("{quote}{escaped}{quote}")
+                        }
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+/// Replace a substring in a character string.
+///
+/// @param x character vector (modified in place conceptually)
+/// @param start integer start position (1-based)
+/// @param stop integer stop position (1-based)
+/// @param value replacement string
+/// @return character vector with substring replaced
+#[builtin(name = "substr<-", min_args = 4)]
+fn builtin_substr_assign(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let start = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1) as usize;
+    let stop = args
+        .get(2)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1) as usize;
+    let value = args
+        .get(3)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let chars: Vec<char> = x.chars().collect();
+    let start = start.saturating_sub(1).min(chars.len());
+    let stop = stop.min(chars.len());
+    let range_len = stop.saturating_sub(start);
+    let repl_chars: Vec<char> = value.chars().take(range_len).collect();
+
+    let mut result: Vec<char> = chars[..start].to_vec();
+    result.extend(&repl_chars);
+    // If replacement is shorter, keep original chars for remaining positions
+    if repl_chars.len() < range_len {
+        result.extend(&chars[start + repl_chars.len()..stop]);
+    }
+    result.extend(&chars[stop..]);
+
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(result.into_iter().collect())].into(),
+    )))
+}
+
+// endregion
