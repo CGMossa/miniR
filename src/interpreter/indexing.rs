@@ -155,8 +155,34 @@ pub(super) fn eval_index(
                 }
 
                 let indices = idx_vec.to_integers();
+                // Drop zeros, then check sign consistency
+                let nonzero: Vec<Option<i64>> = indices
+                    .iter()
+                    .filter(|x| !matches!(x, Some(0)))
+                    .copied()
+                    .collect();
+                let has_pos = nonzero.iter().any(|x| x.map(|i| i > 0).unwrap_or(false));
+                let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
+                if has_pos && has_neg {
+                    return Err(IndexingError::MixedSubscripts.into());
+                }
+                if has_neg {
+                    // Negative indexing: exclude those positions
+                    let exclude: Vec<usize> = nonzero
+                        .iter()
+                        .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
+                        .collect();
+                    let result: Vec<_> = list
+                        .values
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !exclude.contains(&(i + 1)))
+                        .map(|(_, v)| v.clone())
+                        .collect();
+                    return Ok(RValue::List(RList::new(result)));
+                }
                 let mut result = Vec::new();
-                for i in indices.iter().flatten() {
+                for i in nonzero.iter().flatten() {
                     let i = usize::try_from(*i).unwrap_or(0);
                     if i > 0 && i <= list.values.len() {
                         result.push(list.values[i - 1].clone());
@@ -659,6 +685,19 @@ fn resolve_dim_index(
     match idx {
         None => Ok((0..dim_size).collect()),
         Some(RValue::Vector(rv)) => {
+            // Logical indices: filter by mask (recycled to dim_size)
+            if let Vector::Logical(mask) = &rv.inner {
+                let result: Vec<usize> = (0..dim_size)
+                    .filter(|&i| {
+                        if mask.is_empty() {
+                            false
+                        } else {
+                            mask[i % mask.len()].unwrap_or(false)
+                        }
+                    })
+                    .collect();
+                return Ok(result);
+            }
             // Character indices: look up in dimnames
             if matches!(rv.inner, Vector::Character(_)) {
                 let names = dim_names.as_ref().ok_or(IndexingError::NoDimnames)?;
@@ -673,9 +712,24 @@ fn resolve_dim_index(
                 }
                 return Ok(result);
             }
-            // Numeric indices
-            Ok(rv
-                .to_integers()
+            // Numeric indices (positive or negative)
+            let ints = rv.to_integers();
+            let nonzero: Vec<Option<i64>> = ints
+                .iter()
+                .filter(|x| !matches!(x, Some(0)))
+                .copied()
+                .collect();
+            let has_neg = nonzero.iter().any(|x| x.map(|i| i < 0).unwrap_or(false));
+            if has_neg {
+                let exclude: Vec<usize> = nonzero
+                    .iter()
+                    .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
+                    .collect();
+                return Ok((0..dim_size)
+                    .filter(|i| !exclude.contains(&(i + 1)))
+                    .collect());
+            }
+            Ok(nonzero
                 .iter()
                 .filter_map(|x| x.and_then(|i| usize::try_from(i - 1).ok()))
                 .collect())

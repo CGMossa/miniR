@@ -125,26 +125,23 @@ m <- matrix(1:6, nrow = 3, ncol = 2)
 # [2,]  2    5
 # [3,]  3    6
 
-# Logical indexing on matrix rows may not be fully implemented
-ok <- tryCatch({
-    result <- m[c(TRUE, FALSE, TRUE), ]
-    # Should select rows 1 and 3
-    stopifnot(identical(dim(result), c(2L, 2L)))
-    stopifnot(result[1, 1] == 1L)
-    stopifnot(result[2, 1] == 3L)
-    stopifnot(result[1, 2] == 4L)
-    stopifnot(result[2, 2] == 6L)
-    TRUE
-}, error = function(e) FALSE)
+# Logical indexing on matrix rows
+result <- m[c(TRUE, FALSE, TRUE), ]
+# Should select rows 1 and 3
+stopifnot(identical(dim(result), c(2L, 2L)))
+stopifnot(result[1, 1] == 1L)
+stopifnot(result[2, 1] == 3L)
+stopifnot(result[1, 2] == 4L)
+stopifnot(result[2, 2] == 6L)
 
-# If logical 2D indexing isn't supported, verify basic integer 2D indexing
-if (!isTRUE(ok)) {
-    stopifnot(m[1, 1] == 1L)
-    stopifnot(m[3, 2] == 6L)
-}
+# Logical indexing on columns (selecting both columns)
+result2 <- m[, c(TRUE, TRUE)]
+stopifnot(identical(dim(result2), c(3L, 2L)))
+stopifnot(result2[1, 1] == 1L)
+stopifnot(result2[3, 2] == 6L)
 "#,
     )
-    .expect("matrix indexing should work (logical or integer)");
+    .expect("logical matrix dimension indexing should work");
 }
 
 #[test]
@@ -208,21 +205,23 @@ fn negative_indexing_on_list() {
         r#"
 lst <- list(a = 1, b = 2, c = 3)
 
-# Negative indexing on lists may not be implemented
-ok <- tryCatch({
-    result <- lst[-1]
-    stopifnot(is.list(result))
-    stopifnot(length(result) == 2)
-    TRUE
-}, error = function(e) FALSE)
+result <- lst[-1]
+stopifnot(is.list(result))
+stopifnot(length(result) == 2)
+stopifnot(result[[1]] == 2)
+stopifnot(result[[2]] == 3)
 
-# If negative indexing on lists isn't supported, verify positive indexing works
-if (!isTRUE(ok)) {
-    result <- lst[2:3]
-    stopifnot(is.list(result))
-    stopifnot(length(result) == 2)
-}
+# Exclude last element
+result2 <- lst[-3]
+stopifnot(length(result2) == 2)
+stopifnot(result2[[1]] == 1)
+stopifnot(result2[[2]] == 2)
+
+# Exclude multiple elements
+result3 <- lst[c(-1, -3)]
+stopifnot(length(result3) == 1)
+stopifnot(result3[[1]] == 2)
 "#,
     )
-    .expect("list indexing should work (negative or positive)");
+    .expect("negative indexing on lists should exclude specified elements");
 }
