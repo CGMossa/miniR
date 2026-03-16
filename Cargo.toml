@@ -73,10 +73,12 @@ libm = "0.2"
 signal-hook = "0.3"
 unicode-width = "0.2"
 jiff = { version = "0.2", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [features]
-default = ["random", "datetime", "io", "collections"]
+default = ["random", "datetime", "io", "collections", "digest"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
 collections = []
+digest = ["dep:sha2"]
