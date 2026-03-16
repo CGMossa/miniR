@@ -4,6 +4,7 @@
 //! class "factor" (or c("ordered", "factor") if ordered).
 
 use crate::interpreter::value::*;
+use itertools::Itertools;
 use minir_macros::builtin;
 
 /// Coerce an RValue to a character vector for level matching.
@@ -78,14 +79,13 @@ fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
             }
         }
     } else {
-        let mut seen = Vec::new();
-        for s in char_vals.iter().flatten() {
-            if !seen.contains(s) {
-                seen.push(s.clone());
-            }
-        }
-        seen.sort();
-        seen
+        char_vals
+            .iter()
+            .flatten()
+            .unique()
+            .sorted()
+            .cloned()
+            .collect()
     };
 
     // Get labels (default = levels themselves)

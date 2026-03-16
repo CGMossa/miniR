@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use derive_more::{Display, Error};
+use itertools::Itertools;
 use ndarray::{Array1, Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
@@ -3007,7 +3008,6 @@ fn df_column_doubles(list: &RList, name: &str) -> Result<Vec<Option<f64>>, RErro
             list.values
                 .iter()
                 .filter_map(|(n, _)| n.as_deref())
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
     ))

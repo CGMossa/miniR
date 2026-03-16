@@ -26,6 +26,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use crate::parser::ast::Arg;
+use itertools::Itertools;
 use linkme::distributed_slice;
 use minir_macros::{builtin, interpreter_builtin};
 
@@ -691,12 +692,7 @@ fn builtin_paste(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 
     match collapse {
         Some(col) => {
-            let collapsed: String = result
-                .iter()
-                .filter_map(|s| s.as_ref())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(&col);
+            let collapsed: String = result.iter().filter_map(|s| s.as_ref()).join(&col);
             Ok(RValue::vec(Vector::Character(vec![Some(collapsed)].into())))
         }
         None => Ok(RValue::vec(Vector::Character(result.into()))),
@@ -1333,12 +1329,9 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                     let len = v.len();
                     let type_name = v.type_name();
                     let preview: String = match &v.inner {
-                        Vector::Raw(vals) => vals
-                            .iter()
-                            .take(10)
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<Vec<_>>()
-                            .join(" "),
+                        Vector::Raw(vals) => {
+                            vals.iter().take(10).map(|b| format!("{:02x}", b)).join(" ")
+                        }
                         Vector::Double(vals) => vals
                             .iter()
                             .take(10)
@@ -1346,7 +1339,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                                 Some(f) => format_r_double(*f),
                                 None => "NA".to_string(),
                             })
-                            .collect::<Vec<_>>()
                             .join(" "),
                         Vector::Integer(vals) => vals
                             .iter()
@@ -1355,7 +1347,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                                 Some(i) => i.to_string(),
                                 None => "NA".to_string(),
                             })
-                            .collect::<Vec<_>>()
                             .join(" "),
                         Vector::Logical(vals) => vals
                             .iter()
@@ -1365,7 +1356,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                                 Some(false) => "FALSE".to_string(),
                                 None => "NA".to_string(),
                             })
-                            .collect::<Vec<_>>()
                             .join(" "),
                         Vector::Complex(vals) => vals
                             .iter()
@@ -1374,7 +1364,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                                 Some(c) => format_r_complex(*c),
                                 None => "NA".to_string(),
                             })
-                            .collect::<Vec<_>>()
                             .join(" "),
                         Vector::Character(vals) => vals
                             .iter()
@@ -1383,7 +1372,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                                 Some(s) => format!("\"{}\"", s),
                                 None => "NA".to_string(),
                             })
-                            .collect::<Vec<_>>()
                             .join(" "),
                     };
                     println!(" {} [1:{}] {}", type_name, len, preview);
@@ -3300,22 +3288,14 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
                     RErrorKind::Argument,
                     format!(
                         "'arg' should be one of {}",
-                        choices_vec
-                            .iter()
-                            .map(|c| format!("'{}'", c))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        choices_vec.iter().map(|c| format!("'{}'", c)).join(", ")
                     ),
                 )),
                 _ => Err(RError::new(
                     RErrorKind::Argument,
                     format!(
                         "'arg' should be one of {}",
-                        choices_vec
-                            .iter()
-                            .map(|c| format!("'{}'", c))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        choices_vec.iter().map(|c| format!("'{}'", c)).join(", ")
                     ),
                 )),
             }
