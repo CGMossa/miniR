@@ -2325,14 +2325,6 @@ fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
     RValue::Vector(rv)
 }
 
-fn names_attr(value: &RValue) -> Option<DimNameVec> {
-    match value {
-        RValue::Vector(rv) => rv.get_attr("names").and_then(super::coerce_name_values),
-        RValue::List(list) => list.get_attr("names").and_then(super::coerce_name_values),
-        _ => None,
-    }
-}
-
 fn matrix_dimnames(value: &RValue) -> MatrixDimNames {
     let dimnames = match value {
         RValue::Vector(rv) => rv.get_attr("dimnames"),
@@ -2605,78 +2597,6 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     Ok(array2_to_rvalue(&result))
 }
 
-/// `outer(X, Y, FUN = "*")` — outer product.
-///
-/// For each (x_i, y_j), computes FUN(x_i, y_j).
-/// Returns a matrix with dim = c(length(X), length(Y)).
-#[builtin(min_args = 2)]
-fn builtin_outer(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x_vec = match args.first() {
-        Some(RValue::Vector(rv)) => rv.to_doubles(),
-        _ => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "outer() requires numeric vectors for X and Y".to_string(),
-            ))
-        }
-    };
-    let y_vec = match args.get(1) {
-        Some(RValue::Vector(rv)) => rv.to_doubles(),
-        _ => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "outer() requires numeric vectors for X and Y".to_string(),
-            ))
-        }
-    };
-
-    let fun_str = named
-        .iter()
-        .find(|(n, _)| n == "FUN")
-        .map(|(_, v)| v)
-        .or(args.get(2))
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_else(|| "*".to_string());
-
-    let op: fn(f64, f64) -> f64 = match fun_str.as_str() {
-        "*" => |a, b| a * b,
-        "+" => |a, b| a + b,
-        "-" => |a, b| a - b,
-        "/" => |a, b| a / b,
-        "^" | "**" => |a: f64, b: f64| a.powf(b),
-        "%%" => |a, b| a % b,
-        "%/%" => |a: f64, b: f64| (a / b).floor(),
-        other => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                format!(
-                    "outer() with FUN = \"{}\" is not supported. \
-                 Supported operators: \"*\", \"+\", \"-\", \"/\", \"^\", \"%%\", \"%/%\"",
-                    other
-                ),
-            ));
-        }
-    };
-
-    let nx = x_vec.len();
-    let ny = y_vec.len();
-
-    // R stores matrices column-major: iterate columns (Y) then rows (X)
-    let mut result = Vec::with_capacity(nx * ny);
-    for y_val in &y_vec {
-        for x_val in &x_vec {
-            let val = match (x_val, y_val) {
-                (Some(x), Some(y)) => Some(op(*x, *y)),
-                _ => None,
-            };
-            result.push(val);
-        }
-    }
-
-    let mut rv = RVector::from(Vector::Double(result.into()));
-    set_matrix_attrs(&mut rv, nx, ny, names_attr(&args[0]), names_attr(&args[1]))?;
-    Ok(RValue::Vector(rv))
-}
 /// `det(x)` — matrix determinant via Gaussian elimination with partial pivoting.
 #[builtin(min_args = 1)]
 fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
