@@ -175,6 +175,200 @@ fn interp_format(
     }
 }
 
+/// Print a data.frame with aligned columns via elastic tabstops.
+///
+/// @param x a data.frame to print
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.data.frame", min_args = 1)]
+fn interp_print_data_frame(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    use std::io::Write;
+    use tabwriter::TabWriter;
+
+    let val = &args[0];
+    let list = match val {
+        RValue::List(l) => l,
+        _ => {
+            println!("{}", val);
+            return Ok(val.clone());
+        }
+    };
+
+    let ncol = list.values.len();
+    if ncol == 0 {
+        // Empty data frame — print dimensions like R does
+        let nrow = match list.get_attr("row.names") {
+            Some(RValue::Vector(rv)) => rv.inner.len(),
+            _ => 0,
+        };
+        println!(
+            "data frame with 0 columns and {} row{}",
+            nrow,
+            if nrow == 1 { "" } else { "s" }
+        );
+        return Ok(val.clone());
+    }
+
+    // Extract column names
+    let col_names: Vec<String> = list
+        .values
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| name.clone().unwrap_or_else(|| format!("V{}", i + 1)))
+        .collect();
+
+    // Extract row names
+    let nrow = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+
+    let row_names: Vec<String> = match list.get_attr("row.names") {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Character(c) => c
+                .iter()
+                .map(|s| s.clone().unwrap_or_else(|| "NA".to_string()))
+                .collect(),
+            Vector::Integer(ints) => ints
+                .iter()
+                .map(|i| match i {
+                    Some(v) => v.to_string(),
+                    None => "NA".to_string(),
+                })
+                .collect(),
+            _ => (1..=nrow).map(|i| i.to_string()).collect(),
+        },
+        _ => (1..=nrow).map(|i| i.to_string()).collect(),
+    };
+
+    // Format each column's elements
+    let col_elements: Vec<Vec<String>> = list
+        .values
+        .iter()
+        .map(|(_, v)| format_column_elements(v, nrow))
+        .collect();
+
+    // Build tab-separated output and let tabwriter align it
+    let mut tw = TabWriter::new(Vec::new());
+
+    // Header row: blank for row-names column, then column names
+    let mut header = String::new();
+    header.push('\t');
+    for (i, name) in col_names.iter().enumerate() {
+        header.push_str(name);
+        if i + 1 < ncol {
+            header.push('\t');
+        }
+    }
+    writeln!(tw, "{}", header).unwrap();
+
+    // Data rows
+    for row in 0..nrow {
+        let mut line = String::new();
+        let rn = row_names.get(row).map(|s| s.as_str()).unwrap_or("");
+        line.push_str(rn);
+        for (col_idx, col) in col_elements.iter().enumerate() {
+            line.push('\t');
+            let elem = col.get(row).map(|s| s.as_str()).unwrap_or("NA");
+            line.push_str(elem);
+            let _ = col_idx;
+        }
+        writeln!(tw, "{}", line).unwrap();
+    }
+
+    tw.flush().unwrap();
+    let output = String::from_utf8(tw.into_inner().unwrap()).unwrap();
+    // Print without trailing newline (println adds one)
+    print!("{}", output);
+
+    Ok(val.clone())
+}
+
+/// Format the elements of a single data-frame column for printing.
+fn format_column_elements(val: &RValue, nrow: usize) -> Vec<String> {
+    match val {
+        RValue::Vector(rv) => {
+            let is_factor = rv
+                .class()
+                .map(|c| c.iter().any(|s| s == "factor"))
+                .unwrap_or(false);
+            if is_factor {
+                // For factors, show the level labels
+                let levels = rv.get_attr("levels");
+                let indices = &rv.inner;
+                (0..nrow)
+                    .map(|i| match indices {
+                        Vector::Integer(ints) => match ints.get(i) {
+                            Some(Some(idx)) => {
+                                let idx = usize::try_from(*idx).unwrap_or(0);
+                                if idx == 0 {
+                                    return "NA".to_string();
+                                }
+                                match levels {
+                                    Some(RValue::Vector(lv)) => match &lv.inner {
+                                        Vector::Character(c) => c
+                                            .get(idx - 1)
+                                            .and_then(|s| s.clone())
+                                            .unwrap_or_else(|| "NA".to_string()),
+                                        _ => format!("{}", idx),
+                                    },
+                                    _ => format!("{}", idx),
+                                }
+                            }
+                            _ => "NA".to_string(),
+                        },
+                        _ => "NA".to_string(),
+                    })
+                    .collect()
+            } else {
+                format_vector_elements(&rv.inner, nrow)
+            }
+        }
+        RValue::List(l) => (0..nrow)
+            .map(|i| {
+                l.values
+                    .get(i)
+                    .map(|(_, v)| format!("{}", v))
+                    .unwrap_or_else(|| "NA".to_string())
+            })
+            .collect(),
+        _ => vec!["NA".to_string(); nrow],
+    }
+}
+
+/// Format individual vector elements as strings (no header, no index labels).
+fn format_vector_elements(v: &Vector, nrow: usize) -> Vec<String> {
+    (0..nrow)
+        .map(|i| match v {
+            Vector::Logical(vals) => match vals.get(i) {
+                Some(Some(true)) => "TRUE".to_string(),
+                Some(Some(false)) => "FALSE".to_string(),
+                _ => "NA".to_string(),
+            },
+            Vector::Integer(vals) => match vals.get(i) {
+                Some(Some(n)) => n.to_string(),
+                _ => "NA".to_string(),
+            },
+            Vector::Double(vals) => match vals.get(i) {
+                Some(Some(f)) => format_r_double(*f),
+                _ => "NA".to_string(),
+            },
+            Vector::Complex(vals) => match vals.get(i) {
+                Some(Some(c)) => format_r_complex(*c),
+                _ => "NA".to_string(),
+            },
+            Vector::Character(vals) => match vals.get(i) {
+                Some(Some(s)) => s.clone(),
+                _ => "NA".to_string(),
+            },
+            Vector::Raw(vals) => match vals.get(i) {
+                Some(b) => format!("{:02x}", b),
+                None => "NA".to_string(),
+            },
+        })
+        .collect()
+}
+
 // endregion
 
 /// Apply a function over a vector or list, simplifying the result.

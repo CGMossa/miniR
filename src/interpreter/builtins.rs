@@ -823,7 +823,7 @@ fn builtin_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             if names_val.is_null() {
-                rv.attrs.as_mut().map(|a| a.remove("names"));
+                rv.attrs.as_mut().map(|a| a.shift_remove("names"));
             } else {
                 rv.set_attr("names".to_string(), names_val);
             }
@@ -898,7 +898,7 @@ fn set_list_names(list: &mut RList, names_val: &RValue) {
         for entry in &mut list.values {
             entry.0 = None;
         }
-        list.attrs.as_mut().map(|attrs| attrs.remove("names"));
+        list.attrs.as_mut().map(|attrs| attrs.shift_remove("names"));
     }
 }
 
@@ -1014,7 +1014,9 @@ fn set_data_frame_dimnames(list: &mut RList, dimnames: &RValue) -> Result<(), RE
 
     list.set_attr("row.names".to_string(), character_name_vector(row_values));
     set_list_names(list, &character_name_vector(col_values));
-    list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+    list.attrs
+        .as_mut()
+        .map(|attrs| attrs.shift_remove("dimnames"));
     Ok(())
 }
 
@@ -1146,7 +1148,9 @@ fn builtin_row_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
             let mut rv = rv.clone();
             let dimnames = updated_dimnames_component(rv.get_attr("dimnames"), 0, &row_names);
             if dimnames.is_null() {
-                rv.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+                rv.attrs
+                    .as_mut()
+                    .map(|attrs| attrs.shift_remove("dimnames"));
             } else {
                 rv.set_attr("dimnames".to_string(), dimnames);
             }
@@ -1156,7 +1160,9 @@ fn builtin_row_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
             let mut list = list.clone();
             let dimnames = updated_dimnames_component(list.get_attr("dimnames"), 0, &row_names);
             if dimnames.is_null() {
-                list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+                list.attrs
+                    .as_mut()
+                    .map(|attrs| attrs.shift_remove("dimnames"));
             } else {
                 list.set_attr("dimnames".to_string(), dimnames);
             }
@@ -1184,7 +1190,9 @@ fn builtin_col_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
             let mut rv = rv.clone();
             let dimnames = updated_dimnames_component(rv.get_attr("dimnames"), 1, &col_names);
             if dimnames.is_null() {
-                rv.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+                rv.attrs
+                    .as_mut()
+                    .map(|attrs| attrs.shift_remove("dimnames"));
             } else {
                 rv.set_attr("dimnames".to_string(), dimnames);
             }
@@ -1194,7 +1202,9 @@ fn builtin_col_names_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
             let mut list = list.clone();
             let dimnames = updated_dimnames_component(list.get_attr("dimnames"), 1, &col_names);
             if dimnames.is_null() {
-                list.attrs.as_mut().map(|attrs| attrs.remove("dimnames"));
+                list.attrs
+                    .as_mut()
+                    .map(|attrs| attrs.shift_remove("dimnames"));
             } else {
                 list.set_attr("dimnames".to_string(), dimnames);
             }
@@ -1216,7 +1226,7 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             if class_val.is_null() {
-                rv.attrs.as_mut().map(|a| a.remove("class"));
+                rv.attrs.as_mut().map(|a| a.shift_remove("class"));
             } else {
                 rv.set_attr("class".to_string(), class_val);
             }
@@ -1225,7 +1235,7 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         Some(RValue::List(l)) => {
             let mut l = l.clone();
             if class_val.is_null() {
-                l.attrs.as_mut().map(|a| a.remove("class"));
+                l.attrs.as_mut().map(|a| a.shift_remove("class"));
             } else {
                 l.set_attr("class".to_string(), class_val);
             }
@@ -1234,7 +1244,7 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
         Some(RValue::Language(lang)) => {
             let mut lang = lang.clone();
             if class_val.is_null() {
-                lang.attrs.as_mut().map(|a| a.remove("class"));
+                lang.attrs.as_mut().map(|a| a.shift_remove("class"));
             } else {
                 lang.set_attr("class".to_string(), class_val);
             }
@@ -2539,8 +2549,8 @@ fn builtin_dim_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             if dim_val.is_null() {
-                rv.attrs.as_mut().map(|a| a.remove("dim"));
-                rv.attrs.as_mut().map(|a| a.remove("class"));
+                rv.attrs.as_mut().map(|a| a.shift_remove("dim"));
+                rv.attrs.as_mut().map(|a| a.shift_remove("class"));
             } else {
                 rv.set_attr("dim".to_string(), dim_val);
                 rv.set_attr(
@@ -2712,8 +2722,8 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match args.first() {
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
-            rv.attrs.as_mut().map(|a| a.remove("names"));
-            rv.attrs.as_mut().map(|a| a.remove("dimnames"));
+            rv.attrs.as_mut().map(|a| a.shift_remove("names"));
+            rv.attrs.as_mut().map(|a| a.shift_remove("dimnames"));
             Ok(RValue::Vector(rv))
         }
         Some(RValue::List(l)) => {
@@ -2721,8 +2731,8 @@ fn builtin_unname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             for entry in &mut l.values {
                 entry.0 = None;
             }
-            l.attrs.as_mut().map(|a| a.remove("names"));
-            l.attrs.as_mut().map(|a| a.remove("dimnames"));
+            l.attrs.as_mut().map(|a| a.shift_remove("names"));
+            l.attrs.as_mut().map(|a| a.shift_remove("dimnames"));
             Ok(RValue::List(l))
         }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),
@@ -2757,7 +2767,7 @@ fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             if dimnames_val.is_null() {
-                rv.attrs.as_mut().map(|a| a.remove("dimnames"));
+                rv.attrs.as_mut().map(|a| a.shift_remove("dimnames"));
             } else {
                 rv.set_attr("dimnames".to_string(), dimnames_val);
             }
@@ -2771,7 +2781,7 @@ fn builtin_dimnames_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
         Some(RValue::List(l)) => {
             let mut l = l.clone();
             if dimnames_val.is_null() {
-                l.attrs.as_mut().map(|a| a.remove("dimnames"));
+                l.attrs.as_mut().map(|a| a.shift_remove("dimnames"));
             } else {
                 l.set_attr("dimnames".to_string(), dimnames_val);
             }
@@ -3409,7 +3419,7 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
             if value.is_null() {
-                rv.attrs.as_mut().map(|a| a.remove(&which));
+                rv.attrs.as_mut().map(|a| a.shift_remove(&which));
             } else {
                 rv.set_attr(which, value);
             }
@@ -3418,7 +3428,7 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::List(l)) => {
             let mut l = l.clone();
             if value.is_null() {
-                l.attrs.as_mut().map(|a| a.remove(&which));
+                l.attrs.as_mut().map(|a| a.shift_remove(&which));
             } else {
                 l.set_attr(which, value);
             }
@@ -3427,7 +3437,7 @@ fn builtin_attr_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Language(lang)) => {
             let mut lang = lang.clone();
             if value.is_null() {
-                lang.attrs.as_mut().map(|a| a.remove(&which));
+                lang.attrs.as_mut().map(|a| a.shift_remove(&which));
             } else {
                 lang.set_attr(which, value);
             }
@@ -3743,17 +3753,17 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     match args.first() {
         Some(RValue::Vector(rv)) => {
             let mut rv = rv.clone();
-            rv.attrs.as_mut().map(|a| a.remove("class"));
+            rv.attrs.as_mut().map(|a| a.shift_remove("class"));
             Ok(RValue::Vector(rv))
         }
         Some(RValue::List(l)) => {
             let mut l = l.clone();
-            l.attrs.as_mut().map(|a| a.remove("class"));
+            l.attrs.as_mut().map(|a| a.shift_remove("class"));
             Ok(RValue::List(l))
         }
         Some(RValue::Language(lang)) => {
             let mut lang = lang.clone();
-            lang.attrs.as_mut().map(|a| a.remove("class"));
+            lang.attrs.as_mut().map(|a| a.shift_remove("class"));
             Ok(RValue::Language(lang))
         }
         other => Ok(other.cloned().unwrap_or(RValue::Null)),

@@ -19,9 +19,10 @@ pub use logical::Logical;
 pub use traits::{coerce_arg, find_arg, Builtin, BuiltinInfo, CoerceArg, FromArgs};
 pub use vector::{format_r_complex, format_r_double, Vector};
 
-use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
+
+use indexmap::IndexMap;
 
 use itertools::Itertools;
 use unicode_width::UnicodeWidthStr;
@@ -56,8 +57,11 @@ pub struct BuiltinDescriptor {
     pub namespace: &'static str,
 }
 
-/// Attribute map — every R object can carry named attributes
-pub type Attributes = HashMap<String, RValue>;
+/// Attribute map — every R object can carry named attributes.
+///
+/// Uses `IndexMap` to preserve insertion order, matching R's behavior where
+/// `attributes(x)` returns attributes in the order they were set.
+pub type Attributes = IndexMap<String, RValue>;
 
 /// Unevaluated expression (language object) — returned by quote(), parse().
 ///
@@ -82,7 +86,7 @@ impl Language {
 
     pub fn set_attr(&mut self, name: String, value: RValue) {
         self.attrs
-            .get_or_insert_with(|| Box::new(HashMap::new()))
+            .get_or_insert_with(|| Box::new(IndexMap::new()))
             .insert(name, value);
     }
 
@@ -163,7 +167,7 @@ impl RVector {
 
     pub fn set_attr(&mut self, name: String, value: RValue) {
         self.attrs
-            .get_or_insert_with(|| Box::new(HashMap::new()))
+            .get_or_insert_with(|| Box::new(IndexMap::new()))
             .insert(name, value);
     }
 
@@ -198,7 +202,7 @@ impl RList {
 
     pub fn set_attr(&mut self, name: String, value: RValue) {
         self.attrs
-            .get_or_insert_with(|| Box::new(HashMap::new()))
+            .get_or_insert_with(|| Box::new(IndexMap::new()))
             .insert(name, value);
     }
 
