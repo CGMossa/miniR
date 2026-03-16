@@ -2157,7 +2157,7 @@ fn trim_to_width(s: &str, max_width: usize) -> String {
 /// @param URL character string to encode
 /// @param reserved if TRUE (default), also encode reserved characters
 /// @return percent-encoded character string
-#[builtin(name = "URLencode", min_args = 1)]
+#[builtin(name = "URLencode", min_args = 1, namespace = "utils")]
 fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
         .first()
@@ -2210,7 +2210,7 @@ fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
 ///
 /// @param URL percent-encoded character string
 /// @return decoded character string
-#[builtin(name = "URLdecode", min_args = 1)]
+#[builtin(name = "URLdecode", min_args = 1, namespace = "utils")]
 fn builtin_urldecode(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let s = args
         .first()

@@ -112,7 +112,12 @@ fn require_string(args: &CallArgs, name: &str, pos: usize) -> Result<String, REr
 /// `hashmap_get()`, etc. to manipulate it.
 ///
 /// @return integer scalar with class "hashmap"
-#[interpreter_builtin(name = "hashmap", min_args = 0, max_args = 0)]
+#[interpreter_builtin(
+    name = "hashmap",
+    min_args = 0,
+    max_args = 0,
+    namespace = "collections"
+)]
 fn interp_hashmap(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -129,7 +134,12 @@ fn interp_hashmap(
 /// @param key character scalar: the key to set
 /// @param value any R value to store
 /// @return the previous value for the key, or NULL if the key was new
-#[interpreter_builtin(name = "hashmap_set", min_args = 3, max_args = 3)]
+#[interpreter_builtin(
+    name = "hashmap_set",
+    min_args = 3,
+    max_args = 3,
+    namespace = "collections"
+)]
 fn interp_hashmap_set(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -160,7 +170,12 @@ fn interp_hashmap_set(
 /// @param key character scalar: the key to look up
 /// @param default value to return if the key is not found (default NULL)
 /// @return the stored value, or `default` if the key does not exist
-#[interpreter_builtin(name = "hashmap_get", min_args = 2, max_args = 3)]
+#[interpreter_builtin(
+    name = "hashmap_get",
+    min_args = 2,
+    max_args = 3,
+    namespace = "collections"
+)]
 fn interp_hashmap_get(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -190,7 +205,12 @@ fn interp_hashmap_get(
 /// @param h integer scalar: hashmap ID
 /// @param key character scalar: the key to check
 /// @return logical scalar: TRUE if the key exists, FALSE otherwise
-#[interpreter_builtin(name = "hashmap_has", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashmap_has",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashmap_has(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -218,7 +238,12 @@ fn interp_hashmap_has(
 /// @param h integer scalar: hashmap ID
 /// @param key character scalar: the key to remove
 /// @return the removed value, or NULL if the key did not exist
-#[interpreter_builtin(name = "hashmap_remove", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashmap_remove",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashmap_remove(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -245,7 +270,12 @@ fn interp_hashmap_remove(
 ///
 /// @param h integer scalar: hashmap ID
 /// @return character vector of keys
-#[interpreter_builtin(name = "hashmap_keys", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashmap_keys",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashmap_keys(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -274,7 +304,12 @@ fn interp_hashmap_keys(
 ///
 /// @param h integer scalar: hashmap ID
 /// @return list of values
-#[interpreter_builtin(name = "hashmap_values", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashmap_values",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashmap_values(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -302,7 +337,12 @@ fn interp_hashmap_values(
 ///
 /// @param h integer scalar: hashmap ID
 /// @return integer scalar: the number of entries
-#[interpreter_builtin(name = "hashmap_size", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashmap_size",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashmap_size(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -330,7 +370,12 @@ fn interp_hashmap_size(
 ///
 /// @param h integer scalar: hashmap ID
 /// @return named list
-#[interpreter_builtin(name = "hashmap_to_list", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashmap_to_list",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashmap_to_list(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -366,7 +411,12 @@ fn interp_hashmap_to_list(
 /// class "btreemap".
 ///
 /// @return integer scalar with class "btreemap"
-#[interpreter_builtin(name = "btreemap", min_args = 0, max_args = 0)]
+#[interpreter_builtin(
+    name = "btreemap",
+    min_args = 0,
+    max_args = 0,
+    namespace = "collections"
+)]
 fn interp_btreemap(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -383,7 +433,12 @@ fn interp_btreemap(
 /// @param key character scalar: the key to set
 /// @param value any R value to store
 /// @return the previous value for the key, or NULL if the key was new
-#[interpreter_builtin(name = "btreemap_set", min_args = 3, max_args = 3)]
+#[interpreter_builtin(
+    name = "btreemap_set",
+    min_args = 3,
+    max_args = 3,
+    namespace = "collections"
+)]
 fn interp_btreemap_set(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -414,7 +469,12 @@ fn interp_btreemap_set(
 /// @param key character scalar: the key to look up
 /// @param default value to return if the key is not found (default NULL)
 /// @return the stored value, or `default` if the key does not exist
-#[interpreter_builtin(name = "btreemap_get", min_args = 2, max_args = 3)]
+#[interpreter_builtin(
+    name = "btreemap_get",
+    min_args = 2,
+    max_args = 3,
+    namespace = "collections"
+)]
 fn interp_btreemap_get(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -444,7 +504,12 @@ fn interp_btreemap_get(
 /// @param h integer scalar: btreemap ID
 /// @param key character scalar: the key to check
 /// @return logical scalar: TRUE if the key exists, FALSE otherwise
-#[interpreter_builtin(name = "btreemap_has", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "btreemap_has",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_btreemap_has(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -472,7 +537,12 @@ fn interp_btreemap_has(
 /// @param h integer scalar: btreemap ID
 /// @param key character scalar: the key to remove
 /// @return the removed value, or NULL if the key did not exist
-#[interpreter_builtin(name = "btreemap_remove", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "btreemap_remove",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_btreemap_remove(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -497,7 +567,12 @@ fn interp_btreemap_remove(
 ///
 /// @param h integer scalar: btreemap ID
 /// @return character vector of keys in sorted order
-#[interpreter_builtin(name = "btreemap_keys", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "btreemap_keys",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_btreemap_keys(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -524,7 +599,12 @@ fn interp_btreemap_keys(
 ///
 /// @param h integer scalar: btreemap ID
 /// @return list of values in key-sorted order
-#[interpreter_builtin(name = "btreemap_values", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "btreemap_values",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_btreemap_values(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -552,7 +632,12 @@ fn interp_btreemap_values(
 ///
 /// @param h integer scalar: btreemap ID
 /// @return integer scalar: the number of entries
-#[interpreter_builtin(name = "btreemap_size", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "btreemap_size",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_btreemap_size(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -578,7 +663,12 @@ fn interp_btreemap_size(
 ///
 /// @param h integer scalar: btreemap ID
 /// @return named list with keys in sorted order
-#[interpreter_builtin(name = "btreemap_to_list", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "btreemap_to_list",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_btreemap_to_list(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -614,7 +704,12 @@ fn interp_btreemap_to_list(
 /// `hashset_has()`, etc. to manipulate it.
 ///
 /// @return integer scalar with class "hashset"
-#[interpreter_builtin(name = "hashset", min_args = 0, max_args = 0)]
+#[interpreter_builtin(
+    name = "hashset",
+    min_args = 0,
+    max_args = 0,
+    namespace = "collections"
+)]
 fn interp_hashset(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -630,7 +725,12 @@ fn interp_hashset(
 /// @param s integer scalar: hashset ID
 /// @param value character scalar: the element to add
 /// @return logical scalar: TRUE if the element was new, FALSE if already present
-#[interpreter_builtin(name = "hashset_add", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_add",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_add(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -659,7 +759,12 @@ fn interp_hashset_add(
 /// @param s integer scalar: hashset ID
 /// @param value character scalar: the element to check
 /// @return logical scalar: TRUE if present, FALSE otherwise
-#[interpreter_builtin(name = "hashset_has", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_has",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_has(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -687,7 +792,12 @@ fn interp_hashset_has(
 /// @param s integer scalar: hashset ID
 /// @param value character scalar: the element to remove
 /// @return logical scalar: TRUE if the element was present and removed, FALSE otherwise
-#[interpreter_builtin(name = "hashset_remove", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_remove",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_remove(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -715,7 +825,12 @@ fn interp_hashset_remove(
 ///
 /// @param s integer scalar: hashset ID
 /// @return integer scalar: the number of elements
-#[interpreter_builtin(name = "hashset_size", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashset_size",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashset_size(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -743,7 +858,12 @@ fn interp_hashset_size(
 ///
 /// @param s integer scalar: hashset ID
 /// @return character vector of the set's elements
-#[interpreter_builtin(name = "hashset_to_vector", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "hashset_to_vector",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_hashset_to_vector(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -771,7 +891,12 @@ fn interp_hashset_to_vector(
 /// @param s1 integer scalar: first hashset ID
 /// @param s2 integer scalar: second hashset ID
 /// @return integer scalar with class "hashset": the union
-#[interpreter_builtin(name = "hashset_union", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_union",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_union(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -812,7 +937,12 @@ fn interp_hashset_union(
 /// @param s1 integer scalar: first hashset ID
 /// @param s2 integer scalar: second hashset ID
 /// @return integer scalar with class "hashset": the intersection
-#[interpreter_builtin(name = "hashset_intersect", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_intersect",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_intersect(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -853,7 +983,12 @@ fn interp_hashset_intersect(
 /// @param s1 integer scalar: first hashset ID
 /// @param s2 integer scalar: second hashset ID
 /// @return integer scalar with class "hashset": elements in s1 but not in s2
-#[interpreter_builtin(name = "hashset_diff", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "hashset_diff",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_hashset_diff(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -899,7 +1034,7 @@ fn interp_hashset_diff(
 /// etc. to manipulate it. The largest value is always at the top.
 ///
 /// @return integer scalar with class "heap"
-#[interpreter_builtin(name = "heap", min_args = 0, max_args = 0)]
+#[interpreter_builtin(name = "heap", min_args = 0, max_args = 0, namespace = "collections")]
 fn interp_heap(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -915,7 +1050,12 @@ fn interp_heap(
 /// @param h integer scalar: heap ID
 /// @param value numeric scalar: the value to push
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "heap_push", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "heap_push",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_heap_push(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -954,7 +1094,12 @@ fn interp_heap_push(
 ///
 /// @param h integer scalar: heap ID
 /// @return numeric scalar (the max value), or NULL if empty
-#[interpreter_builtin(name = "heap_pop", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "heap_pop",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_heap_pop(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -983,7 +1128,12 @@ fn interp_heap_pop(
 ///
 /// @param h integer scalar: heap ID
 /// @return numeric scalar (the max value), or NULL if empty
-#[interpreter_builtin(name = "heap_peek", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "heap_peek",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_heap_peek(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1010,7 +1160,12 @@ fn interp_heap_peek(
 ///
 /// @param h integer scalar: heap ID
 /// @return integer scalar: the number of elements
-#[interpreter_builtin(name = "heap_size", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "heap_size",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_heap_size(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1042,7 +1197,7 @@ fn interp_heap_size(
 /// `deque_push_front()`, `deque_pop_back()`, `deque_pop_front()` to manipulate it.
 ///
 /// @return integer scalar with class "deque"
-#[interpreter_builtin(name = "deque", min_args = 0, max_args = 0)]
+#[interpreter_builtin(name = "deque", min_args = 0, max_args = 0, namespace = "collections")]
 fn interp_deque(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -1058,7 +1213,12 @@ fn interp_deque(
 /// @param d integer scalar: deque ID
 /// @param value any R value to append
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "deque_push_back", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "deque_push_back",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_deque_push_back(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1087,7 +1247,12 @@ fn interp_deque_push_back(
 /// @param d integer scalar: deque ID
 /// @param value any R value to prepend
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "deque_push_front", min_args = 2, max_args = 2)]
+#[interpreter_builtin(
+    name = "deque_push_front",
+    min_args = 2,
+    max_args = 2,
+    namespace = "collections"
+)]
 fn interp_deque_push_front(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1117,7 +1282,12 @@ fn interp_deque_push_front(
 ///
 /// @param d integer scalar: deque ID
 /// @return the removed value, or NULL if empty
-#[interpreter_builtin(name = "deque_pop_back", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "deque_pop_back",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_deque_pop_back(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1143,7 +1313,12 @@ fn interp_deque_pop_back(
 ///
 /// @param d integer scalar: deque ID
 /// @return the removed value, or NULL if empty
-#[interpreter_builtin(name = "deque_pop_front", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "deque_pop_front",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_deque_pop_front(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1167,7 +1342,12 @@ fn interp_deque_pop_front(
 ///
 /// @param d integer scalar: deque ID
 /// @return integer scalar: the number of elements
-#[interpreter_builtin(name = "deque_size", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "deque_size",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_deque_size(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -1193,7 +1373,12 @@ fn interp_deque_size(
 ///
 /// @param d integer scalar: deque ID
 /// @return list of the deque's elements (front to back)
-#[interpreter_builtin(name = "deque_to_list", min_args = 1, max_args = 1)]
+#[interpreter_builtin(
+    name = "deque_to_list",
+    min_args = 1,
+    max_args = 1,
+    namespace = "collections"
+)]
 fn interp_deque_to_list(
     args: &[RValue],
     named: &[(String, RValue)],

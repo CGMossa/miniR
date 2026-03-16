@@ -73,7 +73,7 @@ fn extract_bool_param(
 /// @param x numeric vector
 /// @param y numeric vector (same length as x)
 /// @return scalar double
-#[builtin(min_args = 2)]
+#[builtin(min_args = 2, namespace = "stats")]
 fn builtin_cov(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let x_vals = args[0]
         .as_vector()
@@ -140,7 +140,7 @@ fn builtin_cov(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 /// @param y numeric vector (same length as x)
 /// @param method character; only "pearson" is currently supported
 /// @return scalar double
-#[builtin(min_args = 2)]
+#[builtin(min_args = 2, namespace = "stats")]
 fn builtin_cor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     // Check method (only pearson supported)
     for (k, v) in named {
@@ -227,7 +227,7 @@ fn builtin_cor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 /// @param w numeric vector of weights (same length as x)
 /// @param na.rm logical; if TRUE, remove NAs before computing
 /// @return scalar double
-#[builtin(name = "weighted.mean", min_args = 2)]
+#[builtin(name = "weighted.mean", min_args = 2, namespace = "stats")]
 fn builtin_weighted_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let na_rm = extract_na_rm(named);
     let x_vals = args[0]
@@ -295,7 +295,7 @@ fn builtin_weighted_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<
 /// @param center logical (default TRUE)
 /// @param scale logical (default TRUE)
 /// @return numeric vector
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_scale(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let do_center = extract_bool_param(args, named, "center", 1, true);
     let do_scale = extract_bool_param(args, named, "scale", 2, true);
@@ -384,7 +384,7 @@ fn builtin_scale(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 ///
 /// @param ... one or more vectors
 /// @return logical vector
-#[builtin(name = "complete.cases", min_args = 1)]
+#[builtin(name = "complete.cases", min_args = 1, namespace = "stats")]
 fn builtin_complete_cases(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     // Determine length from first argument
     let first_vec = args[0].as_vector().ok_or_else(|| {
@@ -447,7 +447,7 @@ fn is_na_vec(v: &Vector) -> Vec<bool> {
 ///
 /// @param object vector
 /// @return vector with NAs removed
-#[builtin(name = "na.omit", min_args = 1)]
+#[builtin(name = "na.omit", min_args = 1, namespace = "stats")]
 fn builtin_na_omit(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let vec = args[0].as_vector().ok_or_else(|| {
         RError::new(
@@ -645,7 +645,7 @@ fn std_normal_quantile(p: f64) -> f64 {
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
 /// @return numeric vector of densities
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
@@ -690,7 +690,7 @@ fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
 /// @return numeric vector of probabilities
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
@@ -735,7 +735,7 @@ fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
 /// @return numeric vector of quantiles
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_qnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
@@ -779,7 +779,7 @@ fn builtin_qnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param min lower limit (default 0)
 /// @param max upper limit (default 1)
 /// @return numeric vector of densities
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);
@@ -825,7 +825,7 @@ fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param min lower limit (default 0)
 /// @param max upper limit (default 1)
 /// @return numeric vector of probabilities
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);
@@ -873,7 +873,7 @@ fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param min lower limit (default 0)
 /// @param max upper limit (default 1)
 /// @return numeric vector of quantiles
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_qunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);

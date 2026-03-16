@@ -16,7 +16,7 @@ use minir_macros::builtin;
 /// @param x character scalar to hash
 /// @param algo algorithm name: "sha256" (default) or "sha512"
 /// @return character scalar containing the hex digest
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "digest")]
 fn builtin_digest(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let input = match args.first() {
         Some(RValue::Vector(rv)) => match rv.to_characters().first() {
@@ -77,7 +77,7 @@ fn builtin_digest(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param x ignored
 /// @return always errors
-#[builtin(min_args = 0)]
+#[builtin(min_args = 0, namespace = "digest")]
 fn builtin_md5(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Err(RError::new(
         RErrorKind::Other,

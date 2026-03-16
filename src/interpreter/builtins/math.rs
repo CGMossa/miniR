@@ -1162,7 +1162,7 @@ fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// @param x numeric vector
 /// @return scalar double
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
@@ -1187,7 +1187,7 @@ fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 ///
 /// @param x numeric vector
 /// @return scalar double
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::Vector(v)) => {
@@ -1208,7 +1208,7 @@ fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 ///
 /// @param x numeric vector
 /// @return scalar double
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     match builtin_var(args, named)? {
         RValue::Vector(rv) => match rv.inner {
@@ -2038,7 +2038,7 @@ fn builtin_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 /// @param x a vector
 /// @param n number of elements to return (default 6)
 /// @return vector of the first n elements
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "utils")]
 fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = named
         .iter()
@@ -2071,7 +2071,7 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// @param x a vector
 /// @param n number of elements to return (default 6)
 /// @return vector of the last n elements
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "utils")]
 fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = named
         .iter()
@@ -3496,7 +3496,7 @@ fn collect_additive_terms(expr: &Expr, out: &mut Vec<String>) -> Result<(), RErr
 /// @param data a data frame containing the variables in the formula
 /// @return a list of class "lm" with components: coefficients, residuals,
 ///         fitted.values, and call
-#[interpreter_builtin(min_args = 1)]
+#[interpreter_builtin(min_args = 1, namespace = "stats")]
 fn interp_lm(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -3755,7 +3755,7 @@ fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Result<Vec<f64>, REr
 ///
 /// @param object an lm object (result of lm())
 /// @return the object, invisibly
-#[builtin(name = "summary.lm", min_args = 1)]
+#[builtin(name = "summary.lm", min_args = 1, namespace = "stats")]
 fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let obj = args.first().ok_or_else(|| {
         RError::new(
@@ -3846,7 +3846,7 @@ fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param object a fitted model object with a coefficients component
 /// @return a named numeric vector of coefficients
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "stats")]
 fn builtin_coef(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let obj = args.first().ok_or_else(|| {
         RError::new(
