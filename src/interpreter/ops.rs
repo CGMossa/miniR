@@ -10,6 +10,12 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{BinaryOp, SpecialOp, UnaryOp};
 
+/// Minimum vector length to trigger parallel execution (when the `parallel`
+/// feature is enabled). Below this threshold the overhead of spawning rayon
+/// tasks exceeds the benefit.
+#[cfg(feature = "parallel")]
+const PARALLEL_THRESHOLD: usize = 10_000;
+
 /// Copy attributes (dim, dimnames, names, class) from the longer operand
 /// to the arithmetic result. R's rule: attrs come from the first operand
 /// if lengths are equal, otherwise from the longer one.
@@ -321,26 +327,49 @@ fn eval_arith(op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         return Ok(RValue::vec(Vector::Double(vec![].into())));
     }
 
-    let result: Vec<Option<f64>> = (0..len)
-        .map(|i| {
-            let a = ld[i % ld.len()];
-            let b = rd[i % rd.len()];
-            match (a, b) {
-                (Some(a), Some(b)) => Some(match op {
-                    BinaryOp::Add => a + b,
-                    BinaryOp::Sub => a - b,
-                    BinaryOp::Mul => a * b,
-                    BinaryOp::Div => a / b,
-                    BinaryOp::Pow => a.powf(b),
-                    BinaryOp::Mod => a % b,
-                    BinaryOp::IntDiv => (a / b).floor(),
-                    _ => unreachable!(),
-                }),
-                _ => None,
-            }
-        })
-        .collect();
+    let arith_element = |a: Option<f64>, b: Option<f64>| -> Option<f64> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(match op {
+                BinaryOp::Add => a + b,
+                BinaryOp::Sub => a - b,
+                BinaryOp::Mul => a * b,
+                BinaryOp::Div => a / b,
+                BinaryOp::Pow => a.powf(b),
+                BinaryOp::Mod => a % b,
+                BinaryOp::IntDiv => (a / b).floor(),
+                _ => unreachable!(),
+            }),
+            _ => None,
+        }
+    };
+
+    let result: Vec<Option<f64>> = eval_arith_double_vec(&ld, &rd, len, arith_element);
     Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+/// Apply an element-wise operation to two double slices with recycling.
+/// When the `parallel` feature is enabled and both inputs exceed
+/// [`PARALLEL_THRESHOLD`], the work is split across rayon's thread pool.
+fn eval_arith_double_vec(
+    ld: &[Option<f64>],
+    rd: &[Option<f64>],
+    len: usize,
+    f: impl Fn(Option<f64>, Option<f64>) -> Option<f64> + Sync,
+) -> Vec<Option<f64>> {
+    #[cfg(feature = "parallel")]
+    {
+        if ld.len() >= PARALLEL_THRESHOLD && rd.len() >= PARALLEL_THRESHOLD {
+            use rayon::prelude::*;
+            return (0..len)
+                .into_par_iter()
+                .map(|i| f(ld[i % ld.len()], rd[i % rd.len()]))
+                .collect();
+        }
+    }
+
+    (0..len)
+        .map(|i| f(ld[i % ld.len()], rd[i % rd.len()]))
+        .collect()
 }
 
 // endregion

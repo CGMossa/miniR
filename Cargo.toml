@@ -76,6 +76,7 @@ unicode-width = "0.2"
 unicase = "2"
 jiff = { version = "0.2", optional = true }
 sha2 = { version = "0.10", optional = true }
+rayon = { version = "1", optional = true }
 
 [dependencies.serde_json]
 version = "1"
@@ -89,3 +90,4 @@ io = ["dep:csv"]
 collections = []
 digest = ["dep:sha2"]
 json = ["dep:serde_json"]
+parallel = ["dep:rayon"]
