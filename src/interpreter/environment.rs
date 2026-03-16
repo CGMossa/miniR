@@ -20,6 +20,10 @@ struct EnvInner {
     name: Option<String>,
     /// Expressions registered via on.exit() to run when this frame exits.
     on_exit: Vec<Expr>,
+    /// Whether the environment is locked (cannot add new bindings).
+    locked: bool,
+    /// Set of binding names that are individually locked (cannot be modified).
+    locked_bindings: std::collections::HashSet<String>,
 }
 
 impl Environment {
@@ -30,6 +34,8 @@ impl Environment {
                 parent: None,
                 name: Some("R_GlobalEnv".to_string()),
                 on_exit: Vec::new(),
+                locked: false,
+                locked_bindings: std::collections::HashSet::new(),
             })),
         }
     }
@@ -41,6 +47,8 @@ impl Environment {
                 parent: Some(parent.clone()),
                 name: None,
                 on_exit: Vec::new(),
+                locked: false,
+                locked_bindings: std::collections::HashSet::new(),
             })),
         }
     }
@@ -93,7 +101,6 @@ impl Environment {
         self.inner.borrow().bindings.contains_key(name)
     }
 
-    #[allow(dead_code)]
     pub fn remove(&self, name: &str) -> bool {
         self.inner.borrow_mut().bindings.remove(name).is_some()
     }
@@ -131,6 +138,8 @@ impl Environment {
                 parent: None,
                 name: Some("R_EmptyEnv".to_string()),
                 on_exit: Vec::new(),
+                locked: false,
+                locked_bindings: std::collections::HashSet::new(),
             })),
         }
     }
@@ -172,5 +181,36 @@ impl Environment {
         } else {
             None
         }
+    }
+
+    /// Lock the environment so no new bindings can be added.
+    /// If `bindings` is true, also lock all existing bindings.
+    pub fn lock(&self, bindings: bool) {
+        let mut inner = self.inner.borrow_mut();
+        inner.locked = true;
+        if bindings {
+            let names: Vec<String> = inner.bindings.keys().cloned().collect();
+            for name in names {
+                inner.locked_bindings.insert(name);
+            }
+        }
+    }
+
+    /// Return whether this environment is locked.
+    pub fn is_locked(&self) -> bool {
+        self.inner.borrow().locked
+    }
+
+    /// Lock a specific binding in this environment.
+    pub fn lock_binding(&self, name: &str) {
+        self.inner
+            .borrow_mut()
+            .locked_bindings
+            .insert(name.to_string());
+    }
+
+    /// Return whether a specific binding is locked.
+    pub fn binding_is_locked(&self, name: &str) -> bool {
+        self.inner.borrow().locked_bindings.contains(name)
     }
 }
