@@ -1347,6 +1347,58 @@ fn pre_eval_system_time(
     )))
 }
 
+/// Evaluate an expression in a temporary local environment.
+///
+/// Creates a new child of `envir` (default: the calling environment) and evaluates
+/// `expr` in it. The local environment is discarded after evaluation, so any
+/// bindings created inside are not visible to the caller.
+///
+/// @param expr expression to evaluate (not evaluated before dispatch)
+/// @param envir parent environment for the local scope (default: calling environment)
+/// @return the result of evaluating expr
+#[pre_eval_builtin(name = "local", min_args = 1)]
+fn pre_eval_local(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let expr = match args.first().and_then(|a| a.value.as_ref()) {
+        Some(e) => e,
+        None => return Ok(RValue::Null),
+    };
+
+    // Determine parent environment from second positional or named envir= arg
+    let parent_env = context.with_interpreter(|interp| -> Result<Option<Environment>, RError> {
+        for arg in args.iter().skip(1) {
+            if arg.name.as_deref() == Some("envir") {
+                if let Some(ref val_expr) = arg.value {
+                    let val = interp.eval_in(val_expr, env)?;
+                    if let RValue::Environment(e) = val {
+                        return Ok(Some(e));
+                    }
+                }
+            }
+        }
+        if let Some(arg) = args.get(1) {
+            if arg.name.is_none() {
+                if let Some(ref val_expr) = arg.value {
+                    let val = interp.eval_in(val_expr, env)?;
+                    if let RValue::Environment(e) = val {
+                        return Ok(Some(e));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    })?;
+
+    let parent = parent_env.unwrap_or_else(|| env.clone());
+    let local_env = Environment::new_child(&parent);
+    context
+        .with_interpreter(|interp| interp.eval_in(expr, &local_env))
+        .map_err(RError::from)
+}
+
 /// Convert an RValue back to an AST expression (for substitute).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
