@@ -83,6 +83,36 @@ crate-docs crate:
       | "\($kind): \(.value.name)"
     ' "$JSON" | sort -u
 
+# Show lines of code (requires tokei)
+loc:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v tokei &>/dev/null; then
+        echo "error: tokei is not installed" >&2
+        echo "  install it with: cargo install tokei" >&2
+        exit 1
+    fi
+    tokei src/ minir-macros/src/
+
+# Show per-file lines of code breakdown, sorted by lines (requires tokei)
+loc-detail:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v tokei &>/dev/null; then
+        echo "error: tokei is not installed" >&2
+        echo "  install it with: cargo install tokei" >&2
+        exit 1
+    fi
+    tokei -f -e vendor/ -e cran/ -e target/ -s lines
+
+# Find Rust source files over 500 lines in src/
+large-files:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Rust files over 500 lines in src/:"
+    echo "---"
+    find src/ minir-macros/src/ -name '*.rs' -exec wc -l {} + | sort -rn | head -20
+
 # Clone top CRAN packages for compatibility testing
 update-cran-test-packages:
     #!/usr/bin/env bash
