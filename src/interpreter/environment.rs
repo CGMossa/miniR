@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use itertools::Itertools;
+
 use crate::interpreter::value::RValue;
 use crate::parser::ast::Expr;
 
@@ -129,9 +131,13 @@ impl Environment {
     }
 
     pub fn ls(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.inner.borrow().bindings.keys().cloned().collect();
-        names.sort();
-        names
+        self.inner
+            .borrow()
+            .bindings
+            .keys()
+            .cloned()
+            .sorted()
+            .collect()
     }
 
     pub fn name(&self) -> Option<String> {

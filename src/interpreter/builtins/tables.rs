@@ -2,6 +2,7 @@
 
 use crate::interpreter::coerce::f64_to_i64;
 use crate::interpreter::value::*;
+use itertools::Itertools;
 use minir_macros::builtin;
 
 use super::factors::rvalue_to_char_vec;
@@ -69,18 +70,14 @@ fn builtin_table(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
     let vals = rvalue_to_char_vec(&args[0])?;
 
     // Count unique values, sorted
-    let mut order: Vec<String> = Vec::new();
-    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-    for s in vals.iter().flatten() {
-        *counts.entry(s.clone()).or_insert(0) += 1;
-        if !order.contains(s) {
-            order.push(s.clone());
-        }
-    }
-    order.sort();
+    let counts = vals.iter().flatten().counts();
+    let order: Vec<&String> = counts.keys().sorted().copied().collect();
 
-    let names: Vec<Option<String>> = order.iter().map(|s| Some(s.clone())).collect();
-    let values: Vec<Option<i64>> = order.iter().map(|s| Some(counts[s])).collect();
+    let names: Vec<Option<String>> = order.iter().map(|s| Some((*s).clone())).collect();
+    let values: Vec<Option<i64>> = order
+        .iter()
+        .map(|s| Some(i64::try_from(counts[*s]).unwrap_or(0)))
+        .collect();
 
     let mut rv = RVector::from(Vector::Integer(values.into()));
     rv.set_attr(

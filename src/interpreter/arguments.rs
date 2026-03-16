@@ -14,6 +14,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::{RError, RErrorKind, RFlow, RList, RValue};
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{Expr, Param};
+use itertools::Itertools;
 
 pub(crate) struct BoundClosureCall {
     pub env: Environment,
@@ -158,11 +159,7 @@ impl Interpreter {
                     format!(
                         "unused argument{} ({})",
                         if unused_named.len() == 1 { "" } else { "s" },
-                        unused_named
-                            .iter()
-                            .map(|n| format!("{n} = "))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        unused_named.iter().map(|n| format!("{n} = ")).join(", ")
                     ),
                 )
                 .into());

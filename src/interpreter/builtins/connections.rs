@@ -12,6 +12,7 @@ use super::CallArgs;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use crate::interpreter::Interpreter;
+use itertools::Itertools;
 use minir_macros::interpreter_builtin;
 
 // region: ConnectionInfo
@@ -358,7 +359,6 @@ fn interp_write_lines(
     let output: String = text
         .iter()
         .map(|s| s.clone().unwrap_or_else(|| "NA".to_string()))
-        .collect::<Vec<_>>()
         .join(&sep);
 
     // Determine destination from `con` argument (position 1).

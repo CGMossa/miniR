@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
+use itertools::Itertools;
 use unicode_width::UnicodeWidthStr;
 
 use crate::interpreter::environment::Environment;
@@ -550,18 +551,15 @@ pub fn deparse_expr(expr: &Expr) -> String {
         }
         Expr::Call { func, args } => {
             let f = deparse_expr(func);
-            let a: Vec<String> = args.iter().map(deparse_arg).collect();
-            format!("{}({})", f, a.join(", "))
+            format!("{}({})", f, args.iter().map(deparse_arg).join(", "))
         }
         Expr::Index { object, indices } => {
             let o = deparse_expr(object);
-            let i: Vec<String> = indices.iter().map(deparse_arg).collect();
-            format!("{}[{}]", o, i.join(", "))
+            format!("{}[{}]", o, indices.iter().map(deparse_arg).join(", "))
         }
         Expr::IndexDouble { object, indices } => {
             let o = deparse_expr(object);
-            let i: Vec<String> = indices.iter().map(deparse_arg).collect();
-            format!("{}[[{}]]", o, i.join(", "))
+            format!("{}[[{}]]", o, indices.iter().map(deparse_arg).join(", "))
         }
         Expr::Dollar { object, member } => format!("{}${}", deparse_expr(object), member),
         Expr::Slot { object, member } => format!("{}@{}", deparse_expr(object), member),
@@ -608,12 +606,14 @@ pub fn deparse_expr(expr: &Expr) -> String {
             if exprs.len() == 1 {
                 deparse_expr(&exprs[0])
             } else {
-                let inner: Vec<String> = exprs.iter().map(deparse_expr).collect();
-                format!("{{\n    {}\n}}", inner.join("\n    "))
+                format!(
+                    "{{\n    {}\n}}",
+                    exprs.iter().map(deparse_expr).join("\n    ")
+                )
             }
         }
         Expr::Function { params, body } => {
-            let p: Vec<String> = params
+            let p = params
                 .iter()
                 .map(|p| {
                     if p.is_dots {
@@ -624,13 +624,10 @@ pub fn deparse_expr(expr: &Expr) -> String {
                         p.name.clone()
                     }
                 })
-                .collect();
-            format!("function({}) {}", p.join(", "), deparse_expr(body))
+                .join(", ");
+            format!("function({}) {}", p, deparse_expr(body))
         }
-        Expr::Program(exprs) => {
-            let inner: Vec<String> = exprs.iter().map(deparse_expr).collect();
-            inner.join("\n")
-        }
+        Expr::Program(exprs) => exprs.iter().map(deparse_expr).join("\n"),
     }
 }
 

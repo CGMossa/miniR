@@ -8,6 +8,7 @@ use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use crate::parser::ast::{Arg, Expr};
+use itertools::Itertools;
 use minir_macros::pre_eval_builtin;
 
 #[derive(Clone)]
@@ -106,9 +107,7 @@ fn matrix_dimnames(rv: &RVector) -> (Option<RowNames>, Option<RowNames>) {
 }
 
 fn factorize_character_vector(values: Vec<Option<String>>) -> Result<RValue, RError> {
-    let mut levels: Vec<String> = values.iter().flatten().cloned().collect();
-    levels.sort();
-    levels.dedup();
+    let levels: Vec<String> = values.iter().flatten().unique().sorted().cloned().collect();
 
     let codes: Vec<Option<i64>> = values
         .iter()
@@ -574,7 +573,6 @@ fn pre_eval_data_frame(
             all_lengths
                 .iter()
                 .map(|length| length.to_string())
-                .collect::<Vec<_>>()
                 .join(", ")
         )));
     }

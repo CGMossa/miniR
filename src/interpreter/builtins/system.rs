@@ -6,6 +6,7 @@ use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use derive_more::{Display, Error};
+use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin};
 use std::fs;
 use std::path::Path;
@@ -422,7 +423,7 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         source,
     })?;
 
-    let mut files: Vec<String> = entries
+    let result: Vec<Option<String>> = entries
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let name = entry.file_name().into_string().ok()?;
@@ -433,11 +434,9 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
             }
             Some(name)
         })
+        .sorted()
+        .map(Some)
         .collect();
-
-    files.sort();
-
-    let result: Vec<Option<String>> = files.into_iter().map(Some).collect();
     Ok(RValue::vec(Vector::Character(result.into())))
 }
 

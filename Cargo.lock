@@ -674,6 +674,7 @@ dependencies = [
  "csv",
  "derive_more",
  "glob",
+ "itertools",
  "jiff",
  "linkme",
  "minir-macros",

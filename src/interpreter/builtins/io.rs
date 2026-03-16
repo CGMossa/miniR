@@ -11,6 +11,7 @@ use crate::interpreter::Interpreter;
 use crate::parser::ast::{Arg, Expr};
 use crate::parser::parse_program;
 use derive_more::{Display, Error};
+use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin, pre_eval_builtin};
 
 const MINIR_RDS_HEADER: &str = "miniRDS1\n";
@@ -102,11 +103,7 @@ fn serialize_vector(value: &Vector) -> String {
         Vector::Raw(values) if values.is_empty() => "raw(0)".to_string(),
         Vector::Raw(values) => format!(
             "as.raw(c({}))",
-            values
-                .iter()
-                .map(|value| value.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            values.iter().map(|value| value.to_string()).join(", ")
         ),
         Vector::Logical(values) if values.is_empty() => "logical(0)".to_string(),
         Vector::Logical(values) => format!(
@@ -118,7 +115,6 @@ fn serialize_vector(value: &Vector) -> String {
                     Some(false) => "FALSE".to_string(),
                     None => "NA".to_string(),
                 })
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
         Vector::Integer(values) if values.is_empty() => "integer(0)".to_string(),
@@ -130,7 +126,6 @@ fn serialize_vector(value: &Vector) -> String {
                     Some(value) => format!("{value}L"),
                     None => "NA_integer_".to_string(),
                 })
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
         Vector::Double(values) if values.is_empty() => "numeric(0)".to_string(),
@@ -142,7 +137,6 @@ fn serialize_vector(value: &Vector) -> String {
                     Some(value) => format_r_double(*value),
                     None => "NA_real_".to_string(),
                 })
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
         Vector::Complex(values) if values.is_empty() => "complex(0)".to_string(),
@@ -154,7 +148,6 @@ fn serialize_vector(value: &Vector) -> String {
                     Some(value) => serialize_complex(*value),
                     None => "NA_complex_".to_string(),
                 })
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
         Vector::Character(values) if values.is_empty() => "character(0)".to_string(),
@@ -166,7 +159,6 @@ fn serialize_vector(value: &Vector) -> String {
                     Some(value) => format!("\"{}\"", escape_r_string(value)),
                     None => "NA_character_".to_string(),
                 })
-                .collect::<Vec<_>>()
                 .join(", ")
         ),
     }
@@ -190,9 +182,7 @@ fn serialize_attr_pairs(
     }
 
     if let Some(attrs) = attrs {
-        let mut keys: Vec<&String> = attrs.keys().collect();
-        keys.sort();
-        for key in keys {
+        for key in attrs.keys().sorted() {
             if seen.contains(key) {
                 continue;
             }
@@ -216,7 +206,6 @@ fn serialize_with_attrs(base: String, attrs: Vec<(String, String)>) -> String {
     let attr_args = attrs
         .into_iter()
         .map(|(name, value)| format!("{name} = {value}"))
-        .collect::<Vec<_>>()
         .join(", ");
     format!("structure({base}, {attr_args})")
 }
