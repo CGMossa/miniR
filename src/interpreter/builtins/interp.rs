@@ -375,17 +375,77 @@ fn interp_do_call(
     ))
 }
 
-/// Create a vectorized version of a function (stub: returns FUN unchanged).
+/// Create a vectorized version of a function.
+///
+/// Returns a new closure that calls `mapply(FUN, ...)` under the hood,
+/// so scalar user-defined functions work element-wise on vector inputs.
 ///
 /// @param FUN function to vectorize
-/// @return the function (currently a no-op pass-through)
+/// @param vectorize.args character vector of argument names to vectorize over (default: all formals)
+/// @param SIMPLIFY if TRUE (default), simplify the result
+/// @return a new function that applies FUN element-wise
 #[interpreter_builtin(name = "Vectorize", min_args = 1)]
 fn interp_vectorize(
     positional: &[RValue],
-    _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    Ok(positional.first().cloned().unwrap_or(RValue::Null))
+    let env = context.env();
+    let fun = match_fun(
+        positional.first().ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
+        env,
+    )?;
+
+    let simplify = named
+        .iter()
+        .find(|(n, _)| n == "SIMPLIFY")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    // Build a closure: function(...) mapply(FUN, ..., SIMPLIFY = <simplify>)
+    // The FUN value is captured in the closure's environment.
+    let closure_env = Environment::new_child(env);
+    closure_env.set(".VEC_FUN".to_string(), fun);
+    closure_env.set(
+        ".VEC_SIMPLIFY".to_string(),
+        RValue::vec(Vector::Logical(vec![Some(simplify)].into())),
+    );
+
+    let body = Expr::Call {
+        func: Box::new(Expr::Symbol("mapply".to_string())),
+        args: vec![
+            // FUN as first positional arg (mapply takes FUN as positional[0])
+            Arg {
+                name: None,
+                value: Some(Expr::Symbol(".VEC_FUN".to_string())),
+            },
+            Arg {
+                name: None,
+                value: Some(Expr::Dots),
+            },
+            Arg {
+                name: Some("SIMPLIFY".to_string()),
+                value: Some(Expr::Symbol(".VEC_SIMPLIFY".to_string())),
+            },
+        ],
+    };
+
+    let params = vec![Param {
+        name: "...".to_string(),
+        default: None,
+        is_dots: true,
+    }];
+
+    Ok(RValue::Function(RFunction::Closure {
+        params,
+        body,
+        env: closure_env,
+    }))
 }
 
 /// Reduce a vector or list to a single value by applying a binary function.
@@ -1593,7 +1653,7 @@ fn interp_apply(
         })?;
 
     // Extract dim attribute — X must be a matrix
-    let (nrow, ncol, data) = match x {
+    let (nrow, ncol, vec_inner) = match x {
         RValue::Vector(rv) => {
             let dims = super::get_dim_ints(rv.get_attr("dim")).ok_or_else(|| {
                 RError::new(
@@ -1612,7 +1672,7 @@ fn interp_apply(
             }
             let nr = usize::try_from(dims[0].unwrap_or(0))?;
             let nc = usize::try_from(dims[1].unwrap_or(0))?;
-            (nr, nc, rv.to_doubles())
+            (nr, nc, &rv.inner)
         }
         _ => {
             return Err(RError::new(
@@ -1628,12 +1688,14 @@ fn interp_apply(
 
     match margin {
         1 => {
-            // Apply FUN to each row
+            // Apply FUN to each row — extract row indices preserving original type
             let mut results: Vec<RValue> = Vec::with_capacity(nrow);
             context.with_interpreter(|interp| {
                 for i in 0..nrow {
-                    let row: Vec<Option<f64>> = (0..ncol).map(|j| data[i + j * nrow]).collect();
-                    let row_val = RValue::vec(Vector::Double(row.into()));
+                    // Column-major: element (i, j) is at index i + j * nrow
+                    let indices: Vec<usize> = (0..ncol).map(|j| i + j * nrow).collect();
+                    let row_vec = vec_inner.select_indices(&indices);
+                    let row_val = RValue::vec(row_vec);
                     let mut call_args = vec![row_val];
                     call_args.extend(extra_args.iter().cloned());
                     if fail_fast {
@@ -1651,12 +1713,14 @@ fn interp_apply(
             simplify_apply_results(results)
         }
         2 => {
-            // Apply FUN to each column
+            // Apply FUN to each column — extract column indices preserving original type
             let mut results: Vec<RValue> = Vec::with_capacity(ncol);
             context.with_interpreter(|interp| {
                 for j in 0..ncol {
-                    let col: Vec<Option<f64>> = (0..nrow).map(|i| data[i + j * nrow]).collect();
-                    let col_val = RValue::vec(Vector::Double(col.into()));
+                    // Column-major: column j starts at j * nrow
+                    let indices: Vec<usize> = (0..nrow).map(|i| i + j * nrow).collect();
+                    let col_vec = vec_inner.select_indices(&indices);
+                    let col_val = RValue::vec(col_vec);
                     let mut call_args = vec![col_val];
                     call_args.extend(extra_args.iter().cloned());
                     if fail_fast {
@@ -2364,6 +2428,654 @@ fn interp_by(
         "by() requires a vector, list, or data frame as 'data'".to_string(),
     ))
 }
+
+// region: split / unsplit / aggregate
+
+/// Split a vector or data frame into groups defined by a factor.
+///
+/// @param x vector or data frame to split
+/// @param f factor or vector defining the groups (same length as x, or nrow(x) for data frames)
+/// @param drop if TRUE, drop unused factor levels (currently ignored)
+/// @return named list of subsets
+#[interpreter_builtin(min_args = 2)]
+fn interp_split(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
+    let f = positional
+        .get(1)
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'f' is missing".to_string()))?;
+
+    split_impl(x, f)
+}
+
+/// Internal split implementation shared by split() and aggregate().
+fn split_impl(x: &RValue, f: &RValue) -> Result<RValue, RError> {
+    let f_items = rvalue_to_items(f);
+
+    // Convert factor values to string keys
+    let f_keys: Vec<String> = f_items
+        .iter()
+        .map(|v| match v {
+            RValue::Vector(rv) => rv
+                .inner
+                .as_character_scalar()
+                .unwrap_or_else(|| format!("{}", v)),
+            _ => format!("{}", v),
+        })
+        .collect();
+
+    // Collect unique group names preserving first-seen order
+    let mut group_names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for key in &f_keys {
+        if seen.insert(key.clone()) {
+            group_names.push(key.clone());
+        }
+    }
+
+    match x {
+        RValue::Vector(_) => {
+            let x_items = rvalue_to_items(x);
+            if x_items.len() != f_keys.len() {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "'x' (length {}) and 'f' (length {}) must have the same length",
+                        x_items.len(),
+                        f_keys.len()
+                    ),
+                ));
+            }
+
+            let mut groups: std::collections::HashMap<String, Vec<RValue>> =
+                std::collections::HashMap::new();
+            for (item, key) in x_items.into_iter().zip(f_keys.iter()) {
+                groups.entry(key.clone()).or_default().push(item);
+            }
+
+            let entries: Vec<(Option<String>, RValue)> = group_names
+                .into_iter()
+                .map(|name| {
+                    let items = groups.remove(&name).unwrap_or_default();
+                    let vec = combine_items_to_vector(&items);
+                    (Some(name), vec)
+                })
+                .collect();
+
+            Ok(RValue::List(RList::new(entries)))
+        }
+        RValue::List(list) => {
+            // Data frame: split rows by f
+            let nrow = list.values.first().map(|(_, v)| v.length()).unwrap_or(0);
+            if f_keys.len() != nrow {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "data frame has {} rows but 'f' has length {}",
+                        nrow,
+                        f_keys.len()
+                    ),
+                ));
+            }
+
+            let entries: Vec<(Option<String>, RValue)> = group_names
+                .into_iter()
+                .map(|name| {
+                    let row_indices: Vec<usize> = f_keys
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, k)| k.as_str() == name)
+                        .map(|(i, _)| i)
+                        .collect();
+
+                    let mut subset_cols: Vec<(Option<String>, RValue)> = Vec::new();
+                    for (col_name, col_val) in &list.values {
+                        let col_items = rvalue_to_items(col_val);
+                        let subset: Vec<RValue> = row_indices
+                            .iter()
+                            .filter_map(|&i| col_items.get(i).cloned())
+                            .collect();
+                        let subset_vec = combine_items_to_vector(&subset);
+                        subset_cols.push((col_name.clone(), subset_vec));
+                    }
+
+                    let mut subset_list = RList::new(subset_cols);
+                    if let Some(cls) = list.get_attr("class") {
+                        subset_list.set_attr("class".to_string(), cls.clone());
+                    }
+                    if let Some(names) = list.get_attr("names") {
+                        subset_list.set_attr("names".to_string(), names.clone());
+                    }
+                    // row_indices.len() is bounded by original data frame row count
+                    let n_rows = i64::try_from(row_indices.len()).unwrap_or(0);
+                    let row_names: Vec<Option<i64>> = (1..=n_rows).map(Some).collect();
+                    subset_list.set_attr(
+                        "row.names".to_string(),
+                        RValue::vec(Vector::Integer(row_names.into())),
+                    );
+
+                    (Some(name), RValue::List(subset_list))
+                })
+                .collect();
+
+            Ok(RValue::List(RList::new(entries)))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "split() requires a vector, list, or data frame as 'x'".to_string(),
+        )),
+    }
+}
+
+/// Reverse of split: reassemble a vector from a split list.
+///
+/// @param value list of vectors (as produced by split())
+/// @param f factor or vector defining the groups (same length as the original vector)
+/// @return vector with elements placed back at their original positions
+#[interpreter_builtin(min_args = 2)]
+fn interp_unsplit(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let value = positional.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'value' is missing".to_string(),
+        )
+    })?;
+    let f = positional
+        .get(1)
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'f' is missing".to_string()))?;
+
+    let f_items = rvalue_to_items(f);
+    let n = f_items.len();
+
+    // Convert factor values to string keys
+    let f_keys: Vec<String> = f_items
+        .iter()
+        .map(|v| match v {
+            RValue::Vector(rv) => rv
+                .inner
+                .as_character_scalar()
+                .unwrap_or_else(|| format!("{}", v)),
+            _ => format!("{}", v),
+        })
+        .collect();
+
+    // value must be a named list
+    let list = match value {
+        RValue::List(l) => l,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "unsplit() requires a list as 'value'".to_string(),
+            ))
+        }
+    };
+
+    // Build a map from group name to items iterator
+    let mut group_items: std::collections::HashMap<String, Vec<RValue>> =
+        std::collections::HashMap::new();
+    for (name, val) in &list.values {
+        if let Some(name) = name {
+            group_items.insert(name.clone(), rvalue_to_items(val));
+        }
+    }
+
+    // Track how many items we've consumed from each group
+    let mut group_cursors: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+
+    let mut result: Vec<RValue> = Vec::with_capacity(n);
+    for key in &f_keys {
+        let cursor = group_cursors.entry(key.clone()).or_insert(0);
+        let item = group_items
+            .get(key)
+            .and_then(|items| items.get(*cursor))
+            .cloned()
+            .unwrap_or(RValue::Null);
+        *cursor += 1;
+        result.push(item);
+    }
+
+    Ok(combine_items_to_vector(&result))
+}
+
+/// Aggregate data by groups, applying a function to each group.
+///
+/// Supports two calling conventions:
+///   aggregate(x, by, FUN) — x is a vector/matrix, by is a list of grouping vectors
+///   aggregate(formula, data, FUN) — formula interface (x ~ group)
+///
+/// @param x numeric vector or data frame column to aggregate
+/// @param by list of grouping vectors (each same length as x)
+/// @param FUN function to apply to each group
+/// @return data frame with Group.1, ..., and x columns
+#[interpreter_builtin(min_args = 3)]
+fn interp_aggregate(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+    let (fail_fast, extra_named) = extract_fail_fast(named);
+
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
+    let by = positional
+        .get(1)
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'by' is missing".to_string()))?;
+    let fun = match_fun(
+        positional.get(2).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?,
+        env,
+    )?;
+
+    // by must be a list of grouping vectors
+    let by_vectors: Vec<(Option<String>, Vec<RValue>)> = match by {
+        RValue::List(l) => l
+            .values
+            .iter()
+            .map(|(name, v)| (name.clone(), rvalue_to_items(v)))
+            .collect(),
+        _ => {
+            // Single grouping vector — wrap in a list
+            vec![(None, rvalue_to_items(by))]
+        }
+    };
+
+    let x_items = rvalue_to_items(x);
+    let n = x_items.len();
+
+    // Validate all grouping vectors have the same length as x
+    for (i, (_, gv)) in by_vectors.iter().enumerate() {
+        if gv.len() != n {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "grouping vector {} has length {} but 'x' has length {}",
+                    i + 1,
+                    gv.len(),
+                    n
+                ),
+            ));
+        }
+    }
+
+    // Build composite group keys from all grouping vectors
+    let mut group_keys: Vec<Vec<String>> = Vec::with_capacity(n);
+    for i in 0..n {
+        let key: Vec<String> = by_vectors
+            .iter()
+            .map(|(_, gv)| match &gv[i] {
+                RValue::Vector(rv) => rv
+                    .inner
+                    .as_character_scalar()
+                    .unwrap_or_else(|| format!("{}", gv[i])),
+                other => format!("{}", other),
+            })
+            .collect();
+        group_keys.push(key);
+    }
+
+    // Collect unique composite keys preserving first-seen order
+    let mut unique_keys: Vec<Vec<String>> = Vec::new();
+    let mut seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+    for key in &group_keys {
+        if seen.insert(key.clone()) {
+            unique_keys.push(key.clone());
+        }
+    }
+
+    // Group x items by composite key
+    let mut groups: std::collections::HashMap<Vec<String>, Vec<RValue>> =
+        std::collections::HashMap::new();
+    for (item, key) in x_items.into_iter().zip(group_keys.iter()) {
+        groups.entry(key.clone()).or_default().push(item);
+    }
+
+    // Apply FUN to each group and build result columns
+    let n_groups = unique_keys.len();
+    let n_by = by_vectors.len();
+
+    // Group columns (Group.1, Group.2, ...)
+    let mut group_cols: Vec<Vec<Option<String>>> = vec![Vec::with_capacity(n_groups); n_by];
+    let mut result_vals: Vec<RValue> = Vec::with_capacity(n_groups);
+
+    context.with_interpreter(|interp| {
+        for key in &unique_keys {
+            for (col_idx, k) in key.iter().enumerate() {
+                group_cols[col_idx].push(Some(k.clone()));
+            }
+            let items = groups.remove(key).unwrap_or_default();
+            let group_vec = combine_items_to_vector(&items);
+            if fail_fast {
+                let result = interp.call_function(&fun, &[group_vec], &extra_named, env)?;
+                result_vals.push(result);
+            } else {
+                match interp.call_function(&fun, &[group_vec], &extra_named, env) {
+                    Ok(result) => result_vals.push(result),
+                    Err(_) => result_vals.push(RValue::Null),
+                }
+            }
+        }
+        Ok::<(), RError>(())
+    })?;
+
+    // Build the result data frame
+    let mut df_cols: Vec<(Option<String>, RValue)> = Vec::new();
+
+    // Add grouping columns
+    for (i, col) in group_cols.into_iter().enumerate() {
+        let col_name = by_vectors
+            .get(i)
+            .and_then(|(n, _)| n.clone())
+            .unwrap_or_else(|| format!("Group.{}", i + 1));
+        df_cols.push((Some(col_name), RValue::vec(Vector::Character(col.into()))));
+    }
+
+    // Add the result column — try to simplify scalar results to a vector
+    let all_scalar = result_vals.iter().all(|r| r.length() == 1);
+    if all_scalar && !result_vals.is_empty() {
+        let simplified = combine_items_to_vector(&result_vals);
+        df_cols.push((Some("x".to_string()), simplified));
+    } else {
+        let entries: Vec<(Option<String>, RValue)> =
+            result_vals.into_iter().map(|v| (None, v)).collect();
+        df_cols.push((Some("x".to_string()), RValue::List(RList::new(entries))));
+    }
+
+    let mut result = RList::new(df_cols);
+    result.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(n_groups)?).map(Some).collect();
+    result.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Integer(row_names.into())),
+    );
+    // Set names attribute
+    let col_names: Vec<Option<String>> = result.values.iter().map(|(n, _)| n.clone()).collect();
+    result.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(col_names.into())),
+    );
+
+    Ok(RValue::List(result))
+}
+
+// endregion
+
+// region: outer
+
+/// Outer product of two vectors, applying FUN to each pair of elements.
+///
+/// @param X first vector
+/// @param Y second vector
+/// @param FUN function to apply (default: "*")
+/// @return matrix with dim = c(length(X), length(Y))
+#[interpreter_builtin(min_args = 2)]
+fn interp_outer(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+
+    let x = positional
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'X' is missing".to_string()))?;
+    let y = positional
+        .get(1)
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'Y' is missing".to_string()))?;
+
+    // FUN can be positional arg #3 or named
+    let fun_val = named
+        .iter()
+        .find(|(n, _)| n == "FUN")
+        .map(|(_, v)| v.clone())
+        .or_else(|| positional.get(2).cloned());
+
+    let x_items = rvalue_to_items(x);
+    let y_items = rvalue_to_items(y);
+    let nx = x_items.len();
+    let ny = y_items.len();
+
+    // Try to resolve as a known arithmetic operator for fast path
+    let use_fast_path = match &fun_val {
+        Some(RValue::Vector(rv)) => rv.inner.as_character_scalar().is_some(),
+        None => true, // default is "*"
+        _ => false,
+    };
+
+    if use_fast_path {
+        let fun_str = fun_val
+            .as_ref()
+            .and_then(|v| v.as_vector()?.as_character_scalar())
+            .unwrap_or_else(|| "*".to_string());
+
+        let op: Option<fn(f64, f64) -> f64> = match fun_str.as_str() {
+            "*" => Some(|a, b| a * b),
+            "+" => Some(|a, b| a + b),
+            "-" => Some(|a, b| a - b),
+            "/" => Some(|a, b| a / b),
+            "^" | "**" => Some(|a: f64, b: f64| a.powf(b)),
+            "%%" => Some(|a, b| a % b),
+            "%/%" => Some(|a: f64, b: f64| (a / b).floor()),
+            _ => None, // Fall through to general path
+        };
+
+        if let Some(op) = op {
+            let x_vec = match x {
+                RValue::Vector(rv) => rv.to_doubles(),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "outer() requires vectors for X and Y".to_string(),
+                    ))
+                }
+            };
+            let y_vec = match y {
+                RValue::Vector(rv) => rv.to_doubles(),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "outer() requires vectors for X and Y".to_string(),
+                    ))
+                }
+            };
+
+            // R stores matrices column-major: iterate columns (Y) then rows (X)
+            let mut result = Vec::with_capacity(nx * ny);
+            for y_val in &y_vec {
+                for x_val in &x_vec {
+                    let val = match (x_val, y_val) {
+                        (Some(xv), Some(yv)) => Some(op(*xv, *yv)),
+                        _ => None,
+                    };
+                    result.push(val);
+                }
+            }
+
+            return build_outer_matrix(Vector::Double(result.into()), nx, ny, x, y);
+        }
+
+        // If it's a string naming a function, look it up
+        let fun_rv = match_fun(
+            &RValue::vec(Vector::Character(vec![Some(fun_str)].into())),
+            env,
+        )?;
+        return outer_general(&fun_rv, &x_items, &y_items, nx, ny, x, y, context, env);
+    }
+
+    // General path: FUN is a closure or other callable
+    let fun = match_fun(fun_val.as_ref().unwrap_or(&RValue::Null), env)?;
+    outer_general(&fun, &x_items, &y_items, nx, ny, x, y, context, env)
+}
+
+/// Extract the "names" attribute from an RValue as a list of optional strings.
+fn outer_names(val: &RValue) -> Option<Vec<Option<String>>> {
+    match val {
+        RValue::Vector(rv) => rv.get_attr("names").and_then(|nv| {
+            if let RValue::Vector(nrv) = nv {
+                Some(nrv.inner.to_characters())
+            } else {
+                None
+            }
+        }),
+        _ => None,
+    }
+}
+
+/// Set dimnames on an outer product result matrix if X or Y had names.
+fn set_outer_dimnames(rv: &mut RVector, x: &RValue, y: &RValue) {
+    let x_names = outer_names(x);
+    let y_names = outer_names(y);
+    if x_names.is_some() || y_names.is_some() {
+        let row_names = x_names
+            .map(|n| RValue::vec(Vector::Character(n.into())))
+            .unwrap_or(RValue::Null);
+        let col_names = y_names
+            .map(|n| RValue::vec(Vector::Character(n.into())))
+            .unwrap_or(RValue::Null);
+        rv.set_attr(
+            "dimnames".to_string(),
+            RValue::List(RList::new(vec![(None, row_names), (None, col_names)])),
+        );
+    }
+}
+
+/// Build an RVector matrix with class, dim, and optional dimnames.
+fn build_outer_matrix(
+    inner: Vector,
+    nx: usize,
+    ny: usize,
+    x_orig: &RValue,
+    y_orig: &RValue,
+) -> Result<RValue, RError> {
+    let mut rv = RVector::from(inner);
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+        )),
+    );
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(i64::try_from(nx)?), Some(i64::try_from(ny)?)].into(),
+        )),
+    );
+    set_outer_dimnames(&mut rv, x_orig, y_orig);
+    Ok(RValue::Vector(rv))
+}
+
+/// General outer product: call FUN(x_i, y_j) for each pair and collect into a matrix.
+#[allow(clippy::too_many_arguments)]
+fn outer_general(
+    fun: &RValue,
+    x_items: &[RValue],
+    y_items: &[RValue],
+    nx: usize,
+    ny: usize,
+    x_orig: &RValue,
+    y_orig: &RValue,
+    context: &BuiltinContext,
+    env: &Environment,
+) -> Result<RValue, RError> {
+    let mut results: Vec<RValue> = Vec::with_capacity(nx * ny);
+
+    context.with_interpreter(|interp| {
+        // Column-major order: iterate Y (columns) then X (rows)
+        for yv in y_items {
+            for xv in x_items {
+                let result = interp.call_function(fun, &[xv.clone(), yv.clone()], &[], env)?;
+                results.push(result);
+            }
+        }
+        Ok::<(), RError>(())
+    })?;
+
+    // Try to simplify: if all results are scalar, combine into a typed vector
+    let all_scalar = results.iter().all(|r| r.length() == 1);
+    if all_scalar && !results.is_empty() {
+        let first_type = results[0].type_name();
+        let all_same = results.iter().all(|r| r.type_name() == first_type);
+        if all_same {
+            match first_type {
+                "double" => {
+                    let vals: Vec<Option<f64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return build_outer_matrix(Vector::Double(vals.into()), nx, ny, x_orig, y_orig);
+                }
+                "integer" => {
+                    let vals: Vec<Option<i64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return build_outer_matrix(
+                        Vector::Integer(vals.into()),
+                        nx,
+                        ny,
+                        x_orig,
+                        y_orig,
+                    );
+                }
+                "character" => {
+                    let vals: Vec<Option<String>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_characters().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    return build_outer_matrix(
+                        Vector::Character(vals.into()),
+                        nx,
+                        ny,
+                        x_orig,
+                        y_orig,
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Fall back: collect all results into doubles
+    let vals: Vec<Option<f64>> = results
+        .iter()
+        .filter_map(|r| {
+            r.as_vector()
+                .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+        })
+        .collect();
+    build_outer_matrix(Vector::Double(vals.into()), nx, ny, x_orig, y_orig)
+}
+
+// endregion
 
 /// Summarize an object (S3 generic).
 ///
