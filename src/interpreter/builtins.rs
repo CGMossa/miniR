@@ -4,6 +4,8 @@ mod conditions;
 pub mod connections;
 #[cfg(feature = "datetime")]
 mod datetime;
+#[cfg(feature = "digest")]
+mod digest;
 mod factors;
 mod graphics;
 mod interp;
