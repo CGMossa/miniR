@@ -1474,6 +1474,227 @@ fn interp_ls(
     Ok(RValue::vec(Vector::Character(chars.into())))
 }
 
+/// Remove objects from an environment.
+///
+/// Accepts variable names as character strings (positional args or via `list`).
+/// Ignores names not found when `inherits` is FALSE (default).
+///
+/// @param ... names of objects to remove (character strings)
+/// @param list character vector of names to remove
+/// @param envir environment from which to remove (default: calling environment)
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "rm", names = ["remove"])]
+fn interp_rm(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+
+    // Collect the target environment from `envir` arg, defaulting to calling env
+    let target_env = {
+        let mut found_env: Option<Environment> = None;
+        for (n, v) in named {
+            if n == "envir" {
+                if let RValue::Environment(e) = v {
+                    found_env = Some(e.clone());
+                } else {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "invalid 'envir' argument".to_string(),
+                    ));
+                }
+            }
+        }
+        found_env.unwrap_or_else(|| env.clone())
+    };
+
+    // Collect names to remove from positional args (character strings)
+    let mut names_to_remove: Vec<String> = Vec::new();
+    for val in positional {
+        match val.as_vector() {
+            Some(Vector::Character(c)) => {
+                for name in c.iter().flatten() {
+                    names_to_remove.push(name.clone());
+                }
+            }
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "rm() expects character strings naming objects to remove, got {}",
+                        val.type_name()
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Collect names from `list` argument
+    for (n, v) in named {
+        if n == "list" {
+            if let Some(Vector::Character(c)) = v.as_vector() {
+                for name in c.iter().flatten() {
+                    names_to_remove.push(name.clone());
+                }
+            }
+        }
+    }
+
+    // Remove each name from the target environment
+    for name in &names_to_remove {
+        target_env.remove(name);
+    }
+
+    Ok(RValue::Null)
+}
+
+/// Lock an environment so no new bindings can be added.
+///
+/// @param env environment to lock
+/// @param bindings if TRUE, also lock all existing bindings (default FALSE)
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "lockEnvironment", min_args = 1)]
+fn interp_lock_environment(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = match positional.first() {
+        Some(RValue::Environment(e)) => e.clone(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+
+    let call_args = CallArgs::new(positional, named);
+    let bindings = call_args.logical_flag("bindings", 1, false);
+    env.lock(bindings);
+    Ok(RValue::Null)
+}
+
+/// Check whether an environment is locked.
+///
+/// @param env environment to query
+/// @return logical scalar: TRUE if locked, FALSE otherwise
+#[interpreter_builtin(name = "environmentIsLocked", min_args = 1)]
+fn interp_environment_is_locked(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let locked = match positional.first() {
+        Some(RValue::Environment(e)) => e.is_locked(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+    Ok(RValue::vec(Vector::Logical(vec![Some(locked)].into())))
+}
+
+/// Lock a specific binding in an environment.
+///
+/// @param sym name of the binding to lock (character string)
+/// @param env environment containing the binding
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "lockBinding", min_args = 2)]
+fn interp_lock_binding(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let sym = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "not a valid symbol name".to_string()))?;
+    let env = match positional.get(1) {
+        Some(RValue::Environment(e)) => e.clone(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+    env.lock_binding(&sym);
+    Ok(RValue::Null)
+}
+
+/// Check whether a binding is locked in an environment.
+///
+/// @param sym name of the binding to check (character string)
+/// @param env environment containing the binding
+/// @return logical scalar: TRUE if the binding is locked, FALSE otherwise
+#[interpreter_builtin(name = "bindingIsLocked", min_args = 2)]
+fn interp_binding_is_locked(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let sym = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "not a valid symbol name".to_string()))?;
+    let locked = match positional.get(1) {
+        Some(RValue::Environment(e)) => e.binding_is_locked(&sym),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+    Ok(RValue::vec(Vector::Logical(vec![Some(locked)].into())))
+}
+
+/// Create an active binding (stub).
+///
+/// Active bindings call a function every time they are accessed.
+/// This is a placeholder that simply assigns the result of calling `fun()`
+/// as a regular binding, since full active binding support is not yet implemented.
+///
+/// @param sym name for the binding (character string)
+/// @param fun zero-argument function to call on access
+/// @param env environment in which to create the binding
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "makeActiveBinding", min_args = 3)]
+fn interp_make_active_binding(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let sym = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "not a valid symbol name".to_string()))?;
+    let fun = positional.get(1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'fun' argument is missing".to_string(),
+        )
+    })?;
+    let env = match positional.get(2) {
+        Some(RValue::Environment(e)) => e.clone(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+
+    // Stub: call fun() once and store the result as a regular binding
+    let result = context.with_interpreter(|interp| interp.call_function(fun, &[], &[], &env))?;
+    env.set(sym, result);
+    Ok(RValue::Null)
+}
+
 /// Evaluate an expression in a specified environment.
 ///
 /// @param expr expression to evaluate (language object or character string)
