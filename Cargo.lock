@@ -693,6 +693,8 @@ dependencies = [
  "signal-hook",
  "tabled",
  "temp-dir",
+ "unicase",
+ "unicode-segmentation",
  "unicode-width",
 ]
 
