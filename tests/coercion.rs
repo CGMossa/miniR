@@ -51,21 +51,18 @@ fn as_logical_from_numeric() {
 #[test]
 fn as_logical_from_string() {
     let mut r = Session::new();
-    // as.logical("TRUE") should give TRUE, but character->logical coercion
-    // for string values is not yet implemented (returns NA for all strings).
-    // Use tryCatch to verify the current behavior: the stopifnot fails
-    // because as.logical("TRUE") returns NA instead of TRUE.
     r.eval_source(
         r#"
-        result <- tryCatch(
-            { stopifnot(identical(as.logical("TRUE"), TRUE)); "ok" },
-            error = function(e) "not_yet_implemented"
-        )
-        # Accept either correct behavior or known limitation
-        stopifnot(result == "ok" || result == "not_yet_implemented")
+        stopifnot(identical(as.logical("TRUE"), TRUE))
+        stopifnot(identical(as.logical("FALSE"), FALSE))
+        stopifnot(identical(as.logical("T"), TRUE))
+        stopifnot(identical(as.logical("F"), FALSE))
+        stopifnot(is.na(as.logical("yes")))
+        stopifnot(is.na(as.logical("no")))
+        stopifnot(is.na(as.logical("foo")))
     "#,
     )
-    .expect("as.logical from string test failed unexpectedly");
+    .expect("as.logical from string should parse TRUE/FALSE/T/F");
 }
 
 #[test]
