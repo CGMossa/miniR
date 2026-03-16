@@ -835,26 +835,48 @@ fn parse_fmt_spec(chars: &[char]) -> Option<(FmtSpec, usize)> {
     }
 }
 
-/// Format strings using C-style format specifiers.
-///
-/// @param fmt character scalar: format string with %d, %f, %s, etc.
-/// @param ... values to substitute into the format string
-/// @return character scalar containing the formatted result
-#[builtin(min_args = 1)]
-fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let fmt = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let mut arg_idx = 1;
+/// Collect the format specifiers from a format string, returning a list of
+/// `(FmtSpec, arg_index)` pairs (0-based among the data args, i.e. excluding fmt).
+fn collect_fmt_specs(fmt: &str) -> Vec<(FmtSpec, usize)> {
+    let chars: Vec<char> = fmt.chars().collect();
+    let mut specs = Vec::new();
+    let mut i = 0;
+    let mut arg_idx: usize = 0;
+    while i < chars.len() {
+        if chars[i] == '%' && i + 1 < chars.len() {
+            i += 1;
+            if chars[i] == '%' {
+                i += 1;
+                continue;
+            }
+            if let Some((spec, consumed)) = parse_fmt_spec(&chars[i..]) {
+                i += consumed;
+                match spec.specifier {
+                    'd' | 'i' | 'f' | 'e' | 'E' | 'g' | 'G' | 's' => {
+                        specs.push((spec, arg_idx));
+                        arg_idx += 1;
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    specs
+}
+
+/// Format one string from the format template, using element `elem_idx` from
+/// each data-arg vector (with recycling).
+fn sprintf_one(fmt: &str, data_args: &[&Vector], elem_idx: usize) -> Result<String, RError> {
     let chars: Vec<char> = fmt.chars().collect();
     let mut output = String::new();
     let mut i = 0;
+    let mut arg_idx: usize = 0;
 
     while i < chars.len() {
         if chars[i] == '%' && i + 1 < chars.len() {
             i += 1;
-            // Handle %%
             if chars[i] == '%' {
                 output.push('%');
                 i += 1;
@@ -864,26 +886,67 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                 i += consumed;
                 match spec.specifier {
                     'd' | 'i' => {
-                        let v = args
-                            .get(arg_idx)
-                            .and_then(|v| v.as_vector()?.as_integer_scalar())
-                            .unwrap_or(0);
+                        let vec = data_args.get(arg_idx).ok_or_else(|| {
+                            RError::new(
+                                RErrorKind::Argument,
+                                format!(
+                                    "too few arguments for sprintf format: \
+                                     need argument {} but only {} supplied",
+                                    arg_idx + 1,
+                                    data_args.len()
+                                ),
+                            )
+                        })?;
+                        let ints = vec.to_integers();
+                        let v = if ints.is_empty() {
+                            0
+                        } else {
+                            ints[elem_idx % ints.len()].unwrap_or(0)
+                        };
                         output.push_str(&spec.format_int(v));
                         arg_idx += 1;
                     }
                     'f' | 'e' | 'E' | 'g' | 'G' => {
-                        let v = args
-                            .get(arg_idx)
-                            .and_then(|v| v.as_vector()?.as_double_scalar())
-                            .unwrap_or(0.0);
+                        let vec = data_args.get(arg_idx).ok_or_else(|| {
+                            RError::new(
+                                RErrorKind::Argument,
+                                format!(
+                                    "too few arguments for sprintf format: \
+                                     need argument {} but only {} supplied",
+                                    arg_idx + 1,
+                                    data_args.len()
+                                ),
+                            )
+                        })?;
+                        let doubles = vec.to_doubles();
+                        let v = if doubles.is_empty() {
+                            0.0
+                        } else {
+                            doubles[elem_idx % doubles.len()].unwrap_or(0.0)
+                        };
                         output.push_str(&spec.format_float(v));
                         arg_idx += 1;
                     }
                     's' => {
-                        let v = args
-                            .get(arg_idx)
-                            .and_then(|v| v.as_vector()?.as_character_scalar())
-                            .unwrap_or_default();
+                        let vec = data_args.get(arg_idx).ok_or_else(|| {
+                            RError::new(
+                                RErrorKind::Argument,
+                                format!(
+                                    "too few arguments for sprintf format: \
+                                     need argument {} but only {} supplied",
+                                    arg_idx + 1,
+                                    data_args.len()
+                                ),
+                            )
+                        })?;
+                        let chars_vec = vec.to_characters();
+                        let v = if chars_vec.is_empty() {
+                            String::new()
+                        } else {
+                            chars_vec[elem_idx % chars_vec.len()]
+                                .clone()
+                                .unwrap_or_default()
+                        };
                         output.push_str(&spec.format_str(&v));
                         arg_idx += 1;
                     }
@@ -898,7 +961,70 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             i += 1;
         }
     }
-    Ok(RValue::vec(Vector::Character(vec![Some(output)].into())))
+    Ok(output)
+}
+
+/// Format strings using C-style format specifiers, vectorized over arguments.
+///
+/// In R, `sprintf(fmt, ...)` is vectorized: if any argument is a vector of
+/// length > 1, the result is a character vector of the same length (the
+/// longest argument), with shorter arguments recycled.
+///
+/// @param fmt character scalar: format string with %d, %f, %s, etc.
+/// @param ... values to substitute into the format string
+/// @return character vector containing the formatted results
+#[builtin(min_args = 1)]
+fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let fmt_vec = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "sprintf requires a character format string".to_string(),
+        )
+    })?;
+
+    let fmt_chars = fmt_vec.to_characters();
+
+    // If format string is empty, return character(0)
+    if fmt_chars.is_empty() {
+        return Ok(RValue::vec(Vector::Character(
+            Vec::<Option<String>>::new().into(),
+        )));
+    }
+
+    let fmt = fmt_chars[0].clone().unwrap_or_default();
+
+    // Collect data-arg vectors (args after the format string)
+    let data_vecs: Vec<&Vector> = args[1..].iter().filter_map(|a| a.as_vector()).collect();
+
+    // If any data arg has length 0, return character(0) (R behavior)
+    if data_vecs.iter().any(|v| v.is_empty()) {
+        return Ok(RValue::vec(Vector::Character(
+            Vec::<Option<String>>::new().into(),
+        )));
+    }
+
+    // Determine the output length: max of all data-arg lengths (minimum 1)
+    let max_len = data_vecs.iter().map(|v| v.len()).max().unwrap_or(1);
+
+    // If there are no format specifiers that consume args, produce max_len copies
+    // (or just 1 if no data args).  But if data_vecs is empty, just format once.
+    let specs = collect_fmt_specs(&fmt);
+    let output_len = if specs.is_empty() || data_vecs.is_empty() {
+        if data_vecs.is_empty() {
+            1
+        } else {
+            max_len
+        }
+    } else {
+        max_len
+    };
+
+    let mut results: Vec<Option<String>> = Vec::with_capacity(output_len);
+    for elem_idx in 0..output_len {
+        results.push(Some(sprintf_one(&fmt, &data_vecs, elem_idx)?));
+    }
+
+    Ok(RValue::vec(Vector::Character(results.into())))
 }
 
 // format() is in interp.rs (S3-dispatching interpreter builtin)
@@ -1613,6 +1739,268 @@ fn builtin_strrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .collect();
 
     Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
+
+// region: formatC
+
+/// Formatted printing of numbers and strings, similar to C's printf family.
+///
+/// @param x numeric or character vector to format
+/// @param width integer: minimum field width (default 0, meaning no padding)
+/// @param format character: one of "d" (integer), "f" (fixed), "e" (scientific),
+///   "g" (general), "s" (string). Default: "g" for numeric, "s" for character.
+/// @param flag character: formatting flags — "-" left-justify, "+" always show sign,
+///   " " leading space for positive numbers, "0" zero-pad. Default: ""
+/// @param digits integer: number of significant or decimal digits (depends on format).
+///   Default: 6.
+/// @return character vector of formatted values
+#[builtin(name = "formatC", min_args = 1)]
+fn builtin_format_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "formatC() requires a vector as first argument".to_string(),
+        )
+    })?;
+
+    // Extract named arguments with defaults
+    let width: usize = named
+        .iter()
+        .find(|(k, _)| k == "width")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok())
+        .or_else(|| {
+            args.get(1)
+                .and_then(|v| v.as_vector()?.as_integer_scalar())
+                .and_then(|i| usize::try_from(i).ok())
+        })
+        .unwrap_or(0);
+
+    let default_format = match x {
+        Vector::Character(_) => "s",
+        _ => "g",
+    };
+    let format = named
+        .iter()
+        .find(|(k, _)| k == "format")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| default_format.to_string());
+
+    let flag = named
+        .iter()
+        .find(|(k, _)| k == "flag")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let digits: usize = named
+        .iter()
+        .find(|(k, _)| k == "digits")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok())
+        .unwrap_or(6);
+
+    let spec = FmtSpec {
+        flags: flag,
+        width: if width > 0 { Some(width) } else { None },
+        precision: Some(digits),
+        specifier: format.chars().next().unwrap_or('g'),
+    };
+
+    let result: Vec<Option<String>> = match &format[..] {
+        "d" => {
+            let ints = x.to_integers();
+            ints.iter().map(|v| v.map(|i| spec.format_int(i))).collect()
+        }
+        "f" | "e" | "E" | "g" | "G" => {
+            let doubles = x.to_doubles();
+            doubles
+                .iter()
+                .map(|v| v.map(|f| spec.format_float(f)))
+                .collect()
+        }
+        "s" => {
+            let chars = x.to_characters();
+            chars
+                .iter()
+                .map(|v| v.as_ref().map(|s| spec.format_str(s)))
+                .collect()
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "formatC(): invalid 'format' argument '{}'. \
+                     Use one of: \"d\", \"f\", \"e\", \"g\", \"s\"",
+                    format
+                ),
+            ));
+        }
+    };
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
+
+// region: format.pval
+
+/// Format p-values for display, showing e.g. "< 2.2e-16" for very small values.
+///
+/// @param pv numeric vector of p-values
+/// @param digits integer: number of significant digits (default 3)
+/// @param eps numeric: threshold below which to show "< eps" (default 2.220446e-16,
+///   i.e. `.Machine$double.eps`)
+/// @return character vector of formatted p-values
+#[builtin(name = "format.pval", min_args = 1)]
+fn builtin_format_pval(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "format.pval() requires a numeric vector".to_string(),
+        )
+    })?;
+
+    let digits: usize = named
+        .iter()
+        .find(|(k, _)| k == "digits")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok())
+        .unwrap_or(3);
+
+    let eps: f64 = named
+        .iter()
+        .find(|(k, _)| k == "eps")
+        .and_then(|(_, v)| v.as_vector()?.as_double_scalar())
+        .unwrap_or(f64::EPSILON);
+
+    let doubles = x.to_doubles();
+    let result: Vec<Option<String>> = doubles
+        .iter()
+        .map(|v| {
+            v.map(|pv| {
+                if pv.is_nan() {
+                    "NaN".to_string()
+                } else if pv < eps {
+                    format!("< {:.e_digits$e}", eps, e_digits = digits.saturating_sub(1))
+                } else if pv > 1.0 - eps {
+                    // Near 1.0 — just show the formatted value
+                    format!("{:.prec$}", pv, prec = digits)
+                } else {
+                    format_g(pv, digits, false)
+                }
+            })
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
+
+// region: prettyNum
+
+/// Format numbers with separators for readability (e.g., thousand separators).
+///
+/// @param x character vector (or coerced from numeric) to format
+/// @param big.mark character: separator inserted every 3 digits before the decimal
+///   point (default "")
+/// @param small.mark character: separator inserted every 3 digits after the decimal
+///   point (default "")
+/// @return character vector with separators inserted
+#[builtin(name = "prettyNum", min_args = 1)]
+fn builtin_pretty_num(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().and_then(|v| v.as_vector()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "prettyNum() requires a vector as first argument".to_string(),
+        )
+    })?;
+
+    let big_mark = named
+        .iter()
+        .find(|(k, _)| k == "big.mark")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let small_mark = named
+        .iter()
+        .find(|(k, _)| k == "small.mark")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let chars = x.to_characters();
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .map(|v| v.as_ref().map(|s| insert_marks(s, &big_mark, &small_mark)))
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Insert `big_mark` every 3 digits before the decimal point and `small_mark`
+/// every 3 digits after the decimal point.
+fn insert_marks(s: &str, big_mark: &str, small_mark: &str) -> String {
+    if big_mark.is_empty() && small_mark.is_empty() {
+        return s.to_string();
+    }
+
+    // Split into sign, integer part, and fractional part
+    let (sign, rest) = if let Some(stripped) = s.strip_prefix('-') {
+        ("-", stripped)
+    } else if let Some(stripped) = s.strip_prefix('+') {
+        ("+", stripped)
+    } else {
+        ("", s)
+    };
+
+    // Trim leading/trailing whitespace from rest for the number portion
+    let rest = rest.trim();
+
+    let (int_part, frac_part) = match rest.find('.') {
+        Some(dot) => (&rest[..dot], Some(&rest[dot + 1..])),
+        None => (rest, None),
+    };
+
+    let mut out = String::with_capacity(s.len() + 10);
+    out.push_str(sign);
+
+    // Insert big.mark in integer part (from right to left, every 3 digits)
+    if !big_mark.is_empty() && int_part.len() > 3 {
+        // Find where digits start (skip leading non-digit chars like spaces)
+        let digit_start = int_part.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
+        out.push_str(&int_part[..digit_start]);
+        let digits = &int_part[digit_start..];
+        let len = digits.len();
+        for (i, ch) in digits.chars().enumerate() {
+            out.push(ch);
+            let pos_from_right = len - 1 - i;
+            if pos_from_right > 0 && pos_from_right % 3 == 0 {
+                out.push_str(big_mark);
+            }
+        }
+    } else {
+        out.push_str(int_part);
+    }
+
+    // Append fractional part with small.mark
+    if let Some(frac) = frac_part {
+        out.push('.');
+        if !small_mark.is_empty() && frac.len() > 3 {
+            for (i, ch) in frac.chars().enumerate() {
+                out.push(ch);
+                let pos = i + 1;
+                if pos < frac.len() && pos % 3 == 0 {
+                    out.push_str(small_mark);
+                }
+            }
+        } else {
+            out.push_str(frac);
+        }
+    }
+
+    out
 }
 
 // endregion
