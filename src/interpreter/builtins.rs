@@ -754,10 +754,12 @@ fn builtin_length(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
 /// Count the number of characters in each element of a character vector.
 ///
 /// @param x character vector
-/// @param type one of "bytes", "chars", or "width" (default "chars")
+/// @param type one of "bytes", "chars", "width", or "graphemes" (default "chars")
 /// @return integer vector of string lengths
 #[builtin(min_args = 1)]
 fn builtin_nchar(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    use unicode_segmentation::UnicodeSegmentation;
+
     // Extract the "type" named argument (default: "chars")
     let nchar_type = named
         .iter()
@@ -780,6 +782,7 @@ fn builtin_nchar(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                         let n = match nchar_type.as_str() {
                             "bytes" => s.len(),
                             "width" => UnicodeWidthStr::width(s.as_str()),
+                            "graphemes" => s.graphemes(true).count(),
                             _ => s.chars().count(), // "chars" or default
                         };
                         i64::try_from(n).unwrap_or(0)
@@ -1685,19 +1688,30 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 /// Find positions of first matches of x in table.
 ///
 /// For each element of x, returns the position of its first exact match in table,
-/// or NA if no match is found.
+/// or NA if no match is found. Supports case-insensitive matching via `ignore.case`.
 ///
 /// @param x values to look up
 /// @param table values to match against
+/// @param ignore.case logical; if TRUE, comparison is case-insensitive (Unicode-aware)
 /// @return integer vector of match positions (1-indexed)
 #[builtin(min_args = 2)]
-fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_match(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.len() < 2 {
         return Err(RError::new(
             RErrorKind::Argument,
             "need 2 arguments".to_string(),
         ));
     }
+
+    let ignore_case = named
+        .iter()
+        .find(|(k, _)| k == "ignore.case")
+        .and_then(|(_, v)| match v {
+            RValue::Vector(rv) => rv.inner.as_logical_scalar(),
+            _ => None,
+        })
+        .unwrap_or(false);
+
     let x = match &args[0] {
         RValue::Vector(v) => v.to_characters(),
         _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
@@ -1707,17 +1721,30 @@ fn builtin_match(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         _ => return Ok(RValue::vec(Vector::Integer(vec![None].into()))),
     };
 
-    let result: Vec<Option<i64>> = x
-        .iter()
-        .map(|xi| {
-            xi.as_ref().and_then(|xi| {
-                table
-                    .iter()
-                    .position(|t| t.as_ref() == Some(xi))
-                    .map(|p| i64::try_from(p).map(|v| v + 1).unwrap_or(0))
+    let result: Vec<Option<i64>> = if ignore_case {
+        x.iter()
+            .map(|xi| {
+                xi.as_ref().and_then(|xi| {
+                    let key = unicase::UniCase::new(xi.as_str());
+                    table
+                        .iter()
+                        .position(|t| t.as_deref().map(unicase::UniCase::new) == Some(key))
+                        .map(|p| i64::try_from(p).map(|v| v + 1).unwrap_or(0))
+                })
             })
-        })
-        .collect();
+            .collect()
+    } else {
+        x.iter()
+            .map(|xi| {
+                xi.as_ref().and_then(|xi| {
+                    table
+                        .iter()
+                        .position(|t| t.as_ref() == Some(xi))
+                        .map(|p| i64::try_from(p).map(|v| v + 1).unwrap_or(0))
+                })
+            })
+            .collect()
+    };
     Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
