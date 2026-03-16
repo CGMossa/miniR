@@ -345,8 +345,12 @@ fn eval_apply(
 
 /// Call a function with arguments supplied as a list.
 ///
+/// Named elements in the list are passed as named arguments to the function.
+/// Unnamed elements are passed as positional arguments.
+///
 /// @param what function or character string naming the function
 /// @param args list of arguments to pass to the function
+/// @param quote if TRUE, do not evaluate the arguments (default FALSE)
 /// @return the result of the function call
 #[interpreter_builtin(name = "do.call", min_args = 2)]
 fn interp_do_call(
@@ -359,9 +363,21 @@ fn interp_do_call(
         let f = match_fun(&positional[0], env)?;
         return context.with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
-                let args: Vec<RValue> = l.values.iter().map(|(_, v)| v.clone()).collect();
+                // Split list elements into positional and named args
+                let mut pos_args: Vec<RValue> = Vec::new();
+                let mut named_args: Vec<(String, RValue)> = named.to_vec();
+                for (name, value) in &l.values {
+                    match name {
+                        Some(n) if !n.is_empty() => {
+                            named_args.push((n.clone(), value.clone()));
+                        }
+                        _ => {
+                            pos_args.push(value.clone());
+                        }
+                    }
+                }
                 interp
-                    .call_function(&f, &args, named, env)
+                    .call_function(&f, &pos_args, &named_args, env)
                     .map_err(RError::from)
             }
             _ => interp
