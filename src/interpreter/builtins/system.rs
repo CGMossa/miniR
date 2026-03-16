@@ -536,9 +536,11 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// Normalize a file path to its canonical absolute form.
 ///
 /// @param path character scalar: path to normalize
+/// @param mustWork if TRUE, error when the path cannot be resolved; if FALSE/NA, return
+///   the original path on failure
 /// @return character scalar: the canonical path (or the original if resolution fails)
 #[builtin(name = "normalizePath", min_args = 1)]
-fn builtin_normalize_path(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_normalize_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -549,13 +551,31 @@ fn builtin_normalize_path(args: &[RValue], _named: &[(String, RValue)]) -> Resul
             )
         })?;
 
-    let normalized = fs::canonicalize(&path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| path.clone());
+    let must_work = named
+        .iter()
+        .find(|(n, _)| n == "mustWork")
+        .or_else(|| named.iter().find(|(n, _)| n == "mustwork"))
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| args.get(2).and_then(|v| v.as_vector()?.as_logical_scalar()))
+        .unwrap_or(false);
 
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(normalized)].into(),
-    )))
+    match fs::canonicalize(&path) {
+        Ok(p) => Ok(RValue::vec(Vector::Character(
+            vec![Some(p.to_string_lossy().to_string())].into(),
+        ))),
+        Err(e) => {
+            if must_work {
+                Err(RError::new(
+                    RErrorKind::Other,
+                    format!("path '{}' does not exist: {}", path, e),
+                ))
+            } else {
+                Ok(RValue::vec(Vector::Character(
+                    vec![Some(path.clone())].into(),
+                )))
+            }
+        }
+    }
 }
 
 /// Expand a tilde (~) prefix in a file path to the user's home directory.
@@ -987,4 +1007,29 @@ fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result
             )),
         ),
     ])))
+}
+
+/// Find files in installed packages.
+///
+/// miniR does not have a package installation directory, so this always
+/// returns "" (empty string) to indicate "not found". This stub prevents
+/// errors in CRAN packages that probe for installed package resources.
+///
+/// @param ... path components (ignored)
+/// @param package package name (ignored)
+/// @return character scalar: always ""
+#[builtin(name = "system.file")]
+fn builtin_system_file(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(String::new())].into(),
+    )))
+}
+
+/// Return the process ID of the current R process.
+///
+/// @return integer scalar: the PID
+#[builtin(name = "Sys.getpid")]
+fn builtin_sys_getpid(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pid = i64::from(std::process::id());
+    Ok(RValue::vec(Vector::Integer(vec![Some(pid)].into())))
 }
