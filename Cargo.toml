@@ -76,16 +76,22 @@ unicode-width = "0.2"
 unicase = "2"
 jiff = { version = "0.2", optional = true }
 sha2 = { version = "0.10", optional = true }
+dirs = { version = "6", optional = true }
+walkdir = { version = "2", optional = true }
+globset = { version = "0.4", optional = true }
 
 [dependencies.serde_json]
 version = "1"
 optional = true
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
 collections = []
 digest = ["dep:sha2"]
 json = ["dep:serde_json"]
+dirs-support = ["dep:dirs"]
+walkdir-support = ["dep:walkdir"]
+globset-support = ["dep:globset"]
