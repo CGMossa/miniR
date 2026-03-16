@@ -2437,3 +2437,116 @@ fn interp_reg_finalizer(
 }
 
 // endregion
+
+// region: options
+
+/// Get or set global options.
+///
+/// With no arguments, returns all current options as a named list.
+/// With character arguments, returns the named options.
+/// With name=value pairs, sets those options and returns the previous values.
+///
+/// @param ... option names to query, or name=value pairs to set
+/// @return list of (previous) option values
+#[interpreter_builtin]
+fn interp_options(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.with_interpreter(|interp| {
+        let mut result: Vec<(Option<String>, RValue)> = Vec::new();
+
+        // If no arguments, return all options
+        if positional.is_empty() && named.is_empty() {
+            let opts = interp.options.borrow();
+            let mut entries: Vec<_> = opts.iter().collect();
+            entries.sort_by_key(|(k, _)| (*k).clone());
+            for (k, v) in entries {
+                result.push((Some(k.clone()), v.clone()));
+            }
+            return Ok(RValue::List(RList::new(result)));
+        }
+
+        // Process positional args — character strings are queries
+        for arg in positional {
+            if let Some(name) = arg.as_vector().and_then(|v| v.as_character_scalar()) {
+                let val = interp
+                    .options
+                    .borrow()
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or(RValue::Null);
+                result.push((Some(name), val));
+            } else if let RValue::List(list) = arg {
+                // Setting options from a list (e.g. options(old_opts))
+                for (opt_name, val) in &list.values {
+                    if let Some(opt_name) = opt_name {
+                        let prev = interp
+                            .options
+                            .borrow()
+                            .get(opt_name.as_str())
+                            .cloned()
+                            .unwrap_or(RValue::Null);
+                        interp
+                            .options
+                            .borrow_mut()
+                            .insert(opt_name.clone(), val.clone());
+                        result.push((Some(opt_name.clone()), prev));
+                    }
+                }
+            }
+        }
+
+        // Process named args — these are set operations
+        for (name, val) in named {
+            let prev = interp
+                .options
+                .borrow()
+                .get(name)
+                .cloned()
+                .unwrap_or(RValue::Null);
+            interp
+                .options
+                .borrow_mut()
+                .insert(name.clone(), val.clone());
+            result.push((Some(name.clone()), prev));
+        }
+
+        Ok(RValue::List(RList::new(result)))
+    })
+}
+
+/// Get the value of a named global option.
+///
+/// @param name character string — the option name
+/// @param default value to return if the option is not set (default NULL)
+/// @return the option value, or default if not set
+#[interpreter_builtin(name = "getOption", min_args = 1)]
+fn interp_get_option(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let name = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "getOption() requires a character string as its first argument".to_string(),
+            )
+        })?;
+    let default = positional.get(1).cloned().unwrap_or(RValue::Null);
+
+    context.with_interpreter(|interp| {
+        Ok(interp
+            .options
+            .borrow()
+            .get(&name)
+            .cloned()
+            .unwrap_or(default))
+    })
+}
+
+// endregion
