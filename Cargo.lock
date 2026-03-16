@@ -676,6 +676,7 @@ dependencies = [
  "glob",
  "itertools",
  "jiff",
+ "libm",
  "linkme",
  "minir-macros",
  "ndarray",
