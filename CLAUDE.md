@@ -68,6 +68,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 - `cargo test` — primary test command, runs all Rust integration tests
 - `cargo clippy --all-targets --all-features -- -D warnings` — must pass with zero warnings
+- **Every new feature must include tests** — either `stopifnot` assertions via `Session::eval_source` in a Rust integration test, or direct value checks via the Session API. Never ship a new builtin, semantic change, or bug fix without a test that exercises it. If an agent produces code without tests, add them before merging.
 - `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
 - `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
 - `tests/parse_corpus.rs` — runs all .R files through Session API, asserts no regressions
