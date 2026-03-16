@@ -655,10 +655,38 @@ impl FmtSpec {
 
     /// Format an integer value according to this specifier.
     fn format_int(&self, v: i64) -> String {
-        let raw = if self.flags.contains('+') && v >= 0 {
-            format!("+{}", v)
-        } else {
-            v.to_string()
+        let raw = match self.specifier {
+            'x' => {
+                let hex = format!("{:x}", v);
+                if self.flags.contains('#') {
+                    format!("0x{}", hex)
+                } else {
+                    hex
+                }
+            }
+            'X' => {
+                let hex = format!("{:X}", v);
+                if self.flags.contains('#') {
+                    format!("0X{}", hex)
+                } else {
+                    hex
+                }
+            }
+            'o' => {
+                let oct = format!("{:o}", v);
+                if self.flags.contains('#') && !oct.starts_with('0') {
+                    format!("0{}", oct)
+                } else {
+                    oct
+                }
+            }
+            _ => {
+                if self.flags.contains('+') && v >= 0 {
+                    format!("+{}", v)
+                } else {
+                    v.to_string()
+                }
+            }
         };
         self.pad(&raw)
     }
@@ -863,7 +891,7 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
             if let Some((spec, consumed)) = parse_fmt_spec(&chars[i..]) {
                 i += consumed;
                 match spec.specifier {
-                    'd' | 'i' => {
+                    'd' | 'i' | 'x' | 'X' | 'o' => {
                         let v = args
                             .get(arg_idx)
                             .and_then(|v| v.as_vector()?.as_integer_scalar())
@@ -1613,6 +1641,446 @@ fn builtin_strrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .collect();
 
     Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
+
+// region: formatC
+
+/// Format numbers and strings with C-style formatting control.
+///
+/// @param x vector to format
+/// @param width minimum field width (default 1)
+/// @param format format type: "d" (integer), "f" (fixed), "e" (scientific),
+///   "g" (general), "s" (string), "x" (hex), "o" (octal), "X" (upper hex)
+/// @param flag character: "-" (left-justify), "+" (always sign), "0" (zero-pad),
+///   " " (space for positive), "#" (alternate form)
+/// @return character vector of formatted values
+#[builtin(name = "formatC", min_args = 1)]
+fn builtin_format_c(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "formatC() requires at least one argument".to_string(),
+        )
+    })?;
+    let width = named
+        .iter()
+        .find(|(n, _)| n == "width")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_integer_scalar()))
+        .map(|w| usize::try_from(w).unwrap_or(0))
+        .unwrap_or(1);
+    let format = named
+        .iter()
+        .find(|(n, _)| n == "format")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "g".to_string());
+    let flag = named
+        .iter()
+        .find(|(n, _)| n == "flag")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let spec = FmtSpec {
+        flags: flag,
+        width: if width > 0 { Some(width) } else { None },
+        precision: named
+            .iter()
+            .find(|(n, _)| n == "digits")
+            .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+            .map(|d| usize::try_from(d).unwrap_or(6)),
+        specifier: format.chars().next().unwrap_or('g'),
+    };
+
+    let rv = x.as_vector().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "formatC() requires a vector argument".to_string(),
+        )
+    })?;
+
+    match spec.specifier {
+        'd' | 'i' | 'x' | 'X' | 'o' => {
+            let ints = rv.to_integers();
+            let result: Vec<Option<String>> =
+                ints.iter().map(|v| v.map(|i| spec.format_int(i))).collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        'f' | 'e' | 'E' | 'g' | 'G' => {
+            let doubles = rv.to_doubles();
+            let result: Vec<Option<String>> = doubles
+                .iter()
+                .map(|v| v.map(|d| spec.format_float(d)))
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        's' => {
+            let chars = rv.to_characters();
+            let result: Vec<Option<String>> = chars
+                .iter()
+                .map(|v| v.as_ref().map(|s| spec.format_str(s)))
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            format!("formatC(): unsupported format '{}'", format),
+        )),
+    }
+}
+
+// endregion
+
+// region: strtrim
+
+/// Trim character strings to a specified display width.
+///
+/// @param x character vector to trim
+/// @param width integer: maximum display width
+/// @return character vector with elements trimmed to width
+#[builtin(min_args = 2)]
+fn builtin_strtrim(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let width = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "strtrim() requires a 'width' argument".to_string(),
+            )
+        })?;
+    let width = usize::try_from(width)?;
+
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .map(|s| {
+                    s.as_ref().map(|s| {
+                        let mut current_width = 0;
+                        let mut trimmed = String::new();
+                        for c in s.chars() {
+                            let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+                            if current_width + cw > width {
+                                break;
+                            }
+                            current_width += cw;
+                            trimmed.push(c);
+                        }
+                        trimmed
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "strtrim() requires a character vector".to_string(),
+        )),
+    }
+}
+
+// endregion
+
+// region: casefold
+
+/// Convert case of character strings.
+///
+/// @param x character vector to convert
+/// @param upper logical: if TRUE convert to upper case, if FALSE (default) to lower
+/// @return character vector with case converted
+#[builtin(min_args = 1)]
+fn builtin_casefold(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let upper = named
+        .iter()
+        .find(|(n, _)| n == "upper")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .map(|s| {
+                    s.as_ref().map(|s| {
+                        if upper {
+                            s.to_uppercase()
+                        } else {
+                            s.to_lowercase()
+                        }
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
+}
+
+// endregion
+
+// region: encodeString
+
+/// Encode character strings with quoting and escaping.
+///
+/// @param x character vector to encode
+/// @param quote character scalar: quote character to wrap strings in (default none)
+/// @param na.encode logical: if TRUE (default), encode NA as "NA"
+/// @return character vector with encoded strings
+#[builtin(name = "encodeString", min_args = 1)]
+fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let quote = named
+        .iter()
+        .find(|(n, _)| n == "quote")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let na_encode = named
+        .iter()
+        .find(|(n, _)| n == "na.encode")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .map(|s| match s {
+                    Some(s) => {
+                        let escaped = s
+                            .replace('\\', "\\\\")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t");
+                        let escaped = if quote == "\"" {
+                            escaped.replace('"', "\\\"")
+                        } else if quote == "'" {
+                            escaped.replace('\'', "\\'")
+                        } else {
+                            escaped
+                        };
+                        if quote.is_empty() {
+                            Some(escaped)
+                        } else {
+                            Some(format!("{}{}{}", quote, escaped, quote))
+                        }
+                    }
+                    None => {
+                        if na_encode {
+                            Some("NA".to_string())
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
+}
+
+// endregion
+
+// region: URLencode / URLdecode
+
+/// Percent-encode a URL string.
+///
+/// @param URL character scalar: the URL to encode
+/// @param reserved logical: if TRUE (default), also encode reserved characters
+/// @return character scalar with percent-encoded URL
+#[builtin(name = "URLencode", min_args = 1)]
+fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let url = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "URLencode() requires a character string".to_string(),
+            )
+        })?;
+    let reserved = named
+        .iter()
+        .find(|(n, _)| n == "reserved")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let mut encoded = String::with_capacity(url.len());
+    for byte in url.bytes() {
+        // Unreserved characters per RFC 3986
+        let is_unreserved = byte.is_ascii_alphanumeric()
+            || byte == b'-'
+            || byte == b'_'
+            || byte == b'.'
+            || byte == b'~';
+        // Reserved characters that URLencode keeps when reserved=FALSE
+        let is_reserved = matches!(
+            byte,
+            b':' | b'/'
+                | b'?'
+                | b'#'
+                | b'['
+                | b']'
+                | b'@'
+                | b'!'
+                | b'$'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'='
+        );
+        if is_unreserved || (!reserved && is_reserved) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{:02X}", byte));
+        }
+    }
+    Ok(RValue::vec(Vector::Character(vec![Some(encoded)].into())))
+}
+
+/// Decode a percent-encoded URL string.
+///
+/// @param URL character scalar: the percent-encoded URL
+/// @return character scalar with decoded URL
+#[builtin(name = "URLdecode", min_args = 1)]
+fn builtin_urldecode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let url = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "URLdecode() requires a character string".to_string(),
+            )
+        })?;
+
+    let mut decoded = Vec::with_capacity(url.len());
+    let bytes = url.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = bytes[i + 1];
+            let lo = bytes[i + 2];
+            if let (Some(h), Some(l)) = (hex_digit(hi), hex_digit(lo)) {
+                decoded.push(h << 4 | l);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    let s = String::from_utf8(decoded).map_err(|e| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("URLdecode(): invalid UTF-8 after decoding: {}", e),
+        )
+    })?;
+    Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
+}
+
+/// Convert a hex ASCII digit to its numeric value.
+fn hex_digit(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+// endregion
+
+// region: iconv
+
+/// Convert character encoding (stub: returns input unchanged for UTF-8).
+///
+/// @param x character vector to convert
+/// @param from character scalar: source encoding (default "")
+/// @param to character scalar: target encoding (default "")
+/// @return character vector with encoding converted
+#[builtin(min_args = 1)]
+fn builtin_iconv(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Stub: miniR is internally UTF-8, so just return the input unchanged
+    match args.first() {
+        Some(v @ RValue::Vector(_)) => Ok(v.clone()),
+        _ => Ok(RValue::vec(Vector::Character(vec![None].into()))),
+    }
+}
+
+// endregion
+
+// region: substr<-
+
+/// Replace a substring within a character string.
+///
+/// This is the replacement function for `substr(x, start, stop) <- value`.
+///
+/// @param x character scalar: original string
+/// @param start integer: starting position (1-indexed)
+/// @param stop integer: ending position (inclusive)
+/// @param value character scalar: replacement text
+/// @return character scalar with the substring replaced
+#[builtin(name = "substr<-", names = ["substring<-"], min_args = 4)]
+fn builtin_substr_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let s = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let start = usize::try_from(
+        args.get(1)
+            .and_then(|v| v.as_vector()?.as_integer_scalar())
+            .unwrap_or(1),
+    )?;
+    let stop = usize::try_from(
+        args.get(2)
+            .and_then(|v| v.as_vector()?.as_integer_scalar())
+            .unwrap_or(1),
+    )?;
+    let value = args
+        .get(3)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let start = start.saturating_sub(1); // R is 1-indexed
+    let stop = stop.min(s.len());
+
+    if start >= s.len() || start >= stop {
+        return Ok(RValue::vec(Vector::Character(vec![Some(s)].into())));
+    }
+
+    // R's substr<- replaces at most (stop - start) characters from value
+    let replace_len = stop - start;
+    let replacement: String = value.chars().take(replace_len).collect();
+    // If replacement is shorter than the range, only replace that many chars
+    let actual_replace_len = replacement.len().min(replace_len);
+
+    let mut result = String::with_capacity(s.len());
+    result.push_str(&s[..start]);
+    result.push_str(&replacement);
+    result.push_str(&s[start + actual_replace_len..]);
+    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
 // endregion

@@ -1033,3 +1033,28 @@ fn builtin_sys_getpid(_args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     let pid = i64::from(std::process::id());
     Ok(RValue::vec(Vector::Integer(vec![Some(pid)].into())))
 }
+
+/// Get the current locale setting (stub: returns "C" for all categories).
+///
+/// @param category character scalar: locale category (default "" meaning all)
+/// @return character scalar: locale string
+#[builtin(name = "Sys.getlocale")]
+fn builtin_sys_getlocale(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Stub: miniR is UTF-8 internally; report "C" locale
+    Ok(RValue::vec(Vector::Character(
+        vec![Some("C".to_string())].into(),
+    )))
+}
+
+/// Set the locale (stub: accepts but ignores the value, returns "C").
+///
+/// @param category character scalar: locale category
+/// @param locale character scalar: locale to set
+/// @return character scalar: the (unchanged) locale
+#[builtin(name = "Sys.setlocale")]
+fn builtin_sys_setlocale(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Stub: miniR doesn't change process locale
+    Ok(RValue::vec(Vector::Character(
+        vec![Some("C".to_string())].into(),
+    )))
+}
