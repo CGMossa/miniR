@@ -112,6 +112,8 @@ pub struct Interpreter {
     /// Flag set by the SIGINT handler; checked at loop boundaries to interrupt
     /// long-running computations without killing the process.
     interrupted: Arc<AtomicBool>,
+    /// Per-interpreter R options (accessed via `options()` and `getOption()`).
+    pub(crate) options: RefCell<std::collections::HashMap<String, value::RValue>>,
 }
 
 impl Default for Interpreter {
@@ -204,6 +206,7 @@ impl Interpreter {
             connections: RefCell::new(Vec::new()),
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),
+            options: RefCell::new(Self::default_options()),
         }
     }
 
@@ -257,6 +260,59 @@ impl Interpreter {
             }
         }
         Ok(false)
+    }
+
+    /// Default R options, matching GNU R defaults where sensible.
+    fn default_options() -> std::collections::HashMap<String, value::RValue> {
+        use value::{RValue, Vector};
+        let mut opts = std::collections::HashMap::new();
+        opts.insert(
+            "digits".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(7)].into())),
+        );
+        opts.insert(
+            "warn".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(0)].into())),
+        );
+        opts.insert(
+            "OutDec".to_string(),
+            RValue::vec(Vector::Character(vec![Some(".".to_string())].into())),
+        );
+        opts.insert(
+            "scipen".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(0)].into())),
+        );
+        opts.insert(
+            "max.print".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(99999)].into())),
+        );
+        opts.insert(
+            "width".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(80)].into())),
+        );
+        opts.insert(
+            "warning.length".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(1000)].into())),
+        );
+        opts.insert(
+            "prompt".to_string(),
+            RValue::vec(Vector::Character(vec![Some("> ".to_string())].into())),
+        );
+        opts.insert(
+            "continue".to_string(),
+            RValue::vec(Vector::Character(vec![Some("+ ".to_string())].into())),
+        );
+        opts.insert(
+            "encoding".to_string(),
+            RValue::vec(Vector::Character(
+                vec![Some("native.enc".to_string())].into(),
+            )),
+        );
+        opts.insert(
+            "stringsAsFactors".to_string(),
+            RValue::vec(Vector::Logical(vec![Some(false)].into())),
+        );
+        opts
     }
 
     #[cfg(feature = "random")]

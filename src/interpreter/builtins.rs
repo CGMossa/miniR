@@ -203,12 +203,67 @@ pub fn register_builtins(env: &Environment) {
                 RValue::vec(Vector::Double(vec![Some(f64::EPSILON)].into())),
             ),
             (
+                Some("double.neg.eps".to_string()),
+                RValue::vec(Vector::Double(vec![Some(f64::EPSILON / 2.0)].into())),
+            ),
+            (
                 Some("double.xmax".to_string()),
                 RValue::vec(Vector::Double(vec![Some(f64::MAX)].into())),
             ),
             (
                 Some("double.xmin".to_string()),
                 RValue::vec(Vector::Double(vec![Some(f64::MIN_POSITIVE)].into())),
+            ),
+            (
+                Some("double.digits".to_string()),
+                RValue::vec(Vector::Integer(vec![Some(53)].into())),
+            ),
+            (
+                Some("double.max.exp".to_string()),
+                RValue::vec(Vector::Integer(vec![Some(1024)].into())),
+            ),
+            (
+                Some("double.min.exp".to_string()),
+                RValue::vec(Vector::Integer(vec![Some(-1021)].into())),
+            ),
+            (
+                Some("sizeof.long".to_string()),
+                RValue::vec(Vector::Integer(
+                    vec![Some(
+                        i64::try_from(std::mem::size_of::<std::ffi::c_long>()).unwrap_or(8),
+                    )]
+                    .into(),
+                )),
+            ),
+            (
+                Some("sizeof.longlong".to_string()),
+                RValue::vec(Vector::Integer(
+                    vec![Some(
+                        i64::try_from(std::mem::size_of::<std::ffi::c_longlong>()).unwrap_or(8),
+                    )]
+                    .into(),
+                )),
+            ),
+            (
+                Some("sizeof.pointer".to_string()),
+                RValue::vec(Vector::Integer(
+                    vec![Some(
+                        i64::try_from(std::mem::size_of::<*const u8>()).unwrap_or(8),
+                    )]
+                    .into(),
+                )),
+            ),
+            (
+                Some("longdouble.eps".to_string()),
+                RValue::vec(Vector::Double(vec![Some(f64::EPSILON)].into())),
+            ),
+            (
+                Some("longdouble.max".to_string()),
+                RValue::vec(Vector::Double(vec![Some(f64::MAX)].into())),
+            ),
+            (
+                Some("longdouble.digits".to_string()),
+                RValue::vec(Vector::Integer(vec![Some(53)].into())),
             ),
         ])),
     );
@@ -1639,38 +1694,7 @@ fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     }
 }
 
-/// Get or set global options.
-///
-/// Currently a stub that returns an empty list.
-///
-/// @param ... option names to query, or name=value pairs to set
-/// @return list of previous option values
-#[builtin]
-fn builtin_options(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::List(RList::new(vec![])))
-}
-
-/// Get the value of a named global option.
-///
-/// Supports "digits", "warn", and "OutDec". Returns NULL for unknown options.
-///
-/// @param name option name to query
-/// @return the option's value, or NULL
-#[builtin(name = "getOption", min_args = 1)]
-fn builtin_get_option(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let name = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    match name.as_str() {
-        "digits" => Ok(RValue::vec(Vector::Integer(vec![Some(7)].into()))),
-        "warn" => Ok(RValue::vec(Vector::Integer(vec![Some(0)].into()))),
-        "OutDec" => Ok(RValue::vec(Vector::Character(
-            vec![Some(".".to_string())].into(),
-        ))),
-        _ => Ok(RValue::Null),
-    }
-}
+// options() and getOption() are interpreter builtins in interp.rs
 
 // Sys.time() is in datetime.rs; proc.time() is in system.rs
 
@@ -3308,6 +3332,152 @@ fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
          As a workaround, give your function a name and call it directly for recursion.",
     ))
 }
+
+// region: locale, gc, debugging stubs
+
+/// Return locale-specific numeric formatting conventions.
+///
+/// Returns a named character vector with C locale defaults (miniR does not
+/// support locale switching).
+///
+/// @return named character vector of locale conventions
+#[builtin(name = "Sys.localeconv")]
+fn builtin_sys_localeconv(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let names = vec![
+        "decimal_point",
+        "thousands_sep",
+        "grouping",
+        "int_curr_symbol",
+        "currency_symbol",
+        "mon_decimal_point",
+        "mon_thousands_sep",
+        "mon_grouping",
+        "positive_sign",
+        "negative_sign",
+        "int_frac_digits",
+        "frac_digits",
+        "p_cs_precedes",
+        "p_sep_by_space",
+        "n_cs_precedes",
+        "n_sep_by_space",
+        "p_sign_posn",
+        "n_sign_posn",
+    ];
+    let values: Vec<Option<String>> = vec![
+        Some(".".to_string()),   // decimal_point
+        Some(String::new()),     // thousands_sep
+        Some(String::new()),     // grouping
+        Some(String::new()),     // int_curr_symbol
+        Some(String::new()),     // currency_symbol
+        Some(String::new()),     // mon_decimal_point
+        Some(String::new()),     // mon_thousands_sep
+        Some(String::new()),     // mon_grouping
+        Some(String::new()),     // positive_sign
+        Some(String::new()),     // negative_sign
+        Some("127".to_string()), // int_frac_digits (CHAR_MAX)
+        Some("127".to_string()), // frac_digits
+        Some("127".to_string()), // p_cs_precedes
+        Some("127".to_string()), // p_sep_by_space
+        Some("127".to_string()), // n_cs_precedes
+        Some("127".to_string()), // n_sep_by_space
+        Some("127".to_string()), // p_sign_posn
+        Some("127".to_string()), // n_sign_posn
+    ];
+    let mut rv = RVector::from(Vector::Character(values.into()));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            names
+                .into_iter()
+                .map(|s| Some(s.to_string()))
+                .collect::<Vec<_>>()
+                .into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// Trigger garbage collection (stub).
+///
+/// miniR uses Rust's ownership model for memory management, so there is no
+/// garbage collector to invoke. Returns invisible NULL.
+///
+/// @param verbose logical; if TRUE, print GC info (ignored)
+/// @param reset logical; if TRUE, reset max memory stats (ignored)
+/// @param full logical; if TRUE, do a full collection (ignored)
+/// @return invisible NULL
+#[builtin]
+fn builtin_gc(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Return a minimal named double matrix matching R's gc() output shape:
+    // 2 rows (Ncells, Vcells) x 6 cols (used, gc trigger, max used, ...)
+    // For simplicity, return zeros.
+    Ok(RValue::Null)
+}
+
+/// Set or query verbose GC reporting (stub).
+///
+/// miniR does not have a garbage collector. Always returns FALSE.
+///
+/// @param verbose logical (ignored)
+/// @return previous setting (always FALSE)
+#[builtin]
+fn builtin_gcinfo(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+/// Print the call stack of the last error (stub).
+///
+/// miniR does not yet maintain a full traceback. Returns invisible NULL.
+///
+/// @param x number of calls to display (ignored)
+/// @return invisible NULL
+#[builtin(names = ["traceBack"])]
+fn builtin_traceback(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// Set a function for debug-mode single-stepping (stub).
+///
+/// miniR does not support interactive debugging. Prints a message.
+///
+/// @param fun function to debug
+/// @return invisible NULL
+#[builtin]
+fn builtin_debug(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    eprintln!("debug() is not supported in miniR — interactive debugging is not available.");
+    Ok(RValue::Null)
+}
+
+/// Remove debug-mode single-stepping from a function (stub).
+///
+/// @param fun function to undebug
+/// @return invisible NULL
+#[builtin]
+fn builtin_undebug(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// Query whether a function has debug-mode enabled (stub).
+///
+/// @param fun function to query
+/// @return always FALSE
+#[builtin(name = "isdebugged")]
+fn builtin_isdebugged(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+/// Enter the browser for interactive debugging (stub).
+///
+/// miniR does not support interactive debugging. Prints a message.
+///
+/// @return invisible NULL
+#[builtin]
+fn builtin_browser(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    eprintln!("browser() is not supported in miniR — interactive debugging is not available.");
+    Ok(RValue::Null)
+}
+
+// endregion
 
 /// Convert an RValue back to an AST expression (for call/expression construction).
 fn rvalue_to_expr(val: &RValue) -> Expr {
