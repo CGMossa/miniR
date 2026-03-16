@@ -154,6 +154,350 @@ fn builtin_sign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 
 use super::math_unary_op as math_unary;
 
+// region: Inverse trigonometric
+
+/// Inverse sine (arc sine).
+///
+/// @param x numeric vector with values in [-1, 1]
+/// @return numeric vector of angles in radians
+#[builtin(min_args = 1)]
+fn builtin_asin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::asin)
+}
+
+/// Inverse cosine (arc cosine).
+///
+/// @param x numeric vector with values in [-1, 1]
+/// @return numeric vector of angles in radians
+#[builtin(min_args = 1)]
+fn builtin_acos(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::acos)
+}
+
+/// Inverse tangent (arc tangent).
+///
+/// @param x numeric vector
+/// @return numeric vector of angles in radians
+#[builtin(min_args = 1)]
+fn builtin_atan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::atan)
+}
+
+/// Two-argument inverse tangent.
+///
+/// Computes atan(y/x) but uses the signs of both arguments to determine
+/// the correct quadrant. Returns angles in [-pi, pi].
+///
+/// @param y numeric vector (y-coordinates)
+/// @param x numeric vector (x-coordinates)
+/// @return numeric vector of angles in radians
+#[builtin(min_args = 2)]
+fn builtin_atan2(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_binary(args, f64::atan2)
+}
+
+// endregion
+
+// region: Hyperbolic
+
+/// Hyperbolic sine.
+///
+/// @param x numeric vector
+/// @return numeric vector of hyperbolic sines
+#[builtin(min_args = 1)]
+fn builtin_sinh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::sinh)
+}
+
+/// Hyperbolic cosine.
+///
+/// @param x numeric vector
+/// @return numeric vector of hyperbolic cosines
+#[builtin(min_args = 1)]
+fn builtin_cosh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::cosh)
+}
+
+/// Hyperbolic tangent.
+///
+/// @param x numeric vector
+/// @return numeric vector of hyperbolic tangents
+#[builtin(min_args = 1)]
+fn builtin_tanh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::tanh)
+}
+
+// endregion
+
+// region: Inverse hyperbolic
+
+/// Inverse hyperbolic sine.
+///
+/// @param x numeric vector
+/// @return numeric vector of inverse hyperbolic sines
+#[builtin(min_args = 1)]
+fn builtin_asinh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::asinh)
+}
+
+/// Inverse hyperbolic cosine.
+///
+/// @param x numeric vector with values >= 1
+/// @return numeric vector of inverse hyperbolic cosines
+#[builtin(min_args = 1)]
+fn builtin_acosh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::acosh)
+}
+
+/// Inverse hyperbolic tangent.
+///
+/// @param x numeric vector with values in (-1, 1)
+/// @return numeric vector of inverse hyperbolic tangents
+#[builtin(min_args = 1)]
+fn builtin_atanh(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::atanh)
+}
+
+// endregion
+
+// region: Numerically stable exp/log variants
+
+/// Numerically stable exp(x) - 1.
+///
+/// More accurate than `exp(x) - 1` for x near zero, where catastrophic
+/// cancellation would otherwise lose precision.
+///
+/// @param x numeric vector
+/// @return numeric vector of exp(x) - 1
+#[builtin(min_args = 1)]
+fn builtin_expm1(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::exp_m1)
+}
+
+/// Numerically stable log(1 + x).
+///
+/// More accurate than `log(1 + x)` for x near zero, where catastrophic
+/// cancellation would otherwise lose precision.
+///
+/// @param x numeric vector with values > -1
+/// @return numeric vector of log(1 + x)
+#[builtin(min_args = 1)]
+fn builtin_log1p(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, f64::ln_1p)
+}
+
+// endregion
+
+// region: Gamma-related and combinatorial
+
+/// Gamma function.
+///
+/// Computes the gamma function, which extends factorial to real numbers:
+/// gamma(n) = (n-1)! for positive integers.
+///
+/// @param x numeric vector
+/// @return numeric vector of gamma values
+#[builtin(min_args = 1)]
+fn builtin_gamma(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, libm::tgamma)
+}
+
+/// Natural logarithm of the absolute value of the gamma function.
+///
+/// More numerically stable than log(abs(gamma(x))) for large x.
+///
+/// @param x numeric vector
+/// @return numeric vector of log-gamma values
+#[builtin(min_args = 1)]
+fn builtin_lgamma(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, libm::lgamma)
+}
+
+/// Beta function: gamma(a) * gamma(b) / gamma(a + b).
+///
+/// @param a numeric vector
+/// @param b numeric vector
+/// @return numeric vector of beta function values
+#[builtin(min_args = 2)]
+fn builtin_beta(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_binary(args, |a, b| {
+        (libm::lgamma(a) + libm::lgamma(b) - libm::lgamma(a + b)).exp()
+    })
+}
+
+/// Natural logarithm of the beta function.
+///
+/// More numerically stable than log(beta(a, b)) for large a or b.
+///
+/// @param a numeric vector
+/// @param b numeric vector
+/// @return numeric vector of log-beta values
+#[builtin(min_args = 2)]
+fn builtin_lbeta(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_binary(args, |a, b| {
+        libm::lgamma(a) + libm::lgamma(b) - libm::lgamma(a + b)
+    })
+}
+
+/// Factorial: n! = 1 * 2 * ... * n.
+///
+/// Uses gamma(n + 1) for non-integer and large values.
+///
+/// @param x numeric vector (non-negative)
+/// @return numeric vector of factorials
+#[builtin(min_args = 1)]
+fn builtin_factorial(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_unary(args, |x| libm::tgamma(x + 1.0))
+}
+
+/// Binomial coefficient: choose(n, k) = n! / (k! * (n - k)!).
+///
+/// Uses the log-gamma formulation for numerical stability.
+///
+/// @param n numeric vector
+/// @param k numeric vector
+/// @return numeric vector of binomial coefficients
+#[builtin(min_args = 2)]
+fn builtin_choose(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    math_binary(args, |n, k| {
+        if k < 0.0 || k > n {
+            return 0.0;
+        }
+        // For integer-valued inputs, use the log-gamma identity:
+        // choose(n, k) = exp(lgamma(n+1) - lgamma(k+1) - lgamma(n-k+1))
+        (libm::lgamma(n + 1.0) - libm::lgamma(k + 1.0) - libm::lgamma(n - k + 1.0))
+            .exp()
+            .round()
+    })
+}
+
+/// All combinations of n elements taken k at a time.
+///
+/// Returns a matrix with k rows and choose(n, k) columns, where each
+/// column is one combination.
+///
+/// @param x if numeric scalar, treated as 1:x; if vector, elements to combine
+/// @param m number of elements to choose
+/// @return matrix of combinations (k rows, choose(n,k) columns)
+#[builtin(min_args = 2)]
+fn builtin_combn(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Resolve the pool of elements
+    let pool: Vec<f64> = match args.first() {
+        Some(RValue::Vector(v)) => {
+            let doubles = v.to_doubles();
+            if doubles.len() == 1 {
+                // Scalar n => pool is 1:n
+                let n = doubles[0].ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "NA in combn first argument".to_string(),
+                    )
+                })?;
+                let n_int = n as i64;
+                (1..=n_int).map(|i| i as f64).collect()
+            } else {
+                doubles
+                    .into_iter()
+                    .map(|x| {
+                        x.ok_or_else(|| {
+                            RError::new(RErrorKind::Argument, "NA in combn input".to_string())
+                        })
+                    })
+                    .collect::<Result<Vec<f64>, RError>>()?
+            }
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "first argument must be numeric".to_string(),
+            ))
+        }
+    };
+
+    let m = match args.get(1) {
+        Some(RValue::Vector(v)) => v.as_integer_scalar().ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "second argument (m) must be a single integer".to_string(),
+            )
+        })?,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "second argument (m) must be a single integer".to_string(),
+            ))
+        }
+    };
+
+    let n = pool.len();
+    let m_usize = usize::try_from(m).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("m must be non-negative, got {m}"),
+        )
+    })?;
+
+    if m_usize > n {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("m ({m_usize}) must be <= n ({n}) in combn"),
+        ));
+    }
+
+    // Generate all combinations using itertools
+    let combos: Vec<Vec<f64>> = (0..n)
+        .combinations(m_usize)
+        .map(|indices| indices.iter().map(|&i| pool[i]).collect())
+        .collect();
+
+    let ncol = combos.len();
+    let nrow = m_usize;
+
+    // Fill column-major (R convention): column by column
+    let mut data: Vec<Option<f64>> = Vec::with_capacity(nrow * ncol);
+    for combo in &combos {
+        for &val in combo {
+            data.push(Some(val));
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(data.into()));
+    set_matrix_attrs(&mut rv, nrow, ncol, None, None)?;
+    Ok(RValue::Vector(rv))
+}
+
+// endregion
+
+// region: Binary math helper
+
+/// Helper for binary math builtins: applies `(f64, f64) -> f64` element-wise
+/// with recycling.
+fn math_binary(args: &[RValue], f: fn(f64, f64) -> f64) -> Result<RValue, RError> {
+    let (a_vec, b_vec) = match (args.first(), args.get(1)) {
+        (Some(RValue::Vector(a)), Some(RValue::Vector(b))) => (a.to_doubles(), b.to_doubles()),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "non-numeric argument to mathematical function".to_string(),
+            ))
+        }
+    };
+    let len = a_vec.len().max(b_vec.len());
+    let result: Vec<Option<f64>> = (0..len)
+        .map(|i| {
+            let a = a_vec[i % a_vec.len()];
+            let b = b_vec[i % b_vec.len()];
+            match (a, b) {
+                (Some(x), Some(y)) => Some(f(x, y)),
+                _ => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+// endregion
+
 /// Round to the specified number of decimal places.
 ///
 /// @param x numeric vector
