@@ -17,7 +17,7 @@ const DEVICE_MSG: &str = "graphics devices are not yet supported in miniR";
 ///
 /// @param file output file path (ignored)
 /// @return NULL
-#[builtin]
+#[builtin(namespace = "grDevices")]
 fn builtin_pdf(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _file = args.first();
     eprintln!("{DEVICE_MSG}");
@@ -31,7 +31,7 @@ fn builtin_pdf(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// @param filename output file path (ignored)
 /// @return NULL
-#[builtin]
+#[builtin(namespace = "grDevices")]
 fn builtin_png(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _filename = args.first();
     eprintln!("{DEVICE_MSG}");
@@ -45,7 +45,7 @@ fn builtin_png(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// @param filename output file path (ignored)
 /// @return NULL
-#[builtin]
+#[builtin(namespace = "grDevices")]
 fn builtin_svg(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _filename = args.first();
     eprintln!("{DEVICE_MSG}");
@@ -58,7 +58,7 @@ fn builtin_svg(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 /// (the null device number), matching R's convention.
 ///
 /// @return integer 1 (invisibly)
-#[builtin(name = "dev.off")]
+#[builtin(name = "dev.off", namespace = "grDevices")]
 fn builtin_dev_off(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::vec(Vector::Integer(vec![Some(1i64)].into())))
 }
@@ -69,7 +69,7 @@ fn builtin_dev_off(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// are supported yet.
 ///
 /// @return integer 1
-#[builtin(name = "dev.cur")]
+#[builtin(name = "dev.cur", namespace = "grDevices")]
 fn builtin_dev_cur(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::vec(Vector::Integer(vec![Some(1i64)].into())))
 }
@@ -80,7 +80,7 @@ fn builtin_dev_cur(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// and returns NULL.
 ///
 /// @return NULL
-#[builtin(name = "dev.new")]
+#[builtin(name = "dev.new", namespace = "grDevices")]
 fn builtin_dev_new(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     eprintln!("{DEVICE_MSG}");
     Ok(RValue::Null)
@@ -98,7 +98,7 @@ fn builtin_dev_new(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// @param x x-coordinates or a formula
 /// @param y y-coordinates (optional)
 /// @return NULL
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_plot(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _x = args.first();
     let _y = args.get(1);
@@ -117,7 +117,7 @@ fn builtin_plot(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
 /// @param x x-coordinates
 /// @param y y-coordinates
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_points(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _x = args.first();
     let _y = args.get(1);
@@ -131,7 +131,7 @@ fn builtin_points(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
 /// @param x x-coordinates
 /// @param y y-coordinates
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_lines(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _x = args.first();
     let _y = args.get(1);
@@ -143,7 +143,7 @@ fn builtin_lines(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 /// Silently returns NULL because graphics output is not yet supported.
 ///
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_abline(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Null)
 }
@@ -153,7 +153,7 @@ fn builtin_abline(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValu
 /// Silently returns NULL because graphics output is not yet supported.
 ///
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_legend(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Null)
 }
@@ -164,7 +164,7 @@ fn builtin_legend(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValu
 ///
 /// @param main main title text
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_title(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _main = args.first();
     Ok(RValue::Null)
@@ -176,7 +176,7 @@ fn builtin_title(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param side which side of the plot (1=bottom, 2=left, 3=top, 4=right)
 /// @return NULL (invisibly)
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_axis(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let _side = args.first();
     Ok(RValue::Null)
@@ -192,7 +192,7 @@ fn builtin_axis(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
 /// that code like `old <- par(mfrow = c(1,2))` does not crash.
 ///
 /// @return an empty list
-#[builtin]
+#[builtin(namespace = "graphics")]
 fn builtin_par(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::List(RList::new(vec![])))
 }

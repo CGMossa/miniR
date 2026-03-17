@@ -21,7 +21,7 @@ use minir_macros::{builtin, interpreter_builtin};
 /// @param contains character vector of superclasses (ignored in stub)
 /// @param ... additional arguments (ignored)
 /// @return the class name (invisibly)
-#[builtin(name = "setClass", min_args = 1)]
+#[builtin(name = "setClass", min_args = 1, namespace = "methods")]
 fn builtin_set_class_s4(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_name = args
         .first()
@@ -52,7 +52,7 @@ fn builtin_set_class_s4(args: &[RValue], _named: &[(String, RValue)]) -> Result<
 /// @param name character string naming the generic
 /// @param def default function definition
 /// @return the generic name (invisibly)
-#[interpreter_builtin(name = "setGeneric", min_args = 1)]
+#[interpreter_builtin(name = "setGeneric", min_args = 1, namespace = "methods")]
 fn interp_set_generic(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -98,7 +98,7 @@ fn interp_set_generic(
 /// @param signature character vector or string specifying the method signature
 /// @param def function implementing the method
 /// @return the function name (invisibly)
-#[interpreter_builtin(name = "setMethod", min_args = 1)]
+#[interpreter_builtin(name = "setMethod", min_args = 1, namespace = "methods")]
 fn interp_set_method(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -143,7 +143,7 @@ fn interp_set_method(
 /// @param Class character string naming the S4 class
 /// @param ... slot values as named arguments
 /// @return a list with class attribute set to Class
-#[builtin(name = "new", min_args = 1)]
+#[builtin(name = "new", min_args = 1, namespace = "methods")]
 fn builtin_new(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_name = args
         .first()
@@ -181,7 +181,7 @@ fn builtin_new(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 /// @param object any R object
 /// @param class2 character string naming the class to check
 /// @return TRUE if the object inherits from class2, FALSE otherwise
-#[builtin(min_args = 1)]
+#[builtin(min_args = 1, namespace = "methods")]
 fn builtin_is(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let object = args.first().ok_or_else(|| {
         RError::new(
@@ -223,7 +223,7 @@ fn builtin_is(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RE
 ///
 /// @param Class character string naming the class
 /// @return FALSE
-#[builtin(name = "isVirtualClass", min_args = 1)]
+#[builtin(name = "isVirtualClass", min_args = 1, namespace = "methods")]
 fn builtin_is_virtual_class(
     _args: &[RValue],
     _named: &[(String, RValue)],
@@ -237,7 +237,7 @@ fn builtin_is_virtual_class(
 ///
 /// @param object an S4 object
 /// @return the object, unchanged
-#[builtin(name = "validObject", min_args = 1)]
+#[builtin(name = "validObject", min_args = 1, namespace = "methods")]
 fn builtin_valid_object(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     args.first().cloned().ok_or_else(|| {
         RError::new(
@@ -254,7 +254,7 @@ fn builtin_valid_object(args: &[RValue], _named: &[(String, RValue)]) -> Result<
 /// @param Class character string naming the class
 /// @param method validity-checking function (ignored in stub)
 /// @return the class name
-#[builtin(name = "setValidity", min_args = 1)]
+#[builtin(name = "setValidity", min_args = 1, namespace = "methods")]
 fn builtin_set_validity(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_name = args
         .first()
@@ -277,7 +277,7 @@ fn builtin_set_validity(args: &[RValue], _named: &[(String, RValue)]) -> Result<
 ///
 /// @param Class character string naming the class
 /// @return NULL, invisibly
-#[builtin(name = "showClass", min_args = 1)]
+#[builtin(name = "showClass", min_args = 1, namespace = "methods")]
 fn builtin_show_class(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let class_name = args
         .first()
@@ -303,7 +303,7 @@ fn builtin_show_class(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 /// @param f character string naming the generic function
 /// @param signature character string or vector for the method signature
 /// @return FALSE
-#[builtin(name = "existsMethod", min_args = 1)]
+#[builtin(name = "existsMethod", min_args = 1, namespace = "methods")]
 fn builtin_exists_method(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
@@ -316,7 +316,7 @@ fn builtin_exists_method(_args: &[RValue], _named: &[(String, RValue)]) -> Resul
 /// @param object an S4 object (list with class attribute)
 /// @param name character string naming the slot
 /// @return the slot value, or an error if the slot doesn't exist
-#[builtin(min_args = 2)]
+#[builtin(min_args = 2, namespace = "methods")]
 fn builtin_slot(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let object = args.first().ok_or_else(|| {
         RError::new(
@@ -366,7 +366,7 @@ fn builtin_slot(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
 /// @param name character string naming the slot
 /// @param value the new value for the slot
 /// @return the modified object
-#[builtin(name = "slot<-", min_args = 3)]
+#[builtin(name = "slot<-", min_args = 3, namespace = "methods")]
 fn builtin_slot_set(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let object = args.first().ok_or_else(|| {
         RError::new(

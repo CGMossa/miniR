@@ -694,7 +694,7 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 /// @param header logical: does the file have a header row? (default TRUE)
 /// @param sep character scalar: field separator (default ",")
 /// @return data.frame with columns coerced to numeric where possible
-#[builtin(name = "read.csv", min_args = 1)]
+#[builtin(name = "read.csv", min_args = 1, namespace = "utils")]
 fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
     let path = call_args.string("file", 0)?;
@@ -812,7 +812,7 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 /// @param file character scalar: output file path
 /// @param row.names logical: include row names? (default TRUE)
 /// @return NULL (invisibly)
-#[builtin(name = "write.csv", min_args = 1)]
+#[builtin(name = "write.csv", min_args = 1, namespace = "utils")]
 fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let data = args
         .first()
@@ -982,7 +982,7 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// @param header logical: does the file have a header row? (default FALSE)
 /// @param sep character scalar: field separator (default: whitespace)
 /// @return data.frame (list of columns) with columns coerced to numeric where possible
-#[builtin(name = "read.table", min_args = 1)]
+#[builtin(name = "read.table", min_args = 1, namespace = "utils")]
 fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[0] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
@@ -1097,7 +1097,7 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 /// @param col.names logical: include column names? (default TRUE)
 /// @param quote logical: quote character fields? (default TRUE)
 /// @return NULL (invisibly)
-#[builtin(name = "write.table", min_args = 2)]
+#[builtin(name = "write.table", min_args = 2, namespace = "utils")]
 fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let file = match &args[1] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {

@@ -609,7 +609,7 @@ fn interp_stderr(
 /// @param port integer scalar: port number
 /// @param server logical scalar: whether to create a server socket (only FALSE supported)
 /// @return integer scalar with class "connection"
-#[interpreter_builtin(name = "make.socket", min_args = 2)]
+#[interpreter_builtin(name = "make.socket", min_args = 2, namespace = "net")]
 fn interp_make_socket(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -666,7 +666,7 @@ fn interp_make_socket(
 /// @param socket integer scalar: connection ID of a TCP socket
 /// @param maxlen integer scalar: maximum number of bytes to read (default 256)
 /// @return character scalar containing the data read
-#[interpreter_builtin(name = "read.socket", min_args = 1)]
+#[interpreter_builtin(name = "read.socket", min_args = 1, namespace = "net")]
 fn interp_read_socket(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -734,7 +734,7 @@ fn interp_read_socket(
 /// @param socket integer scalar: connection ID of a TCP socket
 /// @param string character scalar: data to write
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "write.socket", min_args = 2)]
+#[interpreter_builtin(name = "write.socket", min_args = 2, namespace = "net")]
 fn interp_write_socket(
     args: &[RValue],
     named: &[(String, RValue)],
@@ -797,7 +797,7 @@ fn interp_write_socket(
 ///
 /// @param socket integer scalar: connection ID of a TCP socket
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "close.socket", min_args = 1, max_args = 1)]
+#[interpreter_builtin(name = "close.socket", min_args = 1, max_args = 1, namespace = "net")]
 fn interp_close_socket(
     args: &[RValue],
     named: &[(String, RValue)],
