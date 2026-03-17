@@ -124,16 +124,32 @@ fn parse_hex_float_value(s: &str) -> f64 {
 
 pub(super) fn parse_raw_string(pair: Pair<Rule>) -> Expr {
     let s = pair.as_str();
-    // r"(...)" or R'(...)' etc - find the body between delimiters
-    // Skip r/R and the quote char, then the opening delimiter
+    // r"(...)" or R'(...)' etc — find the body between outer quotes
+    // Also handles dash delimiters: r"---(text)---"
     let quote_pos = s.find('"').or_else(|| s.find('\'')).unwrap();
     let inner = &s[quote_pos + 1..s.len() - 1]; // between outer quotes
-                                                // inner is like "(...)" -- strip the delimiter pair
-    let content = if inner.starts_with('(') || inner.starts_with('[') || inner.starts_with('{') {
-        &inner[1..inner.len() - 1]
+
+    // Strip leading dashes, then the open delimiter, then trailing close + dashes
+    let inner = inner.trim_start_matches('-');
+    let (open, close) = if inner.starts_with('(') {
+        ('(', ')')
+    } else if inner.starts_with('[') {
+        ('[', ']')
+    } else if inner.starts_with('{') {
+        ('{', '}')
     } else {
-        inner
+        return Expr::String(inner.to_string());
     };
+    // Strip open delimiter from start
+    let inner = &inner[1..];
+    // Find the matching close delimiter (last occurrence of close + dashes)
+    let content = inner.trim_end_matches('-');
+    let content = if content.ends_with(close) {
+        &content[..content.len() - 1]
+    } else {
+        content
+    };
+    let _ = open; // suppress unused warning
     Expr::String(content.to_string())
 }
 

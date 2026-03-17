@@ -56,8 +56,8 @@ expr = { help_expr }
 
 // "?" help operator (lowest precedence, unary or binary, can chain: ??x)
 help_expr = {
-      "?" ~ help_expr
-    | assign_eq_expr ~ ("?" ~ help_expr)?
+      "?" ~ GAP ~ help_expr
+    | assign_eq_expr ~ (GAP ~ "?" ~ GAP ~ help_expr)?
 }
 
 // "=" assignment (loosest, right-associative)
@@ -167,6 +167,10 @@ power_op = { "^" | "**" }
 // -------------------- postfix chains --------------------
 
 // Chains like: pkg::name$a()[[1]]@slot
+// NOTE: GAP here includes newlines, which means x\n(y) parses as a call.
+// This diverges from GNU R (which treats it as two expressions) but is
+// necessary for CRAN compatibility where paste\n(...) is common.
+// See reviews/parser-newline-continuation.md for the design decision.
 postfix_expr = {
     namespace_expr ~ (GAP ~ postfix_suffix)*
 }
@@ -350,29 +354,32 @@ sstring_char = _{ escape_seq | !("'"  | "\\") ~ ANY }
 escape_seq   = _{ "\\" ~ ANY }
 
 // Raw strings: R 4.0+ r"(...)" R"(...)" r'(...)' R'(...)'
-// Also supports alternate delimiters: r"[...]" r"{...}" r"---(...)"
+// Supports alternate delimiters: r"[...]" r"{...}"
+// Custom dash delimiters like r"---(...)---" are handled by the
+// raw_string_custom rule — the parser accepts any content between
+// the quote+open and close+quote, validated in the builder.
 raw_string = @{
       ("r" | "R") ~ "\"" ~ raw_dq_body ~ "\""
     | ("r" | "R") ~ "'"  ~ raw_sq_body ~ "'"
 }
 
 raw_dq_body = @{
-      "(" ~ raw_dq_paren_char* ~ ")"
-    | "[" ~ raw_dq_bracket_char* ~ "]"
-    | "{" ~ raw_dq_brace_char* ~ "}"
+      "-"* ~ "(" ~ raw_dq_paren_char* ~ ")" ~ "-"*
+    | "-"* ~ "[" ~ raw_dq_bracket_char* ~ "]" ~ "-"*
+    | "-"* ~ "{" ~ raw_dq_brace_char* ~ "}" ~ "-"*
 }
 raw_sq_body = @{
-      "(" ~ raw_sq_paren_char* ~ ")"
-    | "[" ~ raw_sq_bracket_char* ~ "]"
-    | "{" ~ raw_sq_brace_char* ~ "}"
+      "-"* ~ "(" ~ raw_sq_paren_char* ~ ")" ~ "-"*
+    | "-"* ~ "[" ~ raw_sq_bracket_char* ~ "]" ~ "-"*
+    | "-"* ~ "{" ~ raw_sq_brace_char* ~ "}" ~ "-"*
 }
 
-raw_dq_paren_char   = _{ !(")" ~ "\"") ~ ANY }
-raw_dq_bracket_char = _{ !("]" ~ "\"") ~ ANY }
-raw_dq_brace_char   = _{ !("}" ~ "\"") ~ ANY }
-raw_sq_paren_char   = _{ !(")" ~ "'") ~ ANY }
-raw_sq_bracket_char = _{ !("]" ~ "'") ~ ANY }
-raw_sq_brace_char   = _{ !("}" ~ "'") ~ ANY }
+raw_dq_paren_char   = _{ !(")" ~ "-"* ~ "\"") ~ ANY }
+raw_dq_bracket_char = _{ !("]" ~ "-"* ~ "\"") ~ ANY }
+raw_dq_brace_char   = _{ !("}" ~ "-"* ~ "\"") ~ ANY }
+raw_sq_paren_char   = _{ !(")" ~ "-"* ~ "'") ~ ANY }
+raw_sq_bracket_char = _{ !("]" ~ "-"* ~ "'") ~ ANY }
+raw_sq_brace_char   = _{ !("}" ~ "-"* ~ "'") ~ ANY }
 
 // -------------------- control flow --------------------
 
