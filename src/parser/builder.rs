@@ -8,10 +8,14 @@ use super::Rule;
 
 // region: Identifier helpers
 
+fn unescape_backtick_ident(s: &str) -> String {
+    s.replace("\\`", "`")
+}
+
 pub(super) fn parse_ident_str(pair: Pair<Rule>) -> String {
     let s = pair.as_str();
     if s.starts_with('`') && s.ends_with('`') {
-        s[1..s.len() - 1].to_string()
+        unescape_backtick_ident(&s[1..s.len() - 1])
     } else {
         s.to_string()
     }
@@ -20,7 +24,7 @@ pub(super) fn parse_ident_str(pair: Pair<Rule>) -> String {
 pub(super) fn parse_ident_or_string(pair: Pair<Rule>) -> String {
     let s = pair.as_str();
     if s.starts_with('`') && s.ends_with('`') {
-        s[1..s.len() - 1].to_string()
+        unescape_backtick_ident(&s[1..s.len() - 1])
     } else if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\''))
     {
         super::literals::unescape_string(&s[1..s.len() - 1])

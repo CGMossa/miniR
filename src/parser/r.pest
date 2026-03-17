@@ -24,7 +24,7 @@ program = {
 }
 
 expr_seq = {
-    expr ~ (LINESEP ~ GAP ~ expr)* ~ LINESEP?
+    expr? ~ (LINESEP ~ GAP ~ expr?)* ~ LINESEP?
 }
 
 // -------------------- expressions --------------------
@@ -105,7 +105,7 @@ and_op = { "&&" | "&" }
 
 // "!"
 not_expr = {
-      "!" ~ not_expr
+      "!" ~ GAP ~ not_expr
     | compare_expr
 }
 
@@ -150,8 +150,8 @@ colon_expr = {
 // expressions like !a == b → !(a == b). Adding it here too allows
 // a == !b → a == (!b), where !b appears inside a comparison operand.
 unary_expr = {
-      "!" ~ unary_expr
-    | unary_op ~ unary_expr
+      "!" ~ GAP ~ unary_expr
+    | unary_op ~ GAP ~ unary_expr
     | power_expr
 }
 unary_op = { "+" | !("->" | "->>") ~ "-" }
@@ -168,15 +168,15 @@ power_op = { "^" | "**" }
 
 // Chains like: pkg::name$a()[[1]]@slot
 postfix_expr = {
-    namespace_expr ~ postfix_suffix*
+    namespace_expr ~ (GAP ~ postfix_suffix)*
 }
 
 namespace_expr = {
-    primary_expr ~ namespace_suffix*
+    primary_expr ~ (GAP ~ namespace_suffix)*
 }
 
 namespace_suffix = {
-    namespace_op ~ (ident | string)
+    namespace_op ~ GAP ~ (ident | string)
 }
 
 namespace_op = @{ ":::" | "::" }
@@ -202,11 +202,11 @@ index2_suffix = {
 }
 
 dollar_suffix = {
-    "$" ~ (ident | string | dots)
+    "$" ~ GAP ~ (ident | string | dots)
 }
 
 slot_suffix = {
-    "@" ~ ident
+    "@" ~ GAP ~ ident
 }
 
 // -------------------- arguments --------------------
@@ -242,7 +242,7 @@ named_sub_arg = {
     arg_name ~ GAP ~ named_eq ~ GAP ~ expr?
 }
 
-arg_name = { dots | dotdot | ident | string }
+arg_name = { dots | dotdot | ident | string | keyword_constant }
 
 // -------------------- primary expressions --------------------
 
@@ -448,6 +448,7 @@ ident = @{
       backtick_ident
     | dotted_ident
     | plain_ident
+    | underscore_ident
 }
 
 plain_ident = @{
@@ -463,11 +464,16 @@ dotted_ident = @{
     ~ ident_rest*
 }
 
+underscore_ident = @{
+    "_" ~ !ident_rest
+}
+
 ident_rest = _{ ASCII_ALPHANUMERIC | "." | "_" }
 
 backtick_ident = @{
-    "`" ~ (!"`" ~ ANY)+ ~ "`"
+    "`" ~ backtick_char* ~ "`"
 }
+backtick_char = _{ "\\`" | !"`" ~ ANY }
 
 // Reserved word followed by word boundary (not an ident continuation char)
 reserved_word_boundary = @{

@@ -1,16 +1,6 @@
-cran/callr/R/r-session.R
-cran/diffobj/R/hunks.R
-cran/htmltools/R/tags.R
-cran/lattice/R/legend.R
-cran/pbkrtest/R/anovax.R
-cran/rlang/R/types.R
-cran/shiny/R/bind-cache.R
-cran/stats/R/logLik.R
-cran/stats/R/proj.R
 tests/Pkgs/PR17859.1/R/f2.R
 tests/Pkgs/PR17859.2/R/f2.R
 tests/Pkgs/PR17859.2/R/f3.R
-tests/reg-tests-1c.R
 tests/reg-tests-1e.R
 tests/reg-tests-2.R
 tests/utf8-regex.R
