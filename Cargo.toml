@@ -95,6 +95,10 @@ webpki-roots = { version = "0.26", optional = true }
 default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "arena"]
 
 logging = ["dep:env_logger"]
+miette = { version = "7", features = ["fancy-no-backtrace"], optional = true }
+
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "diagnostics"]
+diagnostics = ["dep:miette"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]

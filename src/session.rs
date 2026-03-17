@@ -19,12 +19,24 @@ pub struct EvalOutput {
 
 #[derive(Debug)]
 pub enum SessionError {
-    Parse(ParseError),
+    Parse(Box<ParseError>),
     Runtime(RFlow),
     CannotRead {
         path: String,
         source: std::io::Error,
     },
+}
+
+impl SessionError {
+    /// Render the error as a string. When the `diagnostics` feature is enabled,
+    /// parse errors are rendered using miette's graphical report handler with
+    /// source spans, colors, and suggestions.
+    pub fn render(&self) -> String {
+        match self {
+            SessionError::Parse(err) => err.render(),
+            other => format!("{}", other),
+        }
+    }
 }
 
 impl fmt::Display for SessionError {
