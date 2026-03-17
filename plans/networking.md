@@ -64,20 +64,20 @@ socket.send_to(data, addr)?;
 - Make `readBin()` / `writeBin()` work on sockets for binary data
 - `isOpen()`, `close()` work on socket connections
 
-### Phase 4: HTTP client (basic)
+### Phase 4: HTTP client (basic) -- DONE
 
-- `url(description)` — open HTTP connection
+- `url(description)` — open HTTP/HTTPS connection
 - Parse URL, connect via TCP, send HTTP/1.1 request
 - Read response headers and body
 - `download.file(url, destfile)` — GET + write to file
-- No HTTPS yet (needs TLS — openssl or rustls crate)
+- Implemented in `src/interpreter/builtins/net.rs`
 
-### Phase 5: HTTPS and TLS
+### Phase 5: HTTPS and TLS -- DONE
 
-- Add `rustls` or `openssl` crate for TLS
-- `url("https://...")` works
-- `download.file()` handles HTTPS
-- Feature-gated behind `tls` feature
+- Using `rustls` (pure Rust TLS) + `rustls-native-certs` (system certs) + `webpki-roots` (Mozilla roots fallback)
+- `url("https://...")` works — eagerly fetches response, supports `readLines()`
+- `download.file()` handles both HTTP and HTTPS
+- Feature-gated behind `tls` feature (NOT in default — heavy dep)
 
 ## Architecture
 
@@ -98,8 +98,7 @@ All socket state is per-interpreter (no global sockets).
 ## Dependencies
 
 - Phase 1-3: `std::net` only — no new crates needed
-- Phase 4: No new crates (raw HTTP/1.1 over TCP)
-- Phase 5: `rustls` or native-tls crate for HTTPS
+- Phase 4-5: `rustls` 0.23 + `rustls-native-certs` 0.8 + `webpki-roots` 0.26 (16 transitive deps total)
 
 ## First deliverable
 
