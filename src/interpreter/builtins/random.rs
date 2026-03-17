@@ -36,6 +36,9 @@ pub enum RandomError {
         pop_len
     )]
     SampleTooLarge { size: usize, pop_len: usize },
+
+    #[display("argument '{}' is missing, with no default", param)]
+    MissingParam { param: &'static str },
 }
 
 impl RandomError {
@@ -90,6 +93,30 @@ fn extract_param(
         .and_then(|v| v.as_vector())
         .and_then(|v| v.as_double_scalar())
         .unwrap_or(default)
+}
+
+/// Helper: extract a required named f64 parameter (no default), erroring if missing.
+fn require_param(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    name: &'static str,
+    positional_index: usize,
+) -> Result<f64, RandomError> {
+    // Check named args first
+    for (k, v) in named {
+        if k == name {
+            if let Some(rv) = v.as_vector() {
+                if let Some(d) = rv.as_double_scalar() {
+                    return Ok(d);
+                }
+            }
+        }
+    }
+    // Fall back to positional
+    args.get(positional_index)
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_double_scalar())
+        .ok_or(RandomError::MissingParam { param: name })
 }
 
 // region: set.seed
@@ -632,6 +659,248 @@ fn interp_sample(
     } else {
         Ok(RValue::vec(Vector::Integer(result.into())))
     }
+}
+
+// endregion
+
+// region: miniR extension distributions
+//
+// Distributions available via rand_distr that are NOT part of standard R.
+// These are miniR extensions, registered in the "collections" namespace.
+
+/// Random Frechet (Type II extreme value) deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The Frechet distribution models the maximum of many random variables.
+/// It is parameterised by shape `alpha`, scale `s`, and location `m`.
+///
+/// @param n number of observations
+/// @param alpha shape parameter (positive)
+/// @param s scale parameter (positive, default 1)
+/// @param m location parameter (default 0)
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 2, namespace = "collections")]
+fn interp_rfrechet(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let alpha = require_param(args, named, "alpha", 1)?;
+    let s = extract_param(args, named, "s", 2, 1.0);
+    let m = extract_param(args, named, "m", 3, 0.0);
+    // Frechet::new(location, scale, shape)
+    let dist = rand_distr::Frechet::new(m, s, alpha).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random Gumbel (Type I extreme value) deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The Gumbel distribution models the maximum (or minimum) of many samples.
+/// It is parameterised by location `mu` and scale `beta`.
+///
+/// @param n number of observations
+/// @param mu location parameter (default 0)
+/// @param beta scale parameter (positive, default 1)
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 1, namespace = "collections")]
+fn interp_rgumbel(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let mu = extract_param(args, named, "mu", 1, 0.0);
+    let beta = extract_param(args, named, "beta", 2, 1.0);
+    let dist = rand_distr::Gumbel::new(mu, beta).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random inverse Gaussian (Wald) deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The inverse Gaussian distribution is a continuous distribution defined for
+/// x > 0, parameterised by mean `mu` and shape `lambda`.
+///
+/// @param n number of observations
+/// @param mu mean parameter (positive)
+/// @param lambda shape parameter (positive)
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 3, namespace = "collections")]
+fn interp_rinvgauss(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let mu = require_param(args, named, "mu", 1)?;
+    let lambda = require_param(args, named, "lambda", 2)?;
+    let dist = rand_distr::InverseGaussian::new(mu, lambda).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random Pareto deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The Pareto distribution is a power-law distribution parameterised by
+/// scale (minimum value) and shape (tail index).
+///
+/// @param n number of observations
+/// @param scale scale parameter (positive, minimum value of the distribution)
+/// @param shape shape parameter (positive, controls tail heaviness)
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 3, namespace = "collections")]
+fn interp_rpareto(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let scale = require_param(args, named, "scale", 1)?;
+    let shape = require_param(args, named, "shape", 2)?;
+    let dist = rand_distr::Pareto::new(scale, shape).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random PERT deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The PERT distribution is similar to the triangular distribution but with
+/// a smooth (beta-shaped) PDF. It is parameterised by min, max, and mode.
+///
+/// @param n number of observations
+/// @param min minimum value
+/// @param max maximum value
+/// @param mode most likely value (must be in [min, max])
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 4, namespace = "collections")]
+fn interp_rpert(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let min = require_param(args, named, "min", 1)?;
+    let max = require_param(args, named, "max", 2)?;
+    let mode = require_param(args, named, "mode", 3)?;
+    let dist = rand_distr::Pert::new(min, max)
+        .with_mode(mode)
+        .map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random skew-normal deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The skew-normal distribution generalises the normal distribution to allow
+/// non-zero skewness. When shape = 0 it reduces to the normal distribution.
+///
+/// @param n number of observations
+/// @param location location parameter (default 0)
+/// @param scale scale parameter (positive, default 1)
+/// @param shape skewness parameter (default 0; 0 = normal)
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 1, namespace = "collections")]
+fn interp_rskewnorm(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let location = extract_param(args, named, "location", 1, 0.0);
+    let scale = extract_param(args, named, "scale", 2, 1.0);
+    let shape = extract_param(args, named, "shape", 3, 0.0);
+    let dist =
+        rand_distr::SkewNormal::new(location, scale, shape).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random triangular deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The triangular distribution has a piecewise linear PDF defined by min, max,
+/// and mode. For a smooth alternative, see `rpert()`.
+///
+/// @param n number of observations
+/// @param min minimum value
+/// @param max maximum value
+/// @param mode most likely value (must be in [min, max])
+/// @return numeric vector of length n
+#[interpreter_builtin(min_args = 4, namespace = "collections")]
+fn interp_rtriangular(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let min = require_param(args, named, "min", 1)?;
+    let max = require_param(args, named, "max", 2)?;
+    let mode = require_param(args, named, "mode", 3)?;
+    let dist = rand_distr::Triangular::new(min, max, mode).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
+}
+
+/// Random Zeta deviates.
+///
+/// **miniR extension** -- not available in base R.
+///
+/// The Zeta distribution is a discrete power-law distribution on positive
+/// integers. It is the limit of the Zipf distribution as n -> infinity.
+/// The parameter `s` must be strictly greater than 1.
+///
+/// @param n number of observations
+/// @param s shape parameter (must be > 1)
+/// @return numeric vector of length n (values are positive integers stored as doubles)
+#[interpreter_builtin(min_args = 2, namespace = "collections")]
+fn interp_rzeta(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let n = extract_n(args)?;
+    let s = require_param(args, named, "s", 1)?;
+    let dist = rand_distr::Zeta::new(s).map_err(RandomError::invalid_dist)?;
+    let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
+        let mut rng = interp.rng().borrow_mut();
+        (0..n).map(|_| Some(dist.sample(&mut *rng))).collect()
+    });
+    Ok(RValue::vec(Vector::Double(values.into())))
 }
 
 // endregion

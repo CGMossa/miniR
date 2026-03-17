@@ -1112,7 +1112,7 @@ fn builtin_capabilities(_args: &[RValue], _named: &[(String, RValue)]) -> Result
         ("libxml", false),
         ("fifo", cfg!(unix)),
         ("cledit", true),
-        ("iconv", false),
+        ("iconv", true),
         ("NLS", false),
         ("profmem", false),
         ("cairo", false),

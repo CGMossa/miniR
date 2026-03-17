@@ -60,11 +60,11 @@ ndarray = { version = "0.17", optional = true }
 csv = { version = "1.4", optional = true }
 itertools = "0.14.0"
 regex = "1"
-tabled = { version = "0.20", optional = true }
+tabled = { version = "0.20", optional = true, default-features = false, features = ["std"] }
 pest = "2.8"
 pest_derive = "2.8"
-rand = { version = "0.10.0", optional = true }
-rand_distr = { version = "0.6.0", optional = true }
+rand = { version = "0.10.0", optional = true, default-features = false, features = ["std", "thread_rng"] }
+rand_distr = { version = "0.6.0", optional = true, default-features = false, features = ["std"] }
 rayon = { version = "1", optional = true }
 nu-ansi-term = "0.50"
 reedline = { version = "0.46" }
@@ -72,22 +72,29 @@ temp-dir = "0.2.0"
 glob = "0.3"
 num-complex = "0.4"
 libm = "0.2"
-signal-hook = { version = "0.4.3", optional = true }
+signal-hook = { version = "0.4.3", optional = true, default-features = false }
 tabwriter = { version = "1", optional = true }
 unicode-segmentation = "1"
 unicode-width = "0.2"
 unicase = "2"
-jiff = { version = "0.2", optional = true }
+jiff = { version = "0.2", optional = true, default-features = false, features = ["std", "tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 sha2 = { version = "0.10", optional = true }
 dirs = { version = "6", optional = true }
 walkdir = { version = "2", optional = true }
-globset = { version = "0.4", optional = true }
+globset = { version = "0.4", optional = true, default-features = false }
 serde_json = {version = "1", optional = true}
-miette = { version = "7", features = ["fancy-no-backtrace"], optional = true }
+slotmap = { version = "1.0", optional = true }
+bstr = "1"
+log = "0.4"
+env_logger = { version = "0.11", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
+rustls-native-certs = { version = "0.8", optional = true }
+webpki-roots = { version = "0.26", optional = true }
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "diagnostics"]
-diagnostics = ["dep:miette"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "arena"]
+
+logging = ["dep:env_logger"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
@@ -100,4 +107,6 @@ signal = ["dep:signal-hook"]
 dirs-support = ["dep:dirs"]
 walkdir-support = ["dep:walkdir"]
 globset-support = ["dep:globset"]
+arena = ["dep:slotmap"]
+tls = ["dep:rustls", "dep:rustls-native-certs", "dep:webpki-roots"]
 parallel = ["dep:rayon"]
