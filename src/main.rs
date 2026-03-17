@@ -123,7 +123,13 @@ Type 'q()' to quit.
     let mut session = Session::new();
     let _ = session.install_signal_handler();
 
+    // Set initial terminal width
+    session.sync_terminal_width();
+
     loop {
+        // Refresh terminal width before each prompt (handles window resize)
+        session.sync_terminal_width();
+
         match line_editor.read_line(&prompt) {
             Ok(Signal::Success(buffer)) => match session.eval_source(&buffer) {
                 Ok(result) => {

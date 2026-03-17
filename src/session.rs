@@ -109,6 +109,28 @@ impl Session {
         &self.interpreter
     }
 
+    /// Set a per-interpreter R option (same effect as `options(name = value)` in R).
+    pub fn set_option(&self, name: &str, value: RValue) {
+        self.interpreter
+            .options
+            .borrow_mut()
+            .insert(name.to_string(), value);
+    }
+
+    /// Update `getOption("width")` to match the current terminal width.
+    /// Falls back to 80 columns if terminal size cannot be determined.
+    pub fn sync_terminal_width(&self) {
+        let cols = crossterm::terminal::size()
+            .map(|(c, _)| i64::from(c).clamp(10, 10000))
+            .unwrap_or(80);
+        self.set_option(
+            "width",
+            RValue::vec(crate::interpreter::value::Vector::Integer(
+                vec![Some(cols)].into(),
+            )),
+        );
+    }
+
     /// Return a clone of the interpreter's interrupt flag.
     /// The caller (or a signal handler) can set it to `true` to interrupt
     /// the current computation.

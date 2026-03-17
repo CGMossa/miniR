@@ -18,6 +18,7 @@ enum TokenKind {
     Number,
     Comment,
     Operator,
+    Bracket,
     Normal,
 }
 
@@ -30,6 +31,7 @@ impl TokenKind {
             TokenKind::Number => Style::new().fg(Color::Cyan),
             TokenKind::Comment => Style::new().italic().fg(Color::DarkGray),
             TokenKind::Operator => Style::new().fg(Color::Red),
+            TokenKind::Bracket => Style::new().bold(),
             TokenKind::Normal => Style::new(),
         }
     }
@@ -43,7 +45,7 @@ fn classify_word(word: &str) -> TokenKind {
     match word {
         // R keywords
         "if" | "else" | "for" | "while" | "repeat" | "function" | "return" | "next" | "break"
-        | "in" => TokenKind::Keyword,
+        | "in" | "library" | "require" => TokenKind::Keyword,
 
         // Literal constants
         "TRUE" | "FALSE" | "NULL" | "NA" | "NA_integer_" | "NA_real_" | "NA_complex_"
@@ -51,6 +53,40 @@ fn classify_word(word: &str) -> TokenKind {
 
         _ => TokenKind::Normal,
     }
+}
+
+// endregion
+
+// region: raw string detection
+
+/// Check if position `i` starts an R 4.0+ raw string like `r"(...)"`, `R"[...]"`,
+/// `r'(...)'`, `R'{...}'`, etc. Returns the closing delimiter char and the number
+/// of chars consumed for the prefix (e.g. `r"(` = 3 chars) if it matches.
+fn raw_string_prefix(chars: &[char], i: usize) -> Option<(char, usize)> {
+    let len = chars.len();
+    if i >= len {
+        return None;
+    }
+    let c = chars[i];
+    if c != 'r' && c != 'R' {
+        return None;
+    }
+    if i + 2 >= len {
+        return None;
+    }
+    let quote = chars[i + 1];
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let open = chars[i + 2];
+    let close = match open {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        _ => return None,
+    };
+    // The closing delimiter is: close_bracket followed by the matching quote
+    Some((close, 3))
 }
 
 // endregion
@@ -75,6 +111,26 @@ impl Highlighter for RHighlighter {
                 }
                 let text: String = chars[start..i].iter().collect();
                 styled.push((TokenKind::Comment.style(), text));
+                continue;
+            }
+
+            // R 4.0+ raw strings: r"(...)", R"[...]", r'{...}', etc.
+            // Must be checked before regular identifiers since 'r' and 'R' are valid
+            // identifier starts.
+            if let Some((close_bracket, prefix_len)) = raw_string_prefix(&chars, i) {
+                let start = i;
+                let quote = chars[i + 1];
+                i += prefix_len; // skip r"( or R"[ etc.
+                                 // Scan for close_bracket followed by matching quote
+                while i < len {
+                    if chars[i] == close_bracket && i + 1 < len && chars[i + 1] == quote {
+                        i += 2; // skip )' or }" etc.
+                        break;
+                    }
+                    i += 1;
+                }
+                let text: String = chars[start..i].iter().collect();
+                styled.push((TokenKind::String.style(), text));
                 continue;
             }
 
@@ -143,6 +199,13 @@ impl Highlighter for RHighlighter {
                 continue;
             }
 
+            // Lambda shorthand: \(x) x + 1
+            if c == '\\' && i + 1 < len && chars[i + 1] == '(' {
+                styled.push((TokenKind::Keyword.style(), "\\".to_string()));
+                i += 1;
+                continue;
+            }
+
             // Backtick-quoted identifiers
             if c == '`' {
                 let start = i;
@@ -164,7 +227,7 @@ impl Highlighter for RHighlighter {
                 match two.as_str() {
                     "<-" | "<<" | "->" | ">>" | "|>" | "||" | "&&" | "!=" | "==" | "<=" | ">="
                     | "%%" | "::" => {
-                        // Check for <<- and ->>
+                        // Check for <<- and ->> and :::
                         if i + 2 < len {
                             let three: String = chars[i..i + 3].iter().collect();
                             if three == "<<-" || three == "->>" || three == ":::" {
@@ -213,13 +276,21 @@ impl Highlighter for RHighlighter {
                     | ':'
                     | '$'
                     | '@'
+                    | '?'
             ) {
                 styled.push((TokenKind::Operator.style(), c.to_string()));
                 i += 1;
                 continue;
             }
 
-            // Everything else (whitespace, parens, brackets, commas, etc.)
+            // Brackets and parentheses — bold for visibility
+            if matches!(c, '(' | ')' | '[' | ']' | '{' | '}') {
+                styled.push((TokenKind::Bracket.style(), c.to_string()));
+                i += 1;
+                continue;
+            }
+
+            // Everything else (whitespace, commas, semicolons, etc.)
             styled.push((Style::new(), c.to_string()));
             i += 1;
         }
