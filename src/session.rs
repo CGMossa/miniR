@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use log::info;
+
 use crate::interpreter::value::{RFlow, RValue};
 use crate::interpreter::{with_interpreter_state, Interpreter};
 use crate::parser::ast::Expr;
@@ -79,6 +81,7 @@ impl Session {
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<EvalOutput, SessionError> {
         let path = path.as_ref();
+        info!("loading source: {}", path.display());
         let source = read_source(path)?;
         let ast = match parse_program(&source) {
             Ok(ast) => ast,
