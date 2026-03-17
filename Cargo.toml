@@ -56,6 +56,7 @@ derive_more = { version = "2.1", features = [
 ] }
 indexmap = "2"
 linkme = "0.3"
+nalgebra = { version = "0.34", optional = true, default-features = false, features = ["std"] }
 ndarray = { version = "0.17", optional = true }
 csv = { version = "1.4", optional = true }
 itertools = "0.14.0"
@@ -109,7 +110,7 @@ collections = []
 digest = ["dep:sha2"]
 json = ["dep:serde_json"]
 toml = ["dep:toml_edit"]
-linalg = ["dep:ndarray"]
+linalg = ["dep:ndarray", "dep:nalgebra"]
 tables = ["dep:tabled", "dep:tabwriter"]
 signal = ["dep:signal-hook"]
 dirs-support = ["dep:dirs"]
