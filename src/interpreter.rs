@@ -204,7 +204,11 @@ impl Interpreter {
             call_stack: RefCell::new(Vec::new()),
             condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
-            rng: RefCell::new(<rand::rngs::StdRng as rand::SeedableRng>::from_os_rng()),
+            rng: RefCell::new({
+                use rand::SeedableRng;
+                let mut thread_rng = rand::rng();
+                rand::rngs::StdRng::from_rng(&mut thread_rng)
+            }),
             temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
             temp_counter: std::cell::Cell::new(0),
             env_vars: RefCell::new(std::collections::HashMap::new()),

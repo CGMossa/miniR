@@ -2,7 +2,7 @@
 //! Uses the per-interpreter RNG state via `BuiltinContext`.
 
 use derive_more::{Display, Error};
-use rand::Rng;
+use rand::RngExt;
 use rand::SeedableRng;
 use rand_distr::Distribution;
 
