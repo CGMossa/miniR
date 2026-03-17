@@ -1,28 +1,15 @@
-//! Recursive parse-corpus check for every `.R` file under `tests/`.
+//! Recursive parse-corpus check for `.R` files under `tests/` plus `cran/**/R/`.
 //!
 //! Unlike the shell harness, this stays parse-only so it cannot hang on
 //! runtime behavior while still catching grammar regressions.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use r::parser::parse_program;
 
-/// Known parse failures in tests/ from GNU R's test suite.
-/// These use syntax we haven't implemented yet (e.g. R 4.1+ features).
-/// If this list shrinks, update the constant. If a new failure appears,
-/// the test fails — that's a regression.
-const KNOWN_PARSE_FAILURES: &[&str] = &[
-    "reg-tests-1a.R",
-    "reg-tests-1b.R",
-    "reg-tests-1c.R",
-    "reg-tests-1e.R",
-    "reg-tests-2.R",
-    "utf8-regex.R",
-    "Pkgs/PR17859.1/R/f2.R",
-    "Pkgs/PR17859.1/R/f3.R",
-    "Pkgs/PR17859.2/R/f2.R",
-    "Pkgs/PR17859.2/R/f3.R",
-];
+/// Known parse failures, stored as repo-relative paths one per line.
+const KNOWN_PARSE_FAILURES: &str = include_str!("parse_corpus_known_failures.txt");
 
 fn collect_r_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir).expect("failed to read test dir");
@@ -32,6 +19,20 @@ fn collect_r_files(dir: &Path, out: &mut Vec<PathBuf>) {
             collect_r_files(&path, out);
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("R") {
             out.push(path);
+        }
+    }
+}
+
+fn collect_cran_r_files(cran_dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries = std::fs::read_dir(cran_dir).expect("failed to read cran dir");
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if path.file_name().and_then(|name| name.to_str()) == Some("R") {
+                collect_r_files(&path, out);
+            } else {
+                collect_cran_r_files(&path, out);
+            }
         }
     }
 }
@@ -48,20 +49,33 @@ fn read_source(path: &Path) -> Result<String, std::io::Error> {
 
 #[test]
 fn test_corpus_parses_without_regressions() {
-    let test_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let test_dir = repo_root.join("tests");
+    let cran_dir = repo_root.join("cran");
 
     let mut files = Vec::new();
     collect_r_files(&test_dir, &mut files);
+    if cran_dir.is_dir() {
+        collect_cran_r_files(&cran_dir, &mut files);
+    }
     files.sort();
-    assert!(!files.is_empty(), "no .R files found in tests/");
+    assert!(
+        !files.is_empty(),
+        "no .R files found in tests/ or cran/**/R/"
+    );
 
     let mut passed = 0usize;
     let mut expected_failures = Vec::new();
     let mut unexpected_failures = Vec::new();
+    let known_failures: HashSet<&str> = KNOWN_PARSE_FAILURES
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
 
     for path in &files {
         let file = path
-            .strip_prefix(&test_dir)
+            .strip_prefix(repo_root)
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
@@ -73,12 +87,12 @@ fn test_corpus_parses_without_regressions() {
             Ok(()) => {
                 passed += 1;
                 // If this was a known failure that now passes, flag it
-                if KNOWN_PARSE_FAILURES.contains(&file.as_str()) {
+                if known_failures.contains(file.as_str()) {
                     eprintln!("  FIXED: {file} now parses (remove from KNOWN_PARSE_FAILURES)");
                 }
             }
             Err(_) => {
-                if KNOWN_PARSE_FAILURES.contains(&file.as_str()) {
+                if known_failures.contains(file.as_str()) {
                     expected_failures.push(file);
                 } else {
                     unexpected_failures.push(file);
