@@ -4372,3 +4372,194 @@ fn rapply_replace(
 }
 
 // endregion
+
+// region: Introspection — search path, namespace exploration, function lookup
+
+/// Return the search path as a character vector.
+///
+/// miniR has a flat two-level environment chain (base → global), so the
+/// search path is always `c(".GlobalEnv", "package:base")`.
+///
+/// @return character vector of environment names on the search path
+#[interpreter_builtin(name = "search")]
+fn interp_search(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Character(
+        vec![
+            Some(".GlobalEnv".to_string()),
+            Some("package:base".to_string()),
+        ]
+        .into(),
+    )))
+}
+
+/// List all loaded namespace names.
+///
+/// @return character vector of namespace names
+#[interpreter_builtin(name = "loadedNamespaces")]
+fn interp_loaded_namespaces(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let mut namespaces: Vec<String> = super::BUILTIN_REGISTRY
+        .iter()
+        .map(|d| d.namespace.to_string())
+        .filter(|ns| !ns.is_empty())
+        .collect();
+    namespaces.sort();
+    namespaces.dedup();
+    Ok(RValue::vec(Vector::Character(
+        namespaces.into_iter().map(Some).collect::<Vec<_>>().into(),
+    )))
+}
+
+/// Get exports from a namespace (list functions in a package).
+///
+/// @param ns character scalar: namespace name (e.g. "base", "stats", "utils")
+/// @return character vector of function names in that namespace
+/// @namespace base
+#[interpreter_builtin(name = "getNamespaceExports", min_args = 1)]
+fn interp_get_namespace_exports(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ns = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
+
+    let mut names: Vec<String> = super::BUILTIN_REGISTRY
+        .iter()
+        .filter(|d| d.namespace == ns)
+        .map(|d| d.name.to_string())
+        .collect();
+    names.sort();
+    Ok(RValue::vec(Vector::Character(
+        names.into_iter().map(Some).collect::<Vec<_>>().into(),
+    )))
+}
+
+/// Find which namespace a function belongs to.
+///
+/// @param what character scalar: function name to look up
+/// @return character vector of namespace names where the function is registered
+/// @namespace utils
+#[interpreter_builtin(name = "find", min_args = 1, namespace = "utils")]
+fn interp_find_on_search_path(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'what' argument".to_string()))?;
+
+    let mut found = Vec::new();
+
+    // Check builtin registry
+    for d in super::BUILTIN_REGISTRY.iter() {
+        if d.name == name {
+            let ns = if d.namespace.is_empty() {
+                "package:base"
+            } else {
+                d.namespace
+            };
+            found.push(format!("package:{ns}"));
+        }
+    }
+
+    // Check global env
+    if context.env().get(&name).is_some() {
+        found.push(".GlobalEnv".to_string());
+    }
+
+    found.dedup();
+    Ok(RValue::vec(Vector::Character(
+        found.into_iter().map(Some).collect::<Vec<_>>().into(),
+    )))
+}
+
+/// Get a namespace environment by name.
+///
+/// For miniR, this returns the base environment since all builtins live there.
+///
+/// @param ns character scalar: namespace name
+/// @return environment
+/// @namespace base
+#[interpreter_builtin(name = "getNamespace", min_args = 1)]
+fn interp_get_namespace(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let _ns = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
+
+    // All builtins live in the base env's parent
+    let env = context.env();
+    let mut current = env.clone();
+    while let Some(parent) = current.parent() {
+        current = parent;
+    }
+    Ok(RValue::Environment(current))
+}
+
+/// Check if a namespace is loaded.
+///
+/// @param ns character scalar: namespace name
+/// @return logical scalar
+/// @namespace base
+#[interpreter_builtin(name = "isNamespaceLoaded", min_args = 1)]
+fn interp_is_namespace_loaded(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ns = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
+
+    let exists = super::BUILTIN_REGISTRY.iter().any(|d| d.namespace == ns);
+    Ok(RValue::vec(Vector::Logical(vec![Some(exists)].into())))
+}
+
+/// Return the number of builtins registered, optionally filtered by namespace.
+///
+/// This is a miniR extension — not in GNU R. Useful for debugging.
+///
+/// @param ns optional character scalar: namespace to filter by
+/// @return integer scalar
+/// @namespace base
+#[interpreter_builtin(name = ".builtinCount")]
+fn interp_builtin_count(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ns_filter = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar());
+
+    let count = match ns_filter {
+        Some(ns) => super::BUILTIN_REGISTRY
+            .iter()
+            .filter(|d| d.namespace == ns)
+            .count(),
+        None => super::BUILTIN_REGISTRY.len(),
+    };
+
+    Ok(RValue::vec(Vector::Integer(
+        vec![Some(i64::try_from(count).unwrap_or(0))].into(),
+    )))
+}
+
+// endregion
