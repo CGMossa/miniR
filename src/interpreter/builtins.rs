@@ -29,6 +29,8 @@ pub mod system;
 mod tables;
 #[cfg(feature = "tables")]
 mod tables_display;
+#[cfg(feature = "toml")]
+mod toml;
 mod types;
 
 use unicode_width::UnicodeWidthStr;
