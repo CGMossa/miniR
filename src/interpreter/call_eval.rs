@@ -1,7 +1,5 @@
 //! Call evaluation and dispatch helpers used by the evaluator.
 
-use log::trace;
-
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::{BuiltinContext, Interpreter};
@@ -97,12 +95,6 @@ pub(crate) fn call_function_with_call(
             min_args,
             max_args,
         }) => {
-            trace!(
-                "call builtin: {}({} positional, {} named)",
-                name,
-                positional.len(),
-                named.len()
-            );
             let actual_args = positional.len() + named.len();
             Interpreter::ensure_builtin_min_arity(name, *min_args, actual_args)
                 .map_err(RFlow::from)?;
@@ -120,26 +112,18 @@ pub(crate) fn call_function_with_call(
             params,
             body,
             env: closure_env,
-        }) => {
-            trace!(
-                "call closure({} params, {} positional, {} named)",
-                params.len(),
-                positional.len(),
-                named.len()
-            );
-            call_closure(
-                interp,
-                ClosureCall {
-                    func,
-                    params,
-                    body,
-                    closure_env,
-                    positional,
-                    named,
-                    call_expr,
-                },
-            )
-        }
+        }) => call_closure(
+            interp,
+            ClosureCall {
+                func,
+                params,
+                body,
+                closure_env,
+                positional,
+                named,
+                call_expr,
+            },
+        ),
         _ => Err(RError::new(
             RErrorKind::Type,
             "attempt to apply non-function".to_string(),

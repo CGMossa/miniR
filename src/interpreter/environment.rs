@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use itertools::Itertools;
-use log::trace;
 
 use crate::interpreter::value::RValue;
 use crate::parser::ast::Expr;
@@ -42,10 +41,6 @@ impl Environment {
     }
 
     pub fn new_child(parent: &Environment) -> Self {
-        trace!(
-            "new child env (parent: {})",
-            parent.name().as_deref().unwrap_or("<anonymous>")
-        );
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {
                 bindings: HashMap::new(),

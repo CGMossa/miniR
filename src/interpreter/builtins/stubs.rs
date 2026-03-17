@@ -27,13 +27,7 @@ stub_builtin!("installed.packages");
 stub_builtin!("install.packages");
 
 // Connections (file, open, close, isOpen, readLines, writeLines — connections.rs)
-// url() is implemented in net.rs (with tls feature) or stubbed below without it
-#[cfg(not(feature = "tls"))]
-stub_builtin!(
-    "url",
-    1,
-    "url() requires the 'tls' feature — rebuild miniR with --features tls"
-);
+stub_builtin!("url", 1);
 
 // Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
 stub_builtin!("arity", 1);
