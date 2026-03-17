@@ -398,6 +398,10 @@ fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 ///
 /// @param path character scalar: directory path (default ".")
 /// @param pattern character scalar: regex pattern to filter file names
+/// @param recursive logical: if TRUE, recurse into subdirectories (default FALSE).
+///   When the `walkdir-support` feature is enabled, uses walkdir for efficient
+///   recursive traversal.
+/// @param full.names logical: if TRUE, return full paths (default FALSE)
 /// @return character vector of matching file names (sorted)
 #[builtin(name = "list.files", names = ["dir"])]
 fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -411,6 +415,18 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         .find(|(n, _)| n == "pattern")
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
 
+    let recursive = named
+        .iter()
+        .find(|(n, _)| n == "recursive")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let full_names = named
+        .iter()
+        .find(|(n, _)| n == "full.names")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
     let regex = match &pattern {
         Some(pat) => Some(regex::Regex::new(pat).map_err(|source| -> RError {
             super::strings::StringError::InvalidRegex { source }.into()
@@ -418,8 +434,23 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
         None => None,
     };
 
-    let entries = fs::read_dir(&path).map_err(|source| SystemError::ReadDir {
-        path: path.clone(),
+    let result = if recursive {
+        list_files_recursive(&path, &regex, full_names)?
+    } else {
+        list_files_flat(&path, &regex, full_names)?
+    };
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Non-recursive directory listing.
+fn list_files_flat(
+    path: &str,
+    regex: &Option<regex::Regex>,
+    full_names: bool,
+) -> Result<Vec<Option<String>>, RError> {
+    let entries = fs::read_dir(path).map_err(|source| SystemError::ReadDir {
+        path: path.to_string(),
         source,
     })?;
 
@@ -432,12 +463,111 @@ fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
                     return None;
                 }
             }
-            Some(name)
+            if full_names {
+                Some(entry.path().to_string_lossy().to_string())
+            } else {
+                Some(name)
+            }
         })
         .sorted()
         .map(Some)
         .collect();
-    Ok(RValue::vec(Vector::Character(result.into())))
+    Ok(result)
+}
+
+/// Recursive directory listing using walkdir (when available) or std::fs fallback.
+#[cfg(feature = "walkdir-support")]
+fn list_files_recursive(
+    path: &str,
+    regex: &Option<regex::Regex>,
+    full_names: bool,
+) -> Result<Vec<Option<String>>, RError> {
+    let base = Path::new(path);
+    let result: Vec<Option<String>> = walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(ref re) = regex {
+                if !re.is_match(&name) {
+                    return None;
+                }
+            }
+            if full_names {
+                Some(entry.path().to_string_lossy().to_string())
+            } else {
+                // Return path relative to the base directory
+                entry
+                    .path()
+                    .strip_prefix(base)
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+            }
+        })
+        .sorted()
+        .map(Some)
+        .collect();
+    Ok(result)
+}
+
+/// Recursive directory listing fallback without walkdir.
+#[cfg(not(feature = "walkdir-support"))]
+fn list_files_recursive(
+    path: &str,
+    regex: &Option<regex::Regex>,
+    full_names: bool,
+) -> Result<Vec<Option<String>>, RError> {
+    let mut result: Vec<String> = Vec::new();
+    list_files_recursive_fallback(
+        Path::new(path),
+        Path::new(path),
+        regex,
+        full_names,
+        &mut result,
+    )?;
+    result.sort();
+    Ok(result.into_iter().map(Some).collect())
+}
+
+#[cfg(not(feature = "walkdir-support"))]
+fn list_files_recursive_fallback(
+    base: &Path,
+    dir: &Path,
+    regex: &Option<regex::Regex>,
+    full_names: bool,
+    out: &mut Vec<String>,
+) -> Result<(), RError> {
+    let entries = fs::read_dir(dir).map_err(|source| SystemError::ReadDir {
+        path: dir.to_string_lossy().to_string(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+        let entry_path = entry.path();
+
+        if entry_path.is_dir() {
+            list_files_recursive_fallback(base, &entry_path, regex, full_names, out)?;
+        } else {
+            if let Some(ref re) = regex {
+                if !re.is_match(&name) {
+                    continue;
+                }
+            }
+            if full_names {
+                out.push(entry_path.to_string_lossy().to_string());
+            } else {
+                if let Ok(rel) = entry_path.strip_prefix(base) {
+                    out.push(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 // === Temp paths ===
@@ -502,6 +632,11 @@ fn interp_tempfile(
 
 /// Expand file system glob patterns to matching paths.
 ///
+/// Uses the `glob` crate for file-system expansion. When `globset-support` is
+/// enabled, pattern validation is done via `globset` for better error messages,
+/// though actual path enumeration still goes through `glob::glob()` since
+/// globset is a pattern matcher, not a directory walker.
+///
 /// @param ... character scalars: glob patterns (e.g. "*.R", "src/**/*.rs")
 /// @return character vector of matching file paths
 #[builtin(name = "Sys.glob", min_args = 1)]
@@ -513,6 +648,17 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 
     let mut results: Vec<Option<String>> = Vec::new();
     for pattern in &patterns {
+        // Validate the pattern with globset when available, for better errors
+        #[cfg(feature = "globset-support")]
+        {
+            if let Err(e) = globset::Glob::new(pattern) {
+                return Err(RError::other(format!(
+                    "invalid glob pattern '{}': {}",
+                    pattern, e
+                )));
+            }
+        }
+
         match glob::glob(pattern) {
             Ok(paths) => {
                 for path in paths.flatten() {
@@ -580,6 +726,10 @@ fn builtin_normalize_path(args: &[RValue], named: &[(String, RValue)]) -> Result
 
 /// Expand a tilde (~) prefix in a file path to the user's home directory.
 ///
+/// Uses `dirs::home_dir()` (when the `dirs-support` feature is enabled) for
+/// robust, cross-platform home directory detection, falling back to $HOME /
+/// %USERPROFILE% environment variables.
+///
 /// @param path character scalar: path possibly starting with ~
 /// @return character scalar: the expanded path
 #[builtin(name = "path.expand", min_args = 1)]
@@ -595,9 +745,10 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
         })?;
 
     let expanded = if path.starts_with('~') {
-        match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-            Ok(home) => path.replacen('~', &home, 1),
-            Err(_) => path,
+        let home = home_dir_string();
+        match home {
+            Some(h) => path.replacen('~', &h, 1),
+            None => path,
         }
     } else {
         path
@@ -605,6 +756,80 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 
     Ok(RValue::vec(Vector::Character(vec![Some(expanded)].into())))
 }
+
+/// Resolve the user's home directory, preferring `dirs::home_dir()` when
+/// the `dirs-support` feature is enabled, falling back to environment variables.
+fn home_dir_string() -> Option<String> {
+    #[cfg(feature = "dirs-support")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return Some(home.to_string_lossy().to_string());
+        }
+    }
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+}
+
+// region: R.home / .libPaths
+
+/// Return the miniR "home" directory (data directory for miniR resources).
+///
+/// Uses `dirs::data_dir()` to find a platform-appropriate location, e.g.
+/// `~/Library/Application Support/miniR` on macOS, `~/.local/share/miniR`
+/// on Linux, `%APPDATA%/miniR` on Windows.
+///
+/// @param component character scalar: optional sub-path within R home (default "")
+/// @return character scalar: the miniR home directory path
+#[builtin(name = "R.home")]
+fn builtin_r_home(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let component = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    let base = minir_data_dir();
+    let result = if component.is_empty() {
+        base
+    } else {
+        Path::new(&base)
+            .join(&component)
+            .to_string_lossy()
+            .to_string()
+    };
+
+    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
+}
+
+/// Compute the miniR data directory path.
+fn minir_data_dir() -> String {
+    #[cfg(feature = "dirs-support")]
+    {
+        if let Some(data) = dirs::data_dir() {
+            return data.join("miniR").to_string_lossy().to_string();
+        }
+    }
+    // Fallback: ~/.miniR
+    home_dir_string()
+        .map(|h| format!("{}/.miniR", h))
+        .unwrap_or_else(|| "/tmp/miniR".to_string())
+}
+
+/// Return the library search paths for package installation.
+///
+/// miniR does not yet have a full package system, but many CRAN packages
+/// call `.libPaths()` to discover where packages live. This returns a
+/// character vector with the miniR library directory.
+///
+/// @param new character vector: if provided, sets new library paths (currently ignored)
+/// @return character vector of library search paths
+#[builtin(name = ".libPaths")]
+fn builtin_lib_paths(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let lib_dir = format!("{}/library", minir_data_dir());
+    Ok(RValue::vec(Vector::Character(vec![Some(lib_dir)].into())))
+}
+
+// endregion
 
 // === System operations ===
 
