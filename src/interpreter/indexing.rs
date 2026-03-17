@@ -881,7 +881,7 @@ pub(super) fn eval_index_double(
 }
 
 /// Extract a single element from an RVector at `idx` (0-based).
-fn extract_vector_element(v: &RVector, idx: usize) -> RValue {
+pub fn extract_vector_element(v: &RVector, idx: usize) -> RValue {
     match &v.inner {
         Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[idx]])),
         Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[idx]].into())),

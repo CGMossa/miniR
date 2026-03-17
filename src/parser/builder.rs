@@ -752,7 +752,7 @@ fn build_arg_list(pair: Pair<Rule>) -> Vec<Arg> {
                     name: None,
                     value: None,
                 }, // empty arg
-                Some(arg_pair) => build_arg(arg_pair),
+                Some(arg_pair) => build_arg_or_sub(arg_pair),
             }
         })
         .collect()
@@ -767,46 +767,20 @@ fn build_sub_list(pair: Pair<Rule>) -> Vec<Arg> {
                     name: None,
                     value: None,
                 }, // empty slot
-                Some(sub_pair) => build_sub_arg(sub_pair),
+                Some(sub_pair) => build_arg_or_sub(sub_pair),
             }
         })
         .collect()
 }
 
-fn build_arg(pair: Pair<Rule>) -> Arg {
-    match pair.as_rule() {
-        Rule::arg => {
-            let inner_pair = pair.into_inner().next().unwrap();
-            match inner_pair.as_rule() {
-                Rule::named_arg => build_named_arg(inner_pair),
-                _ => Arg {
-                    name: None,
-                    value: Some(build_expr(inner_pair)),
-                },
-            }
-        }
+/// Shared logic for both call args and index args — structurally identical.
+fn build_arg_or_sub(pair: Pair<Rule>) -> Arg {
+    let inner_pair = pair.into_inner().next().unwrap();
+    match inner_pair.as_rule() {
+        Rule::named_arg | Rule::named_sub_arg => build_named_arg(inner_pair),
         _ => Arg {
             name: None,
-            value: Some(build_expr(pair)),
-        },
-    }
-}
-
-fn build_sub_arg(pair: Pair<Rule>) -> Arg {
-    match pair.as_rule() {
-        Rule::sub_arg => {
-            let inner_pair = pair.into_inner().next().unwrap();
-            match inner_pair.as_rule() {
-                Rule::named_sub_arg => build_named_arg(inner_pair),
-                _ => Arg {
-                    name: None,
-                    value: Some(build_expr(inner_pair)),
-                },
-            }
-        }
-        _ => Arg {
-            name: None,
-            value: Some(build_expr(pair)),
+            value: Some(build_expr(inner_pair)),
         },
     }
 }

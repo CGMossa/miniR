@@ -390,7 +390,7 @@ while_expr = {
 }
 
 repeat_expr = {
-    kw_repeat ~ expr
+    kw_repeat ~ GAP ~ expr
 }
 
 break_expr  = @{ "break" ~ !ident_rest }

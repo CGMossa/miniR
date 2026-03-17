@@ -328,6 +328,137 @@ pub fn register_builtins(env: &Environment) {
             ),
         ])),
     );
+
+    // Primitive operators as callable functions (e.g. lapply(x, `[[`, "name"))
+    register_operator_builtins(env);
+}
+
+/// Register R's primitive operators as first-class callable functions.
+///
+/// In R, operators like `[[`, `[`, `+`, `-` etc. can be passed as function
+/// arguments using backtick-quoting: `lapply(x, \`[[\`, "name")`.
+fn register_operator_builtins(env: &Environment) {
+    use crate::interpreter::value::*;
+
+    // `[[` — extract single element
+    env.set(
+        "[[".to_string(),
+        RValue::Function(RFunction::Builtin {
+            name: "[[".to_string(),
+            implementation: BuiltinImplementation::Eager(|args, _| {
+                if args.len() < 2 {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "`[[` requires 2 arguments".to_string(),
+                    ));
+                }
+                let obj = &args[0];
+                let idx = &args[1];
+                match obj {
+                    RValue::List(list) => match idx {
+                        RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                            let name = rv.inner.as_character_scalar().unwrap_or_default();
+                            for (n, v) in &list.values {
+                                if n.as_deref() == Some(&name) {
+                                    return Ok(v.clone());
+                                }
+                            }
+                            Ok(RValue::Null)
+                        }
+                        RValue::Vector(v) => {
+                            let i = v.as_integer_scalar().unwrap_or(0) as usize;
+                            if i > 0 && i <= list.values.len() {
+                                Ok(list.values[i - 1].1.clone())
+                            } else {
+                                Ok(RValue::Null)
+                            }
+                        }
+                        _ => Ok(RValue::Null),
+                    },
+                    RValue::Vector(v) => match idx {
+                        RValue::Vector(idx_rv)
+                            if matches!(idx_rv.inner, Vector::Character(_)) =>
+                        {
+                            let name = idx_rv.inner.as_character_scalar().unwrap_or_default();
+                            if let Some(names_attr) = v.get_attr("names") {
+                                if let Some(names_vec) = names_attr.as_vector() {
+                                    let name_strs = names_vec.to_characters();
+                                    for (j, n) in name_strs.iter().enumerate() {
+                                        if n.as_deref() == Some(name.as_str()) && j < v.len() {
+                                            return Ok(
+                                                crate::interpreter::indexing::extract_vector_element(
+                                                    v, j,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(RValue::Null)
+                        }
+                        RValue::Vector(idx_rv) => {
+                            let i = idx_rv.as_integer_scalar().unwrap_or(0) as usize;
+                            if i > 0 && i <= v.len() {
+                                Ok(crate::interpreter::indexing::extract_vector_element(v, i - 1))
+                            } else {
+                                Ok(RValue::Null)
+                            }
+                        }
+                        _ => Ok(RValue::Null),
+                    },
+                    _ => Err(RError::other("object of type 'closure' is not subsettable".to_string())),
+                }
+            }),
+            min_args: 2,
+            max_args: None,
+        }),
+    );
+
+    // `[` — subset
+    env.set(
+        "[".to_string(),
+        RValue::Function(RFunction::Builtin {
+            name: "[".to_string(),
+            implementation: BuiltinImplementation::Eager(|args, _| {
+                if args.is_empty() {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "`[` requires at least 1 argument".to_string(),
+                    ));
+                }
+                if args.len() == 1 {
+                    return Ok(args[0].clone());
+                }
+                // Delegate to the indexing machinery via a simplified path
+                // For now, support the common case: vector[index]
+                match (&args[0], &args[1]) {
+                    (RValue::Vector(v), RValue::Vector(idx)) => {
+                        let i = idx.as_integer_scalar().unwrap_or(0) as usize;
+                        if i > 0 && i <= v.len() {
+                            Ok(crate::interpreter::indexing::extract_vector_element(
+                                v,
+                                i - 1,
+                            ))
+                        } else {
+                            Ok(RValue::Null)
+                        }
+                    }
+                    (RValue::List(list), RValue::Vector(idx)) => {
+                        let i = idx.as_integer_scalar().unwrap_or(0) as usize;
+                        if i > 0 && i <= list.values.len() {
+                            let (name, val) = &list.values[i - 1];
+                            Ok(RValue::List(RList::new(vec![(name.clone(), val.clone())])))
+                        } else {
+                            Ok(RValue::Null)
+                        }
+                    }
+                    _ => Ok(RValue::Null),
+                }
+            }),
+            min_args: 1,
+            max_args: None,
+        }),
+    );
 }
 
 #[cfg(test)]
