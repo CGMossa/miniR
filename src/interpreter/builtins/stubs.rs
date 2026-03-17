@@ -15,7 +15,7 @@ use minir_macros::stub_builtin;
 
 // Factors & tables (factor, levels, nlevels, table, tabulate — builtins.rs)
 
-// Function tools (Recall — stub with informative error, see builtins.rs)
+// Function tools (Recall — implemented in interp.rs)
 
 // Error handling (withCallingHandlers — pre_eval.rs; condition constructors — builtins.rs)
 
@@ -35,5 +35,5 @@ stub_builtin!(
     "url() requires the 'tls' feature — rebuild miniR with --features tls"
 );
 
-// Metaprogramming (call, body, formals, args, Recall — builtins.rs; expression — pre_eval.rs)
+// Metaprogramming (call, body, formals, args — builtins.rs; Recall — interp.rs; expression — pre_eval.rs)
 stub_builtin!("arity", 1);

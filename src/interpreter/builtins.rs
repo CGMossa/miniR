@@ -4067,15 +4067,7 @@ fn builtin_use_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 
 // `expression()` is a pre-eval builtin — see builtins/pre_eval.rs
 
-/// `Recall(...)` — recursive self-call. Requires a call stack to know the current
-/// function. Not yet implemented since we don't track a call stack.
-#[builtin(name = "Recall")]
-fn builtin_recall(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Err(RError::other(
-        "Recall() is not yet available — it requires call stack tracking, which is not yet implemented. \
-         As a workaround, give your function a name and call it directly for recursion.",
-    ))
-}
+// `Recall(...)` is an interpreter builtin — see builtins/interp.rs
 
 // region: locale, gc, debugging stubs
 

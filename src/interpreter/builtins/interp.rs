@@ -1776,6 +1776,35 @@ fn interp_nargs(
     })
 }
 
+/// Recursively call the current function with new arguments.
+///
+/// `Recall(...)` finds the currently executing user function from the call stack
+/// and calls it again with the supplied arguments. This is useful for anonymous
+/// recursive functions that don't have a name to call themselves by.
+///
+/// @param ... arguments to pass to the recursive call
+/// @return the result of calling the current function with the new arguments
+#[interpreter_builtin(name = "Recall")]
+fn interp_recall(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+    context.with_interpreter(|interp| {
+        let frame = interp.current_call_frame().ok_or_else(|| {
+            RError::other(
+                "Recall() called from outside a function. \
+                 Recall() can only be used inside a function body to recursively \
+                 call the current function.",
+            )
+        })?;
+        interp
+            .call_function(&frame.function, positional, named, env)
+            .map_err(RError::from)
+    })
+}
+
 /// Get the environment of the parent (calling) frame.
 ///
 /// @param n number of generations to go back (default 1)
