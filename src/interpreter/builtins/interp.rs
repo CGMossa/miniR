@@ -4555,39 +4555,47 @@ fn rapply_replace(
 
 /// Return the search path as a character vector.
 ///
-/// miniR has a flat two-level environment chain (base → global), so the
-/// search path is always `c(".GlobalEnv", "package:base")`.
+/// The search path represents the order in which environments are searched
+/// for names: .GlobalEnv -> attached packages -> package:base.
 ///
 /// @return character vector of environment names on the search path
 #[interpreter_builtin(name = "search")]
 fn interp_search(
     _args: &[RValue],
     _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let path = context.with_interpreter(|interp| interp.get_search_path());
     Ok(RValue::vec(Vector::Character(
-        vec![
-            Some(".GlobalEnv".to_string()),
-            Some("package:base".to_string()),
-        ]
-        .into(),
+        path.into_iter().map(Some).collect::<Vec<_>>().into(),
     )))
 }
 
 /// List all loaded namespace names.
+///
+/// Returns names of all namespaces that have been loaded (via library(),
+/// loadNamespace(), etc.), plus builtin namespaces.
 ///
 /// @return character vector of namespace names
 #[interpreter_builtin(name = "loadedNamespaces")]
 fn interp_loaded_namespaces(
     _args: &[RValue],
     _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let mut namespaces: Vec<String> = super::BUILTIN_REGISTRY
         .iter()
         .map(|d| d.namespace.to_string())
         .filter(|ns| !ns.is_empty())
         .collect();
+
+    // Add loaded package namespaces
+    context.with_interpreter(|interp| {
+        for name in interp.loaded_namespaces.borrow().keys() {
+            namespaces.push(name.clone());
+        }
+    });
+
     namespaces.sort();
     namespaces.dedup();
     Ok(RValue::vec(Vector::Character(
@@ -4604,13 +4612,30 @@ fn interp_loaded_namespaces(
 fn interp_get_namespace_exports(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let ns = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
 
+    // Check loaded packages first
+    let loaded_exports = context.with_interpreter(|interp| {
+        interp
+            .loaded_namespaces
+            .borrow()
+            .get(&ns)
+            .map(|loaded| loaded.exports_env.ls())
+    });
+
+    if let Some(mut names) = loaded_exports {
+        names.sort();
+        return Ok(RValue::vec(Vector::Character(
+            names.into_iter().map(Some).collect::<Vec<_>>().into(),
+        )));
+    }
+
+    // Fall back to builtin registry
     let mut names: Vec<String> = super::BUILTIN_REGISTRY
         .iter()
         .filter(|d| d.namespace == ns)
@@ -4640,21 +4665,26 @@ fn interp_find_on_search_path(
 
     let mut found = Vec::new();
 
-    // Check builtin registry
-    for d in super::BUILTIN_REGISTRY.iter() {
-        if d.name == name {
-            let ns = if d.namespace.is_empty() {
-                "package:base"
-            } else {
-                d.namespace
-            };
-            found.push(format!("package:{ns}"));
-        }
-    }
-
     // Check global env
     if context.env().get(&name).is_some() {
         found.push(".GlobalEnv".to_string());
+    }
+
+    // Check loaded packages on search path
+    context.with_interpreter(|interp| {
+        for entry in interp.search_path.borrow().iter() {
+            if entry.env.has_local(&name) {
+                found.push(entry.name.clone());
+            }
+        }
+    });
+
+    // Check builtin registry
+    for d in super::BUILTIN_REGISTRY.iter() {
+        if d.name == name {
+            found.push("package:base".to_string());
+            break;
+        }
     }
 
     found.dedup();
@@ -4665,7 +4695,8 @@ fn interp_find_on_search_path(
 
 /// Get a namespace environment by name.
 ///
-/// For miniR, this returns the base environment since all builtins live there.
+/// Returns the namespace environment for a loaded package, or the base
+/// environment for builtin namespaces.
 ///
 /// @param ns character scalar: namespace name
 /// @return environment
@@ -4676,18 +4707,27 @@ fn interp_get_namespace(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let _ns = args
+    let ns = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
 
-    // All builtins live in the base env's parent
-    let env = context.env();
-    let mut current = env.clone();
-    while let Some(parent) = current.parent() {
-        current = parent;
+    // Check loaded packages first
+    let loaded_ns = context.with_interpreter(|interp| {
+        interp
+            .loaded_namespaces
+            .borrow()
+            .get(&ns)
+            .map(|loaded| loaded.namespace_env.clone())
+    });
+
+    if let Some(env) = loaded_ns {
+        return Ok(RValue::Environment(env));
     }
-    Ok(RValue::Environment(current))
+
+    // Fall back to base env for builtin namespaces
+    let env = context.with_interpreter(|interp| interp.base_env());
+    Ok(RValue::Environment(env))
 }
 
 /// Check if a namespace is loaded.
@@ -4699,13 +4739,22 @@ fn interp_get_namespace(
 fn interp_is_namespace_loaded(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let ns = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
 
+    // Check loaded packages
+    let loaded =
+        context.with_interpreter(|interp| interp.loaded_namespaces.borrow().contains_key(&ns));
+
+    if loaded {
+        return Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())));
+    }
+
+    // Fall back to builtin registry
     let exists = super::BUILTIN_REGISTRY.iter().any(|d| d.namespace == ns);
     Ok(RValue::vec(Vector::Logical(vec![Some(exists)].into())))
 }

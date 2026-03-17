@@ -21,8 +21,7 @@ use minir_macros::stub_builtin;
 
 // File I/O (scan — builtins.rs)
 // Package management
-stub_builtin!("loadNamespace", 1);
-stub_builtin!("requireNamespace", 1);
+// loadNamespace and requireNamespace are now in builtins.rs (interpreter builtins)
 stub_builtin!("installed.packages");
 stub_builtin!("install.packages");
 

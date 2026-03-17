@@ -114,8 +114,39 @@ impl Interpreter {
             _ => "",
         };
 
-        // Check builtin registry for namespace::name
         if !ns_name.is_empty() {
+            // Check loaded package namespaces first (for pkg::name resolution)
+            {
+                let loaded = self.loaded_namespaces.borrow();
+                if let Some(ns) = loaded.get(ns_name) {
+                    // For :: use exports env, for ::: use namespace env
+                    // (both NsGet and NsGetInt come through here; NsGetInt
+                    // is internal access but we don't distinguish yet)
+                    if let Some(val) = ns.exports_env.get(name) {
+                        return Ok(val);
+                    }
+                    if let Some(val) = ns.namespace_env.get(name) {
+                        return Ok(val);
+                    }
+                }
+            }
+
+            // Try to auto-load the namespace if not loaded yet
+            if self.find_package_dir(ns_name).is_some() {
+                if let Ok(_ns_env) = self.load_namespace(ns_name) {
+                    let loaded = self.loaded_namespaces.borrow();
+                    if let Some(ns) = loaded.get(ns_name) {
+                        if let Some(val) = ns.exports_env.get(name) {
+                            return Ok(val);
+                        }
+                        if let Some(val) = ns.namespace_env.get(name) {
+                            return Ok(val);
+                        }
+                    }
+                }
+            }
+
+            // Check builtin registry for namespace::name
             if let Some(descriptor) = crate::interpreter::builtins::find_builtin_ns(ns_name, name) {
                 return Ok(RValue::Function(RFunction::Builtin {
                     name: descriptor.name.to_string(),

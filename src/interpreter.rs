@@ -143,7 +143,6 @@ pub struct Interpreter {
     /// Rd documentation help index for package `man/` directories.
     pub(crate) rd_help_index: RefCell<packages::rd::RdHelpIndex>,
     /// Visibility flag — set to `true` by `invisible()` to suppress auto-printing
-    /// of the return value. Reset to `false` before each top-level eval.
     pub(crate) last_value_invisible: std::cell::Cell<bool>,
     /// S4 class registry: class name -> class definition.
     pub(crate) s4_classes: RefCell<std::collections::HashMap<String, S4ClassDef>>,
@@ -151,6 +150,11 @@ pub struct Interpreter {
     pub(crate) s4_generics: RefCell<std::collections::HashMap<String, S4GenericDef>>,
     /// S4 method dispatch table: (generic, signature) -> method function.
     pub(crate) s4_methods: RefCell<std::collections::HashMap<S4MethodKey, value::RValue>>,
+    /// Loaded package namespaces, keyed by package name.
+    pub(crate) loaded_namespaces:
+        RefCell<std::collections::HashMap<String, packages::LoadedNamespace>>,
+    /// Search path entries (between .GlobalEnv and package:base).
+    pub(crate) search_path: RefCell<Vec<packages::SearchPathEntry>>,
 }
 
 /// S4 class definition stored in the per-interpreter class registry.
@@ -283,6 +287,8 @@ impl Interpreter {
             s4_classes: RefCell::new(std::collections::HashMap::new()),
             s4_generics: RefCell::new(std::collections::HashMap::new()),
             s4_methods: RefCell::new(std::collections::HashMap::new()),
+            loaded_namespaces: RefCell::new(std::collections::HashMap::new()),
+            search_path: RefCell::new(Vec::new()),
         }
     }
 

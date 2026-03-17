@@ -1,25 +1,26 @@
-//! Package metadata parsing for DESCRIPTION, NAMESPACE, and Rd files.
+//! Package metadata parsing and runtime loading.
 //!
-//! This module provides parsers for R's package metadata formats:
+//! This module provides:
 //!
-//! - **DESCRIPTION** uses Debian Control File (DCF) format: `Field: Value` with
-//!   continuation lines (indented with whitespace). We extract the fields needed
-//!   for dependency resolution and package identity.
+//! - **DESCRIPTION parser** (`description.rs`): Debian Control File format for
+//!   package metadata (name, version, dependencies).
 //!
-//! - **NAMESPACE** uses a simple directive-based DSL with function-call syntax:
-//!   `export(foo)`, `importFrom(pkg, sym)`, `S3method(generic, class)`, etc.
+//! - **NAMESPACE parser** (`namespace.rs`): directive-based DSL for exports,
+//!   imports, and S3 method registrations.
 //!
-//! - **Rd** (R documentation) is a LaTeX-like format used in package `man/`
-//!   directories. The parser extracts metadata and section content for `help()`
-//!   lookup and example extraction.
+//! - **Rd parser** (`rd.rs`): LaTeX-like format used in package `man/`
+//!   directories for `help()` lookup and example extraction.
 //!
-//! This is pure parsing infrastructure — no package loading or environment
-//! creation happens here.
+//! - **Package loader** (`loader.rs`): runtime package loading — discovers
+//!   packages on `.libPaths()`, creates namespace/exports environments, sources
+//!   R files, and manages the search path.
 
 pub mod description;
+pub mod loader;
 pub mod namespace;
 pub mod rd;
 
 pub use description::PackageDescription;
+pub use loader::{LoadedNamespace, SearchPathEntry};
 pub use namespace::PackageNamespace;
 pub use rd::{RdDoc, RdHelpIndex};

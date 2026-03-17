@@ -2615,24 +2615,184 @@ fn interp_sys_getenv(
 
 // (file.path, file.exists, readLines, writeLines, read.csv, write.csv — io.rs)
 
-/// Load a package (stub).
+/// Load and attach a package.
 ///
-/// Prints a warning that the package is not available and returns FALSE.
-/// Also aliased as `library`.
+/// Searches .libPaths() for the package directory, parses DESCRIPTION and
+/// NAMESPACE, creates a namespace environment, sources all R/*.R files,
+/// registers exports, and attaches the package to the search path.
+///
+/// @param package name of the package to load (character or symbol)
+/// @return the package name (invisibly), or errors if package not found
+#[interpreter_builtin(name = "library", min_args = 1)]
+fn interp_library(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Extract package name — R accepts both quoted strings and bare symbols
+    let pkg = extract_package_name(args, named)?;
+
+    context.with_interpreter(|interp| {
+        // Load namespace (creates env, sources R files, etc.)
+        interp.load_namespace(&pkg)?;
+        // Attach to search path
+        interp.attach_package(&pkg)?;
+        Ok(RValue::vec(Vector::Character(vec![Some(pkg)].into())))
+    })
+}
+
+/// Load a package if available, returning TRUE/FALSE instead of erroring.
+///
+/// Like library(), but returns FALSE instead of raising an error if the
+/// package is not found. When quietly = TRUE, suppresses the warning message.
 ///
 /// @param package name of the package to load
-/// @return logical FALSE
-#[builtin(name = "require", min_args = 1, names = ["library"])]
-fn builtin_require_stub(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+/// @param quietly logical: suppress messages?
+/// @return logical: TRUE if package was loaded, FALSE otherwise
+#[interpreter_builtin(name = "require", min_args = 1)]
+fn interp_require(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = extract_package_name(args, named)?;
+    let quietly = named
+        .iter()
+        .find(|(n, _)| n == "quietly")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    context.with_interpreter(|interp| match interp.load_namespace(&pkg) {
+        Ok(_) => {
+            let _ = interp.attach_package(&pkg);
+            Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+        }
+        Err(_) => {
+            if !quietly {
+                eprintln!("Warning message:\nthere is no package called '{}'", pkg);
+            }
+            Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+        }
+    })
+}
+
+/// Extract the package name from library/require arguments.
+///
+/// R accepts both `library("pkg")` and `library(pkg)` (unquoted symbol).
+/// Since we receive post-evaluation values, bare symbols have already been
+/// resolved. The name must come as a character scalar.
+fn extract_package_name(args: &[RValue], named: &[(String, RValue)]) -> Result<String, RError> {
+    // Check named 'package' argument first
+    let val = named
+        .iter()
+        .find(|(n, _)| n == "package")
+        .map(|(_, v)| v)
+        .or_else(|| args.first());
+
+    match val {
+        Some(v) => v
+            .as_vector()
+            .and_then(|v| v.as_character_scalar())
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "invalid package name — expected a character string".to_string(),
+                )
+            }),
+        None => Err(RError::new(
+            RErrorKind::Argument,
+            "argument 'package' is missing".to_string(),
+        )),
+    }
+}
+
+/// Load a package namespace without attaching it to the search path.
+///
+/// Creates the namespace environment, sources all R files, and registers
+/// exports, but does not add the package to the search path. This is the
+/// mechanism underlying `library()` and `::` resolution.
+///
+/// @param package character scalar: the package name
+/// @return the namespace environment
+#[interpreter_builtin(name = "loadNamespace", min_args = 1)]
+fn interp_load_namespace(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let pkg = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    eprintln!(
-        "Warning: package '{}' is not available in this R implementation",
-        pkg
-    );
-    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid package name".to_string()))?;
+
+    let env = context.with_interpreter(|interp| interp.load_namespace(&pkg))?;
+    Ok(RValue::Environment(env))
+}
+
+/// Check if a namespace can be loaded, returning TRUE/FALSE.
+///
+/// Like loadNamespace(), but returns TRUE/FALSE instead of raising an error.
+/// Useful for conditional logic that depends on package availability.
+///
+/// @param package character scalar: the package name
+/// @param quietly logical: suppress messages? (default TRUE)
+/// @return logical: TRUE if the namespace could be loaded
+#[interpreter_builtin(name = "requireNamespace", min_args = 1)]
+fn interp_require_namespace(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid package name".to_string()))?;
+
+    let quietly = named
+        .iter()
+        .find(|(n, _)| n == "quietly")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let result = context.with_interpreter(|interp| interp.load_namespace(&pkg));
+    match result {
+        Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
+        Err(_) => {
+            if !quietly {
+                eprintln!("Warning message:\nthere is no package called '{}'", pkg);
+            }
+            Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+        }
+    }
+}
+
+/// Detach a package from the search path.
+///
+/// @param name the search path entry to detach (e.g. "package:dplyr")
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "detach", min_args = 1)]
+fn interp_detach(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let name = named
+        .iter()
+        .find(|(n, _)| n == "name")
+        .map(|(_, v)| v)
+        .or_else(|| args.first())
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'name' argument".to_string()))?;
+
+    // If user said just "dplyr", prefix with "package:"
+    let entry_name = if name.starts_with("package:") {
+        name
+    } else {
+        format!("package:{}", name)
+    };
+
+    context.with_interpreter(|interp| interp.detach_package(&entry_name))?;
+    Ok(RValue::Null)
 }
 
 /// Get the version of the R implementation.
