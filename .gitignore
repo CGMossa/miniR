@@ -2,3 +2,4 @@
 /cran
 .cargo/config.toml
 vendor/
+.claude/worktrees/
