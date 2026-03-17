@@ -879,6 +879,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signal-hook 0.4.3",
+ "slotmap",
  "tabled",
  "tabwriter",
  "temp-dir",
@@ -1171,6 +1172,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "slotmap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]

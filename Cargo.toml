@@ -83,9 +83,10 @@ dirs = { version = "6", optional = true }
 walkdir = { version = "2", optional = true }
 globset = { version = "0.4", optional = true, default-features = false }
 serde_json = {version = "1", optional = true}
+slotmap = { version = "1.0", optional = true }
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "arena"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
@@ -98,4 +99,5 @@ signal = ["dep:signal-hook"]
 dirs-support = ["dep:dirs"]
 walkdir-support = ["dep:walkdir"]
 globset-support = ["dep:globset"]
+arena = ["dep:slotmap"]
 parallel = ["dep:rayon"]
