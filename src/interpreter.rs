@@ -140,6 +140,8 @@ pub struct Interpreter {
     interrupted: Arc<AtomicBool>,
     /// Per-interpreter R options (accessed via `options()` and `getOption()`).
     pub(crate) options: RefCell<std::collections::HashMap<String, value::RValue>>,
+    /// Rd documentation help index for package `man/` directories.
+    pub(crate) rd_help_index: RefCell<packages::rd::RdHelpIndex>,
 }
 
 impl Default for Interpreter {
@@ -245,7 +247,15 @@ impl Interpreter {
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),
             options: RefCell::new(Self::default_options()),
+            rd_help_index: RefCell::new(packages::rd::RdHelpIndex::new()),
         }
+    }
+
+    /// Index all `.Rd` files in a package's `man/` directory for `help()` lookup.
+    pub fn index_package_help(&self, package_name: &str, man_dir: &std::path::Path) {
+        self.rd_help_index
+            .borrow_mut()
+            .index_package_dir(package_name, man_dir);
     }
 
     /// Return a clone of the interrupt flag so the SIGINT handler can set it.
