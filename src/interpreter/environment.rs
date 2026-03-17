@@ -13,8 +13,15 @@ pub struct Environment {
     inner: Rc<RefCell<EnvInner>>,
 }
 
+impl Environment {
+    /// Check if two environments are the same object (pointer equality).
+    pub fn ptr_eq(&self, other: &Environment) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
 #[derive(Debug)]
-struct EnvInner {
+pub(crate) struct EnvInner {
     bindings: HashMap<String, RValue>,
     parent: Option<Environment>,
     #[allow(dead_code)]

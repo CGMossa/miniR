@@ -344,7 +344,7 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             };
             let result: Vec<Option<bool>> = vals
                 .iter()
-                .map(|s| Some(s.as_ref().map(|s| re.is_match(s)).unwrap_or(false)))
+                .map(|s| s.as_ref().map(|s| re.is_match(s)))
                 .collect();
             Ok(RValue::vec(Vector::Logical(result.into())))
         }
@@ -2922,6 +2922,187 @@ fn builtin_strwrap(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
             .collect();
         Ok(RValue::List(RList::new(list_vals)))
     }
+}
+
+// endregion
+
+// region: CRAN-compat string builtins (toString, gettext, type.convert, locale)
+
+/// Collapse a vector into a single comma-separated string.
+///
+/// @param x vector to collapse
+/// @param sep separator (default ", ")
+/// @return character scalar
+/// @namespace base
+#[builtin(name = "toString", min_args = 1)]
+fn builtin_to_string(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
+    let sep = call_args
+        .optional_string("sep", 1)
+        .unwrap_or_else(|| ", ".to_string());
+
+    let chars = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_characters(),
+        Some(RValue::Null) => Vec::new(),
+        Some(RValue::List(l)) => l
+            .values
+            .iter()
+            .map(|(_, v)| v.as_vector().and_then(|vec| vec.as_character_scalar()))
+            .collect(),
+        _ => vec![],
+    };
+
+    let parts: Vec<String> = chars.into_iter().flatten().collect();
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(parts.join(&sep))].into(),
+    )))
+}
+
+/// Translate a message (i18n stub — returns the message unchanged).
+///
+/// @param ... character strings to return
+/// @param domain translation domain (ignored)
+/// @return character vector
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_gettext(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Stub: just return the first argument unchanged
+    match args.first() {
+        Some(v) => Ok(v.clone()),
+        None => Ok(RValue::vec(Vector::Character(
+            vec![Some(String::new())].into(),
+        ))),
+    }
+}
+
+/// Translate a message with singular/plural forms (i18n stub).
+///
+/// @param n count for plural selection
+/// @param msg1 singular message
+/// @param msg2 plural message
+/// @return character scalar
+/// @namespace base
+#[builtin(min_args = 3)]
+fn builtin_ngettext(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let n = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1);
+    let msg = if n == 1 { args.get(1) } else { args.get(2) };
+    match msg {
+        Some(v) => Ok(v.clone()),
+        None => Ok(RValue::vec(Vector::Character(
+            vec![Some(String::new())].into(),
+        ))),
+    }
+}
+
+/// Format and translate a message (i18n stub — delegates to sprintf).
+///
+/// @param fmt format string
+/// @param ... format arguments
+/// @return character scalar
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_gettextf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Delegate to sprintf
+    builtin_sprintf(args, named)
+}
+
+/// Auto-convert character vector to appropriate type.
+///
+/// @param x character vector to convert
+/// @param as.is if TRUE, don't convert to factor (default TRUE in miniR)
+/// @return converted vector (numeric, integer, logical, or character)
+/// @namespace utils
+#[builtin(name = "type.convert", min_args = 1)]
+fn builtin_type_convert(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let chars = match args.first() {
+        Some(RValue::Vector(rv)) => rv.to_characters(),
+        _ => return Ok(args.first().cloned().unwrap_or(RValue::Null)),
+    };
+
+    // Try logical first
+    let all_logical = chars
+        .iter()
+        .all(|c| matches!(c.as_deref(), Some("TRUE" | "FALSE" | "T" | "F") | None));
+    if all_logical && !chars.is_empty() {
+        let vals: Vec<Option<bool>> = chars
+            .iter()
+            .map(|c| match c.as_deref() {
+                Some("TRUE") | Some("T") => Some(true),
+                Some("FALSE") | Some("F") => Some(false),
+                _ => None,
+            })
+            .collect();
+        return Ok(RValue::vec(Vector::Logical(vals.into())));
+    }
+
+    // Try integer
+    let all_int = chars.iter().all(|c| match c {
+        None => true,
+        Some(s) => s.parse::<i64>().is_ok(),
+    });
+    if all_int && !chars.is_empty() {
+        let vals: Vec<Option<i64>> = chars
+            .iter()
+            .map(|c| match c {
+                None => None,
+                Some(s) => s.parse::<i64>().ok(),
+            })
+            .collect();
+        return Ok(RValue::vec(Vector::Integer(vals.into())));
+    }
+
+    // Try double
+    let all_double = chars.iter().all(|c| match c {
+        None => true,
+        Some(s) => s.parse::<f64>().is_ok() || s == "NA" || s == "NaN" || s == "Inf" || s == "-Inf",
+    });
+    if all_double && !chars.is_empty() {
+        let vals: Vec<Option<f64>> = chars
+            .iter()
+            .map(|c| match c {
+                None => None,
+                Some(s) => match s.as_str() {
+                    "NA" => None,
+                    "NaN" => Some(f64::NAN),
+                    "Inf" => Some(f64::INFINITY),
+                    "-Inf" => Some(f64::NEG_INFINITY),
+                    _ => s.parse::<f64>().ok(),
+                },
+            })
+            .collect();
+        return Ok(RValue::vec(Vector::Double(vals.into())));
+    }
+
+    // Keep as character
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+/// Get the current locale setting (stub — returns "C" locale).
+///
+/// @param category locale category (default "LC_ALL")
+/// @return character scalar with locale name
+/// @namespace base
+#[builtin(name = "Sys.getlocale", min_args = 0)]
+fn builtin_sys_getlocale(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Character(
+        vec![Some("C".to_string())].into(),
+    )))
+}
+
+/// Set the locale (stub — accepts but ignores the setting).
+///
+/// @param category locale category
+/// @param locale locale string
+/// @return character scalar with previous locale
+/// @namespace base
+#[builtin(name = "Sys.setlocale", min_args = 0)]
+fn builtin_sys_setlocale(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Character(
+        vec![Some("C".to_string())].into(),
+    )))
 }
 
 // endregion
