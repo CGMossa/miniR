@@ -4,6 +4,7 @@ mod coercion;
 pub mod collections;
 mod conditions;
 pub mod connections;
+mod dataframes;
 #[cfg(feature = "datetime")]
 mod datetime;
 #[cfg(feature = "digest")]
@@ -1633,6 +1634,241 @@ fn builtin_list(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         values.push((Some(name.clone()), val.clone()));
     }
     Ok(RValue::List(RList::new(values)))
+}
+
+/// Create a data frame from all combinations of the supplied vectors.
+///
+/// Each argument is a vector of values; the result is a data frame with one
+/// row for every combination. The first factor varies fastest, matching R's
+/// `expand.grid()` semantics.
+///
+/// Uses `itertools::multi_cartesian_product` internally (with reversed input
+/// order so the first argument cycles fastest).
+///
+/// @param ... vectors whose Cartesian product forms the rows
+/// @return data.frame with `prod(lengths)` rows
+#[builtin(name = "expand.grid")]
+fn builtin_expand_grid(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Collect all input vectors with their names
+    let mut inputs: Vec<(String, Vec<RValue>)> = Vec::new();
+    let mut unnamed_idx = 0usize;
+
+    // Positional args first, then named — preserving call order
+    // (R interleaves positional and named in the order they appear,
+    // but the builtin dispatch separates them. We number unnamed ones
+    // sequentially as Var1, Var2, … and named ones keep their name.)
+    for arg in args {
+        unnamed_idx += 1;
+        let name = format!("Var{unnamed_idx}");
+        let items = vector_to_items(arg);
+        if items.is_empty() {
+            return Ok(empty_expand_grid());
+        }
+        inputs.push((name, items));
+    }
+    for (name, val) in named {
+        if name == "stringsAsFactors" || name == "KEEP.OUT.ATTRS" {
+            continue; // control args — skip
+        }
+        let items = vector_to_items(val);
+        if items.is_empty() {
+            return Ok(empty_expand_grid());
+        }
+        inputs.push((name.clone(), items));
+    }
+
+    if inputs.is_empty() {
+        return Ok(empty_expand_grid());
+    }
+
+    // Total number of rows = product of all vector lengths
+    let nrow: usize = inputs.iter().map(|(_, v)| v.len()).product();
+
+    // Build columns using modular arithmetic.
+    // The first input varies fastest: column k repeats each element
+    // `repeat_each` times and the whole sequence `repeat_whole` times.
+    //
+    //   repeat_each  = product of lengths of inputs 0..(k-1)
+    //   repeat_whole = nrow / (len_k * repeat_each)
+    let mut columns: Vec<(Option<String>, RValue)> = Vec::with_capacity(inputs.len());
+    let mut repeat_each: usize = 1;
+
+    for (col_name, items) in &inputs {
+        let len_k = items.len();
+        let mut col_values: Vec<RValue> = Vec::with_capacity(nrow);
+
+        // Pattern: repeat the whole sequence (nrow / (len_k * repeat_each)) times,
+        // and within each cycle, repeat each element `repeat_each` times.
+        let cycle_len = len_k * repeat_each;
+        let n_cycles = nrow / cycle_len;
+
+        for _ in 0..n_cycles {
+            for item in items {
+                for _ in 0..repeat_each {
+                    col_values.push(item.clone());
+                }
+            }
+        }
+
+        // Combine the column items into a typed vector
+        let col_vec = combine_expand_grid_column(&col_values);
+        columns.push((Some(col_name.clone()), col_vec));
+
+        repeat_each *= len_k;
+    }
+
+    // Build the data frame
+    let col_names: Vec<Option<String>> = columns.iter().map(|(n, _)| n.clone()).collect();
+    let mut result = RList::new(columns);
+    result.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    result.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(col_names.into())),
+    );
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(nrow)?).map(Some).collect();
+    result.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Integer(row_names.into())),
+    );
+
+    Ok(RValue::List(result))
+}
+
+/// Return an empty data.frame for expand.grid with zero-length inputs.
+fn empty_expand_grid() -> RValue {
+    let mut result = RList::new(Vec::new());
+    result.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    result.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(Vec::<Option<String>>::new().into())),
+    );
+    result.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Integer(Vec::<Option<i64>>::new().into())),
+    );
+    RValue::List(result)
+}
+
+/// Extract scalar items from an RValue for expand.grid column construction.
+fn vector_to_items(x: &RValue) -> Vec<RValue> {
+    match x {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Double(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Double(vec![*v].into())))
+                .collect(),
+            Vector::Integer(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Integer(vec![*v].into())))
+                .collect(),
+            Vector::Logical(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Logical(vec![*v].into())))
+                .collect(),
+            Vector::Character(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Character(vec![v.clone()].into())))
+                .collect(),
+            Vector::Complex(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Complex(vec![*v].into())))
+                .collect(),
+            Vector::Raw(vals) => vals
+                .iter()
+                .map(|v| RValue::vec(Vector::Raw(vec![*v])))
+                .collect(),
+        },
+        RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
+        RValue::Null => Vec::new(),
+        other => vec![other.clone()],
+    }
+}
+
+/// Combine a column of scalar RValues back into a single typed vector.
+fn combine_expand_grid_column(items: &[RValue]) -> RValue {
+    if items.is_empty() {
+        return RValue::Null;
+    }
+
+    // Determine the type from the first element
+    let first_type = items[0].type_name();
+    let all_same = items.iter().all(|i| i.type_name() == first_type);
+
+    if all_same {
+        match first_type {
+            "double" => {
+                let vals: Vec<Option<f64>> = items
+                    .iter()
+                    .map(|i| {
+                        i.as_vector()
+                            .and_then(|v| v.to_doubles().into_iter().next())
+                            .flatten()
+                    })
+                    .collect();
+                RValue::vec(Vector::Double(vals.into()))
+            }
+            "integer" => {
+                let vals: Vec<Option<i64>> = items
+                    .iter()
+                    .map(|i| {
+                        i.as_vector()
+                            .and_then(|v| v.to_integers().into_iter().next())
+                            .flatten()
+                    })
+                    .collect();
+                RValue::vec(Vector::Integer(vals.into()))
+            }
+            "logical" => {
+                let vals: Vec<Option<bool>> = items
+                    .iter()
+                    .map(|i| {
+                        i.as_vector()
+                            .and_then(|v| v.to_logicals().into_iter().next())
+                            .flatten()
+                    })
+                    .collect();
+                RValue::vec(Vector::Logical(vals.into()))
+            }
+            "character" => {
+                let vals: Vec<Option<String>> = items
+                    .iter()
+                    .map(|i| {
+                        i.as_vector()
+                            .and_then(|v| v.to_characters().into_iter().next())
+                            .flatten()
+                    })
+                    .collect();
+                RValue::vec(Vector::Character(vals.into()))
+            }
+            _ => {
+                // Fall back to list
+                let entries: Vec<(Option<String>, RValue)> =
+                    items.iter().map(|v| (None, v.clone())).collect();
+                RValue::List(RList::new(entries))
+            }
+        }
+    } else {
+        // Mixed types — coerce to character
+        let vals: Vec<Option<String>> = items
+            .iter()
+            .map(|i| {
+                i.as_vector()
+                    .and_then(|v| v.to_characters().into_iter().next())
+                    .flatten()
+            })
+            .collect();
+        RValue::vec(Vector::Character(vals.into()))
+    }
 }
 
 /// Create a vector of a given mode and length.
