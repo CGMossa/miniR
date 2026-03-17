@@ -68,6 +68,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 - `cargo test` — primary test command, runs all Rust integration tests
 - `cargo clippy --all-targets --all-features -- -D warnings` — must pass with zero warnings
+- **Every new feature should have tests planned** — either `stopifnot` assertions via `Session::eval_source` in a Rust integration test, or direct value checks via the Session API. Tests don't have to land in the same commit, but they should be planned and tracked. If an agent produces code without tests, note what needs coverage.
 - `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
 - `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
 - `tests/parse_corpus.rs` — runs all .R files through Session API, asserts no regressions
@@ -113,7 +114,8 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 ## Code Quality
 
-- Before committing, always run: `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings), and `cargo test`
+- Before committing, always run in this order: `cargo fmt`, then `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings), then `cargo test` — fmt must run first so clippy reports correct line numbers
+- **No "pre-existing" warnings** — if you encounter a warning or error, fix it. There is no such thing as a pre-existing issue that can be ignored. Every warning is a bug to be fixed, not a known issue to be documented.
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 - **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
 - **Prefer `From`/`TryFrom` over `as` casts** — use `TryFrom` and `From` trait conversions instead of `as`-casts; propagate the error rather than silently truncating or wrapping
@@ -134,6 +136,8 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - After adding a new dependency, run `cargo tree -p <dep>` to discover its transitive dependencies that might be useful for the interpreter, and write plans for any relevant ones
 - Use `just vendor` to re-vendor — never run `cargo vendor` directly (the `justfile` preserves README.md and writes .cargo/config.toml)
 - The vendor directory uses an absolute path in `.cargo/config.toml` — this is required because subagents and worktrees run from different working directories
+- **Adding new dependencies**: `.cargo/config.toml` replaces crates-io with the vendor dir, so `cargo add` and `cargo update` fail for new crates. Workaround: (1) add the dep to `Cargo.toml` manually, (2) temporarily `mv .cargo/config.toml .cargo/config.toml.bak`, (3) run `cargo update`, (4) `mv .cargo/config.toml.bak .cargo/config.toml`, (5) `just vendor-force` to vendor the new crate
+- **Cargo.lock merge conflicts**: When `Cargo.lock` has merge conflicts, don't try to resolve them manually — delete it and run `cargo generate-lockfile` to regenerate from scratch, then re-vendor
 
 ## Tool Rules
 
