@@ -80,36 +80,58 @@ fn convert_replacement(repl: &str) -> String {
     result
 }
 
-/// Extract a substring from a character string.
+/// Extract substrings from character strings.
 ///
-/// @param x character string to extract from
-/// @param start integer starting position (1-indexed)
-/// @param stop integer ending position (inclusive)
-/// @return character scalar containing the substring
+/// Vectorized over x, start, and stop with recycling.
+///
+/// @param x character vector to extract from
+/// @param start integer vector of starting positions (1-indexed)
+/// @param stop integer vector of ending positions (inclusive)
+/// @return character vector containing the substrings
 #[builtin(min_args = 3, names = ["substring"])]
 fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let s = args
+    let x_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
-    let start = usize::try_from(
-        args.get(1)
-            .and_then(|v| v.as_vector()?.as_integer_scalar())
-            .unwrap_or(1),
-    )?;
-    let default_stop = i64::try_from(s.len())?;
-    let stop = usize::try_from(
-        args.get(2)
-            .and_then(|v| v.as_vector()?.as_integer_scalar())
-            .unwrap_or(default_stop),
-    )?;
-    let start = start.saturating_sub(1); // R is 1-indexed
-    let result = if start < s.len() {
-        s[start..stop.min(s.len())].to_string()
-    } else {
-        String::new()
-    };
-    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
+    let start_vec = args
+        .get(1)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .unwrap_or_else(|| vec![Some(1)]);
+    let stop_vec = args
+        .get(2)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .unwrap_or_default();
+
+    if x_vec.is_empty() {
+        return Ok(RValue::vec(Vector::Character(vec![].into())));
+    }
+
+    let n = x_vec.len().max(start_vec.len()).max(stop_vec.len());
+    let result: Vec<Option<String>> = (0..n)
+        .map(|i| {
+            let s_opt = &x_vec[i % x_vec.len()];
+            let start_opt = start_vec[i % start_vec.len()];
+            let stop_opt = stop_vec[i % stop_vec.len()];
+            match (s_opt, start_opt, stop_opt) {
+                (Some(s), Some(start), Some(stop)) => {
+                    let start = usize::try_from(start).unwrap_or(0);
+                    let stop = usize::try_from(stop).unwrap_or(0);
+                    let start = start.saturating_sub(1); // R is 1-indexed
+                    if start < s.len() {
+                        Some(s[start..stop.min(s.len())].to_string())
+                    } else {
+                        Some(String::new())
+                    }
+                }
+                (None, _, _) | (_, None, _) | (_, _, None) => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Convert strings to upper case.
@@ -1199,18 +1221,21 @@ fn builtin_sprintf(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 
 // format() is in interp.rs (S3-dispatching interpreter builtin)
 
-/// Split a string by a pattern or fixed delimiter.
+/// Split strings by a pattern or fixed delimiter.
 ///
-/// @param x character scalar to split
+/// Vectorized over x: returns a list with one element per input string.
+///
+/// @param x character vector to split
 /// @param split character scalar: pattern or fixed string to split on
 /// @param fixed logical: if TRUE, split is a literal string
 /// @param ignore.case logical: if TRUE, matching is case-insensitive
-/// @return list containing a character vector of the split pieces
+/// @return list of character vectors, one per input string
 #[builtin(min_args = 2)]
 fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let s = args
+    let x_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
     let split = args
         .get(1)
@@ -1218,33 +1243,44 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    let parts: Vec<(Option<String>, RValue)> = if split.is_empty() {
-        // Empty split: split into individual characters (same for fixed and regex)
-        s.chars()
-            .map(|c| {
-                (
-                    None,
-                    RValue::vec(Vector::Character(vec![Some(c.to_string())].into())),
-                )
-            })
-            .collect()
-    } else if fixed && !ignore_case {
-        // Fixed literal split (no regex), case-sensitive
-        vec![(
-            None,
-            RValue::vec(Vector::Character(
-                s.split(&split)
-                    .map(|p| Some(p.to_string()))
-                    .collect::<Vec<_>>()
-                    .into(),
-            )),
-        )]
+    // Pre-compile regex once if needed
+    let re = if !split.is_empty() && (!fixed || ignore_case) {
+        Some(build_regex(&split, fixed, ignore_case)?)
     } else {
-        // Regex split (or fixed with ignore.case, which uses regex::escape)
-        let re = build_regex(&split, fixed, ignore_case)?;
-        let pieces: Vec<Option<String>> = re.split(&s).map(|p| Some(p.to_string())).collect();
-        vec![(None, RValue::vec(Vector::Character(pieces.into())))]
+        None
     };
+
+    let parts: Vec<(Option<String>, RValue)> = x_vec
+        .into_iter()
+        .map(|s_opt| {
+            let elem = match s_opt {
+                None => RValue::vec(Vector::Character(vec![None].into())),
+                Some(s) => {
+                    if split.is_empty() {
+                        // Empty split: split into individual characters
+                        let chars: Vec<Option<String>> =
+                            s.chars().map(|c| Some(c.to_string())).collect();
+                        RValue::vec(Vector::Character(chars.into()))
+                    } else if fixed && !ignore_case {
+                        // Fixed literal split, case-sensitive
+                        let pieces: Vec<Option<String>> =
+                            s.split(&split).map(|p| Some(p.to_string())).collect();
+                        RValue::vec(Vector::Character(pieces.into()))
+                    } else {
+                        // Regex split
+                        let pieces: Vec<Option<String>> = re
+                            .as_ref()
+                            .unwrap()
+                            .split(&s)
+                            .map(|p| Some(p.to_string()))
+                            .collect();
+                        RValue::vec(Vector::Character(pieces.into()))
+                    }
+                }
+            };
+            (None, elem)
+        })
+        .collect();
     Ok(RValue::List(RList::new(parts)))
 }
 
@@ -1306,12 +1342,14 @@ fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
-/// Translate characters in a string (character-by-character substitution).
+/// Translate characters in strings (character-by-character substitution).
+///
+/// Vectorized over x.
 ///
 /// @param old character scalar: characters to replace
 /// @param new character scalar: replacement characters (positionally matched)
-/// @param x character scalar: string to translate
-/// @return character scalar with characters substituted
+/// @param x character vector: strings to translate
+/// @return character vector with characters substituted
 #[builtin(min_args = 3)]
 fn builtin_chartr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let old = args
@@ -1322,23 +1360,30 @@ fn builtin_chartr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .get(1)
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    let x = args
+    let x_vec = args
         .get(2)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
     let old_chars: Vec<char> = old.chars().collect();
     let new_chars: Vec<char> = new.chars().collect();
-    let result: String = x
-        .chars()
-        .map(|c| {
-            if let Some(pos) = old_chars.iter().position(|&oc| oc == c) {
-                new_chars.get(pos).copied().unwrap_or(c)
-            } else {
-                c
-            }
+    let result: Vec<Option<String>> = x_vec
+        .into_iter()
+        .map(|s_opt| {
+            s_opt.map(|s| {
+                s.chars()
+                    .map(|c| {
+                        if let Some(pos) = old_chars.iter().position(|&oc| oc == c) {
+                            new_chars.get(pos).copied().unwrap_or(c)
+                        } else {
+                            c
+                        }
+                    })
+                    .collect()
+            })
         })
         .collect();
-    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Make syntactically valid R names from character strings.
@@ -1412,38 +1457,58 @@ fn builtin_make_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
     }
 }
 
-/// Extract the file name from a path.
+/// Extract the file name from paths.
 ///
-/// @param path character scalar: a file path
-/// @return character scalar containing the base file name
+/// Vectorized over path.
+///
+/// @param path character vector of file paths
+/// @return character vector containing the base file names
 #[builtin(min_args = 1)]
 fn builtin_basename(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = args
+    let path_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
-    let base = std::path::Path::new(&path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or(path);
-    Ok(RValue::vec(Vector::Character(vec![Some(base)].into())))
+    let result: Vec<Option<String>> = path_vec
+        .into_iter()
+        .map(|p_opt| {
+            p_opt.map(|p| {
+                std::path::Path::new(&p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or(p)
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
-/// Extract the directory part from a path.
+/// Extract the directory part from paths.
 ///
-/// @param path character scalar: a file path
-/// @return character scalar containing the directory component
+/// Vectorized over path.
+///
+/// @param path character vector of file paths
+/// @return character vector containing the directory components
 #[builtin(min_args = 1)]
 fn builtin_dirname(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let path = args
+    let path_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
-    let dir = std::path::Path::new(&path)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| ".".to_string());
-    Ok(RValue::vec(Vector::Character(vec![Some(dir)].into())))
+    let result: Vec<Option<String>> = path_vec
+        .into_iter()
+        .map(|p_opt| {
+            p_opt.map(|p| {
+                std::path::Path::new(&p)
+                    .parent()
+                    .map(|par| par.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ".".to_string())
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Convert an R expression or value to its string representation.
@@ -1773,16 +1838,19 @@ fn builtin_dput(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     Ok(RValue::Null)
 }
 
-/// Convert a string to an integer using a specified base (radix).
+/// Convert strings to integers using a specified base (radix).
 ///
-/// @param x character scalar: the string to parse
+/// Vectorized over x.
+///
+/// @param x character vector: the strings to parse
 /// @param base integer scalar: the radix (default 10)
-/// @return integer scalar, or NA if parsing fails
+/// @return integer vector, NA where parsing fails
 #[builtin(min_args = 1)]
 fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x = args
+    let x_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
     let base = named
         .iter()
@@ -1791,10 +1859,14 @@ fn builtin_strtoi(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_integer_scalar()))
         .unwrap_or(10);
     let base = u32::try_from(base)?;
-    match i64::from_str_radix(x.trim(), base) {
-        Ok(n) => Ok(RValue::vec(Vector::Integer(vec![Some(n)].into()))),
-        Err(_) => Ok(RValue::vec(Vector::Integer(vec![None].into()))),
-    }
+    let result: Vec<Option<i64>> = x_vec
+        .into_iter()
+        .map(|s_opt| match s_opt {
+            None => None,
+            Some(s) => i64::from_str_radix(s.trim(), base).ok(),
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Integer(result.into())))
 }
 
 /// Test whether character strings are non-empty.
@@ -2484,16 +2556,19 @@ fn trim_to_width(s: &str, max_width: usize) -> String {
 
 // region: URLencode, URLdecode, casefold, encodeString, substr<-
 
-/// Percent-encode a URL string per RFC 3986.
+/// Percent-encode URL strings per RFC 3986.
 ///
-/// @param URL character string to encode
+/// Vectorized over URL.
+///
+/// @param URL character vector of strings to encode
 /// @param reserved if TRUE (default), also encode reserved characters
-/// @return percent-encoded character string
+/// @return character vector of percent-encoded strings
 #[builtin(name = "URLencode", min_args = 1, namespace = "utils")]
 fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let s = args
+    let url_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
     let reserved = named
         .iter()
@@ -2527,46 +2602,66 @@ fn builtin_urlencode(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         )
     };
 
-    let mut encoded = String::new();
-    for &b in s.as_bytes() {
-        if unreserved(b) || (!reserved && is_reserved(b)) {
-            encoded.push(b as char);
-        } else {
-            encoded.push_str(&format!("%{:02X}", b));
-        }
-    }
-    Ok(RValue::vec(Vector::Character(vec![Some(encoded)].into())))
+    let result: Vec<Option<String>> = url_vec
+        .into_iter()
+        .map(|s_opt| {
+            s_opt.map(|s| {
+                let mut encoded = String::new();
+                for &b in s.as_bytes() {
+                    if unreserved(b) || (!reserved && is_reserved(b)) {
+                        encoded.push(char::from(b));
+                    } else {
+                        encoded.push_str(&format!("%{:02X}", b));
+                    }
+                }
+                encoded
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
-/// Decode a percent-encoded URL string.
+/// Decode percent-encoded URL strings.
 ///
-/// @param URL percent-encoded character string
-/// @return decoded character string
+/// Vectorized over URL.
+///
+/// @param URL character vector of percent-encoded strings
+/// @return character vector of decoded strings
 #[builtin(name = "URLdecode", min_args = 1, namespace = "utils")]
 fn builtin_urldecode(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let s = args
+    let url_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
 
-    let mut bytes = Vec::new();
-    let mut chars = s.bytes();
-    while let Some(b) = chars.next() {
-        if b == b'%' {
-            let hi = chars.next().unwrap_or(b'0');
-            let lo = chars.next().unwrap_or(b'0');
-            let hex = [hi, lo];
-            if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&hex).unwrap_or("00"), 16) {
-                bytes.push(val);
-            }
-        } else if b == b'+' {
-            bytes.push(b' ');
-        } else {
-            bytes.push(b);
-        }
-    }
-    let decoded = String::from_utf8_lossy(&bytes).into_owned();
-    Ok(RValue::vec(Vector::Character(vec![Some(decoded)].into())))
+    let result: Vec<Option<String>> = url_vec
+        .into_iter()
+        .map(|s_opt| {
+            s_opt.map(|s| {
+                let mut bytes = Vec::new();
+                let mut chars = s.bytes();
+                while let Some(b) = chars.next() {
+                    if b == b'%' {
+                        let hi = chars.next().unwrap_or(b'0');
+                        let lo = chars.next().unwrap_or(b'0');
+                        let hex = [hi, lo];
+                        if let Ok(val) =
+                            u8::from_str_radix(std::str::from_utf8(&hex).unwrap_or("00"), 16)
+                        {
+                            bytes.push(val);
+                        }
+                    } else if b == b'+' {
+                        bytes.push(b' ');
+                    } else {
+                        bytes.push(b);
+                    }
+                }
+                String::from_utf8_lossy(&bytes).into_owned()
+            })
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Convert case of a character vector.
@@ -2648,49 +2743,87 @@ fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<
     }
 }
 
-/// Replace a substring in a character string.
+/// Replace substrings in character strings.
+///
+/// Vectorized over x, with start, stop, and value recycled.
 ///
 /// @param x character vector (modified in place conceptually)
-/// @param start integer start position (1-based)
-/// @param stop integer stop position (1-based)
-/// @param value replacement string
-/// @return character vector with substring replaced
+/// @param start integer vector of start positions (1-based)
+/// @param stop integer vector of stop positions (1-based)
+/// @param value character vector of replacement strings
+/// @return character vector with substrings replaced
 #[builtin(name = "substr<-", min_args = 4)]
 fn builtin_substr_assign(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x = args
+    let x_vec = args
         .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
-    let start = args
+    let start_vec = args
         .get(1)
-        .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(1) as usize;
-    let stop = args
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .unwrap_or_else(|| vec![Some(1)]);
+    let stop_vec = args
         .get(2)
-        .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .unwrap_or(1) as usize;
-    let value = args
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_integers())
+        .unwrap_or_else(|| vec![Some(1)]);
+    let value_vec = args
         .get(3)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
 
-    let chars: Vec<char> = x.chars().collect();
-    let start = start.saturating_sub(1).min(chars.len());
-    let stop = stop.min(chars.len());
-    let range_len = stop.saturating_sub(start);
-    let repl_chars: Vec<char> = value.chars().take(range_len).collect();
-
-    let mut result: Vec<char> = chars[..start].to_vec();
-    result.extend(&repl_chars);
-    // If replacement is shorter, keep original chars for remaining positions
-    if repl_chars.len() < range_len {
-        result.extend(&chars[start + repl_chars.len()..stop]);
+    if x_vec.is_empty() {
+        return Ok(RValue::vec(Vector::Character(vec![].into())));
     }
-    result.extend(&chars[stop..]);
 
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(result.into_iter().collect())].into(),
-    )))
+    let n = x_vec.len();
+    let result: Vec<Option<String>> = (0..n)
+        .map(|i| {
+            let x_opt = &x_vec[i];
+            let start_opt = if start_vec.is_empty() {
+                Some(1)
+            } else {
+                start_vec[i % start_vec.len()]
+            };
+            let stop_opt = if stop_vec.is_empty() {
+                Some(1)
+            } else {
+                stop_vec[i % stop_vec.len()]
+            };
+            let value_opt = if value_vec.is_empty() {
+                None
+            } else {
+                value_vec[i % value_vec.len()].clone()
+            };
+
+            match (x_opt, start_opt, stop_opt, value_opt) {
+                (Some(x), Some(start_i), Some(stop_i), Some(value)) => {
+                    let start = usize::try_from(start_i).unwrap_or(0);
+                    let stop = usize::try_from(stop_i).unwrap_or(0);
+                    let chars: Vec<char> = x.chars().collect();
+                    let start = start.saturating_sub(1).min(chars.len());
+                    let stop = stop.min(chars.len());
+                    let range_len = stop.saturating_sub(start);
+                    let repl_chars: Vec<char> = value.chars().take(range_len).collect();
+
+                    let mut result: Vec<char> = chars[..start].to_vec();
+                    result.extend(&repl_chars);
+                    if repl_chars.len() < range_len {
+                        result.extend(&chars[start + repl_chars.len()..stop]);
+                    }
+                    result.extend(&chars[stop..]);
+
+                    Some(result.into_iter().collect())
+                }
+                (None, _, _, _) | (_, None, _, _) | (_, _, None, _) | (_, _, _, None) => None,
+            }
+        })
+        .collect();
+
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 // endregion
