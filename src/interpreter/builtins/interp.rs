@@ -346,6 +346,7 @@ fn interp_sapply(
 ///
 /// @param X vector or list to iterate over
 /// @param FUN function to apply to each element
+/// @param ... additional arguments passed to FUN
 /// @return list of results
 #[interpreter_builtin(name = "lapply", min_args = 2)]
 fn interp_lapply(
@@ -358,17 +359,150 @@ fn interp_lapply(
 
 /// Apply a function over a vector or list with a type-checked return template.
 ///
+/// vapply is similar to sapply, but requires a FUN.VALUE template that specifies
+/// the expected return type and length. Each result is checked against the template,
+/// and an error is raised if there is a mismatch.
+///
 /// @param X vector or list to iterate over
 /// @param FUN function to apply to each element
-/// @param FUN.VALUE template value specifying the expected return type
+/// @param FUN.VALUE template value specifying the expected return type and length
+/// @param ... additional arguments passed to FUN
 /// @return simplified vector matching FUN.VALUE type
 #[interpreter_builtin(name = "vapply", min_args = 3)]
 fn interp_vapply(
-    args: &[RValue],
+    positional: &[RValue],
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    eval_apply(args, named, true, context)
+    if positional.len() < 3 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "vapply requires at least 3 arguments: X, FUN, and FUN.VALUE".to_string(),
+        ));
+    }
+    let env = context.env();
+    let (fail_fast, extra_named) = extract_fail_fast(named);
+    let x = &positional[0];
+    let f = match_fun(&positional[1], env)?;
+    let fun_value = &positional[2];
+
+    // Determine expected type and length from FUN.VALUE
+    let expected_len = fun_value.length();
+    let expected_type = fun_value.type_name().to_string();
+
+    let items: Vec<RValue> = rvalue_to_items(x);
+
+    // Extra positional args beyond X, FUN, FUN.VALUE are passed to FUN
+    let extra_args: Vec<RValue> = positional.iter().skip(3).cloned().collect();
+
+    let env = context.env();
+    context.with_interpreter(|interp| {
+        let mut results: Vec<RValue> = Vec::with_capacity(items.len());
+        for (i, item) in items.iter().enumerate() {
+            let mut call_args = vec![item.clone()];
+            call_args.extend(extra_args.iter().cloned());
+            let result = if fail_fast {
+                interp.call_function(&f, &call_args, &extra_named, env)?
+            } else {
+                interp
+                    .call_function(&f, &call_args, &extra_named, env)
+                    .unwrap_or(RValue::Null)
+            };
+
+            // Validate result matches FUN.VALUE template
+            let result_len = result.length();
+            let result_type = result.type_name().to_string();
+            if result_len != expected_len {
+                return Err(RError::new(
+                    RErrorKind::Type,
+                    format!(
+                        "values must be length {} (FUN.VALUE), but FUN(X[[{}]]) result is length {}",
+                        expected_len,
+                        i + 1,
+                        result_len
+                    ),
+                ));
+            }
+            if result_type != expected_type {
+                return Err(RError::new(
+                    RErrorKind::Type,
+                    format!(
+                        "values must be type '{}' (FUN.VALUE), but FUN(X[[{}]]) result is type '{}'",
+                        expected_type,
+                        i + 1,
+                        result_type
+                    ),
+                ));
+            }
+            results.push(result);
+        }
+
+        // Simplify results: vapply always simplifies since we've validated types
+        if results.is_empty() {
+            // Return an empty vector of the expected type
+            return match expected_type.as_str() {
+                "double" => Ok(RValue::vec(Vector::Double(vec![].into()))),
+                "integer" => Ok(RValue::vec(Vector::Integer(vec![].into()))),
+                "character" => Ok(RValue::vec(Vector::Character(vec![].into()))),
+                "logical" => Ok(RValue::vec(Vector::Logical(vec![].into()))),
+                _ => Ok(RValue::List(RList::new(vec![]))),
+            };
+        }
+
+        if expected_len == 1 {
+            // Scalar results: simplify to a typed vector
+            match expected_type.as_str() {
+                "double" => {
+                    let vals: Vec<Option<f64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_doubles().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    Ok(RValue::vec(Vector::Double(vals.into())))
+                }
+                "integer" => {
+                    let vals: Vec<Option<i64>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_integers().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    Ok(RValue::vec(Vector::Integer(vals.into())))
+                }
+                "character" => {
+                    let vals: Vec<Option<String>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_characters().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    Ok(RValue::vec(Vector::Character(vals.into())))
+                }
+                "logical" => {
+                    let vals: Vec<Option<bool>> = results
+                        .iter()
+                        .filter_map(|r| {
+                            r.as_vector()
+                                .map(|v| v.to_logicals().into_iter().next().unwrap_or(None))
+                        })
+                        .collect();
+                    Ok(RValue::vec(Vector::Logical(vals.into())))
+                }
+                _ => {
+                    let values: Vec<(Option<String>, RValue)> =
+                        results.into_iter().map(|v| (None, v)).collect();
+                    Ok(RValue::List(RList::new(values)))
+                }
+            }
+        } else {
+            // Multi-value results: build a matrix (each result becomes a column)
+            simplify_apply_results(results)
+        }
+    })
 }
 
 fn eval_apply(
@@ -384,50 +518,26 @@ fn eval_apply(
         ));
     }
     let env = context.env();
-    let (fail_fast, _extra_named) = extract_fail_fast(named);
+    let (fail_fast, extra_named) = extract_fail_fast(named);
     let x = &positional[0];
     let f = match_fun(&positional[1], env)?;
 
-    let items: Vec<RValue> = match x {
-        RValue::Vector(v) => match &v.inner {
-            Vector::Raw(vals) => vals
-                .iter()
-                .map(|&x| RValue::vec(Vector::Raw(vec![x])))
-                .collect(),
-            Vector::Double(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Double(vec![*x].into())))
-                .collect(),
-            Vector::Integer(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
-                .collect(),
-            Vector::Complex(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Complex(vec![*x].into())))
-                .collect(),
-            Vector::Character(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Character(vec![x.clone()].into())))
-                .collect(),
-            Vector::Logical(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Logical(vec![*x].into())))
-                .collect(),
-        },
-        RValue::List(l) => l.values.iter().map(|(_, v)| v.clone()).collect(),
-        _ => vec![x.clone()],
-    };
+    let items: Vec<RValue> = rvalue_to_items(x);
+
+    // Extra positional args beyond X and FUN are passed to FUN in each call
+    let extra_args: Vec<RValue> = positional.iter().skip(2).cloned().collect();
 
     let env = context.env();
     context.with_interpreter(|interp| {
         let mut results: Vec<RValue> = Vec::new();
         for item in &items {
+            let mut call_args = vec![item.clone()];
+            call_args.extend(extra_args.iter().cloned());
             if fail_fast {
-                let result = interp.call_function(&f, std::slice::from_ref(item), &[], env)?;
+                let result = interp.call_function(&f, &call_args, &extra_named, env)?;
                 results.push(result);
             } else {
-                match interp.call_function(&f, std::slice::from_ref(item), &[], env) {
+                match interp.call_function(&f, &call_args, &extra_named, env) {
                     Ok(result) => results.push(result),
                     Err(_) => results.push(RValue::Null),
                 }
@@ -2249,6 +2359,7 @@ fn simplify_apply_results(results: Vec<RValue>) -> Result<RValue, RError> {
 ///
 /// @param FUN function to apply
 /// @param ... vectors to iterate over in parallel
+/// @param MoreArgs list of additional arguments passed to FUN in every call
 /// @param SIMPLIFY if TRUE, simplify the result to a vector or matrix
 /// @return simplified vector or list of results
 #[interpreter_builtin(name = "mapply", min_args = 2)]
@@ -2276,6 +2387,32 @@ fn interp_mapply(
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(true);
 
+    // Extract MoreArgs: a list of additional arguments to pass to FUN in every call
+    let more_args: Vec<RValue> = extra_named
+        .iter()
+        .find(|(n, _)| n == "MoreArgs")
+        .and_then(|(_, v)| match v {
+            RValue::List(l) => Some(l.values.iter().map(|(_, v)| v.clone()).collect()),
+            RValue::Null => None,
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    // Extract named args from MoreArgs
+    let more_named: Vec<(String, RValue)> = extra_named
+        .iter()
+        .find(|(n, _)| n == "MoreArgs")
+        .and_then(|(_, v)| match v {
+            RValue::List(l) => Some(
+                l.values
+                    .iter()
+                    .filter_map(|(n, v)| n.as_ref().map(|n| (n.clone(), v.clone())))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
+
     // Collect the input sequences (all positional args after FUN, excluding named)
     let seqs: Vec<Vec<RValue>> = positional[1..].iter().map(rvalue_to_items).collect();
 
@@ -2290,7 +2427,7 @@ fn interp_mapply(
 
     context.with_interpreter(|interp| {
         for i in 0..max_len {
-            let call_args: Vec<RValue> = seqs
+            let mut call_args: Vec<RValue> = seqs
                 .iter()
                 .map(|s| {
                     if s.is_empty() {
@@ -2300,11 +2437,13 @@ fn interp_mapply(
                     }
                 })
                 .collect();
+            // Append MoreArgs positional values
+            call_args.extend(more_args.iter().cloned());
             let result = if fail_fast {
-                interp.call_function(&fun, &call_args, &[], env)?
+                interp.call_function(&fun, &call_args, &more_named, env)?
             } else {
                 interp
-                    .call_function(&fun, &call_args, &[], env)
+                    .call_function(&fun, &call_args, &more_named, env)
                     .unwrap_or(RValue::Null)
             };
             results.push(result);
@@ -4022,10 +4161,16 @@ fn interp_negate(
     }))
 }
 
-/// Recursively apply a function to all non-list elements of a (nested) list.
+/// Recursively apply a function to elements of a (nested) list.
+///
+/// When `classes` is specified, only leaf elements whose type matches one of the
+/// given class names are transformed by `f`. Non-matching leaves are replaced
+/// by `deflt` (or left unchanged in "replace" mode).
 ///
 /// @param object a list (possibly nested)
-/// @param f function to apply to non-list elements
+/// @param f function to apply to matching leaf elements
+/// @param classes character vector of class names to match (default: "ANY" matches all)
+/// @param deflt default value for non-matching leaves (used with "unlist"/"list" modes)
 /// @param how one of "unlist" (default), "replace", or "list"
 /// @return depends on `how`: "unlist" returns a flat vector, "replace" returns a list
 ///   with the same structure, "list" returns a flat list of results
@@ -4056,11 +4201,43 @@ fn interp_rapply(
         })
         .unwrap_or_else(|| "unlist".to_string());
 
+    // Extract classes parameter: a character vector of type names to match
+    let classes: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "classes")
+            .and_then(|(_, v)| match v.as_vector() {
+                Some(rv) => {
+                    let chars = rv.to_characters();
+                    let strs: Vec<String> = chars.into_iter().flatten().collect();
+                    if strs.len() == 1 && strs[0] == "ANY" {
+                        None // "ANY" means match everything (same as no filter)
+                    } else {
+                        Some(strs)
+                    }
+                }
+                None => None,
+            });
+
+    // Extract deflt parameter: default value for non-matching leaves
+    let deflt = named
+        .iter()
+        .find(|(n, _)| n == "deflt")
+        .map(|(_, v)| v.clone());
+
     context.with_interpreter(|interp| match how.as_str() {
-        "replace" => rapply_replace(interp, object, &f, env),
+        "replace" => rapply_replace(interp, object, &f, env, classes.as_deref()),
         "list" => {
             let mut results = Vec::new();
-            rapply_collect(interp, object, &f, env, &mut results)?;
+            rapply_collect(
+                interp,
+                object,
+                &f,
+                env,
+                &mut results,
+                classes.as_deref(),
+                deflt.as_ref(),
+            )?;
             Ok(RValue::List(RList::new(
                 results.into_iter().map(|v| (None, v)).collect(),
             )))
@@ -4068,7 +4245,15 @@ fn interp_rapply(
         _ => {
             // "unlist" (default)
             let mut results = Vec::new();
-            rapply_collect(interp, object, &f, env, &mut results)?;
+            rapply_collect(
+                interp,
+                object,
+                &f,
+                env,
+                &mut results,
+                classes.as_deref(),
+                deflt.as_ref(),
+            )?;
             if results.is_empty() {
                 return Ok(RValue::Null);
             }
@@ -4078,25 +4263,52 @@ fn interp_rapply(
     })
 }
 
-/// Helper: collect results of applying f to all leaf (non-list) elements.
+/// Check if an RValue's type name matches one of the given class names.
+fn rapply_matches_class(x: &RValue, classes: Option<&[String]>) -> bool {
+    match classes {
+        None => true, // No filter — match everything
+        Some(cls) => {
+            let type_name = x.type_name();
+            // Map R type names: "double" -> "numeric", etc.
+            cls.iter().any(|c| {
+                c == type_name
+                    || (c == "numeric" && (type_name == "double" || type_name == "integer"))
+                    || (c == "character" && type_name == "character")
+                    || (c == "logical" && type_name == "logical")
+                    || (c == "complex" && type_name == "complex")
+                    || (c == "integer" && type_name == "integer")
+                    || (c == "double" && type_name == "double")
+            })
+        }
+    }
+}
+
+/// Helper: collect results of applying f to matching leaf (non-list) elements.
 fn rapply_collect(
     interp: &crate::interpreter::Interpreter,
     x: &RValue,
     f: &RValue,
     env: &Environment,
     out: &mut Vec<RValue>,
+    classes: Option<&[String]>,
+    deflt: Option<&RValue>,
 ) -> Result<(), RError> {
     match x {
         RValue::List(list) => {
             for (_, val) in &list.values {
-                rapply_collect(interp, val, f, env, out)?;
+                rapply_collect(interp, val, f, env, out, classes, deflt)?;
             }
         }
         _ => {
-            let result = interp
-                .call_function(f, std::slice::from_ref(x), &[], env)
-                .map_err(RError::from)?;
-            out.push(result);
+            if rapply_matches_class(x, classes) {
+                let result = interp
+                    .call_function(f, std::slice::from_ref(x), &[], env)
+                    .map_err(RError::from)?;
+                out.push(result);
+            } else if let Some(d) = deflt {
+                out.push(d.clone());
+            }
+            // If no deflt and class doesn't match, skip the element
         }
     }
     Ok(())
@@ -4108,6 +4320,7 @@ fn rapply_replace(
     x: &RValue,
     f: &RValue,
     env: &Environment,
+    classes: Option<&[String]>,
 ) -> Result<RValue, RError> {
     match x {
         RValue::List(list) => {
@@ -4115,15 +4328,22 @@ fn rapply_replace(
                 .values
                 .iter()
                 .map(|(name, val)| {
-                    let new_val = rapply_replace(interp, val, f, env)?;
+                    let new_val = rapply_replace(interp, val, f, env, classes)?;
                     Ok((name.clone(), new_val))
                 })
                 .collect::<Result<Vec<_>, RError>>()?;
             Ok(RValue::List(RList::new(new_vals)))
         }
-        _ => Ok(interp
-            .call_function(f, std::slice::from_ref(x), &[], env)
-            .map_err(RError::from)?),
+        _ => {
+            if rapply_matches_class(x, classes) {
+                Ok(interp
+                    .call_function(f, std::slice::from_ref(x), &[], env)
+                    .map_err(RError::from)?)
+            } else {
+                // Non-matching leaf: keep as-is in "replace" mode
+                Ok(x.clone())
+            }
+        }
     }
 }
 
