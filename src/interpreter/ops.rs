@@ -321,25 +321,33 @@ fn eval_arith(op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         return Ok(RValue::vec(Vector::Double(vec![].into())));
     }
 
-    let result: Vec<Option<f64>> = (0..len)
-        .map(|i| {
-            let a = ld[i % ld.len()];
-            let b = rd[i % rd.len()];
-            match (a, b) {
-                (Some(a), Some(b)) => Some(match op {
-                    BinaryOp::Add => a + b,
-                    BinaryOp::Sub => a - b,
-                    BinaryOp::Mul => a * b,
-                    BinaryOp::Div => a / b,
-                    BinaryOp::Pow => a.powf(b),
-                    BinaryOp::Mod => a % b,
-                    BinaryOp::IntDiv => (a / b).floor(),
-                    _ => unreachable!(),
-                }),
-                _ => None,
-            }
-        })
-        .collect();
+    let arith_element = |i: usize| -> Option<f64> {
+        let a = ld[i % ld.len()];
+        let b = rd[i % rd.len()];
+        match (a, b) {
+            (Some(a), Some(b)) => Some(match op {
+                BinaryOp::Add => a + b,
+                BinaryOp::Sub => a - b,
+                BinaryOp::Mul => a * b,
+                BinaryOp::Div => a / b,
+                BinaryOp::Pow => a.powf(b),
+                BinaryOp::Mod => a % b,
+                BinaryOp::IntDiv => (a / b).floor(),
+                _ => unreachable!(),
+            }),
+            _ => None,
+        }
+    };
+
+    // Use rayon for large vectors when the parallel feature is enabled
+    #[cfg(feature = "parallel")]
+    if len >= 10_000 {
+        use rayon::prelude::*;
+        let result: Vec<Option<f64>> = (0..len).into_par_iter().map(arith_element).collect();
+        return Ok(RValue::vec(Vector::Double(result.into())));
+    }
+
+    let result: Vec<Option<f64>> = (0..len).map(arith_element).collect();
     Ok(RValue::vec(Vector::Double(result.into())))
 }
 

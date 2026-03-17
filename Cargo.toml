@@ -65,6 +65,7 @@ pest = "2.8"
 pest_derive = "2.8"
 rand = { version = "0.9", optional = true }
 rand_distr = { version = "0.5", optional = true }
+rayon = { version = "1", optional = true }
 nu-ansi-term = "0.50"
 reedline = { version = "0.46" }
 temp-dir = "0.1"
@@ -97,3 +98,4 @@ json = ["dep:serde_json"]
 dirs-support = ["dep:dirs"]
 walkdir-support = ["dep:walkdir"]
 globset-support = ["dep:globset"]
+parallel = ["dep:rayon"]
