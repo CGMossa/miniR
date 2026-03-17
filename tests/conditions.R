@@ -122,4 +122,43 @@ e <- simpleError("test")
 stopifnot(is.null(conditionCall(e)))
 cat("PASS: conditionCall\n")
 
+# --- signalCondition ---
+caught_signal <- FALSE
+cond <- simpleWarning("sig test")
+withCallingHandlers(
+  signalCondition(cond),
+  warning = function(w) {
+    caught_signal <<- TRUE
+    invokeRestart("muffleWarning")
+  }
+)
+stopifnot(caught_signal)
+cat("PASS: signalCondition triggers calling handlers\n")
+
+# --- tryCatch with named expr argument ---
+result <- tryCatch(expr = stop("boom"), error = function(e) "caught")
+stopifnot(result == "caught")
+cat("PASS: tryCatch with expr= named arg\n")
+
+# --- warning() with condition object ---
+w <- simpleWarning("pre-made warning")
+caught_w <- NULL
+withCallingHandlers(
+  warning(w),
+  warning = function(cond) {
+    caught_w <<- conditionMessage(cond)
+    invokeRestart("muffleWarning")
+  }
+)
+stopifnot(caught_w == "pre-made warning")
+cat("PASS: warning() with condition object\n")
+
+# --- stop() with call.=FALSE ---
+result <- tryCatch(
+  stop("msg", call. = FALSE),
+  error = function(e) conditionMessage(e)
+)
+stopifnot(result == "msg")
+cat("PASS: stop() with call.=FALSE\n")
+
 cat("\nAll condition system tests passed!\n")

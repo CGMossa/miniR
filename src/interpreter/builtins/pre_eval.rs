@@ -165,7 +165,7 @@ fn strip_names_attr(value: &mut RValue) {
     }
 }
 
-fn recycle_value(value: &RValue, target_len: usize) -> Result<RValue, RError> {
+pub(super) fn recycle_value(value: &RValue, target_len: usize) -> Result<RValue, RError> {
     match value {
         RValue::Vector(rv) => {
             let mut recycled = rv.clone();
@@ -629,10 +629,11 @@ fn pre_eval_try_catch(
 ) -> Result<RValue, RError> {
     use crate::interpreter::ConditionHandler;
 
-    // First unnamed arg is the expression to evaluate
+    // First unnamed arg is the expression to evaluate; also accept expr=...
     let expr = args
         .iter()
         .find(|a| a.name.is_none())
+        .or_else(|| args.iter().find(|a| a.name.as_deref() == Some("expr")))
         .and_then(|a| a.value.as_ref());
 
     // Collect named handlers and finally expression
@@ -644,6 +645,7 @@ fn pre_eval_try_catch(
                 Some("finally") => {
                     finally_expr = arg.value.clone();
                 }
+                Some("expr") => {} // handled above
                 Some(class) => {
                     if let Some(ref val_expr) = arg.value {
                         let handler = interp.eval_in(val_expr, env)?;
@@ -721,7 +723,7 @@ fn pre_eval_try_catch(
             Err(other) => {
                 // Non-condition errors: check for "error" handler
                 if let Some((_, handler)) = handlers.iter().find(|(c, _)| c == "error") {
-                    let err_msg = format!("{}", other);
+                    let err_msg = other.message();
                     let condition =
                         make_condition(&err_msg, &["simpleError", "error", "condition"]);
                     interp
@@ -788,21 +790,26 @@ fn pre_eval_with_calling_handlers(
     let expr = args
         .iter()
         .find(|a| a.name.is_none())
+        .or_else(|| args.iter().find(|a| a.name.as_deref() == Some("expr")))
         .and_then(|a| a.value.as_ref());
 
     // Collect named handlers (class = handler_function)
     let mut handler_set: Vec<ConditionHandler> = Vec::new();
     context.with_interpreter(|interp| {
         for arg in args {
-            if let Some(class) = &arg.name {
-                if let Some(ref val_expr) = arg.value {
-                    let handler = interp.eval_in(val_expr, env).map_err(RError::from)?;
-                    handler_set.push(ConditionHandler {
-                        class: class.clone(),
-                        handler,
-                        env: env.clone(),
-                    });
+            match arg.name.as_deref() {
+                Some("expr") => {} // handled above
+                Some(class) => {
+                    if let Some(ref val_expr) = arg.value {
+                        let handler = interp.eval_in(val_expr, env).map_err(RError::from)?;
+                        handler_set.push(ConditionHandler {
+                            class: class.to_string(),
+                            handler,
+                            env: env.clone(),
+                        });
+                    }
                 }
+                None => {} // the expression itself
             }
         }
         Ok::<(), RError>(())

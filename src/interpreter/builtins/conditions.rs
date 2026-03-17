@@ -1,17 +1,36 @@
-//! R condition system builtins — stop, warning, message, condition constructors,
-//! condition accessors, and restart invocation.
+//! R condition system builtins — stop, warning, message, signalCondition,
+//! condition constructors, condition accessors, and restart invocation.
 
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin};
 
+// region: Helpers
+
+/// Check whether a named argument is a truthy boolean (default `default`).
+fn named_bool(named: &[(String, RValue)], key: &str, default: bool) -> bool {
+    named
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| match v {
+            RValue::Vector(rv) => rv.as_logical_scalar().unwrap_or(default),
+            _ => default,
+        })
+        .unwrap_or(default)
+}
+
+// endregion
+
+// region: stop / warning / message
+
 /// Signal an error condition and stop execution.
 ///
 /// @param ... character strings concatenated into the error message, or a condition object
+/// @param call. logical, whether to include the call in the condition (default TRUE, currently ignored)
 /// @return does not return; signals an error
 #[builtin]
-fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_stop(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     // If the first arg is already a condition object, re-signal it
     if let Some(first) = args.first() {
         let classes = get_class(first);
@@ -39,13 +58,29 @@ fn builtin_stop(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 /// Signal a warning condition.
 ///
 /// @param ... character strings concatenated into the warning message
+/// @param call. logical, whether to include the call (default TRUE, currently ignored)
+/// @param immediate. logical, whether to print immediately (default FALSE, currently ignored)
 /// @return NULL, invisibly
 #[interpreter_builtin]
 fn interp_warning(
     args: &[RValue],
-    _: &[(String, RValue)],
+    _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // If the first arg is already a condition object, re-signal it
+    if let Some(first) = args.first() {
+        let classes = get_class(first);
+        if classes.iter().any(|c| c == "condition") {
+            let muffled = context
+                .with_interpreter(|interp| interp.signal_condition(first, &interp.global_env))?;
+            if !muffled {
+                // Extract message from condition for display
+                let msg = condition_message_str(first);
+                eprintln!("Warning message:\n{}", msg);
+            }
+            return Ok(RValue::Null);
+        }
+    }
     let msg = args
         .iter()
         .map(|v| match v {
@@ -65,13 +100,35 @@ fn interp_warning(
 /// Print a diagnostic message to stderr.
 ///
 /// @param ... character strings concatenated into the message
+/// @param domain character string for translation domain (currently ignored)
+/// @param appendLF logical, whether to append a newline (default TRUE)
 /// @return NULL, invisibly
 #[interpreter_builtin]
 fn interp_message(
     args: &[RValue],
-    _: &[(String, RValue)],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    let append_lf = named_bool(named, "appendLF", true);
+
+    // If the first arg is already a condition object, re-signal it
+    if let Some(first) = args.first() {
+        let classes = get_class(first);
+        if classes.iter().any(|c| c == "condition") {
+            let muffled = context
+                .with_interpreter(|interp| interp.signal_condition(first, &interp.global_env))?;
+            if !muffled {
+                let msg = condition_message_str(first);
+                if append_lf {
+                    eprintln!("{}", msg);
+                } else {
+                    eprint!("{}", msg);
+                }
+            }
+            return Ok(RValue::Null);
+        }
+    }
+
     let msg = args
         .iter()
         .map(|v| match v {
@@ -83,9 +140,61 @@ fn interp_message(
     let muffled = context
         .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
-        eprintln!("{}", msg);
+        if append_lf {
+            eprintln!("{}", msg);
+        } else {
+            eprint!("{}", msg);
+        }
     }
     Ok(RValue::Null)
+}
+
+// endregion
+
+// region: signalCondition
+
+/// Signal a condition object to calling handlers without unwinding.
+///
+/// This is the low-level primitive used by the condition system. It walks the
+/// handler stack and invokes matching handlers in calling-handler style (the
+/// handler runs and then returns to the signaler).
+///
+/// @param c a condition object (list with class attribute containing condition classes)
+/// @return NULL, invisibly
+#[interpreter_builtin(name = "signalCondition", min_args = 1)]
+fn interp_signal_condition(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let condition = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "argument 'cond' is missing, with no default".to_string(),
+        )
+    })?;
+    context.with_interpreter(|interp| {
+        interp.signal_condition(condition, &interp.global_env)?;
+        Ok(RValue::Null)
+    })
+}
+
+// endregion
+
+/// Extract the message string from a condition object (list with "message" element).
+fn condition_message_str(cond: &RValue) -> String {
+    if let RValue::List(list) = cond {
+        for (name, val) in &list.values {
+            if name.as_deref() == Some("message") {
+                if let RValue::Vector(rv) = val {
+                    if let Some(s) = rv.as_character_scalar() {
+                        return s;
+                    }
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 /// Construct a simple condition object.
