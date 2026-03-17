@@ -47,6 +47,42 @@ fn read_source(path: &Path) -> Result<String, std::io::Error> {
     }
 }
 
+fn parse_ok(path: &Path) -> bool {
+    read_source(path)
+        .and_then(|source| {
+            parse_program(&source)
+                .map(|_| ())
+                .map_err(std::io::Error::other)
+        })
+        .is_ok()
+}
+
+fn parse_files_in_parallel(entries: &[(PathBuf, String)]) -> Vec<(String, bool)> {
+    let worker_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
+        .min(entries.len().max(1));
+    let chunk_size = entries.len().div_ceil(worker_count);
+
+    std::thread::scope(|scope| {
+        let mut workers = Vec::new();
+        for chunk in entries.chunks(chunk_size) {
+            workers.push(scope.spawn(move || {
+                chunk
+                    .iter()
+                    .map(|(path, file)| (file.clone(), parse_ok(path)))
+                    .collect::<Vec<_>>()
+            }));
+        }
+
+        let mut results = Vec::with_capacity(entries.len());
+        for worker in workers {
+            results.extend(worker.join().expect("parse worker panicked"));
+        }
+        results
+    })
+}
+
 #[test]
 fn test_corpus_parses_without_regressions() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -64,6 +100,19 @@ fn test_corpus_parses_without_regressions() {
         "no .R files found in tests/ or cran/**/R/"
     );
 
+    let entries: Vec<(PathBuf, String)> = files
+        .iter()
+        .map(|path| {
+            (
+                path.clone(),
+                path.strip_prefix(repo_root)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        })
+        .collect();
+
     let mut passed = 0usize;
     let mut expected_failures = Vec::new();
     let mut unexpected_failures = Vec::new();
@@ -73,31 +122,17 @@ fn test_corpus_parses_without_regressions() {
         .filter(|line| !line.is_empty())
         .collect();
 
-    for path in &files {
-        let file = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        match read_source(path).and_then(|source| {
-            parse_program(&source)
-                .map(|_| ())
-                .map_err(std::io::Error::other)
-        }) {
-            Ok(()) => {
-                passed += 1;
-                // If this was a known failure that now passes, flag it
-                if known_failures.contains(file.as_str()) {
-                    eprintln!("  FIXED: {file} now parses (remove from KNOWN_PARSE_FAILURES)");
-                }
+    for (file, ok) in parse_files_in_parallel(&entries) {
+        if ok {
+            passed += 1;
+            // If this was a known failure that now passes, flag it
+            if known_failures.contains(file.as_str()) {
+                eprintln!("  FIXED: {file} now parses (remove from KNOWN_PARSE_FAILURES)");
             }
-            Err(_) => {
-                if known_failures.contains(file.as_str()) {
-                    expected_failures.push(file);
-                } else {
-                    unexpected_failures.push(file);
-                }
-            }
+        } else if known_failures.contains(file.as_str()) {
+            expected_failures.push(file);
+        } else {
+            unexpected_failures.push(file);
         }
     }
 
