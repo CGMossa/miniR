@@ -2416,29 +2416,24 @@ fn interp_mapply(
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(true);
 
-    // Extract MoreArgs: a list of additional arguments to pass to FUN in every call
-    let more_args: Vec<RValue> = extra_named
+    // Extract MoreArgs: a list of additional arguments to pass to FUN in every call.
+    // Named elements become named args; unnamed elements become positional args.
+    let (more_positional, more_named): (Vec<RValue>, Vec<(String, RValue)>) = extra_named
         .iter()
         .find(|(n, _)| n == "MoreArgs")
-        .and_then(|(_, v)| match v {
-            RValue::List(l) => Some(l.values.iter().map(|(_, v)| v.clone()).collect()),
-            RValue::Null => None,
-            _ => None,
-        })
-        .unwrap_or_default();
-
-    // Extract named args from MoreArgs
-    let more_named: Vec<(String, RValue)> = extra_named
-        .iter()
-        .find(|(n, _)| n == "MoreArgs")
-        .and_then(|(_, v)| match v {
-            RValue::List(l) => Some(
-                l.values
-                    .iter()
-                    .filter_map(|(n, v)| n.as_ref().map(|n| (n.clone(), v.clone())))
-                    .collect(),
-            ),
-            _ => None,
+        .map(|(_, v)| match v {
+            RValue::List(l) => {
+                let mut pos = Vec::new();
+                let mut named = Vec::new();
+                for (name, val) in &l.values {
+                    match name {
+                        Some(n) if !n.is_empty() => named.push((n.clone(), val.clone())),
+                        _ => pos.push(val.clone()),
+                    }
+                }
+                (pos, named)
+            }
+            _ => (Vec::new(), Vec::new()),
         })
         .unwrap_or_default();
 
@@ -2467,7 +2462,7 @@ fn interp_mapply(
                 })
                 .collect();
             // Append MoreArgs positional values
-            call_args.extend(more_args.iter().cloned());
+            call_args.extend(more_positional.iter().cloned());
             let result = if fail_fast {
                 interp.call_function(&fun, &call_args, &more_named, env)?
             } else {

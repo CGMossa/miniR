@@ -3343,16 +3343,25 @@ fn builtin_aperm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::Vector(out))
 }
 
-/// Bind vectors or matrices by rows.
+/// Bind vectors, matrices, or data frames by rows.
 ///
-/// Combines arguments row-wise into a matrix. Vectors become single rows.
+/// Combines arguments row-wise. If any argument is a data frame, produces
+/// a data frame result by matching columns by name. Otherwise produces a matrix.
 ///
-/// @param ... vectors or matrices to bind
-/// @return matrix
+/// @param ... vectors, matrices, or data frames to bind
+/// @return matrix or data frame
 #[builtin(min_args = 1)]
 fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.is_empty() {
         return Ok(RValue::Null);
+    }
+
+    // Check if any argument is a data frame — if so, use data frame rbind
+    let has_df = args
+        .iter()
+        .any(|a| matches!(a, RValue::List(_)) && has_class(a, "data.frame"));
+    if has_df {
+        return rbind_data_frames(args);
     }
 
     let mut inputs = Vec::new();
@@ -3487,16 +3496,137 @@ fn builtin_rbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
     Ok(RValue::Vector(rv))
 }
 
-/// Bind vectors or matrices by columns.
+/// Row-bind data frames by matching column names.
+fn rbind_data_frames(args: &[RValue]) -> Result<RValue, RError> {
+    // Collect all unique column names in order
+    let mut all_col_names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut dfs: Vec<&RList> = Vec::new();
+
+    for arg in args {
+        match arg {
+            RValue::List(list) if has_class(arg, "data.frame") => {
+                let names = dataframes::df_col_names(list);
+                for name in names.into_iter().flatten() {
+                    if seen.insert(name.clone()) {
+                        all_col_names.push(name);
+                    }
+                }
+                dfs.push(list);
+            }
+            RValue::Null => continue,
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "rbind() with data frames requires all arguments to be data frames".to_string(),
+                ))
+            }
+        }
+    }
+
+    if dfs.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    let total_nrow: usize = dfs.iter().map(|df| dataframes::df_nrow(df)).sum();
+
+    // For each column, concatenate values from all data frames
+    let mut output_columns: Vec<(Option<String>, RValue)> = Vec::new();
+    for col_name in &all_col_names {
+        let mut parts: Vec<RValue> = Vec::new();
+        for df in &dfs {
+            let col_idx = dataframes::df_col_index(df, col_name);
+            let nrow = dataframes::df_nrow(df);
+            if let Some(idx) = col_idx {
+                parts.push(df.values[idx].1.clone());
+            } else {
+                // Fill with NA for missing columns
+                parts.push(RValue::vec(Vector::Logical(vec![None; nrow].into())));
+            }
+        }
+        let combined = concat_column_values(&parts)?;
+        output_columns.push((Some(col_name.clone()), combined));
+    }
+
+    dataframes::build_data_frame(output_columns, total_nrow)
+}
+
+/// Concatenate column values from multiple data frames into a single column.
+fn concat_column_values(parts: &[RValue]) -> Result<RValue, RError> {
+    // Determine the "widest" type
+    let mut has_character = false;
+    let mut has_double = false;
+    let mut has_integer = false;
+    let mut has_logical = false;
+
+    for part in parts {
+        if let RValue::Vector(rv) = part {
+            match &rv.inner {
+                Vector::Character(_) => has_character = true,
+                Vector::Double(_) => has_double = true,
+                Vector::Integer(_) => has_integer = true,
+                Vector::Logical(_) => has_logical = true,
+                _ => {}
+            }
+        }
+    }
+
+    if has_character {
+        let mut result: Vec<Option<String>> = Vec::new();
+        for part in parts {
+            if let RValue::Vector(rv) = part {
+                result.extend(rv.inner.to_characters());
+            }
+        }
+        Ok(RValue::vec(Vector::Character(result.into())))
+    } else if has_double {
+        let mut result: Vec<Option<f64>> = Vec::new();
+        for part in parts {
+            if let RValue::Vector(rv) = part {
+                result.extend(rv.to_doubles());
+            }
+        }
+        Ok(RValue::vec(Vector::Double(result.into())))
+    } else if has_integer {
+        let mut result: Vec<Option<i64>> = Vec::new();
+        for part in parts {
+            if let RValue::Vector(rv) = part {
+                result.extend(rv.inner.to_integers());
+            }
+        }
+        Ok(RValue::vec(Vector::Integer(result.into())))
+    } else if has_logical {
+        let mut result: Vec<Option<bool>> = Vec::new();
+        for part in parts {
+            if let RValue::Vector(rv) = part {
+                result.extend(rv.inner.to_logicals());
+            }
+        }
+        Ok(RValue::vec(Vector::Logical(result.into())))
+    } else {
+        Ok(RValue::Null)
+    }
+}
+
+/// Bind vectors, matrices, or data frames by columns.
 ///
-/// Combines arguments column-wise into a matrix. Vectors become single columns.
+/// Combines arguments column-wise. If any argument is a data frame, produces
+/// a data frame result. Otherwise produces a matrix.
 ///
-/// @param ... vectors or matrices to bind
-/// @return matrix
+/// @param ... vectors, matrices, or data frames to bind
+/// @return matrix or data frame
 #[builtin(min_args = 1)]
 fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     if args.is_empty() {
         return Ok(RValue::Null);
+    }
+
+    // Check if any argument is a data frame — if so, use data frame cbind
+    let has_df = args
+        .iter()
+        .any(|a| matches!(a, RValue::List(_)) && has_class(a, "data.frame"));
+    if has_df {
+        return cbind_data_frames(args);
     }
 
     let mut inputs = Vec::new();
@@ -3629,6 +3759,67 @@ fn builtin_cbind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
         rv.set_attr("dimnames".to_string(), dimnames);
     }
     Ok(RValue::Vector(rv))
+}
+
+/// Column-bind data frames.
+fn cbind_data_frames(args: &[RValue]) -> Result<RValue, RError> {
+    let mut output_columns: Vec<(Option<String>, RValue)> = Vec::new();
+    let mut target_nrow: Option<usize> = None;
+
+    for arg in args {
+        match arg {
+            RValue::List(list) if has_class(arg, "data.frame") => {
+                let nrow = dataframes::df_nrow(list);
+                if let Some(expected) = target_nrow {
+                    if nrow != expected {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            format!(
+                                "cbind() arguments have different row counts: {} vs {}",
+                                expected, nrow
+                            ),
+                        ));
+                    }
+                } else {
+                    target_nrow = Some(nrow);
+                }
+                for (name, val) in &list.values {
+                    output_columns.push((name.clone(), val.clone()));
+                }
+            }
+            RValue::Vector(rv) => {
+                let len = rv.inner.len();
+                if let Some(expected) = target_nrow {
+                    if len != expected && len != 1 {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            format!(
+                                "cbind() arguments have different row counts: {} vs {}",
+                                expected, len
+                            ),
+                        ));
+                    }
+                } else {
+                    target_nrow = Some(len);
+                }
+                // Use names attr as column name if available
+                let col_name = rv
+                    .get_attr("names")
+                    .and_then(|v| v.as_vector()?.as_character_scalar());
+                output_columns.push((col_name, RValue::Vector(rv.clone())));
+            }
+            RValue::Null => continue,
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "cbind() requires data frames or vectors".to_string(),
+                ))
+            }
+        }
+    }
+
+    let nrow = target_nrow.unwrap_or(0);
+    dataframes::build_data_frame(output_columns, nrow)
 }
 
 /// Get a single attribute of an object.

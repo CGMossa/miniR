@@ -196,7 +196,6 @@ stopifnot(result == 21)
 // region: rbind/cbind for data frames
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
 fn rbind_data_frames() {
     let mut s = Session::new();
     s.eval_source(
@@ -215,7 +214,6 @@ stopifnot(
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
 fn cbind_data_frames() {
     let mut s = Session::new();
     s.eval_source(
@@ -239,7 +237,7 @@ stopifnot(
 // region: head/tail for data frames
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn head_data_frame() {
     let mut s = Session::new();
     s.eval_source(
@@ -257,7 +255,7 @@ stopifnot(
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn tail_data_frame() {
     let mut s = Session::new();
     s.eval_source(
@@ -275,7 +273,7 @@ stopifnot(
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn head_tail_default_n() {
     let mut s = Session::new();
     s.eval_source(
@@ -295,7 +293,7 @@ stopifnot(
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn head_tail_list() {
     let mut s = Session::new();
     s.eval_source(
@@ -330,7 +328,7 @@ stopifnot(identical(o, c(2L, 4L, 1L, 3L, 5L, 6L)))
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn order_decreasing() {
     let mut s = Session::new();
     s.eval_source(
@@ -344,7 +342,7 @@ stopifnot(identical(o, c(5L, 3L, 1L, 2L, 4L)))
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn order_character() {
     let mut s = Session::new();
     s.eval_source(
@@ -358,7 +356,7 @@ stopifnot(identical(o, c(2L, 1L, 3L)))
 }
 
 #[test]
-#[ignore = "needs rbind/cbind/order/head/tail data frame support"]
+#[ignore = "needs head/tail/order data frame enhancements"]
 fn order_multiple_keys() {
     let mut s = Session::new();
     s.eval_source(

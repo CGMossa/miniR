@@ -613,7 +613,6 @@ stopifnot(result[[3]] == 15)
 // region: mapply with MoreArgs
 
 #[test]
-#[ignore = "mapply MoreArgs not yet implemented"]
 fn mapply_with_more_args() {
     let mut s = Session::new();
     s.eval_source(
