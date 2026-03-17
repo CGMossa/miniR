@@ -846,6 +846,24 @@ pub(super) fn eval_index_double(
             _ => Ok(RValue::Null),
         },
         RValue::Vector(v) => {
+            // Character indexing: look up name in the "names" attribute
+            if let RValue::Vector(iv) = &idx_val {
+                if let Vector::Character(idx_names) = &iv.inner {
+                    if let Some(Some(name)) = idx_names.first() {
+                        if let Some(names_attr) = v.get_attr("names") {
+                            if let Some(names_vec) = names_attr.as_vector() {
+                                let name_strs = names_vec.to_characters();
+                                for (j, n) in name_strs.iter().enumerate() {
+                                    if n.as_deref() == Some(name.as_str()) && j < v.len() {
+                                        return Ok(extract_vector_element(v, j));
+                                    }
+                                }
+                            }
+                        }
+                        return Ok(RValue::Null);
+                    }
+                }
+            }
             let i = match &idx_val {
                 RValue::Vector(iv) => {
                     usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
@@ -853,28 +871,24 @@ pub(super) fn eval_index_double(
                 _ => 0,
             };
             if i > 0 && i <= v.len() {
-                let idx = i - 1;
-                match &v.inner {
-                    Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(vec![vals[idx]]))),
-                    Vector::Double(vals) => Ok(RValue::vec(Vector::Double(vec![vals[idx]].into()))),
-                    Vector::Integer(vals) => {
-                        Ok(RValue::vec(Vector::Integer(vec![vals[idx]].into())))
-                    }
-                    Vector::Logical(vals) => {
-                        Ok(RValue::vec(Vector::Logical(vec![vals[idx]].into())))
-                    }
-                    Vector::Complex(vals) => {
-                        Ok(RValue::vec(Vector::Complex(vec![vals[idx]].into())))
-                    }
-                    Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
-                        vec![vals[idx].clone()].into(),
-                    ))),
-                }
+                Ok(extract_vector_element(v, i - 1))
             } else {
                 Ok(RValue::Null)
             }
         }
         _ => Err(IndexingError::NotSubsettable.into()),
+    }
+}
+
+/// Extract a single element from an RVector at `idx` (0-based).
+fn extract_vector_element(v: &RVector, idx: usize) -> RValue {
+    match &v.inner {
+        Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[idx]])),
+        Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[idx]].into())),
+        Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[idx]].into())),
+        Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[idx]].into())),
+        Vector::Complex(vals) => RValue::vec(Vector::Complex(vec![vals[idx]].into())),
+        Vector::Character(vals) => RValue::vec(Vector::Character(vec![vals[idx].clone()].into())),
     }
 }
 
