@@ -10,7 +10,9 @@
 
 ## Serialization
 
-- [ ] GNU-R-compatible binary serialization for `readRDS()`, `saveRDS()`, `load()`, `save()`
+- [x] GNU-R-compatible binary deserialization for `readRDS()` (XDR binary, gzip via flate2)
+- [ ] Binary serialization for `saveRDS()` (write XDR binary)
+- [ ] `load()` / `save()` support (RDX2 header + pairlist)
 
 ## Architecture
 
