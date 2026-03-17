@@ -4,20 +4,82 @@
 //! or satisfies a type predicate, returning a logical scalar or vector.
 
 use crate::interpreter::value::*;
+use crate::parser::ast::Expr;
 use minir_macros::builtin;
 
 use super::{get_dim_ints, has_class};
 
 /// Test if an object is NULL.
 ///
-/// Also registered as stubs for is.ordered, is.call, is.symbol,
-/// is.name, is.expression, and is.pairlist (all return FALSE for now).
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1)]
+fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(args.first(), Some(RValue::Null));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is an ordered factor.
 ///
 /// @param x object to test
 /// @return logical scalar
-#[builtin(min_args = 1, names = ["is.ordered", "is.call", "is.symbol", "is.name", "is.expression", "is.pairlist"])]
-fn builtin_is_null(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Null));
+#[builtin(min_args = 1)]
+fn builtin_is_ordered(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = args.first().is_some_and(|v| has_class(v, "ordered"));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is a call (language object).
+///
+/// In R, `is.call(x)` returns TRUE for unevaluated function call expressions.
+///
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1)]
+fn builtin_is_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(args.first(), Some(RValue::Language(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is a symbol (name).
+///
+/// In R, `is.symbol(x)` / `is.name(x)` returns TRUE for name objects.
+/// In miniR, Language wrapping a bare `Expr::Symbol` is a symbol.
+///
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1, names = ["is.name"])]
+fn builtin_is_symbol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(
+        args.first(),
+        Some(RValue::Language(lang)) if matches!(*lang.inner, Expr::Symbol(_))
+    );
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is an expression object.
+///
+/// In R, expression objects are created by `expression()`. In miniR, these are
+/// represented as lists with class "expression".
+///
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1)]
+fn builtin_is_expression(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = args.first().is_some_and(|v| has_class(v, "expression"));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is a pairlist.
+///
+/// In GNU R, pairlists are a linked-list type used internally. In miniR,
+/// lists serve the same role, so `is.pairlist` returns TRUE for lists and NULL.
+///
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1)]
+fn builtin_is_pairlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(args.first(), Some(RValue::List(_)) | Some(RValue::Null));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -124,15 +186,28 @@ fn builtin_is_double(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
-/// Test if an object is a function.
-///
-/// Also aliased as `is.primitive`.
+/// Test if an object is a function (closure or builtin).
 ///
 /// @param x object to test
 /// @return logical scalar
-#[builtin(min_args = 1, names = ["is.primitive"])]
+#[builtin(min_args = 1)]
 fn builtin_is_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let r = matches!(args.first(), Some(RValue::Function(_)));
+    Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
+}
+
+/// Test if an object is a primitive (builtin) function.
+///
+/// Returns TRUE only for builtin functions, not user-defined closures.
+///
+/// @param x object to test
+/// @return logical scalar
+#[builtin(min_args = 1)]
+fn builtin_is_primitive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let r = matches!(
+        args.first(),
+        Some(RValue::Function(RFunction::Builtin { .. }))
+    );
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -330,11 +405,26 @@ fn builtin_is_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 
 /// Test if an object is an array.
 ///
+/// An array is any object with a dim attribute. This includes matrices
+/// (dim of length 2) and higher-dimensional arrays.
+///
 /// @param x object to test
 /// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_array(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = args.first().is_some_and(|v| has_class(v, "array"));
+    let r = args.first().is_some_and(|v| {
+        // Check class attribute first
+        if has_class(v, "array") || has_class(v, "matrix") {
+            return true;
+        }
+        // An array is any object with a dim attribute
+        let dim_attr = match v {
+            RValue::Vector(rv) => rv.get_attr("dim"),
+            RValue::List(l) => l.get_attr("dim"),
+            _ => None,
+        };
+        get_dim_ints(dim_attr).is_some_and(|d| !d.is_empty())
+    });
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 

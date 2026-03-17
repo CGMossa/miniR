@@ -1328,7 +1328,14 @@ fn pre_eval_expression(
                 .map(|expr| (None, RValue::Language(Language::new(expr.clone()))))
         })
         .collect();
-    Ok(RValue::List(RList::new(entries)))
+    let mut list = RList::new(entries);
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("expression".to_string())].into(),
+        )),
+    );
+    Ok(RValue::List(list))
 }
 
 /// Measure the wall-clock time to evaluate an expression.
