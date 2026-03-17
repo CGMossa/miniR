@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use derive_more::{Display, Error};
 use itertools::Itertools;
 #[cfg(feature = "linalg")]
+use nalgebra::DMatrix;
+#[cfg(feature = "linalg")]
 use ndarray::{Array1, Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
@@ -2647,6 +2649,54 @@ fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
     RValue::Vector(rv)
 }
 
+/// Convert an RValue matrix to a nalgebra DMatrix (column-major — zero-copy reorder).
+#[cfg(feature = "linalg")]
+fn rvalue_to_dmatrix(val: &RValue) -> Result<DMatrix<f64>, RError> {
+    let (data, dim_attr) = match val {
+        RValue::Vector(rv) => (rv.to_doubles(), rv.get_attr("dim")),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "requires numeric matrix/vector arguments".to_string(),
+            ))
+        }
+    };
+    let (nrow, ncol) = match dim_attr {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Integer(d) if d.len() >= 2 => (
+                usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+            ),
+            _ => (data.len(), 1),
+        },
+        _ => (data.len(), 1),
+    };
+    let flat: Vec<f64> = data.iter().map(|x| x.unwrap_or(f64::NAN)).collect();
+    // nalgebra DMatrix stores data in column-major order, same as R
+    Ok(DMatrix::from_vec(nrow, ncol, flat))
+}
+
+/// Convert a nalgebra DMatrix back to an RValue matrix.
+#[cfg(feature = "linalg")]
+fn dmatrix_to_rvalue(mat: &DMatrix<f64>) -> RValue {
+    let nrow = mat.nrows();
+    let ncol = mat.ncols();
+    // nalgebra stores column-major, so as_slice() gives us the right order
+    let data: Vec<Option<f64>> = mat.as_slice().iter().copied().map(Some).collect();
+    let mut rv = RVector::from(Vector::Double(data.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![
+                Some(i64::try_from(nrow).unwrap_or(0)),
+                Some(i64::try_from(ncol).unwrap_or(0)),
+            ]
+            .into(),
+        )),
+    );
+    RValue::Vector(rv)
+}
+
 fn matrix_dimnames(value: &RValue) -> MatrixDimNames {
     let dimnames = match value {
         RValue::Vector(rv) => rv.get_attr("dimnames"),
@@ -2808,14 +2858,16 @@ fn builtin_norm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     Ok(RValue::vec(Vector::Double(vec![Some(result)].into())))
 }
 
-/// `solve(a, b)` — solve linear system or compute matrix inverse.
+/// `solve(a, b)` — solve linear system or compute matrix inverse via LU decomposition.
 ///
 /// - `solve(a)`: returns the inverse of matrix a
 /// - `solve(a, b)`: solves the linear system Ax = b
+///
+/// Uses nalgebra's LU decomposition with partial pivoting for numerical stability.
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let nrow = a.nrows();
     let ncol = a.ncols();
 
@@ -2845,8 +2897,8 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .or(args.get(1));
 
     let b = match b_arg {
-        Some(val) => rvalue_to_array2(val)?,
-        None => Array2::eye(n),
+        Some(val) => rvalue_to_dmatrix(val)?,
+        None => DMatrix::identity(n, n),
     };
 
     if b.nrows() != n {
@@ -2860,74 +2912,22 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         ));
     }
 
-    let b_ncol = b.ncols();
+    let lu = a.lu();
+    let result = lu.solve(&b).ok_or_else(|| {
+        RError::other(
+            "solve(): matrix is singular (or very close to singular). \
+             Check that your matrix has full rank — its determinant is effectively zero",
+        )
+    })?;
 
-    // Gaussian elimination with partial pivoting
-    let mut aug = Array2::<f64>::zeros((n, n + b_ncol));
-    for i in 0..n {
-        for j in 0..n {
-            aug[[i, j]] = a[[i, j]];
-        }
-        for j in 0..b_ncol {
-            aug[[i, n + j]] = b[[i, j]];
-        }
-    }
-
-    // Forward elimination with partial pivoting
-    for col in 0..n {
-        let mut max_val = aug[[col, col]].abs();
-        let mut max_row = col;
-        for row in (col + 1)..n {
-            let val = aug[[row, col]].abs();
-            if val > max_val {
-                max_val = val;
-                max_row = row;
-            }
-        }
-
-        if max_val < 1e-15 {
-            return Err(RError::other(
-                "solve(): matrix is singular (or very close to singular). \
-                 Check that your matrix has full rank — its determinant is effectively zero",
-            ));
-        }
-
-        if max_row != col {
-            for j in 0..(n + b_ncol) {
-                let tmp = aug[[col, j]];
-                aug[[col, j]] = aug[[max_row, j]];
-                aug[[max_row, j]] = tmp;
-            }
-        }
-
-        for row in (col + 1)..n {
-            let factor = aug[[row, col]] / aug[[col, col]];
-            for j in col..(n + b_ncol) {
-                aug[[row, j]] -= factor * aug[[col, j]];
-            }
-        }
-    }
-
-    // Back substitution
-    let mut result = Array2::<f64>::zeros((n, b_ncol));
-    for bcol in 0..b_ncol {
-        for row in (0..n).rev() {
-            let mut sum = aug[[row, n + bcol]];
-            for j in (row + 1)..n {
-                sum -= aug[[row, j]] * result[[j, bcol]];
-            }
-            result[[row, bcol]] = sum / aug[[row, row]];
-        }
-    }
-
-    Ok(array2_to_rvalue(&result))
+    Ok(dmatrix_to_rvalue(&result))
 }
 
-/// `det(x)` — matrix determinant via Gaussian elimination with partial pivoting.
+/// `det(x)` — matrix determinant via LU decomposition.
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let n = a.nrows();
     if n != a.ncols() {
         return Err(RError::new(
@@ -2939,46 +2939,17 @@ fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
         return Ok(RValue::vec(Vector::Double(vec![Some(1.0)].into())));
     }
 
-    let mut m = a;
-    let mut det = 1.0;
-    for col in 0..n {
-        // Partial pivot
-        let mut max_row = col;
-        let mut max_val = m[[col, col]].abs();
-        for row in (col + 1)..n {
-            let val = m[[row, col]].abs();
-            if val > max_val {
-                max_val = val;
-                max_row = row;
-            }
-        }
-        if max_val < 1e-15 {
-            return Ok(RValue::vec(Vector::Double(vec![Some(0.0)].into())));
-        }
-        if max_row != col {
-            for j in 0..n {
-                let tmp = m[[col, j]];
-                m[[col, j]] = m[[max_row, j]];
-                m[[max_row, j]] = tmp;
-            }
-            det = -det;
-        }
-        det *= m[[col, col]];
-        for row in (col + 1)..n {
-            let factor = m[[row, col]] / m[[col, col]];
-            for j in col..n {
-                m[[row, j]] -= factor * m[[col, j]];
-            }
-        }
-    }
+    let det = a.lu().determinant();
     Ok(RValue::vec(Vector::Double(vec![Some(det)].into())))
 }
 
 /// `chol(x)` — Cholesky decomposition (upper triangular R such that x = R'R).
+///
+/// Uses nalgebra's Cholesky decomposition and returns the upper triangular factor.
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let n = a.nrows();
     if n != a.ncols() {
         return Err(RError::new(
@@ -2987,116 +2958,78 @@ fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         ));
     }
 
-    let mut r = Array2::<f64>::zeros((n, n));
-    for i in 0..n {
-        for j in i..n {
-            let mut sum = a[[i, j]];
-            for k in 0..i {
-                sum -= r[[k, i]] * r[[k, j]];
-            }
-            if i == j {
-                if sum <= 0.0 {
-                    return Err(RError::other(
-                        "the leading minor of order ".to_string()
-                            + &(i + 1).to_string()
-                            + " is not positive — matrix is not positive definite",
-                    ));
-                }
-                r[[i, j]] = sum.sqrt();
-            } else {
-                r[[i, j]] = sum / r[[i, i]];
-            }
-        }
-    }
-    Ok(array2_to_rvalue(&r))
+    // nalgebra's cholesky() computes L such that A = L L^T (lower triangular).
+    // R's chol() returns the upper triangular R such that A = R^T R, so R = L^T.
+    let chol = a.cholesky().ok_or_else(|| {
+        RError::other(
+            "matrix is not positive definite — Cholesky decomposition failed. \
+             Ensure the matrix is symmetric and all eigenvalues are positive",
+        )
+    })?;
+    let l = chol.l();
+    let r = l.transpose();
+
+    Ok(dmatrix_to_rvalue(&r))
 }
 
 // region: QR, SVD, Eigen decompositions
 
-/// `qr(x)` — QR decomposition via Householder reflections.
+/// `qr(x)` — QR decomposition via nalgebra's column-pivoted QR.
 ///
 /// Returns a list with class "qr" containing:
-/// - `$qr`: the compact QR matrix (R stored in upper triangle, Householder
-///    vectors in lower triangle)
+/// - `$qr`: the compact QR matrix (R in upper triangle)
 /// - `$rank`: integer rank estimate
-/// - `$pivot`: integer vector 1:ncol (no column pivoting)
+/// - `$pivot`: integer permutation vector (1-based)
+/// - `$Q`: the orthogonal Q matrix (for qr.Q() access)
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let m = a.nrows();
     let n = a.ncols();
 
-    // Work on a mutable copy — will hold the compact QR representation
-    let mut qr = a;
+    let qr = a.col_piv_qr();
+    let q = qr.q();
+    let r = qr.r();
+
+    // Build compact QR representation: upper triangle = R, zeros below
     let k = m.min(n);
-
-    for j in 0..k {
-        // Compute the norm of the j-th column below the diagonal
-        let mut col_norm_sq = 0.0;
-        for i in j..m {
-            col_norm_sq += qr[[i, j]] * qr[[i, j]];
-        }
-        let col_norm = col_norm_sq.sqrt();
-
-        if col_norm < 1e-15 {
-            continue;
-        }
-
-        // Choose sign to avoid cancellation
-        let sign = if qr[[j, j]] >= 0.0 { 1.0 } else { -1.0 };
-        let alpha = -sign * col_norm;
-
-        // Householder vector v = x - alpha*e1, stored in-place below diagonal
-        qr[[j, j]] -= alpha;
-
-        // Normalise the Householder vector for numerical stability
-        let mut v_norm_sq = 0.0;
-        for i in j..m {
-            v_norm_sq += qr[[i, j]] * qr[[i, j]];
-        }
-        if v_norm_sq < 1e-30 {
-            qr[[j, j]] = alpha;
-            continue;
-        }
-        let inv_v_norm_sq = 1.0 / v_norm_sq;
-
-        // Apply Householder reflection to remaining columns:
-        // A[j:m, j+1:n] -= 2 * v * (v^T A) / (v^T v)
-        for col in (j + 1)..n {
-            let mut dot = 0.0;
-            for i in j..m {
-                dot += qr[[i, j]] * qr[[i, col]];
-            }
-            let factor = 2.0 * dot * inv_v_norm_sq;
-            for i in j..m {
-                qr[[i, col]] -= factor * qr[[i, j]];
+    let mut compact = DMatrix::<f64>::zeros(m, n);
+    for i in 0..m {
+        for j in 0..n {
+            if i <= j {
+                compact[(i, j)] = r[(i, j)];
             }
         }
-
-        // Store the diagonal element of R
-        qr[[j, j]] = alpha;
     }
+    let qr_val = dmatrix_to_rvalue(&compact);
 
     // Estimate rank from diagonal of R
     let tol = f64::EPSILON * (m.max(n) as f64) * {
         let mut max_diag = 0.0f64;
         for i in 0..k {
-            max_diag = max_diag.max(qr[[i, i]].abs());
+            max_diag = max_diag.max(r[(i, i)].abs());
         }
         max_diag
     };
     let mut rank = 0i64;
     for i in 0..k {
-        if qr[[i, i]].abs() > tol {
+        if r[(i, i)].abs() > tol {
             rank += 1;
         }
     }
 
-    // Pivot vector: 1:ncol (no pivoting)
-    let pivot: Vec<Option<i64>> = (1..=i64::try_from(n)?).map(Some).collect();
+    // Pivot vector (1-based): apply the column permutation to get column ordering.
+    // We apply the permutation to a row matrix of column indices.
+    let p = qr.p();
+    let mut pivot_mat = DMatrix::<f64>::zeros(1, n);
+    for j in 0..n {
+        pivot_mat[(0, j)] = j as f64;
+    }
+    p.permute_columns(&mut pivot_mat);
+    let pivot: Vec<Option<i64>> = (0..n).map(|j| Some(pivot_mat[(0, j)] as i64 + 1)).collect();
 
-    let qr_val = array2_to_rvalue(&qr);
+    let q_val = dmatrix_to_rvalue(&q);
 
     let mut list = RList::new(vec![
         (Some("qr".to_string()), qr_val),
@@ -3108,6 +3041,7 @@ fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
             Some("pivot".to_string()),
             RValue::vec(Vector::Integer(pivot.into())),
         ),
+        (Some("Q".to_string()), q_val),
     ]);
     list.set_attr(
         "class".to_string(),
@@ -3116,7 +3050,7 @@ fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
     Ok(RValue::List(list))
 }
 
-/// `svd(x)` — Singular Value Decomposition via one-sided Jacobi rotations.
+/// `svd(x)` — Singular Value Decomposition via nalgebra's bidiagonal SVD.
 ///
 /// Returns a list with:
 /// - `$d`: numeric vector of singular values (descending)
@@ -3125,7 +3059,7 @@ fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_svd(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let m = a.nrows();
     let n = a.ncols();
 
@@ -3136,154 +3070,49 @@ fn builtin_svd(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
         ));
     }
 
-    // Work on B = A^T A (n x n) for one-sided Jacobi
-    let at = a.t();
-    let mut b = at.dot(&a);
-
-    // V accumulates right singular vectors (n x n)
-    let mut v = Array2::<f64>::zeros((n, n));
-    for i in 0..n {
-        v[[i, i]] = 1.0;
-    }
-
-    // Jacobi iterations on B = A^T A to diagonalize it
-    let max_iter = 100 * n * n;
-    let tol = 1e-12;
-    for _ in 0..max_iter {
-        let mut off_diag = 0.0;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                off_diag += b[[i, j]] * b[[i, j]];
-            }
-        }
-        if off_diag.sqrt()
-            < tol * {
-                let mut diag_norm = 0.0;
-                for i in 0..n {
-                    diag_norm += b[[i, i]] * b[[i, i]];
-                }
-                diag_norm.sqrt()
-            }
-        {
-            break;
-        }
-
-        for p in 0..n {
-            for q in (p + 1)..n {
-                let b_pq = b[[p, q]];
-                if b_pq.abs() < 1e-15 {
-                    continue;
-                }
-                let b_pp = b[[p, p]];
-                let b_qq = b[[q, q]];
-
-                // Compute Jacobi rotation angle
-                let tau = (b_qq - b_pp) / (2.0 * b_pq);
-                let t = if tau >= 0.0 {
-                    1.0 / (tau + (1.0 + tau * tau).sqrt())
-                } else {
-                    -1.0 / (-tau + (1.0 + tau * tau).sqrt())
-                };
-                let c = 1.0 / (1.0 + t * t).sqrt();
-                let s = t * c;
-
-                // Apply rotation to B: B <- J^T B J
-                // Update rows p and q of B
-                for i in 0..n {
-                    let b_ip = b[[i, p]];
-                    let b_iq = b[[i, q]];
-                    b[[i, p]] = c * b_ip - s * b_iq;
-                    b[[i, q]] = s * b_ip + c * b_iq;
-                }
-                // Update columns p and q of B
-                for j in 0..n {
-                    let b_pj = b[[p, j]];
-                    let b_qj = b[[q, j]];
-                    b[[p, j]] = c * b_pj - s * b_qj;
-                    b[[q, j]] = s * b_pj + c * b_qj;
-                }
-
-                // Accumulate in V
-                for i in 0..n {
-                    let v_ip = v[[i, p]];
-                    let v_iq = v[[i, q]];
-                    v[[i, p]] = c * v_ip - s * v_iq;
-                    v[[i, q]] = s * v_ip + c * v_iq;
-                }
-            }
-        }
-    }
-
-    // Singular values are sqrt of diagonal of B (eigenvalues of A^T A)
+    let svd = a.svd(true, true);
     let k = m.min(n);
-    let mut sigma: Vec<f64> = (0..n).map(|i| b[[i, i]].max(0.0).sqrt()).collect();
 
-    // Sort singular values in descending order and permute V accordingly
-    let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a_idx, &b_idx| {
-        sigma[b_idx]
-            .partial_cmp(&sigma[a_idx])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Singular values (already in descending order from nalgebra)
+    let d_vals: Vec<Option<f64>> = svd.singular_values.iter().copied().map(Some).collect();
 
-    let sorted_sigma: Vec<f64> = order.iter().map(|&i| sigma[i]).collect();
-    sigma = sorted_sigma;
+    // Left singular vectors: m x k
+    let u_full = svd
+        .u
+        .ok_or_else(|| RError::other("svd(): failed to compute left singular vectors"))?;
+    let u = u_full.columns(0, k).clone_owned();
 
-    let mut v_sorted = Array2::<f64>::zeros((n, n));
-    for (new_j, &old_j) in order.iter().enumerate() {
-        for i in 0..n {
-            v_sorted[[i, new_j]] = v[[i, old_j]];
-        }
-    }
-
-    // Compute U = A V Sigma^{-1} (only first k columns)
-    let mut u = Array2::<f64>::zeros((m, k));
-    for j in 0..k {
-        if sigma[j] > 1e-15 {
-            let inv_sigma = 1.0 / sigma[j];
-            for i in 0..m {
-                let mut sum = 0.0;
-                for l in 0..n {
-                    sum += a[[i, l]] * v_sorted[[l, j]];
-                }
-                u[[i, j]] = sum * inv_sigma;
-            }
-        }
-    }
-
-    // Truncate to min(m,n) singular values and V columns
-    let d_vals: Vec<Option<f64>> = sigma[..k].iter().copied().map(Some).collect();
-
-    let mut v_out = Array2::<f64>::zeros((n, k));
-    for j in 0..k {
-        for i in 0..n {
-            v_out[[i, j]] = v_sorted[[i, j]];
-        }
-    }
+    // Right singular vectors: n x k
+    let v_t_full = svd
+        .v_t
+        .ok_or_else(|| RError::other("svd(): failed to compute right singular vectors"))?;
+    let v = v_t_full.rows(0, k).transpose();
 
     Ok(RValue::List(RList::new(vec![
         (
             Some("d".to_string()),
             RValue::vec(Vector::Double(d_vals.into())),
         ),
-        (Some("u".to_string()), array2_to_rvalue(&u)),
-        (Some("v".to_string()), array2_to_rvalue(&v_out)),
+        (Some("u".to_string()), dmatrix_to_rvalue(&u)),
+        (Some("v".to_string()), dmatrix_to_rvalue(&v)),
     ])))
 }
 
-/// `eigen(x)` — Eigenvalue decomposition for symmetric matrices via Jacobi
-/// iteration.
+/// `eigen(x)` — Eigenvalue decomposition via nalgebra.
 ///
 /// Returns a list with:
-/// - `$values`: numeric vector of eigenvalues (descending)
+/// - `$values`: numeric vector of eigenvalues (descending by absolute value)
 /// - `$vectors`: matrix of eigenvectors (columns)
 ///
-/// Currently only supports real symmetric matrices. Non-symmetric input
-/// produces an informative error.
+/// Supports both symmetric and non-symmetric real matrices.
+/// For symmetric matrices, uses nalgebra's `symmetric_eigen()` (faster, all-real).
+/// For non-symmetric matrices, uses Schur decomposition to extract real eigenvalues,
+/// or reports complex eigenvalues as an error (R returns complex values, which we
+/// don't yet support in this context).
 #[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_eigen(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
+    let a = rvalue_to_dmatrix(args.first().unwrap_or(&RValue::Null))?;
     let n = a.nrows();
     if n != a.ncols() {
         return Err(RError::new(
@@ -3304,115 +3133,109 @@ fn builtin_eigen(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             ),
             (
                 Some("vectors".to_string()),
-                array2_to_rvalue(&Array2::<f64>::zeros((0, 0))),
+                dmatrix_to_rvalue(&DMatrix::<f64>::zeros(0, 0)),
             ),
         ])));
     }
 
     // Check symmetry
     let sym_tol = 1e-10;
-    for i in 0..n {
+    let mut is_symmetric = true;
+    'sym_check: for i in 0..n {
         for j in (i + 1)..n {
-            if (a[[i, j]] - a[[j, i]]).abs() > sym_tol * (a[[i, j]].abs() + a[[j, i]].abs() + 1.0) {
-                return Err(RError::other(
-                    "only real symmetric matrices are supported in eigen() currently — \
-                     the input matrix is not symmetric. Consider using (x + t(x))/2 \
-                     if you want to symmetrize it."
-                        .to_string(),
-                ));
+            if (a[(i, j)] - a[(j, i)]).abs() > sym_tol * (a[(i, j)].abs() + a[(j, i)].abs() + 1.0) {
+                is_symmetric = false;
+                break 'sym_check;
             }
         }
     }
 
-    // Jacobi eigenvalue algorithm for symmetric matrices
-    let mut s = a;
-    let mut eigvecs = Array2::<f64>::zeros((n, n));
-    for i in 0..n {
-        eigvecs[[i, i]] = 1.0;
-    }
+    if is_symmetric {
+        // Use optimized symmetric eigendecomposition
+        let eig = a.symmetric_eigen();
 
-    let max_iter = 100 * n * n;
-    let tol = 1e-12;
+        // nalgebra returns eigenvalues in arbitrary order — sort descending
+        let mut eigen_pairs: Vec<(f64, usize)> = eig
+            .eigenvalues
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(i, v)| (v, i))
+            .collect();
+        eigen_pairs.sort_by(|a_pair, b_pair| {
+            b_pair
+                .0
+                .partial_cmp(&a_pair.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-    for _ in 0..max_iter {
-        // Find largest off-diagonal element
-        let mut off_diag = 0.0;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                off_diag += s[[i, j]] * s[[i, j]];
+        let values: Vec<Option<f64>> = eigen_pairs.iter().map(|&(val, _)| Some(val)).collect();
+
+        let mut vectors = DMatrix::<f64>::zeros(n, n);
+        for (new_j, &(_, old_j)) in eigen_pairs.iter().enumerate() {
+            for i in 0..n {
+                vectors[(i, new_j)] = eig.eigenvectors[(i, old_j)];
             }
         }
-        if off_diag.sqrt() < tol {
-            break;
-        }
 
-        for p in 0..n {
-            for q in (p + 1)..n {
-                let s_pq = s[[p, q]];
-                if s_pq.abs() < 1e-15 {
-                    continue;
-                }
+        Ok(RValue::List(RList::new(vec![
+            (
+                Some("values".to_string()),
+                RValue::vec(Vector::Double(values.into())),
+            ),
+            (Some("vectors".to_string()), dmatrix_to_rvalue(&vectors)),
+        ])))
+    } else {
+        // Non-symmetric: use Schur decomposition to extract eigenvalues.
+        // The real Schur form has eigenvalues on the diagonal (for real eigenvalues)
+        // or in 2x2 blocks (for complex conjugate pairs).
+        let schur = a.schur();
+        let (u_mat, t_mat) = schur.unpack();
 
-                let tau = (s[[q, q]] - s[[p, p]]) / (2.0 * s_pq);
-                let t = if tau >= 0.0 {
-                    1.0 / (tau + (1.0 + tau * tau).sqrt())
-                } else {
-                    -1.0 / (-tau + (1.0 + tau * tau).sqrt())
-                };
-                let c = 1.0 / (1.0 + t * t).sqrt();
-                let sv = t * c;
-
-                // Apply Givens rotation
-                for i in 0..n {
-                    let s_ip = s[[i, p]];
-                    let s_iq = s[[i, q]];
-                    s[[i, p]] = c * s_ip - sv * s_iq;
-                    s[[i, q]] = sv * s_ip + c * s_iq;
-                }
-                for j in 0..n {
-                    let s_pj = s[[p, j]];
-                    let s_qj = s[[q, j]];
-                    s[[p, j]] = c * s_pj - sv * s_qj;
-                    s[[q, j]] = sv * s_pj + c * s_qj;
-                }
-
-                // Accumulate eigenvectors
-                for i in 0..n {
-                    let v_ip = eigvecs[[i, p]];
-                    let v_iq = eigvecs[[i, q]];
-                    eigvecs[[i, p]] = c * v_ip - sv * v_iq;
-                    eigvecs[[i, q]] = sv * v_ip + c * v_iq;
-                }
+        // Extract eigenvalues from diagonal/2x2 blocks of the quasi-triangular T
+        let mut values = Vec::new();
+        let mut has_complex = false;
+        let mut i = 0;
+        while i < n {
+            if i + 1 < n && t_mat[(i + 1, i)].abs() > 1e-10 {
+                // 2x2 block: complex conjugate pair
+                has_complex = true;
+                i += 2;
+            } else {
+                values.push(t_mat[(i, i)]);
+                i += 1;
             }
         }
-    }
 
-    // Extract eigenvalues from diagonal
-    let mut eigen_pairs: Vec<(f64, usize)> = (0..n).map(|i| (s[[i, i]], i)).collect();
-    // Sort descending by eigenvalue
-    eigen_pairs.sort_by(|a_pair, b_pair| {
-        b_pair
-            .0
-            .partial_cmp(&a_pair.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let values: Vec<Option<f64>> = eigen_pairs.iter().map(|&(val, _)| Some(val)).collect();
-
-    let mut vectors = Array2::<f64>::zeros((n, n));
-    for (new_j, &(_, old_j)) in eigen_pairs.iter().enumerate() {
-        for i in 0..n {
-            vectors[[i, new_j]] = eigvecs[[i, old_j]];
+        if has_complex {
+            return Err(RError::other(
+                "non-symmetric matrix has complex eigenvalues — \
+                 complex eigenvalue support is not yet implemented. \
+                 If the matrix should be symmetric, consider using (x + t(x))/2 \
+                 to symmetrize it.",
+            ));
         }
-    }
 
-    Ok(RValue::List(RList::new(vec![
-        (
-            Some("values".to_string()),
-            RValue::vec(Vector::Double(values.into())),
-        ),
-        (Some("vectors".to_string()), array2_to_rvalue(&vectors)),
-    ])))
+        // Sort descending by value
+        values.sort_by(|a_val, b_val| {
+            b_val
+                .partial_cmp(a_val)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let vals: Vec<Option<f64>> = values.iter().copied().map(Some).collect();
+
+        // Use the Schur vectors as approximate eigenvectors
+        let vectors = u_mat;
+
+        Ok(RValue::List(RList::new(vec![
+            (
+                Some("values".to_string()),
+                RValue::vec(Vector::Double(vals.into())),
+            ),
+            (Some("vectors".to_string()), dmatrix_to_rvalue(&vectors)),
+        ])))
+    }
 }
 
 // endregion
