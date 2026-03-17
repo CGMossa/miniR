@@ -90,8 +90,19 @@ pub struct Interpreter {
     call_stack: RefCell<Vec<CallFrame>>,
     /// Stack of handler sets from withCallingHandlers() calls.
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
+    /// Per-interpreter RNG state. Uses `SmallRng` (Xoshiro256PlusPlus on 64-bit)
+    /// which is fast and non-cryptographic — appropriate for R's statistical RNG.
+    ///
+    /// # Parallel RNG considerations
+    ///
+    /// The RNG is behind `RefCell` on the single-threaded `Interpreter`, so there
+    /// are no data races. If we ever add rayon-based parallel operations, each
+    /// worker thread must get its own RNG seeded deterministically from the parent
+    /// (e.g. `SmallRng::seed_from_u64(parent_seed + thread_id)`) to avoid
+    /// contention and ensure reproducibility. The current single-threaded design
+    /// is correct as-is.
     #[cfg(feature = "random")]
-    rng: RefCell<rand::rngs::StdRng>,
+    rng: RefCell<rand::rngs::SmallRng>,
     /// Session-scoped temporary directory, auto-cleaned on drop.
     pub(crate) temp_dir: temp_dir::TempDir,
     /// Counter for unique tempfile names within the session.
@@ -207,7 +218,7 @@ impl Interpreter {
             rng: RefCell::new({
                 use rand::SeedableRng;
                 let mut thread_rng = rand::rng();
-                rand::rngs::StdRng::from_rng(&mut thread_rng)
+                rand::rngs::SmallRng::from_rng(&mut thread_rng)
             }),
             temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
             temp_counter: std::cell::Cell::new(0),
@@ -330,7 +341,7 @@ impl Interpreter {
     }
 
     #[cfg(feature = "random")]
-    pub fn rng(&self) -> &RefCell<rand::rngs::StdRng> {
+    pub fn rng(&self) -> &RefCell<rand::rngs::SmallRng> {
         &self.rng
     }
 

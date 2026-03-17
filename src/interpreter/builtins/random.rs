@@ -96,7 +96,12 @@ fn extract_param(
 
 /// Set the random number generator seed for reproducibility.
 ///
-/// @param seed integer seed value
+/// Seeds the per-interpreter RNG deterministically so that subsequent random
+/// draws produce the same sequence.  Also stores the seed value in
+/// `.Random.seed` in the global environment (as an integer vector whose first
+/// element is the seed), matching R's convention of exposing RNG state there.
+///
+/// @param seed integer seed value (or NULL to re-seed from system entropy)
 /// @return NULL, invisibly
 #[interpreter_builtin(name = "set.seed", min_args = 1)]
 fn interp_set_seed(
@@ -104,13 +109,33 @@ fn interp_set_seed(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // set.seed(NULL) re-seeds from system entropy (like a fresh interpreter)
+    if matches!(args[0], RValue::Null) {
+        context.with_interpreter(|interp| {
+            let mut thread_rng = rand::rng();
+            *interp.rng().borrow_mut() = rand::rngs::SmallRng::from_rng(&mut thread_rng);
+            // Remove .Random.seed when re-seeding from entropy
+            interp.global_env.remove(".Random.seed");
+        });
+        return Ok(RValue::Null);
+    }
+
     let seed_f64 = args[0]
         .as_vector()
         .and_then(|v| v.as_double_scalar())
         .ok_or(RandomError::InvalidParam { param: "seed" })?;
     let seed = f64_to_u64(seed_f64)?;
     context.with_interpreter(|interp| {
-        *interp.rng().borrow_mut() = rand::rngs::StdRng::seed_from_u64(seed);
+        *interp.rng().borrow_mut() = rand::rngs::SmallRng::seed_from_u64(seed);
+        // Store the seed in .Random.seed in the global env.
+        // R's .Random.seed is an integer vector; we store the u64 seed as two
+        // i64 values: a "kind" marker (0 = SmallRng/Xoshiro) and the seed.
+        // This is a simplified version of R's full .Random.seed protocol.
+        let seed_i64 = i64::try_from(seed).unwrap_or(i64::MAX);
+        interp.global_env.set(
+            ".Random.seed".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(0), Some(seed_i64)].into())),
+        );
     });
     Ok(RValue::Null)
 }
