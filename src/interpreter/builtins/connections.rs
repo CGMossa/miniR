@@ -15,6 +15,8 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 
+use bstr::ByteSlice;
+
 use super::CallArgs;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
@@ -415,6 +417,7 @@ fn interp_read_lines(
     }
 
     // File path reading — either from string argument or file connection.
+    // Uses bstr to read raw bytes and handle mixed/non-UTF-8 encodings gracefully.
     let path = if is_connection(con_val) {
         let id = connection_id(con_val).unwrap();
         let interp = context.interpreter();
@@ -424,20 +427,28 @@ fn interp_read_lines(
         call_args.string("con", 0)?
     };
 
-    let content = std::fs::read_to_string(&path).map_err(|e| {
+    // Read as raw bytes via bstr so we can handle non-UTF-8 files
+    let raw_bytes = std::fs::read(&path).map_err(|e| {
         RError::new(
             RErrorKind::Other,
             format!("cannot open file '{}': {}", path, e),
         )
     })?;
 
+    // Use bstr's lines() which handles \n, \r\n, and \r line endings on
+    // arbitrary byte strings, then lossy-convert each line to UTF-8.
+    // Invalid byte sequences become U+FFFD (replacement character) instead
+    // of causing an error.
     let lines: Vec<Option<String>> = if n < 0 {
-        content.lines().map(|l| Some(l.to_string())).collect()
+        raw_bytes
+            .lines()
+            .map(|line| Some(line.to_str_lossy().into_owned()))
+            .collect()
     } else {
-        content
+        raw_bytes
             .lines()
             .take(usize::try_from(n).unwrap_or(usize::MAX))
-            .map(|l| Some(l.to_string()))
+            .map(|line| Some(line.to_str_lossy().into_owned()))
             .collect()
     };
     Ok(RValue::vec(Vector::Character(lines.into())))
