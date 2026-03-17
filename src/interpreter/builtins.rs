@@ -25,6 +25,7 @@ pub mod strings;
 mod stubs;
 pub mod system;
 mod tables;
+mod tables_display;
 mod types;
 
 use unicode_width::UnicodeWidthStr;
@@ -1351,6 +1352,8 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 /// Display the compact internal structure of an object.
 ///
 /// Prints type, length, and a preview of the first few elements.
+/// For data.frames, shows a structured view with column types aligned
+/// using the `tabled` crate.
 ///
 /// @param x object to inspect
 /// @return NULL (invisibly)
@@ -1358,6 +1361,12 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(val) => {
+            // Check for data.frame first — use tabled-based structured display
+            if let Some(output) = tables_display::str_data_frame(val) {
+                print!("{}", output);
+                return Ok(RValue::Null);
+            }
+
             match val {
                 RValue::Vector(v) => {
                     let len = v.len();
