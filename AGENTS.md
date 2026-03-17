@@ -71,7 +71,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - **Every new feature should have tests planned** — either `stopifnot` assertions via `Session::eval_source` in a Rust integration test, or direct value checks via the Session API. Tests don't have to land in the same commit, but they should be planned and tracked. If an agent produces code without tests, note what needs coverage.
 - `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
 - `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
-- `tests/parse_corpus.rs` — runs all .R files through Session API, asserts no regressions
+- `tests/parse_corpus.rs` — runs all .R files through parser, asserts no regressions. By default only scans `tests/` directory (fast). Set `MINIR_PARSE_CRAN=1` to include the full CRAN corpus from `cran/` (~7000 files, ~50s). The `cran/` directory must be present (use `just update-cran-test-packages`).
 - `tests/argument_matching.rs` — three-pass matching conformance
 - `./scripts/parse-test.sh <dir>` — test if all .R files in a directory parse without errors or panics
 - `just update-cran-test-packages` — clone/refresh the CRAN test packages in `cran/`
