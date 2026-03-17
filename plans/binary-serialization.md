@@ -143,8 +143,10 @@ Create `src/interpreter/builtins/serialize.rs`:
 
 ## Dependencies
 
-- Phase 1-2: No new deps (just byte manipulation)
-- Phase 3: `flate2` crate for gzip compression
+- Phase 1-2: `flate2` crate for gzip decompression (nearly all .rds files are gzip-compressed)
+- Phase 3: Same `flate2` crate for gzip write
+- See `plans/flate2.md` for flate2 integration details
+- Use `flate2 = { version = "1", features = ["rust_backend"] }` for pure-Rust (no system zlib)
 
 ## First deliverable
 
