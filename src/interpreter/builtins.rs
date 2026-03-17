@@ -7,7 +7,7 @@ pub mod connections;
 mod dataframes;
 #[cfg(feature = "datetime")]
 mod datetime;
-#[cfg(feature = "digest")]
+#[cfg(any(feature = "digest", feature = "blake3"))]
 mod digest;
 mod factors;
 mod graphics;
