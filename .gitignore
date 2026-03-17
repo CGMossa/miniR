@@ -1,3 +1,4 @@
 /target
 /cran
 .cargo/config.toml
+vendor/
