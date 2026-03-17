@@ -92,11 +92,14 @@ rustls-native-certs = { version = "0.8", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "toml", "arena"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "toml", "diagnostics", "arena"]
 
 logging = ["dep:env_logger"]
 toml_edit = {version = "0.22", optional = true}
 
+miette = { version = "7", features = ["fancy-no-backtrace"], optional = true }
+
+diagnostics = ["dep:miette"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
