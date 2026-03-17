@@ -62,6 +62,7 @@ impl Interpreter {
         eval_index(self, object, indices, env)
     }
 
+    #[cfg(feature = "random")]
     pub(crate) fn index_by_integer(
         &self,
         v: &Vector,

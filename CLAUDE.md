@@ -115,6 +115,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 ## Code Quality
 
 - Before committing, always run in this order: `cargo fmt`, then `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings), then `cargo test` — fmt must run first so clippy reports correct line numbers
+- **No "pre-existing" warnings** — if you encounter a warning or error, fix it. There is no such thing as a pre-existing issue that can be ignored. Every warning is a bug to be fixed, not a known issue to be documented.
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 - **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
 - **Prefer `From`/`TryFrom` over `as` casts** — use `TryFrom` and `From` trait conversions instead of `as`-casts; propagate the error rather than silently truncating or wrapping
