@@ -102,7 +102,10 @@ fn test_corpus_parses_without_regressions() {
 
     let mut files = Vec::new();
     collect_r_files(&test_dir, &mut files);
-    if cran_dir.is_dir() {
+    // Only include the heavy CRAN corpus when MINIR_PARSE_CRAN=1 is set.
+    // This keeps `cargo test` fast (~1s) while still allowing full corpus
+    // checks via `MINIR_PARSE_CRAN=1 cargo test --test parse_corpus`.
+    if std::env::var("MINIR_PARSE_CRAN").as_deref() == Ok("1") && cran_dir.is_dir() {
         collect_cran_r_files(&cran_dir, &mut files);
     }
     files.sort();
