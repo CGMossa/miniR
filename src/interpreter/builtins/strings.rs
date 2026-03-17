@@ -610,6 +610,174 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+/// Replace matched substrings using regexpr/gregexpr match data.
+///
+/// Called as `regmatches(x, m) <- value`. The replacement function receives
+/// args `(x, m, value)`:
+/// - For regexpr data: value is a character vector of replacements
+/// - For gregexpr data: value is a list of character vectors
+///
+/// @param x character vector that was searched
+/// @param m match data from regexpr() or gregexpr()
+/// @param value replacement strings
+/// @return character vector with matched substrings replaced
+#[builtin(name = "regmatches<-", min_args = 3)]
+fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            vals.clone()
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'x' is not character".to_string(),
+            ))
+        }
+    };
+
+    let match_data = args.get(1).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "missing match data argument".to_string(),
+        )
+    })?;
+
+    let value = args.get(2).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "missing replacement value".to_string(),
+        )
+    })?;
+
+    match match_data {
+        // regexpr result: single integer vector with match.length attr
+        RValue::Vector(rv) if matches!(rv.inner, Vector::Integer(_)) => {
+            let Vector::Integer(positions) = &rv.inner else {
+                unreachable!()
+            };
+            let lengths = match rv.get_attr("match.length") {
+                Some(RValue::Vector(lv)) => match &lv.inner {
+                    Vector::Integer(l) => l.0.clone(),
+                    _ => {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            "invalid match data: match.length attribute is not integer".to_string(),
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "invalid match data: missing match.length attribute".to_string(),
+                    ))
+                }
+            };
+            let replacements = match value {
+                RValue::Vector(rv) => rv.to_characters(),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "replacement value must be a character vector".to_string(),
+                    ))
+                }
+            };
+
+            let mut result: Vec<Option<String>> = x.to_vec();
+            for (i, pos) in positions.iter().enumerate() {
+                let p = pos.unwrap_or(-1);
+                let l = lengths.get(i).copied().flatten().unwrap_or(-1);
+                if p > 0 && l >= 0 {
+                    if let Some(Some(s)) = result.get(i) {
+                        let start = usize::try_from(p - 1)?;
+                        let end = start + usize::try_from(l)?;
+                        if end <= s.len() {
+                            let repl = replacements
+                                .get(i)
+                                .and_then(|r| r.as_ref())
+                                .map(|r| r.as_str())
+                                .unwrap_or("");
+                            let new_s = format!("{}{}{}", &s[..start], repl, &s[end..]);
+                            result[i] = Some(new_s);
+                        }
+                    }
+                }
+            }
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        // gregexpr result: list of integer vectors
+        RValue::List(match_list) => {
+            let repl_list = match value {
+                RValue::List(l) => l,
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "replacement value must be a list for gregexpr match data".to_string(),
+                    ))
+                }
+            };
+
+            let mut result: Vec<Option<String>> = x.to_vec();
+            for (i, (_, match_val)) in match_list.values.iter().enumerate() {
+                let RValue::Vector(rv) = match_val else {
+                    continue;
+                };
+                let Vector::Integer(positions) = &rv.inner else {
+                    continue;
+                };
+                let lengths = match rv.get_attr("match.length") {
+                    Some(RValue::Vector(lv)) => match &lv.inner {
+                        Vector::Integer(l) => l.0.clone(),
+                        _ => vec![],
+                    },
+                    _ => vec![],
+                };
+
+                let repls: Vec<Option<String>> = match repl_list.values.get(i) {
+                    Some((_, RValue::Vector(rv))) => rv.to_characters().to_vec(),
+                    _ => vec![],
+                };
+
+                if let Some(Some(s)) = result.get(i) {
+                    // Collect all match positions and replacements, process from right to left
+                    // so earlier positions remain valid after replacement
+                    let mut edits: Vec<(usize, usize, &str)> = Vec::new();
+                    for (j, pos) in positions.iter().enumerate() {
+                        let p = pos.unwrap_or(-1);
+                        let l = lengths.get(j).copied().flatten().unwrap_or(-1);
+                        if p > 0 && l >= 0 {
+                            let start = usize::try_from(p - 1)?;
+                            let end = start + usize::try_from(l)?;
+                            if end <= s.len() {
+                                let repl = repls
+                                    .get(j)
+                                    .and_then(|r| r.as_ref())
+                                    .map(|r| r.as_str())
+                                    .unwrap_or("");
+                                edits.push((start, end, repl));
+                            }
+                        }
+                    }
+                    // Apply edits right-to-left so byte offsets stay valid
+                    edits.sort_by(|a, b| b.0.cmp(&a.0));
+                    let mut new_s = s.clone();
+                    for (start, end, repl) in edits {
+                        new_s = format!("{}{}{}", &new_s[..start], repl, &new_s[end..]);
+                    }
+                    result[i] = Some(new_s);
+                }
+            }
+            Ok(RValue::vec(Vector::Character(result.into())))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "invalid match data".to_string(),
+        )),
+    }
+}
+
 /// Parsed format specifier from a `sprintf` format string.
 struct FmtSpec {
     flags: String,
