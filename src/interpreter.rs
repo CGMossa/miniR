@@ -155,6 +155,9 @@ pub struct Interpreter {
         RefCell<std::collections::HashMap<String, packages::LoadedNamespace>>,
     /// Search path entries (between .GlobalEnv and package:base).
     pub(crate) search_path: RefCell<Vec<packages::SearchPathEntry>>,
+    /// Active progress bars, keyed by integer ID.
+    #[cfg(feature = "progress")]
+    pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
 }
 
 /// S4 class definition stored in the per-interpreter class registry.
@@ -289,6 +292,8 @@ impl Interpreter {
             s4_methods: RefCell::new(std::collections::HashMap::new()),
             loaded_namespaces: RefCell::new(std::collections::HashMap::new()),
             search_path: RefCell::new(Vec::new()),
+            #[cfg(feature = "progress")]
+            progress_bars: RefCell::new(Vec::new()),
         }
     }
 

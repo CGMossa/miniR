@@ -306,12 +306,13 @@ fn interp_open(
     Ok(connection_value(id))
 }
 
-/// Close a connection.
+/// Close a connection or progress bar.
 ///
-/// Marks the connection as closed. For TCP socket connections, also shuts
-/// down and removes the underlying stream. Returns invisible NULL.
+/// If the argument has class `"txtProgressBar"`, finishes the bar and removes it.
+/// Otherwise, marks the connection as closed. For TCP socket connections, also
+/// shuts down and removes the underlying stream. Returns invisible NULL.
 ///
-/// @param con integer scalar: connection ID
+/// @param con integer scalar: connection or progress bar ID
 /// @return NULL (invisibly)
 #[interpreter_builtin(name = "close", min_args = 1)]
 fn interp_close(
@@ -326,6 +327,31 @@ fn interp_close(
             "argument 'con' is missing".to_string(),
         )
     })?;
+
+    // Dispatch to progress bar close if the argument carries class "txtProgressBar".
+    #[cfg(feature = "progress")]
+    if super::progress::is_progress_bar(con_val) {
+        let id = con_val
+            .as_vector()
+            .and_then(|v| v.as_integer_scalar())
+            .and_then(|i| usize::try_from(i).ok())
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "invalid txtProgressBar object".to_string(),
+                )
+            })?;
+        let interp = context.interpreter();
+        if !interp.close_progress_bar(id) {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!("progress bar {id} has already been closed or does not exist"),
+            ));
+        }
+        interp.set_invisible();
+        return Ok(RValue::Null);
+    }
+
     let id = connection_id(con_val)
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid connection".to_string()))?;
 

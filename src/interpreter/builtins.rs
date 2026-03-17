@@ -20,6 +20,8 @@ pub mod math;
 #[cfg(feature = "tls")]
 mod net;
 mod pre_eval;
+#[cfg(feature = "progress")]
+pub mod progress;
 #[cfg(feature = "random")]
 mod random;
 mod s4;
