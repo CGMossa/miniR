@@ -64,6 +64,13 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `<<-` creates missing bindings in global env (not base)
 - `print()` and `format()` are S3 generics — they dispatch to `print.Date`, `format.POSIXct`, etc.
 
+## Known Parser Divergences from GNU R
+
+- **Newline continuation in postfix chains**: `x\n(y)` parses as `x(y)`, not two expressions. Same for `x\n$y`, `pkg\n::foo`. Required for CRAN compat (7014/7014). See `reviews/parser-newline-continuation.md`.
+- **`if...else` across newlines**: `if (TRUE) 1\nelse 2` accepted (GNU R rejects).
+- **`?` not embeddable**: `x <- ?sin` doesn't work. `?` is top-level only.
+- **`~~` and `:=` parsed but stubbed**: no runtime semantics yet.
+
 ## Testing
 
 - `cargo test` — primary test command, runs all Rust integration tests

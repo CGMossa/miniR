@@ -48,3 +48,29 @@ A future improvement could use a two-pass approach: parse greedily, then
 validate that cross-line postfix chains are intentional (e.g., preceded by
 an obviously-incomplete expression). But this is low priority given 0
 CRAN failures.
+
+## Other known parser limitations
+
+### `?` inside assignment RHS
+
+`x <- ?sin` doesn't work because `help_expr` wraps the entire precedence
+chain — it's the outermost level. The RHS of `<-` recurses into
+`assign_left_expr`, which doesn't include `help_expr`. In GNU R,
+`x <- ?sin` assigns the help result to x. In miniR, the `?` is not
+reachable in that position. Low priority since `?` is interactive-only.
+
+### Binary `?` drops the RHS
+
+`foo ? bar` (type-based help lookup) parses but the AST builder
+(`builder.rs:137`) discards the RHS, producing just `foo`. This is
+because binary `?` is rarely used and the help system isn't fully
+implemented. The grammar correctly accepts it; the builder just
+doesn't preserve the topic.
+
+### `~~` and `:=` are parsed but stubbed
+
+- `~~` (plotmath spacing) parses as `BinaryOp::DoubleTilde` but evaluates
+  to `NULL` at runtime (`ops.rs`).
+- `:=` (data.table/rlang walrus) parses as `BinaryOp::Special(Walrus)` but
+  has no runtime semantics. Needs data.table/rlang metaprogramming support
+  to be meaningful.
