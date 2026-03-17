@@ -1,0 +1,4 @@
+tests/Pkgs/PR17859.1/R/f2.R
+tests/Pkgs/PR17859.2/R/f2.R
+tests/Pkgs/PR17859.2/R/f3.R
+tests/utf8-regex.R

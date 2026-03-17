@@ -10,6 +10,9 @@ use r::parser::parse_program;
 
 /// Known parse failures, stored as repo-relative paths one per line.
 const KNOWN_PARSE_FAILURES: &str = include_str!("parse_corpus_known_failures.txt");
+/// Files that are intentionally not standalone R source and should not be part
+/// of the parse corpus baseline.
+const EXCLUDED_PARSE_FIXTURES: &str = include_str!("parse_corpus_excluded.txt");
 
 fn collect_r_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir).expect("failed to read test dir");
@@ -124,13 +127,23 @@ fn test_corpus_parses_without_regressions() {
     let mut passed = 0usize;
     let mut expected_failures = Vec::new();
     let mut unexpected_failures = Vec::new();
+    let excluded_fixtures: HashSet<&str> = EXCLUDED_PARSE_FIXTURES
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
     let known_failures: HashSet<&str> = KNOWN_PARSE_FAILURES
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect();
 
-    for (file, ok) in parse_files_in_parallel(&entries) {
+    let parse_entries: Vec<(PathBuf, String)> = entries
+        .into_iter()
+        .filter(|(_, file)| !excluded_fixtures.contains(file.as_str()))
+        .collect();
+
+    for (file, ok) in parse_files_in_parallel(&parse_entries) {
         if ok {
             passed += 1;
             // If this was a known failure that now passes, flag it
@@ -144,9 +157,10 @@ fn test_corpus_parses_without_regressions() {
         }
     }
 
-    let total = files.len();
+    let total = parse_entries.len();
     eprintln!(
-        "\n=== Parse Corpus: {total} files, {passed} passed, {} known failures, {} regressions ===",
+        "\n=== Parse Corpus: {total} files, {passed} passed, {} excluded, {} known failures, {} regressions ===",
+        excluded_fixtures.len(),
         expected_failures.len(),
         unexpected_failures.len()
     );
