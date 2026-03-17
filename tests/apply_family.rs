@@ -498,3 +498,441 @@ stopifnot(result[[3]] == 6)
 }
 
 // endregion
+
+// region: vapply
+
+#[test]
+fn vapply_basic_double() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- vapply(1:5, function(x) x * 2.0, numeric(1))
+stopifnot(is.double(result))
+stopifnot(identical(result, c(2, 4, 6, 8, 10)))
+"#,
+    )
+    .expect("vapply basic double failed");
+}
+
+#[test]
+fn vapply_character() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- vapply(c("hello", "world"), toupper, character(1))
+stopifnot(is.character(result))
+stopifnot(identical(result, c("HELLO", "WORLD")))
+"#,
+    )
+    .expect("vapply character failed");
+}
+
+#[test]
+fn vapply_logical() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- vapply(c(1, -2, 3, -4), function(x) x > 0, logical(1))
+stopifnot(is.logical(result))
+stopifnot(identical(result, c(TRUE, FALSE, TRUE, FALSE)))
+"#,
+    )
+    .expect("vapply logical failed");
+}
+
+#[test]
+fn vapply_type_mismatch_errors() {
+    let mut s = Session::new();
+    let result = s.eval_source(
+        r#"
+# This should error: function returns character but FUN.VALUE is numeric
+vapply(c("a", "b"), function(x) x, numeric(1))
+"#,
+    );
+    assert!(result.is_err(), "vapply should error on type mismatch");
+}
+
+#[test]
+fn vapply_length_mismatch_errors() {
+    let mut s = Session::new();
+    let result = s.eval_source(
+        r#"
+# This should error: function returns length-2 but FUN.VALUE is length-1
+vapply(1:3, function(x) c(x, x), numeric(1))
+"#,
+    );
+    assert!(result.is_err(), "vapply should error on length mismatch");
+}
+
+#[test]
+fn vapply_empty_input() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- vapply(integer(0), function(x) x * 2.0, numeric(1))
+stopifnot(is.double(result))
+stopifnot(length(result) == 0)
+"#,
+    )
+    .expect("vapply empty input failed");
+}
+
+// endregion
+
+// region: sapply/lapply with extra args
+
+#[test]
+fn sapply_with_extra_args() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- sapply(1:3, function(x, y) x + y, 10)
+stopifnot(identical(result, c(11, 12, 13)))
+"#,
+    )
+    .expect("sapply with extra args failed");
+}
+
+#[test]
+fn lapply_with_extra_args() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- lapply(1:3, function(x, y) x * y, 5)
+stopifnot(is.list(result))
+stopifnot(result[[1]] == 5)
+stopifnot(result[[2]] == 10)
+stopifnot(result[[3]] == 15)
+"#,
+    )
+    .expect("lapply with extra args failed");
+}
+
+// endregion
+
+// region: mapply with MoreArgs
+
+#[test]
+#[ignore = "mapply MoreArgs not yet implemented"]
+fn mapply_with_more_args() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- mapply(
+  function(x, y, sep) paste(x, y, sep = sep),
+  c("a", "b", "c"),
+  1:3,
+  MoreArgs = list(sep = "-")
+)
+stopifnot(identical(result, c("a-1", "b-2", "c-3")))
+"#,
+    )
+    .expect("mapply with MoreArgs failed");
+}
+
+// endregion
+
+// region: Reduce
+
+#[test]
+fn reduce_basic_sum() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Reduce("+", 1:5)
+stopifnot(result == 15)
+"#,
+    )
+    .expect("reduce basic sum failed");
+}
+
+#[test]
+fn reduce_with_init() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Reduce("+", 1:5, init = 100)
+stopifnot(result == 115)
+"#,
+    )
+    .expect("reduce with init failed");
+}
+
+#[test]
+fn reduce_accumulate() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Reduce("+", 1:4, accumulate = TRUE)
+stopifnot(is.list(result))
+stopifnot(length(result) == 4)
+# Accumulate: 1, 1+2=3, 3+3=6, 6+4=10
+stopifnot(result[[1]] == 1)
+stopifnot(result[[2]] == 3)
+stopifnot(result[[3]] == 6)
+stopifnot(result[[4]] == 10)
+"#,
+    )
+    .expect("reduce accumulate failed");
+}
+
+#[test]
+fn reduce_custom_function() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Reduce(function(a, b) a * b, 1:5)
+stopifnot(result == 120)  # 5!
+"#,
+    )
+    .expect("reduce custom function failed");
+}
+
+#[test]
+fn reduce_empty_with_init() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Reduce("+", integer(0), init = 42)
+stopifnot(result == 42)
+"#,
+    )
+    .expect("reduce empty with init failed");
+}
+
+// endregion
+
+// region: Filter / Find / Position / Map / Negate
+
+#[test]
+fn filter_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Filter(function(x) x > 3, 1:6)
+stopifnot(identical(result, 4:6))
+"#,
+    )
+    .expect("filter basic failed");
+}
+
+#[test]
+fn filter_empty_result() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Filter(function(x) x > 100, 1:5)
+stopifnot(is.null(result))
+"#,
+    )
+    .expect("filter empty result failed");
+}
+
+#[test]
+fn find_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Find(function(x) x > 3, 1:6)
+stopifnot(result == 4)
+"#,
+    )
+    .expect("find basic failed");
+}
+
+#[test]
+fn find_from_right() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Find(function(x) x > 3, 1:6, right = TRUE)
+stopifnot(result == 6)
+"#,
+    )
+    .expect("find from right failed");
+}
+
+#[test]
+fn find_not_found() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Find(function(x) x > 100, 1:5)
+stopifnot(is.null(result))
+"#,
+    )
+    .expect("find not found failed");
+}
+
+#[test]
+fn position_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Position(function(x) x > 3, 1:6)
+stopifnot(result == 4L)
+"#,
+    )
+    .expect("position basic failed");
+}
+
+#[test]
+fn position_from_right() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Position(function(x) x > 3, 1:6, right = TRUE)
+stopifnot(result == 6L)
+"#,
+    )
+    .expect("position from right failed");
+}
+
+#[test]
+fn position_not_found() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Position(function(x) x > 100, 1:5)
+stopifnot(is.null(result))
+"#,
+    )
+    .expect("position not found failed");
+}
+
+#[test]
+fn map_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Map(function(x, y) x + y, 1:3, 10:12)
+stopifnot(is.list(result))
+stopifnot(result[[1]] == 11)
+stopifnot(result[[2]] == 13)
+stopifnot(result[[3]] == 15)
+"#,
+    )
+    .expect("map basic failed");
+}
+
+#[test]
+#[ignore = "Map with 3+ args not yet implemented"]
+fn map_three_args() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+result <- Map(function(x, y, z) x + y + z, 1:3, 10:12, 100:102)
+stopifnot(is.list(result))
+stopifnot(result[[1]] == 111)
+stopifnot(result[[2]] == 123)
+stopifnot(result[[3]] == 135)
+"#,
+    )
+    .expect("map three args failed");
+}
+
+#[test]
+fn negate_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+is_positive <- function(x) x > 0
+is_non_positive <- Negate(is_positive)
+result <- Filter(is_non_positive, c(-2, -1, 0, 1, 2))
+stopifnot(identical(result, c(-2, -1, 0)))
+"#,
+    )
+    .expect("negate basic failed");
+}
+
+// endregion
+
+// region: rapply
+
+#[test]
+fn rapply_unlist_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- list(a = 1, b = list(c = 2, d = 3))
+result <- rapply(x, function(v) v * 10, how = "unlist")
+# Flattened results: 10, 20, 30
+stopifnot(length(result) == 3)
+stopifnot(result[1] == 10)
+stopifnot(result[2] == 20)
+stopifnot(result[3] == 30)
+"#,
+    )
+    .expect("rapply unlist basic failed");
+}
+
+#[test]
+fn rapply_replace_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- list(a = 1, b = list(c = 2, d = 3))
+result <- rapply(x, function(v) v * 10, how = "replace")
+stopifnot(is.list(result))
+stopifnot(result$a == 10)
+stopifnot(is.list(result$b))
+stopifnot(result$b$c == 20)
+stopifnot(result$b$d == 30)
+"#,
+    )
+    .expect("rapply replace basic failed");
+}
+
+#[test]
+fn rapply_list_mode() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- list(a = 1, b = list(c = 2, d = 3))
+result <- rapply(x, function(v) v + 100, how = "list")
+stopifnot(is.list(result))
+stopifnot(length(result) == 3)
+stopifnot(result[[1]] == 101)
+stopifnot(result[[2]] == 102)
+stopifnot(result[[3]] == 103)
+"#,
+    )
+    .expect("rapply list mode failed");
+}
+
+#[test]
+fn rapply_with_classes() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- list(a = 1L, b = "hello", c = list(d = 2L, e = "world"))
+# Only apply to integer elements
+result <- rapply(x, function(v) v * 10, classes = "integer", how = "replace")
+stopifnot(result$a == 10)
+stopifnot(result$b == "hello")  # unchanged -- not integer
+stopifnot(result$c$d == 20)
+stopifnot(result$c$e == "world")  # unchanged -- not integer
+"#,
+    )
+    .expect("rapply with classes failed");
+}
+
+#[test]
+fn rapply_with_deflt() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- list(a = 1L, b = "hello", c = 2L)
+# Only apply to integers; non-matching get deflt = NA
+result <- rapply(x, function(v) v * 10, classes = "integer", deflt = NA, how = "unlist")
+# result should have 3 elements: 10, NA, 20
+stopifnot(length(result) == 3)
+stopifnot(result[1] == 10)
+stopifnot(is.na(result[2]))
+stopifnot(result[3] == 20)
+"#,
+    )
+    .expect("rapply with deflt failed");
+}
+
+// endregion
