@@ -92,15 +92,18 @@ rustls-native-certs = { version = "0.8", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "arena"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "toml", "arena"]
 
 logging = ["dep:env_logger"]
+toml_edit = {version = "0.22", optional = true}
+
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
 collections = []
 digest = ["dep:sha2"]
 json = ["dep:serde_json"]
+toml = ["dep:toml_edit"]
 linalg = ["dep:ndarray"]
 tables = ["dep:tabled", "dep:tabwriter"]
 signal = ["dep:signal-hook"]
