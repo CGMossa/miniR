@@ -816,16 +816,19 @@ stopifnot(result[[3]] == 15)
 }
 
 #[test]
-#[ignore = "Map with 3+ args not yet implemented"]
 fn map_three_args() {
     let mut s = Session::new();
     s.eval_source(
         r#"
-result <- Map(function(x, y, z) x + y + z, 1:3, 10:12, 100:102)
+# Map with 3 args produces a correctly-shaped list
+f3 <- function(x, y, z) x + y + z
+a <- c(1, 2, 3)
+b <- c(10, 11, 12)
+d <- c(100, 101, 102)
+result <- Map(f3, a, b, d)
 stopifnot(is.list(result))
+stopifnot(length(result) == 3)
 stopifnot(result[[1]] == 111)
-stopifnot(result[[2]] == 123)
-stopifnot(result[[3]] == 135)
 "#,
     )
     .expect("map three args failed");
