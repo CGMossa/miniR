@@ -22,7 +22,7 @@ use minir_macros::builtin;
 ///
 /// @param txt character scalar: JSON string to parse
 /// @return R value corresponding to the JSON structure
-#[builtin(name = "fromJSON", min_args = 1, names = ["jsonlite::fromJSON"])]
+#[builtin(name = "fromJSON", min_args = 1, names = ["jsonlite::fromJSON"], namespace = "jsonlite")]
 fn builtin_from_json(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
     let txt = call_args.string("txt", 0)?;
@@ -392,7 +392,7 @@ fn json_object_to_rvalue(
 ///
 /// @param x R value to convert
 /// @return character scalar containing the JSON string
-#[builtin(name = "toJSON", min_args = 1, names = ["jsonlite::toJSON"])]
+#[builtin(name = "toJSON", min_args = 1, names = ["jsonlite::toJSON"], namespace = "jsonlite")]
 fn builtin_to_json(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let value = args
         .first()
