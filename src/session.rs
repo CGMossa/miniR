@@ -78,10 +78,16 @@ impl Session {
     }
 
     pub fn eval_expr(&mut self, expr: &Expr) -> Result<EvalOutput, SessionError> {
+        // Reset the invisible flag before evaluation so we can detect
+        // whether invisible() was called during this eval.
+        self.interpreter.last_value_invisible.set(false);
         let value = with_interpreter_state(&mut self.interpreter, |interp| interp.eval(expr))
             .map_err(SessionError::Runtime)?;
+        // Check both the runtime flag (set by invisible()) and the syntactic test
+        let runtime_invisible = self.interpreter.take_invisible();
+        let syntactic_invisible = is_invisible_result(expr);
         Ok(EvalOutput {
-            visible: !is_invisible_result(expr),
+            visible: !runtime_invisible && !syntactic_invisible,
             value,
         })
     }

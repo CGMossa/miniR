@@ -142,6 +142,9 @@ pub struct Interpreter {
     pub(crate) options: RefCell<std::collections::HashMap<String, value::RValue>>,
     /// Rd documentation help index for package `man/` directories.
     pub(crate) rd_help_index: RefCell<packages::rd::RdHelpIndex>,
+    /// Visibility flag — set to `true` by `invisible()` to suppress auto-printing
+    /// of the return value. Reset to `false` before each top-level eval.
+    pub(crate) last_value_invisible: std::cell::Cell<bool>,
 }
 
 impl Default for Interpreter {
@@ -248,6 +251,7 @@ impl Interpreter {
             interrupted: Arc::new(AtomicBool::new(false)),
             options: RefCell::new(Self::default_options()),
             rd_help_index: RefCell::new(packages::rd::RdHelpIndex::new()),
+            last_value_invisible: std::cell::Cell::new(false),
         }
     }
 
@@ -256,6 +260,17 @@ impl Interpreter {
         self.rd_help_index
             .borrow_mut()
             .index_package_dir(package_name, man_dir);
+    }
+
+    /// Mark the current result as invisible (suppresses auto-printing).
+    pub(crate) fn set_invisible(&self) {
+        self.last_value_invisible.set(true);
+    }
+
+    /// Check and consume the invisible flag. Returns `true` if the last
+    /// value was marked invisible. The flag is reset after reading.
+    pub(crate) fn take_invisible(&self) -> bool {
+        self.last_value_invisible.replace(false)
     }
 
     /// Return a clone of the interrupt flag so the SIGINT handler can set it.

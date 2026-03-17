@@ -150,10 +150,36 @@ fn interp_print(
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// Return a value invisibly (suppresses auto-printing).
+///
+/// Sets the interpreter's visibility flag so that the REPL/eval loop
+/// knows not to auto-print the result.
+///
+/// @param x value to return (default: NULL)
+/// @return x (invisibly)
+#[interpreter_builtin]
+fn interp_invisible(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.interpreter().set_invisible();
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
 /// Format a value as a character string (S3 generic).
 ///
+/// Supports named parameters: `nsmall` (minimum decimal places for doubles),
+/// `width` (minimum field width, right-justified), `big.mark` (thousands
+/// separator), and `scientific` (force scientific notation when TRUE, suppress
+/// when FALSE).
+///
 /// @param x the value to format
-/// @return character string representation
+/// @param nsmall minimum number of digits to the right of the decimal point
+/// @param width minimum field width (right-justified with spaces)
+/// @param big.mark character to insert as thousands separator
+/// @param scientific logical; TRUE forces scientific notation, FALSE suppresses it
+/// @return character vector representation
 #[interpreter_builtin(min_args = 1)]
 fn interp_format(
     args: &[RValue],
@@ -164,8 +190,71 @@ fn interp_format(
     if let Some(result) = try_s3_dispatch("format", args, named, context)? {
         return Ok(result);
     }
-    // Default format
+
+    // Extract named parameters
+    let nsmall: Option<usize> = named
+        .iter()
+        .find(|(k, _)| k == "nsmall")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok());
+    let width: Option<usize> = named
+        .iter()
+        .find(|(k, _)| k == "width")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok());
+    let big_mark: Option<String> = named
+        .iter()
+        .find(|(k, _)| k == "big.mark")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
+    let scientific: Option<bool> = named
+        .iter()
+        .find(|(k, _)| k == "scientific")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar());
+
+    let has_format_opts =
+        nsmall.is_some() || width.is_some() || big_mark.is_some() || scientific.is_some();
+
     match args.first() {
+        Some(RValue::Vector(rv)) if has_format_opts => {
+            let formatted: Vec<Option<String>> = match &rv.inner {
+                Vector::Double(vals) => vals
+                    .iter()
+                    .map(|x| {
+                        x.map(|f| {
+                            format_double_with_opts(f, nsmall, big_mark.as_deref(), scientific)
+                        })
+                    })
+                    .collect(),
+                Vector::Integer(vals) => vals
+                    .iter()
+                    .map(|x| x.map(|i| format_integer_with_opts(i, big_mark.as_deref())))
+                    .collect(),
+                other => other.to_characters(),
+            };
+            // Apply width padding if requested
+            let formatted = if let Some(w) = width {
+                formatted
+                    .into_iter()
+                    .map(|s| s.map(|s| format!("{:>width$}", s, width = w)))
+                    .collect()
+            } else {
+                formatted
+            };
+            Ok(RValue::vec(Vector::Character(formatted.into())))
+        }
+        Some(RValue::Vector(rv)) => {
+            // No special formatting options — element-wise default format
+            let chars = rv.inner.to_characters();
+            let chars = if let Some(w) = width {
+                chars
+                    .into_iter()
+                    .map(|s| s.map(|s| format!("{:>width$}", s, width = w)))
+                    .collect()
+            } else {
+                chars
+            };
+            Ok(RValue::vec(Vector::Character(chars.into())))
+        }
         Some(val) => Ok(RValue::vec(Vector::Character(
             vec![Some(format!("{}", val))].into(),
         ))),
@@ -173,6 +262,95 @@ fn interp_format(
             vec![Some(String::new())].into(),
         ))),
     }
+}
+
+/// Format a double value with nsmall, big.mark, and scientific options.
+fn format_double_with_opts(
+    f: f64,
+    nsmall: Option<usize>,
+    big_mark: Option<&str>,
+    scientific: Option<bool>,
+) -> String {
+    if f.is_nan() {
+        return "NaN".to_string();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+
+    let s = match scientific {
+        Some(true) => format!("{:e}", f),
+        Some(false) => {
+            // Suppress scientific notation
+            if let Some(ns) = nsmall {
+                format!("{:.prec$}", f, prec = ns)
+            } else if f == f.floor() && f.abs() < 1e15 {
+                use crate::interpreter::coerce;
+                format!("{}", coerce::f64_to_i64(f).unwrap_or(0))
+            } else {
+                format!("{}", f)
+            }
+        }
+        None => {
+            if let Some(ns) = nsmall {
+                format!("{:.prec$}", f, prec = ns)
+            } else {
+                use crate::interpreter::value::vector::format_r_double;
+                format_r_double(f)
+            }
+        }
+    };
+
+    match big_mark {
+        Some(mark) if !mark.is_empty() => insert_thousands_sep(&s, mark),
+        _ => s,
+    }
+}
+
+/// Format an integer value with big.mark option.
+fn format_integer_with_opts(i: i64, big_mark: Option<&str>) -> String {
+    let s = i.to_string();
+    match big_mark {
+        Some(mark) if !mark.is_empty() => insert_thousands_sep(&s, mark),
+        _ => s,
+    }
+}
+
+/// Insert a thousands separator into the integer part of a numeric string.
+fn insert_thousands_sep(s: &str, sep: &str) -> String {
+    // Split into sign, integer part, and decimal part
+    let (sign, rest) = if let Some(stripped) = s.strip_prefix('-') {
+        ("-", stripped)
+    } else {
+        ("", s)
+    };
+
+    let (int_part, dec_part) = match rest.find('.') {
+        Some(pos) => (&rest[..pos], Some(&rest[pos..])),
+        None => (rest, None),
+    };
+
+    // Insert separator every 3 digits from the right
+    let digits: Vec<char> = int_part.chars().collect();
+    let mut result = String::with_capacity(int_part.len() + (int_part.len() / 3) * sep.len());
+    for (i, ch) in digits.iter().enumerate() {
+        let remaining = digits.len() - i;
+        if i > 0 && remaining.is_multiple_of(3) {
+            result.push_str(sep);
+        }
+        result.push(*ch);
+    }
+
+    let mut out = String::from(sign);
+    out.push_str(&result);
+    if let Some(dec) = dec_part {
+        out.push_str(dec);
+    }
+    out
 }
 
 /// Print a data.frame with aligned columns using TabWriter.
