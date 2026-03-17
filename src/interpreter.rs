@@ -126,6 +126,11 @@ pub struct Interpreter {
     /// TCP stream handles, keyed by connection ID. Stored separately from
     /// `ConnectionInfo` because `TcpStream` is not `Clone`.
     pub(crate) tcp_streams: RefCell<std::collections::HashMap<usize, std::net::TcpStream>>,
+    /// Buffered response bodies for URL connections, keyed by connection ID.
+    /// URL connections eagerly fetch the entire HTTP response body, which is
+    /// stored here for subsequent `readLines()` calls.
+    #[cfg(feature = "tls")]
+    pub(crate) url_bodies: RefCell<std::collections::HashMap<usize, Vec<u8>>>,
     /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
     /// interpreter is dropped.
     pub(crate) finalizers: RefCell<Vec<RValue>>,
@@ -232,6 +237,8 @@ impl Interpreter {
             collections: RefCell::new(Vec::new()),
             connections: RefCell::new(Vec::new()),
             tcp_streams: RefCell::new(std::collections::HashMap::new()),
+            #[cfg(feature = "tls")]
+            url_bodies: RefCell::new(std::collections::HashMap::new()),
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),
             options: RefCell::new(Self::default_options()),

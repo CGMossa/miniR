@@ -36,6 +36,9 @@ pub enum ConnectionKind {
     /// TCP client socket — the actual `TcpStream` handle lives in
     /// `Interpreter::tcp_streams`, keyed by connection ID.
     TcpClient,
+    /// URL connection (HTTP/HTTPS) — the fetched body lives in
+    /// `Interpreter::url_bodies`, keyed by connection ID.
+    Url,
 }
 
 /// Describes a single connection slot in the interpreter.
@@ -84,6 +87,17 @@ impl ConnectionInfo {
             is_open: true,
             description,
             kind: ConnectionKind::TcpClient,
+        }
+    }
+
+    /// Create a URL connection, initially closed.
+    pub fn url_connection(url: String) -> Self {
+        Self {
+            path: url.clone(),
+            mode: String::new(),
+            is_open: false,
+            description: url,
+            kind: ConnectionKind::Url,
         }
     }
 }
@@ -157,6 +171,24 @@ impl Interpreter {
             )
         })?;
         f(stream)
+    }
+
+    /// Store a fetched URL response body for the given connection ID.
+    #[cfg(feature = "tls")]
+    pub(crate) fn store_url_body(&self, id: usize, body: Vec<u8>) {
+        self.url_bodies.borrow_mut().insert(id, body);
+    }
+
+    /// Take (remove) the URL response body for the given connection ID.
+    #[cfg(feature = "tls")]
+    pub(crate) fn take_url_body(&self, id: usize) -> Option<Vec<u8>> {
+        self.url_bodies.borrow_mut().remove(&id)
+    }
+
+    /// Get a clone of the URL response body for the given connection ID.
+    #[cfg(feature = "tls")]
+    pub(crate) fn get_url_body(&self, id: usize) -> Option<Vec<u8>> {
+        self.url_bodies.borrow().get(&id).cloned()
     }
 }
 
@@ -291,15 +323,22 @@ fn interp_close(
 
     let interp = context.interpreter();
 
-    // Check if this is a TCP connection and clean up the stream.
+    // Check the connection kind and clean up associated resources.
     let kind = interp
         .get_connection(id)
         .map(|c| c.kind.clone())
         .unwrap_or(ConnectionKind::File);
-    if kind == ConnectionKind::TcpClient {
-        if let Some(stream) = interp.take_tcp_stream(id) {
-            let _ = stream.shutdown(Shutdown::Both);
+    match kind {
+        ConnectionKind::TcpClient => {
+            if let Some(stream) = interp.take_tcp_stream(id) {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
         }
+        #[cfg(feature = "tls")]
+        ConnectionKind::Url => {
+            interp.take_url_body(id);
+        }
+        _ => {}
     }
 
     interp.with_connection_mut(id, |conn| {
@@ -394,6 +433,39 @@ fn interp_read_lines(
                         .collect()
                 };
                 return Ok(RValue::vec(Vector::Character(lines.into())));
+            }
+            #[cfg(feature = "tls")]
+            ConnectionKind::Url => {
+                // Read from URL connection — body was fetched eagerly on open.
+                let body = interp.get_url_body(id).ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Other,
+                        format!(
+                            "URL connection {} ('{}') has no buffered content — \
+                             make sure to open the connection before reading",
+                            id, conn.description
+                        ),
+                    )
+                })?;
+                let data = String::from_utf8_lossy(&body);
+                let lines: Vec<Option<String>> = if n < 0 {
+                    data.lines().map(|l| Some(l.to_string())).collect()
+                } else {
+                    data.lines()
+                        .take(usize::try_from(n).unwrap_or(usize::MAX))
+                        .map(|l| Some(l.to_string()))
+                        .collect()
+                };
+                return Ok(RValue::vec(Vector::Character(lines.into())));
+            }
+            #[cfg(not(feature = "tls"))]
+            ConnectionKind::Url => {
+                return Err(RError::new(
+                    RErrorKind::Other,
+                    "URL connections require the 'tls' feature — \
+                     rebuild miniR with --features tls to enable HTTPS support"
+                        .to_string(),
+                ));
             }
             ConnectionKind::StdStream => {
                 return Err(RError::new(
@@ -527,6 +599,15 @@ fn interp_write_lines(
                         ));
                     }
                     Dest::File(conn.path.clone())
+                }
+                ConnectionKind::Url => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        format!(
+                            "cannot write to URL connection '{}' — URL connections are read-only",
+                            conn.description
+                        ),
+                    ));
                 }
             }
         }
