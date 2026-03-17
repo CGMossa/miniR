@@ -72,13 +72,41 @@ fn builtin_exp(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     math_unary(args, f64::exp)
 }
 
-/// Natural logarithm.
+/// Logarithm. With one argument, computes the natural log. With a second
+/// positional argument or named `base` argument, computes log in that base
+/// via the change-of-base formula: log(x, base) = ln(x) / ln(base).
 ///
 /// @param x numeric vector
-/// @return numeric vector of natural logarithms
+/// @param base the base of the logarithm (default: e, i.e. natural log)
+/// @return numeric vector of logarithms
 #[builtin(min_args = 1)]
-fn builtin_log(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    math_unary(args, f64::ln)
+fn builtin_log(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let base: Option<f64> = named
+        .iter()
+        .find(|(n, _)| n == "base")
+        .and_then(|(_, v)| v.as_vector()?.as_double_scalar())
+        .or_else(|| args.get(1)?.as_vector()?.as_double_scalar());
+
+    match base {
+        Some(b) => {
+            let ln_base = b.ln();
+            match args.first() {
+                Some(RValue::Vector(v)) => {
+                    let result: Vec<Option<f64>> = v
+                        .to_doubles()
+                        .iter()
+                        .map(|x| x.map(|f| f.ln() / ln_base))
+                        .collect();
+                    Ok(RValue::vec(Vector::Double(result.into())))
+                }
+                _ => Err(RError::new(
+                    RErrorKind::Argument,
+                    "non-numeric argument to mathematical function".to_string(),
+                )),
+            }
+        }
+        None => math_unary(args, f64::ln),
+    }
 }
 
 /// Base-2 logarithm.
@@ -774,7 +802,9 @@ fn math_binary(args: &[RValue], f: fn(f64, f64) -> f64) -> Result<RValue, RError
 
 // endregion
 
-/// Round to the specified number of decimal places.
+/// Round to the specified number of decimal places using IEEE 754
+/// round-half-to-even (banker's rounding): when the fractional part is
+/// exactly 0.5, round to the nearest even number.
 ///
 /// @param x numeric vector
 /// @param digits number of decimal places (default 0)
@@ -793,7 +823,7 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             let result: Vec<Option<f64>> = v
                 .to_doubles()
                 .iter()
-                .map(|x| x.map(|f| (f * factor).round() / factor))
+                .map(|x| x.map(|f| round_half_to_even(f * factor) / factor))
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
         }
@@ -801,6 +831,26 @@ fn builtin_round(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             RErrorKind::Argument,
             "non-numeric argument".to_string(),
         )),
+    }
+}
+
+/// IEEE 754 round-half-to-even: if the fractional part is exactly 0.5,
+/// round to the nearest even integer. Otherwise round normally.
+fn round_half_to_even(x: f64) -> f64 {
+    let rounded = x.round();
+    // Check if we're exactly at a .5 boundary
+    let diff = x - x.floor();
+    if (diff - 0.5).abs() < f64::EPSILON {
+        // Exactly half: round to even
+        let floor = x.floor();
+        let ceil = x.ceil();
+        if floor % 2.0 == 0.0 {
+            floor
+        } else {
+            ceil
+        }
+    } else {
+        rounded
     }
 }
 
@@ -2294,16 +2344,91 @@ fn builtin_which_max(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 
 /// Append elements to a vector.
 ///
+/// Concatenates `values` into `x` at position `after`. Type coercion follows
+/// R's hierarchy: raw < logical < integer < double < complex < character.
+///
 /// @param x a vector
 /// @param values values to append
-/// @return concatenated character vector
+/// @param after index after which to insert (default: end of x)
+/// @return concatenated vector preserving the highest type
 #[builtin(min_args = 2)]
-fn builtin_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_append(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     match (args.first(), args.get(1)) {
         (Some(RValue::Vector(v1)), Some(RValue::Vector(v2))) => {
-            let mut chars = v1.to_characters();
-            chars.extend(v2.to_characters());
-            Ok(RValue::vec(Vector::Character(chars.into())))
+            // Determine `after` position (1-based, default = length of x)
+            let x_len = v1.inner.len();
+            let after = named
+                .iter()
+                .find(|(k, _)| k == "after")
+                .map(|(_, v)| v)
+                .or(args.get(2))
+                .and_then(|v| v.as_vector()?.as_integer_scalar())
+                .map(|a| usize::try_from(a.max(0)).unwrap_or(0).min(x_len))
+                .unwrap_or(x_len);
+
+            // Determine the highest type between both vectors
+            let has_char = matches!(v1.inner, Vector::Character(_))
+                || matches!(v2.inner, Vector::Character(_));
+            let has_complex =
+                matches!(v1.inner, Vector::Complex(_)) || matches!(v2.inner, Vector::Complex(_));
+            let has_double =
+                matches!(v1.inner, Vector::Double(_)) || matches!(v2.inner, Vector::Double(_));
+            let has_int =
+                matches!(v1.inner, Vector::Integer(_)) || matches!(v2.inner, Vector::Integer(_));
+
+            let result = if has_char {
+                let x = v1.to_characters();
+                let vals = v2.to_characters();
+                let mut out = x[..after].to_vec();
+                out.extend(vals);
+                out.extend_from_slice(&x[after..]);
+                Vector::Character(out.into())
+            } else if has_complex {
+                let x = v1.inner.to_complex();
+                let vals = v2.inner.to_complex();
+                let mut out = x[..after].to_vec();
+                out.extend(vals);
+                out.extend_from_slice(&x[after..]);
+                Vector::Complex(out.into())
+            } else if has_double {
+                let x = v1.to_doubles();
+                let vals = v2.to_doubles();
+                let mut out = x[..after].to_vec();
+                out.extend(vals);
+                out.extend_from_slice(&x[after..]);
+                Vector::Double(out.into())
+            } else if has_int {
+                let x = v1.to_integers();
+                let vals = v2.to_integers();
+                let mut out = x[..after].to_vec();
+                out.extend(vals);
+                out.extend_from_slice(&x[after..]);
+                Vector::Integer(out.into())
+            } else {
+                // Both logical (or raw)
+                let x = v1.to_logicals();
+                let vals = v2.to_logicals();
+                let mut out = x[..after].to_vec();
+                out.extend(vals);
+                out.extend_from_slice(&x[after..]);
+                Vector::Logical(out.into())
+            };
+            Ok(RValue::vec(result))
+        }
+        (Some(RValue::List(l1)), Some(RValue::List(l2))) => {
+            let x_len = l1.values.len();
+            let after = named
+                .iter()
+                .find(|(k, _)| k == "after")
+                .map(|(_, v)| v)
+                .or(args.get(2))
+                .and_then(|v| v.as_vector()?.as_integer_scalar())
+                .map(|a| usize::try_from(a.max(0)).unwrap_or(0).min(x_len))
+                .unwrap_or(x_len);
+            let mut out = l1.values[..after].to_vec();
+            out.extend(l2.values.clone());
+            out.extend_from_slice(&l1.values[after..]);
+            Ok(RValue::List(RList::new(out)))
         }
         _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
     }

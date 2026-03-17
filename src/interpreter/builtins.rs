@@ -678,13 +678,6 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     if name.is_empty() {
         return Ok(RValue::Null);
     }
-
-    // Check if it's a namespace name (e.g. ?base, ?stats, ?utils)
-    if is_namespace_name(&name) {
-        print_namespace_help(&name);
-        return Ok(RValue::Null);
-    }
-
     // Support namespace::name syntax (e.g. "base::sum")
     let descriptor = if let Some((ns, n)) = name.split_once("::") {
         find_builtin_ns(ns, n)
@@ -701,70 +694,6 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             Ok(RValue::Null)
         }
     }
-}
-
-/// Check if a name is a known namespace.
-fn is_namespace_name(name: &str) -> bool {
-    BUILTIN_REGISTRY.iter().any(|d| d.namespace == name)
-}
-
-/// Print help for a namespace — list all its exported functions.
-fn print_namespace_help(ns: &str) {
-    let mut fns: Vec<&str> = BUILTIN_REGISTRY
-        .iter()
-        .filter(|d| d.namespace == ns)
-        .map(|d| d.name)
-        .collect();
-    fns.sort();
-    fns.dedup();
-
-    println!("Package '{ns}'");
-    println!("{}", "─".repeat(20 + ns.len()));
-    println!();
-    println!("{} functions:", fns.len());
-    println!();
-
-    // Print in columns
-    let max_width = fns.iter().map(|f| f.len()).max().unwrap_or(10) + 2;
-    let cols = 80 / max_width.max(1);
-    for (i, f) in fns.iter().enumerate() {
-        print!("{:<width$}", f, width = max_width);
-        if (i + 1) % cols == 0 {
-            println!();
-        }
-    }
-    if !fns.len().is_multiple_of(cols) {
-        println!();
-    }
-    println!();
-    println!("Use ?{ns}::name for help on a specific function.");
-}
-
-/// List all available namespaces — called by ?namespaces or loadedNamespaces().
-#[builtin(min_args = 0)]
-fn builtin_namespaces(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let _ = args;
-    let mut namespaces: Vec<&str> = BUILTIN_REGISTRY
-        .iter()
-        .map(|d| d.namespace)
-        .filter(|ns| !ns.is_empty())
-        .collect();
-    namespaces.sort();
-    namespaces.dedup();
-
-    println!("Available namespaces ({}):", namespaces.len());
-    println!();
-    for ns in &namespaces {
-        let count = BUILTIN_REGISTRY
-            .iter()
-            .filter(|d| d.namespace == *ns)
-            .count();
-        println!("  {:<15} {:>4} functions", ns, count);
-    }
-    println!();
-    println!("Use ?<namespace> (e.g. ?stats) to list functions in a namespace.");
-    println!("Use loadedNamespaces() to get the list as a character vector.");
-    Ok(RValue::Null)
 }
 
 // print() is in interp.rs (S3-dispatching interpreter builtin)
@@ -1649,10 +1578,6 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 
 /// Test if two objects are exactly identical.
 ///
-/// Performs deep structural comparison: type, length, element values,
-/// and attributes must all match. NaN == NaN is TRUE (unlike `==`).
-/// NA == NA is TRUE. Lists are compared recursively.
-///
 /// @param x first object
 /// @param y second object
 /// @return logical scalar
@@ -1664,123 +1589,8 @@ fn builtin_identical(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             "need 2 arguments".to_string(),
         ));
     }
-    let result = r_identical(&args[0], &args[1]);
+    let result = format!("{:?}", args[0]) == format!("{:?}", args[1]);
     Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
-}
-
-/// Deep structural comparison of two R values.
-///
-/// In R, `identical()` treats NaN == NaN as TRUE and NA == NA as TRUE,
-/// unlike the `==` operator. Attributes must also match.
-fn r_identical(a: &RValue, b: &RValue) -> bool {
-    match (a, b) {
-        (RValue::Null, RValue::Null) => true,
-        (RValue::Vector(va), RValue::Vector(vb)) => {
-            vectors_identical(&va.inner, &vb.inner) && attrs_identical(&va.attrs, &vb.attrs)
-        }
-        (RValue::List(la), RValue::List(lb)) => {
-            if la.values.len() != lb.values.len() {
-                return false;
-            }
-            for ((na, va), (nb, vb)) in la.values.iter().zip(lb.values.iter()) {
-                if na != nb {
-                    return false;
-                }
-                if !r_identical(va, vb) {
-                    return false;
-                }
-            }
-            attrs_identical(&la.attrs, &lb.attrs)
-        }
-        (RValue::Function(fa), RValue::Function(fb)) => match (fa, fb) {
-            (RFunction::Builtin { name: na, .. }, RFunction::Builtin { name: nb, .. }) => na == nb,
-            (
-                RFunction::Closure {
-                    params: pa,
-                    body: ba,
-                    ..
-                },
-                RFunction::Closure {
-                    params: pb,
-                    body: bb,
-                    ..
-                },
-            ) => {
-                format!("{:?}", pa) == format!("{:?}", pb)
-                    && format!("{:?}", ba) == format!("{:?}", bb)
-            }
-            _ => false,
-        },
-        (RValue::Environment(ea), RValue::Environment(eb)) => {
-            // Environments are identical only if they are the same Rc (pointer equality)
-            ea.ptr_eq(eb)
-        }
-        (RValue::Language(la), RValue::Language(lb)) => {
-            format!("{:?}", la.inner) == format!("{:?}", lb.inner)
-                && attrs_identical(&la.attrs, &lb.attrs)
-        }
-        _ => false,
-    }
-}
-
-/// Compare two attribute maps for identical-ness.
-fn attrs_identical(a: &Option<Box<Attributes>>, b: &Option<Box<Attributes>>) -> bool {
-    match (a, b) {
-        (None, None) => true,
-        (Some(aa), Some(bb)) => {
-            if aa.len() != bb.len() {
-                return false;
-            }
-            for (key, val_a) in aa.iter() {
-                match bb.get(key) {
-                    Some(val_b) => {
-                        if !r_identical(val_a, val_b) {
-                            return false;
-                        }
-                    }
-                    None => return false,
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-/// Element-wise comparison of two atomic vectors.
-///
-/// Both vectors must have the same type and length, and every element must
-/// be bitwise-identical (NaN == NaN is TRUE, NA == NA is TRUE).
-fn vectors_identical(a: &Vector, b: &Vector) -> bool {
-    match (a, b) {
-        (Vector::Logical(va), Vector::Logical(vb)) => va.0 == vb.0,
-        (Vector::Integer(va), Vector::Integer(vb)) => va.0 == vb.0,
-        (Vector::Character(va), Vector::Character(vb)) => va.0 == vb.0,
-        (Vector::Raw(va), Vector::Raw(vb)) => va == vb,
-        (Vector::Double(va), Vector::Double(vb)) => {
-            if va.len() != vb.len() {
-                return false;
-            }
-            va.iter().zip(vb.iter()).all(|(x, y)| match (x, y) {
-                (None, None) => true,
-                (Some(fx), Some(fy)) => fx.to_bits() == fy.to_bits(),
-                _ => false,
-            })
-        }
-        (Vector::Complex(va), Vector::Complex(vb)) => {
-            if va.len() != vb.len() {
-                return false;
-            }
-            va.iter().zip(vb.iter()).all(|(x, y)| match (x, y) {
-                (None, None) => true,
-                (Some(cx), Some(cy)) => {
-                    cx.re.to_bits() == cy.re.to_bits() && cx.im.to_bits() == cy.im.to_bits()
-                }
-                _ => false,
-            })
-        }
-        _ => false, // different types are never identical
-    }
 }
 
 /// Test near-equality of two objects within a tolerance.
@@ -2226,31 +2036,17 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Flatten a list into an atomic vector.
 ///
-/// When `recursive = TRUE` (default), recursively flattens all nested lists
-/// into a single atomic vector using the same coercion rules as `c()`.
-/// When `recursive = FALSE`, flattens only one level of list nesting.
+/// Recursively combines list elements using the same coercion rules as `c()`.
 ///
 /// @param x list to flatten
-/// @param recursive whether to flatten recursively (default: TRUE)
 /// @return atomic vector
 #[builtin(min_args = 1)]
-fn builtin_unlist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let recursive = named
-        .iter()
-        .find(|(k, _)| k == "recursive")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(true);
-
+fn builtin_unlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
         Some(RValue::List(l)) => {
             let mut all_vals = Vec::new();
-            if recursive {
-                collect_list_elements_recursive(l, &mut all_vals);
-            } else {
-                // Flatten one level only
-                for (_, v) in &l.values {
-                    all_vals.push(v.clone());
-                }
+            for (_, v) in &l.values {
+                all_vals.push(v.clone());
             }
             builtin_c(&all_vals, &[])
         }
@@ -2259,18 +2055,14 @@ fn builtin_unlist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
-/// Recursively collect all non-list elements from a list and its nested sublists.
-fn collect_list_elements_recursive(list: &RList, out: &mut Vec<RValue>) {
-    for (_, v) in &list.values {
-        match v {
-            RValue::List(inner) => collect_list_elements_recursive(inner, out),
-            other => out.push(other.clone()),
-        }
-    }
+/// Return a value invisibly (suppresses auto-printing).
+///
+/// @param x value to return
+/// @return x (invisibly)
+#[builtin(min_args = 1)]
+fn builtin_invisible(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
-
-// invisible() is implemented as an interpreter_builtin in interp.rs
-// so it can set the interpreter's visibility flag.
 
 /// Vectorized conditional: for each element of test, select the corresponding
 /// element from yes (when TRUE) or no (when FALSE). yes and no are recycled
@@ -2288,13 +2080,6 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             "need 3 arguments".to_string(),
         ));
     }
-    eprintln!(
-        "DEBUG ifelse: args.len()={}, args[0]={:?}, args[1]={:?}, args[2]={:?}",
-        args.len(),
-        args[0],
-        args[1],
-        args[2]
-    );
     let test_vec = args[0]
         .as_vector()
         .ok_or_else(|| RError::new(RErrorKind::Argument, "test must be a vector".to_string()))?;
@@ -2308,15 +2093,7 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         .as_vector()
         .ok_or_else(|| RError::new(RErrorKind::Argument, "no must be a vector".to_string()))?;
 
-    // Coerce yes and no to a common type based on R's type hierarchy.
-    // The result type is the highest type among yes and no.
-    let yes_doubles = yes_vec.to_doubles();
-    let no_doubles = no_vec.to_doubles();
-    let yes_chars = yes_vec.to_characters();
-    let no_chars = no_vec.to_characters();
-    let yes_ints = yes_vec.to_integers();
-    let no_ints = no_vec.to_integers();
-
+    // Determine result type based on R's coercion hierarchy
     let is_character =
         matches!(yes_vec, Vector::Character(_)) || matches!(no_vec, Vector::Character(_));
     let is_logical = matches!(yes_vec, Vector::Logical(_)) && matches!(no_vec, Vector::Logical(_));
@@ -2325,6 +2102,8 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
         && (matches!(no_vec, Vector::Integer(_) | Vector::Logical(_)));
 
     if is_character {
+        let yes_chars = yes_vec.to_characters();
+        let no_chars = no_vec.to_characters();
         let result: Vec<Option<String>> = (0..n)
             .map(|i| match test_logicals[i] {
                 Some(true) => yes_chars[i % yes_chars.len()].clone(),
@@ -2345,6 +2124,8 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             .collect();
         Ok(RValue::vec(Vector::Logical(result.into())))
     } else if is_integer {
+        let yes_ints = yes_vec.to_integers();
+        let no_ints = no_vec.to_integers();
         let result: Vec<Option<i64>> = (0..n)
             .map(|i| match test_logicals[i] {
                 Some(true) => yes_ints[i % yes_ints.len()],
@@ -2354,6 +2135,8 @@ fn builtin_ifelse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             .collect();
         Ok(RValue::vec(Vector::Integer(result.into())))
     } else {
+        let yes_doubles = yes_vec.to_doubles();
+        let no_doubles = no_vec.to_doubles();
         let result: Vec<Option<f64>> = (0..n)
             .map(|i| match test_logicals[i] {
                 Some(true) => yes_doubles[i % yes_doubles.len()],
