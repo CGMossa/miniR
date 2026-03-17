@@ -21,12 +21,30 @@ pub fn init_logging() {
     #[cfg(feature = "logging")]
     {
         use std::env;
+        use std::sync::Once;
+
+        static INIT_LOGGER: Once = Once::new();
+
         if env::var("MINIR_LOG").is_ok() {
-            env_logger::Builder::new()
-                .parse_env("MINIR_LOG")
-                .format_timestamp(None)
-                .format_target(false)
-                .init();
+            INIT_LOGGER.call_once(|| {
+                let _ = env_logger::Builder::new()
+                    .parse_env("MINIR_LOG")
+                    .format_timestamp(None)
+                    .format_target(false)
+                    .try_init();
+            });
         }
+    }
+}
+
+#[cfg(all(test, feature = "logging"))]
+mod tests {
+    use super::init_logging;
+
+    #[test]
+    fn init_logging_is_idempotent() {
+        std::env::set_var("MINIR_LOG", "debug");
+        init_logging();
+        init_logging();
     }
 }
