@@ -1136,9 +1136,13 @@ fn builtin_r_home(
 
 /// Return the library search paths for package installation.
 ///
-/// miniR does not yet have a full package system, but many CRAN packages
-/// call `.libPaths()` to discover where packages live. This returns a
-/// character vector with the miniR library directory.
+/// Builds the search path from (in order):
+/// 1. `R_LIBS` environment variable (colon-separated on Unix, semicolon on Windows)
+/// 2. `R_LIBS_USER` environment variable
+/// 3. The default miniR library directory (`<data_dir>/miniR/library`)
+///
+/// Only directories that actually exist on disk are included, matching R's
+/// behavior of filtering `.libPaths()` to existing directories.
 ///
 /// @param new character vector: if provided, sets new library paths (currently ignored)
 /// @return character vector of library search paths
@@ -1148,8 +1152,47 @@ fn builtin_lib_paths(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let lib_dir = format!("{}/library", minir_data_dir(context.interpreter()));
-    Ok(RValue::vec(Vector::Character(vec![Some(lib_dir)].into())))
+    let interp = context.interpreter();
+    let mut paths: Vec<String> = Vec::new();
+
+    // Platform-appropriate path separator
+    let sep = if cfg!(windows) { ';' } else { ':' };
+
+    // R_LIBS takes priority
+    if let Some(r_libs) = interp.get_env_var("R_LIBS") {
+        for p in r_libs.split(sep) {
+            let p = p.trim();
+            if !p.is_empty() {
+                let resolved = interp.resolve_path(p);
+                if resolved.is_dir() {
+                    paths.push(resolved.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Then R_LIBS_USER
+    if let Some(r_libs_user) = interp.get_env_var("R_LIBS_USER") {
+        for p in r_libs_user.split(sep) {
+            let p = p.trim();
+            if !p.is_empty() {
+                let resolved = interp.resolve_path(p);
+                if resolved.is_dir() {
+                    paths.push(resolved.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Default miniR library directory (always included even if it doesn't exist yet,
+    // as it's the canonical install location)
+    let default_lib = format!("{}/library", minir_data_dir(interp));
+    if !paths.contains(&default_lib) {
+        paths.push(default_lib);
+    }
+
+    let values: Vec<Option<String>> = paths.into_iter().map(Some).collect();
+    Ok(RValue::vec(Vector::Character(values.into())))
 }
 
 // endregion

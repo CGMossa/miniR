@@ -8,6 +8,7 @@ mod control_flow;
 pub mod environment;
 pub(crate) mod indexing;
 mod ops;
+pub mod packages;
 mod s3;
 pub mod value;
 
