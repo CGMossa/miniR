@@ -22,6 +22,7 @@ mod pre_eval;
 #[cfg(feature = "random")]
 mod random;
 mod s4;
+pub mod serialize;
 mod stats;
 pub mod strings;
 mod stubs;

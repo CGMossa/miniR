@@ -528,7 +528,11 @@ fn read_rds_path(args: &[RValue], named: &[(String, RValue)]) -> Result<String, 
     CallArgs::new(args, named).string("file", 0)
 }
 
-/// Read a single R object from a miniRDS file.
+/// Read a single R object from an RDS file.
+///
+/// Supports both GNU R binary RDS files (XDR format, optionally gzip-compressed)
+/// and miniR's own text-based miniRDS format. Binary format is detected
+/// automatically by checking the first bytes of the file.
 ///
 /// @param file character scalar: path to the .rds file
 /// @return the deserialized R value
@@ -539,6 +543,18 @@ fn interp_read_rds(
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let path = read_rds_path(args, named)?;
+
+    // Try reading as binary first by checking the file header.
+    let raw_bytes = std::fs::read(&path).map_err(|source| IoError::CannotOpen {
+        path: path.clone(),
+        source,
+    })?;
+
+    if super::serialize::is_binary_rds(&raw_bytes) {
+        return super::serialize::unserialize_rds(&raw_bytes);
+    }
+
+    // Fall back to miniRDS text format.
     read_minirds(&path, "readRDS", "saveRDS", context.interpreter())
 }
 
