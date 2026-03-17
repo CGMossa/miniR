@@ -221,7 +221,7 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
         }
 
         BinaryOp::Pipe => unreachable!("pipe handled separately"),
-        BinaryOp::Tilde => Ok(RValue::Null), // stub for binary ~
+        BinaryOp::Tilde | BinaryOp::DoubleTilde => Ok(RValue::Null), // formula/plotmath stubs
     }
 }
 

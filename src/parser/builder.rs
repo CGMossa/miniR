@@ -60,6 +60,7 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Expr {
         Rule::expr => build_expr(pair.into_inner().next().unwrap()),
         Rule::help_expr => build_help(pair),
         Rule::assign_eq_expr => build_assign_eq(pair),
+        Rule::walrus_expr => build_walrus(pair),
         Rule::assign_left_expr => build_assign_left(pair),
         Rule::assign_right_expr => build_assign_right(pair),
         Rule::formula_expr => build_formula(pair),
@@ -170,6 +171,23 @@ fn build_assign_eq(pair: Pair<Rule>) -> Expr {
     }
 }
 
+fn build_walrus(pair: Pair<Rule>) -> Expr {
+    let mut inner = pair.into_inner();
+    let lhs = build_expr(inner.next().unwrap());
+    match inner.next() {
+        None => lhs,
+        Some(op_pair) => {
+            assert!(op_pair.as_rule() == Rule::walrus_assign_op);
+            let rhs = build_expr(inner.next().unwrap());
+            Expr::BinaryOp {
+                op: BinaryOp::Special(SpecialOp::Walrus),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            }
+        }
+    }
+}
+
 fn build_assign_left(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
     let lhs = build_expr(inner.next().unwrap());
@@ -226,18 +244,50 @@ fn build_formula(pair: Pair<Rule>) -> Expr {
             rhs: Some(Box::new(rhs)),
         }
     } else {
-        // Binary: or_expr ~ ("~" ~ or_expr)?
         let lhs = build_expr(first);
         match inner.next() {
             None => lhs,
-            Some(rhs_pair) => {
-                let rhs = build_expr(rhs_pair);
-                Expr::Formula {
-                    lhs: Some(Box::new(lhs)),
-                    rhs: Some(Box::new(rhs)),
+            Some(op_pair) => {
+                let rhs = build_expr(inner.next().unwrap());
+                let remaining: Vec<_> = inner.collect();
+
+                if op_pair.as_rule() == Rule::tilde_op
+                    && op_pair.as_str() == "~"
+                    && remaining.is_empty()
+                {
+                    return Expr::Formula {
+                        lhs: Some(Box::new(lhs)),
+                        rhs: Some(Box::new(rhs)),
+                    };
                 }
+
+                let mut expr = Expr::BinaryOp {
+                    op: map_tilde_op(&op_pair),
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+
+                let mut remaining = remaining.into_iter();
+                while let Some(next_op) = remaining.next() {
+                    let next_rhs = build_expr(remaining.next().unwrap());
+                    expr = Expr::BinaryOp {
+                        op: map_tilde_op(&next_op),
+                        lhs: Box::new(expr),
+                        rhs: Box::new(next_rhs),
+                    };
+                }
+
+                expr
             }
         }
+    }
+}
+
+fn map_tilde_op(pair: &Pair<Rule>) -> BinaryOp {
+    match pair.as_str() {
+        "~" => BinaryOp::Tilde,
+        "~~" => BinaryOp::DoubleTilde,
+        _ => unreachable!(),
     }
 }
 

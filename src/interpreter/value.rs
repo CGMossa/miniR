@@ -538,8 +538,10 @@ pub fn deparse_expr(expr: &Expr) -> String {
                 BinaryOp::Pipe => "|>",
                 BinaryOp::Special(SpecialOp::In) => "%in%",
                 BinaryOp::Special(SpecialOp::MatMul) => "%*%",
+                BinaryOp::Special(SpecialOp::Walrus) => ":=",
                 BinaryOp::Special(SpecialOp::Other) => "%%",
                 BinaryOp::Tilde => "~",
+                BinaryOp::DoubleTilde => "~~",
             };
             format!("{} {} {}", l, op_str, r)
         }

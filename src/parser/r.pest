@@ -62,37 +62,44 @@ help_expr = {
 
 // "=" assignment (loosest, right-associative)
 assign_eq_expr = {
-    assign_left_expr ~ (eq_assign_op ~ GAP ~ assign_eq_expr)?
+    walrus_expr ~ (GAP ~ eq_assign_op ~ GAP ~ assign_eq_expr)?
 }
 eq_assign_op = @{ "=" ~ !"=" }
 
+// ":=" (assignment-like, used by data.table/rlang), right-associative
+walrus_expr = {
+    assign_left_expr ~ (GAP ~ walrus_assign_op ~ GAP ~ walrus_expr)?
+}
+walrus_assign_op = @{ ":=" }
+
 // "<-" "<<-" (right-associative)
 assign_left_expr = {
-    assign_right_expr ~ (left_assign_op ~ GAP ~ assign_left_expr)?
+    assign_right_expr ~ (GAP ~ left_assign_op ~ GAP ~ assign_left_expr)?
 }
 left_assign_op = { "<<-" | "<-" }
 
 // "->" "->>" (left-associative)
 assign_right_expr = {
-    formula_expr ~ (right_assign_op ~ GAP ~ formula_expr)*
+    formula_expr ~ (GAP ~ right_assign_op ~ GAP ~ formula_expr)*
 }
 right_assign_op = { "->>" | "->" }
 
-// "~" unary or binary formula
+// "~" unary or binary formula, plus plotmath "~~"
 formula_expr = {
       "~" ~ GAP ~ formula_expr
-    | or_expr ~ ("~" ~ GAP ~ or_expr)?
+    | or_expr ~ (GAP ~ tilde_op ~ GAP ~ or_expr)*
 }
+tilde_op = @{ "~~" | "~" }
 
 // "|" "||"
 or_expr = {
-    and_expr ~ (or_op ~ GAP ~ and_expr)*
+    and_expr ~ (GAP ~ or_op ~ GAP ~ and_expr)*
 }
 or_op = @{ "||" | "|" ~ !">" }
 
 // "&" "&&"
 and_expr = {
-    not_expr ~ (and_op ~ GAP ~ not_expr)*
+    not_expr ~ (GAP ~ and_op ~ GAP ~ not_expr)*
 }
 and_op = { "&&" | "&" }
 
@@ -104,25 +111,25 @@ not_expr = {
 
 // comparisons
 compare_expr = {
-    add_expr ~ (compare_op ~ GAP ~ add_expr)*
+    add_expr ~ (GAP ~ compare_op ~ GAP ~ add_expr)*
 }
 compare_op = { ">=" | "<=" | "==" | "!=" | ">" | !("<-" | "<<-") ~ "<" }
 
 // "+" "-" (binary)
 add_expr = {
-    mul_expr ~ (add_op ~ GAP ~ mul_expr)*
+    mul_expr ~ (GAP ~ add_op ~ GAP ~ mul_expr)*
 }
 add_op = { "+" | !("->" | "->>") ~ "-" }
 
 // "*" "/"
 mul_expr = {
-    special_pipe_expr ~ (mul_op ~ GAP ~ special_pipe_expr)*
+    special_pipe_expr ~ (GAP ~ mul_op ~ GAP ~ special_pipe_expr)*
 }
 mul_op = { "*" | "/" }
 
 // %...% and |>
 special_pipe_expr = {
-    colon_expr ~ ((special_op | pipe_op) ~ GAP ~ colon_expr)*
+    colon_expr ~ (GAP ~ (special_op | pipe_op) ~ GAP ~ colon_expr)*
 }
 pipe_op = { "|>" }
 
@@ -135,7 +142,7 @@ special_op_char = _{ !("%" | NEWLINE) ~ ANY }
 
 // ":" (sequence/range), left-associative, can chain: 1:2:3 = (1:2):3
 colon_expr = {
-    unary_expr ~ (":" ~ GAP ~ unary_expr)*
+    unary_expr ~ (GAP ~ ":" ~ GAP ~ unary_expr)*
 }
 
 // unary + - !
@@ -153,7 +160,7 @@ unary_op = { "+" | !("->" | "->>") ~ "-" }
 // The RHS is unary_expr so that 2^-3 means 2^(-3).
 // Right-associativity is preserved because unary_expr recurses into power_expr.
 power_expr = {
-    postfix_expr ~ (power_op ~ GAP ~ unary_expr)?
+    postfix_expr ~ (GAP ~ power_op ~ GAP ~ unary_expr)?
 }
 power_op = { "^" | "**" }
 
@@ -216,7 +223,7 @@ arg = {
 }
 
 named_arg = {
-    arg_name ~ named_eq ~ GAP ~ expr?
+    arg_name ~ GAP ~ named_eq ~ GAP ~ expr?
 }
 named_eq = @{ "=" ~ !"=" }
 
@@ -232,7 +239,7 @@ sub_arg = {
 }
 
 named_sub_arg = {
-    arg_name ~ named_eq ~ GAP ~ expr?
+    arg_name ~ GAP ~ named_eq ~ GAP ~ expr?
 }
 
 arg_name = { dots | dotdot | ident | string }
@@ -415,11 +422,11 @@ param_list = {
 
 param = {
       dots
-    | ident ~ ("=" ~ GAP ~ expr?)?
+    | ident ~ (GAP ~ "=" ~ GAP ~ expr?)?
 }
 
 dots   = @{ "..." ~ !ident_rest }
-dotdot = @{ ".." ~ ASCII_DIGIT+ }
+dotdot = @{ ".." ~ ASCII_DIGIT+ ~ !ident_rest }
 
 // -------------------- grouping --------------------
 

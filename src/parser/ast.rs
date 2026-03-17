@@ -162,12 +162,15 @@ pub enum BinaryOp {
     Special(SpecialOp),
     #[allow(dead_code)]
     Tilde,
+    #[allow(dead_code)]
+    DoubleTilde,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum SpecialOp {
     In,
     MatMul,
+    Walrus,
     Other,
 }
 

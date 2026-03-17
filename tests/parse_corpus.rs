@@ -67,12 +67,20 @@ fn parse_files_in_parallel(entries: &[(PathBuf, String)]) -> Vec<(String, bool)>
     std::thread::scope(|scope| {
         let mut workers = Vec::new();
         for chunk in entries.chunks(chunk_size) {
-            workers.push(scope.spawn(move || {
-                chunk
-                    .iter()
-                    .map(|(path, file)| (file.clone(), parse_ok(path)))
-                    .collect::<Vec<_>>()
-            }));
+            workers.push(
+                std::thread::Builder::new()
+                    // Some large CRAN files exercise deep parser recursion.
+                    // Give each worker headroom so the parallel corpus check
+                    // stays stable instead of aborting on the default stack.
+                    .stack_size(8 * 1024 * 1024)
+                    .spawn_scoped(scope, move || {
+                        chunk
+                            .iter()
+                            .map(|(path, file)| (file.clone(), parse_ok(path)))
+                            .collect::<Vec<_>>()
+                    })
+                    .expect("failed to spawn parse worker"),
+            );
         }
 
         let mut results = Vec::with_capacity(entries.len());
