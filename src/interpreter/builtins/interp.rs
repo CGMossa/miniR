@@ -175,6 +175,155 @@ fn interp_format(
     }
 }
 
+/// Print a data.frame with aligned columns using TabWriter.
+///
+/// @param x a data.frame to print
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.data.frame", min_args = 1)]
+fn interp_print_data_frame(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    use std::io::Write;
+    use tabwriter::TabWriter;
+
+    let val = &args[0];
+    let list = match val {
+        RValue::List(l) => l,
+        _ => {
+            println!("{}", val);
+            return Ok(val.clone());
+        }
+    };
+
+    if list.values.is_empty() {
+        println!("data frame with 0 columns and 0 rows");
+        return Ok(val.clone());
+    }
+
+    // Column names
+    let col_names: Vec<String> = list
+        .values
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| name.clone().unwrap_or_else(|| format!("V{}", i + 1)))
+        .collect();
+
+    // Number of rows: from row.names attribute or first column length
+    let nrow = list
+        .get_attr("row.names")
+        .map(|v| v.length())
+        .unwrap_or_else(|| list.values.first().map(|(_, v)| v.length()).unwrap_or(0));
+
+    if nrow == 0 {
+        // Print header only for 0-row data frames
+        println!(
+            "data frame with 0 rows and {} columns: {}",
+            col_names.len(),
+            col_names.join(", ")
+        );
+        return Ok(val.clone());
+    }
+
+    // Row names
+    let row_names: Vec<String> = match list.get_attr("row.names") {
+        Some(RValue::Vector(rv)) => match &rv.inner {
+            Vector::Character(chars) => chars
+                .iter()
+                .map(|c| c.clone().unwrap_or_else(|| "NA".to_string()))
+                .collect(),
+            Vector::Integer(ints) => ints
+                .iter()
+                .map(|i| match i {
+                    Some(v) => v.to_string(),
+                    None => "NA".to_string(),
+                })
+                .collect(),
+            _ => (1..=nrow).map(|i| i.to_string()).collect(),
+        },
+        _ => (1..=nrow).map(|i| i.to_string()).collect(),
+    };
+
+    // Format each column's elements
+    let formatted_cols: Vec<Vec<String>> = list
+        .values
+        .iter()
+        .map(|(_, value)| match value {
+            RValue::Vector(rv) => format_column_elements(&rv.inner, nrow),
+            RValue::Null => vec!["NULL".to_string(); nrow],
+            other => vec![format!("{}", other); nrow],
+        })
+        .collect();
+
+    // Build tab-separated output and let tabwriter align it
+    let mut tw = TabWriter::new(Vec::new());
+
+    // Header row: blank for row-names column, then column names
+    let header_parts: Vec<&str> = std::iter::once("")
+        .chain(col_names.iter().map(|s| s.as_str()))
+        .collect();
+    writeln!(tw, "{}", header_parts.join("\t"))
+        .map_err(|e| RError::other(format!("write error: {}", e)))?;
+
+    // Data rows
+    for row in 0..nrow {
+        let row_name = row_names.get(row).map(|s| s.as_str()).unwrap_or("");
+        let mut parts = vec![row_name.to_string()];
+        for col in &formatted_cols {
+            parts.push(col.get(row).cloned().unwrap_or_else(|| "NA".to_string()));
+        }
+        writeln!(tw, "{}", parts.join("\t"))
+            .map_err(|e| RError::other(format!("write error: {}", e)))?;
+    }
+
+    tw.flush()
+        .map_err(|e| RError::other(format!("flush error: {}", e)))?;
+    let output = String::from_utf8(tw.into_inner().unwrap_or_default())
+        .map_err(|e| RError::other(format!("utf8 error: {}", e)))?;
+
+    // Print without trailing newline (println already adds one)
+    print!("{}", output);
+
+    Ok(val.clone())
+}
+
+/// Format individual elements of a vector column for data frame printing.
+fn format_column_elements(v: &Vector, nrow: usize) -> Vec<String> {
+    let len = v.len();
+    (0..nrow)
+        .map(|i| {
+            if i >= len {
+                return "NA".to_string();
+            }
+            match v {
+                Vector::Raw(vals) => format!("{:02x}", vals[i]),
+                Vector::Logical(vals) => match vals[i] {
+                    Some(true) => "TRUE".to_string(),
+                    Some(false) => "FALSE".to_string(),
+                    None => "NA".to_string(),
+                },
+                Vector::Integer(vals) => match vals[i] {
+                    Some(n) => n.to_string(),
+                    None => "NA".to_string(),
+                },
+                Vector::Double(vals) => match vals[i] {
+                    Some(f) => format_r_double(f),
+                    None => "NA".to_string(),
+                },
+                Vector::Complex(vals) => match vals[i] {
+                    Some(c) => format_r_complex(c),
+                    None => "NA".to_string(),
+                },
+                Vector::Character(vals) => match &vals[i] {
+                    Some(s) => s.clone(),
+                    None => "NA".to_string(),
+                },
+            }
+        })
+        .collect()
+}
+
 // endregion
 
 /// Apply a function over a vector or list, simplifying the result.
