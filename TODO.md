@@ -1,18 +1,29 @@
-# TODO — Remaining Stubs and Partial Implementations
+# TODO — Remaining Work
 
-This file tracks behavior that is still stubbed, placeholder, or materially simplified.
+## Package Runtime (highest priority)
 
-## Remaining Builtin Stubs
+- [ ] `library(pkg)`, `require(pkg)`, `requireNamespace(pkg)`, `loadNamespace(pkg)` — package loading
+- [ ] DESCRIPTION / NAMESPACE file parsing
+- [ ] Namespace environments and search path
+- [ ] `.onLoad()` / `.onAttach()` hooks
+- [ ] See `plans/package-runtime.md`
 
-- [ ] GNU-R-compatible binary serialization for `readRDS()`, `saveRDS()`, `load()`, and `save()`
-- [ ] `install.packages(pkgs)`, `library(pkg)`, `require(pkg)` — package loading and management (see `plans/package-runtime.md`)
+## Serialization
 
-## Architecture and Cleanup
+- [ ] GNU-R-compatible binary serialization for `readRDS()`, `saveRDS()`, `load()`, `save()`
 
-- [ ] Arrow backend for vector storage — replace `Vec<Option<T>>` with contiguous storage + validity bitmaps
-- [ ] Split `value.rs` (1200+ lines) and `parser.rs` (900+ lines) into smaller modules
+## Architecture
 
-## Developer Experience
+- [ ] Implement feature gates from `plans/feature-gates.md` for remaining deps
+- [ ] Add `tracing` crate as default logging framework (see `plans/tracing.md`)
+- [ ] Consider `nalgebra` for improved linear algebra (see `plans/nalgebra.md`)
 
-- [ ] Add tokei for file size tracking and refactoring detection
-- [x] Add a vendor patch workflow for intentional edits under `vendor/`
+## Graphics
+
+- [ ] egui-based interactive plotting (see `plans/egui-graphics.md`)
+- [ ] SVG/PNG file device output
+
+## Deferred
+
+- [ ] Arrow backend for vector storage
+- [ ] WASM target support (needs `--no-default-features` testing)

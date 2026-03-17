@@ -213,3 +213,138 @@ If a feature still has important semantic gaps, keep those gaps in `TODO.md` or 
 - `tests/argument_matching.rs` — three-pass matching conformance
 - `tests/lm.rs` — linear regression with 5 tests
 - REPL history fallback — gracefully handles unwritable history files
+
+## Distributions (stats)
+
+- `dexp/pexp/qexp` — exponential density/CDF/quantile
+- `dgamma/pgamma/qgamma` — gamma distribution
+- `dbeta/pbeta/qbeta` — beta distribution
+- `dcauchy/pcauchy/qcauchy` — Cauchy distribution
+- `dweibull/pweibull/qweibull` — Weibull distribution
+- `dlnorm/plnorm/qlnorm` — log-normal distribution
+- `dchisq/pchisq/qchisq` — chi-squared distribution
+- `dt/pt/qt` — Student's t distribution
+- `df/pf/qf` — F distribution
+- `dbinom/pbinom/qbinom` — binomial distribution
+- `dpois/ppois/qpois` — Poisson distribution
+- `dgeom/pgeom/qgeom` — geometric distribution
+- `dhyper/phyper/qhyper` — hypergeometric distribution
+- `cor(x,y)` / `cov(x,y)` — correlation and covariance
+- `weighted.mean(x,w)` — weighted mean
+- `scale(x)` — center and scale
+- `complete.cases(...)` — detect complete observations
+- `na.omit(x)` — remove NAs
+
+## Extended Distributions (miniR extensions)
+
+- `rfrechet`, `rgumbel`, `rinvgauss`, `rpareto`, `rpert`, `rskewnorm`, `rtriangular`, `rzeta`
+
+## Special Math Functions
+
+- `digamma(x)` / `trigamma(x)` — psi functions via libm
+- `besselJ(x, nu)` / `besselY(x, nu)` — Bessel functions via libm
+- `cbrt(x)` — cube root
+- `hypot(x, y)` — overflow-safe Euclidean distance
+- `gamma(x)` / `lgamma(x)` / `beta(a,b)` / `lbeta(a,b)` — gamma/beta functions
+- `factorial(n)` / `choose(n,k)` / `combn(n,k)` — combinatorics
+- `asin/acos/atan/atan2/sinh/cosh/tanh/asinh/acosh/atanh` — trig/hyperbolic
+- `expm1(x)` / `log1p(x)` — numerically stable variants
+
+## Collections (miniR extensions)
+
+- HashMap: `hashmap`, `hashmap_set/get/has/remove/keys/values/size/to_list`
+- BTreeMap: `btreemap_*` (ordered key-value store)
+- HashSet: `hashset_*` with set operations (union/intersect/diff)
+- BinaryHeap: `heap_*` (max priority queue)
+- VecDeque: `deque_*` (double-ended queue)
+
+## JSON Support
+
+- `fromJSON(txt)` / `toJSON(x)` — jsonlite-compatible JSON ↔ R conversion
+- Smart coercion: arrays of objects → data.frames, scalars → vectors
+
+## TOML Support
+
+- `read.toml(file)` / `write.toml(x, file)` — TOML file I/O
+- `toml_parse(text)` / `toml_serialize(x)` — TOML string conversion
+- Array of tables → data.frame coercion
+
+## Networking
+
+- `make.socket(host, port)` / `read.socket` / `write.socket` / `close.socket` — TCP client
+- `download.file(url, destfile)` — HTTP/HTTPS file download (rustls TLS)
+- `url("https://...")` — HTTPS connection support
+
+## Cryptographic Hashing
+
+- `digest(x, algo)` — SHA-256/SHA-512 hashing
+- `md5(x)` — informative error suggesting sha256
+
+## Rich Diagnostics
+
+- miette-powered parse error rendering with source spans and suggestions
+- `View(x)` — tabled-powered data.frame display with column types
+- `kable(x)` — markdown table rendering
+- `str()` for data.frames — aligned column summary via tabled
+
+## Additional Builtins
+
+- `match.call()` — reconstruct matched call
+- `Find/Position/Negate` — functional programming helpers
+- `rapply(object, f, how)` — recursive apply
+- `cut(x, breaks)` / `findInterval(x, vec)` — binning
+- `split(x, f)` / `unsplit(value, f)` — group splitting
+- `aggregate(x, by, FUN)` — group aggregation
+- `rm()` / `remove()` — remove bindings
+- `local(expr)` — evaluate in local environment
+- `lockEnvironment` / `lockBinding` — environment locking
+- `Encoding(x)` / `enc2utf8` / `enc2native` — encoding stubs
+- `strtrim(x, width)` — trim to display width
+- `arrayInd(ind, dim)` — linear to array index
+- `xor(x, y)` — vectorized exclusive OR
+- `URLencode/URLdecode` — percent-encoding
+- `casefold(x, upper)` — case conversion
+- `encodeString(x, quote)` — string encoding with quoting
+- `substr<-` — substring replacement
+- `strrep(x, times)` — string repetition
+- `pmatch/charmatch` — partial matching
+- `formatC/format.pval/prettyNum` — formatting utilities
+- `options()/getOption()` — per-interpreter R options
+- `.Machine` — machine constants
+- `Sys.getpid()` / `Sys.localeconv()` — system info
+- `gc()/gcinfo()/debug()/undebug()/browser()` — stubs
+- `rank(x, ties.method)` — ranking with tie-breaking
+- `aperm(a, perm)` — array permutation
+
+## Dependency Integrations
+
+- `itertools` — join/sorted/unique across codebase
+- `indexmap` — ordered attributes (preserves R's attribute order)
+- `tabwriter` — elastic tabstop data.frame printing
+- `tabled` — rich table rendering (View, kable, str)
+- `unicode-width` — display-width-aware alignment
+- `unicode-segmentation` — grapheme cluster counting
+- `unicase` — case-insensitive string matching
+- `signal-hook` — Ctrl-C interrupt handling
+- `dirs/walkdir/globset` — platform paths, recursive listing, glob validation
+- `bstr` — byte string handling for non-UTF-8 files
+- `rayon` — parallel vectorized arithmetic (opt-in)
+- `serde_json` — JSON support
+- `toml_edit` — TOML support
+- `sha2` — cryptographic hashing
+- `rustls` — TLS for HTTPS (opt-in)
+- `miette` — rich error diagnostics
+- `log/env_logger` — logging infrastructure (opt-in)
+- `slotmap` — vendored for future arena allocation
+- `SmallRng` — faster non-crypto RNG with .Random.seed support
+
+## Feature Gates
+
+- `linalg`, `tables`, `signal`, `tls`, `diagnostics`, `logging`, `parallel`, `arena`, `toml`, `json`, `digest`, `collections`, `random`, `datetime`, `io`, `dirs-support`, `walkdir-support`, `globset-support`
+- `cargo build --no-default-features` compiles minimal interpreter
+
+## Namespace Support
+
+- Builtins annotated with namespace (base/stats/utils/collections/net/jsonlite/digest/grDevices/graphics/methods)
+- `pkg::name` resolution checks builtin registry
+- `?pkg::name` shows namespaced help
