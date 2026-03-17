@@ -10,6 +10,8 @@ use r::repl::{RCompleter, RHighlighter, RPrompt, RValidator};
 use r::Session;
 
 fn main() {
+    r::init_logging();
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {

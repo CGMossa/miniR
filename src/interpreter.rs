@@ -15,6 +15,8 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use log::{debug, info, trace};
+
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
 pub(crate) use call::{CallFrame, S3DispatchContext};
@@ -204,6 +206,7 @@ impl Interpreter {
     }
 
     pub fn new() -> Self {
+        info!("creating new interpreter");
         let base_env = Environment::new_global();
         base_env.set_name("base".to_string());
         builtins::register_builtins(&base_env);
@@ -244,6 +247,7 @@ impl Interpreter {
     pub(crate) fn check_interrupt(&self) -> Result<(), RFlow> {
         if self.interrupted.load(Ordering::Relaxed) {
             self.interrupted.store(false, Ordering::Relaxed);
+            debug!("interrupt detected");
             Err(RFlow::Error(RError::interrupt()))
         } else {
             Ok(())
@@ -378,6 +382,7 @@ impl Interpreter {
     }
 
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
+        trace!("eval: {:?}", expr);
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
@@ -398,9 +403,10 @@ impl Interpreter {
             Expr::Complex(f) => Ok(RValue::vec(Vector::Complex(
                 vec![Some(num_complex::Complex64::new(0.0, *f))].into(),
             ))),
-            Expr::Symbol(name) => env
-                .get(name)
-                .ok_or_else(|| RError::new(RErrorKind::Name, name.clone()).into()),
+            Expr::Symbol(name) => env.get(name).ok_or_else(|| {
+                debug!("symbol not found: {}", name);
+                RError::new(RErrorKind::Name, name.clone()).into()
+            }),
             Expr::Dots => {
                 // Return the ... list from the current environment
                 env.get("...").ok_or_else(|| {
