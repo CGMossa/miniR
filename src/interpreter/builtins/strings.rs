@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use bstr::ByteSlice;
 use unicode_width::UnicodeWidthStr;
 
 use crate::interpreter::value::*;
@@ -1365,17 +1364,10 @@ fn builtin_char_to_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 
 /// Convert a raw (byte) vector to a character string.
 ///
-/// Uses bstr for graceful handling of non-UTF-8 bytes: invalid sequences
-/// are replaced with the Unicode replacement character (U+FFFD) rather than
-/// producing an error, matching R's tolerant behavior with `rawToChar()`.
-///
-/// When `multiple = TRUE`, each byte becomes a separate character element.
-///
 /// @param x raw vector to convert
-/// @param multiple logical: if TRUE, return one string per byte (default FALSE)
-/// @return character scalar (or vector if multiple=TRUE) containing the string
+/// @return character scalar containing the UTF-8 string
 #[builtin(name = "rawToChar", min_args = 1)]
-fn builtin_raw_to_char(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_raw_to_char(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let bytes = match args.first() {
         Some(RValue::Vector(rv)) => rv.inner.to_raw(),
         _ => {
@@ -1385,34 +1377,13 @@ fn builtin_raw_to_char(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
             ))
         }
     };
-
-    let multiple = named
-        .iter()
-        .find(|(k, _)| k == "multiple")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_logical_scalar()))
-        .unwrap_or(false);
-
-    if multiple {
-        // Each byte becomes a separate character element
-        let result: Vec<Option<String>> = bytes
-            .iter()
-            .map(|&b| {
-                // Strip embedded NULs: R silently drops \0 from rawToChar output
-                if b == 0 {
-                    Some(String::new())
-                } else {
-                    Some(std::slice::from_ref(&b).to_str_lossy().into_owned())
-                }
-            })
-            .collect();
-        Ok(RValue::vec(Vector::Character(result.into())))
-    } else {
-        // Strip NUL bytes (R strips embedded NULs in rawToChar)
-        let filtered: Vec<u8> = bytes.into_iter().filter(|&b| b != 0).collect();
-        let s = filtered.as_bstr().to_str_lossy().into_owned();
-        Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
-    }
+    let s = String::from_utf8(bytes).map_err(|e| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("invalid UTF-8 sequence: {}", e),
+        )
+    })?;
+    Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
 /// `raw(length)` — create a raw (byte) vector of zeros.
@@ -2068,140 +2039,6 @@ fn builtin_encoding(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         })
         .collect();
     Ok(RValue::vec(Vector::Character(result.into())))
-}
-
-/// Convert character strings between encodings.
-///
-/// Supports conversions between UTF-8, Latin-1 (ISO-8859-1), ASCII, and "bytes".
-/// Uses bstr for byte-level manipulation when dealing with non-UTF-8 data.
-///
-/// When `sub` is provided, it replaces characters that cannot be represented
-/// in the target encoding. The special value `sub = "byte"` uses hex `<xx>`
-/// escapes (matching R's behavior).
-///
-/// @param x character vector to convert
-/// @param from source encoding name (default: "")
-/// @param to target encoding name (default: "")
-/// @param sub substitution string for unconvertible characters (default: NA)
-/// @return character vector with converted strings
-#[builtin(min_args = 1)]
-fn builtin_iconv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let chars = match args.first() {
-        Some(RValue::Vector(rv)) => rv.to_characters(),
-        _ => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "argument is not a character vector".to_string(),
-            ))
-        }
-    };
-
-    let call_args = super::CallArgs::new(args, named);
-    let from_enc = call_args
-        .optional_string("from", 1)
-        .unwrap_or_default()
-        .to_uppercase();
-    let to_enc = call_args
-        .optional_string("to", 2)
-        .unwrap_or_default()
-        .to_uppercase();
-    let sub = call_args.optional_string("sub", 3);
-
-    // Normalize encoding names
-    let from_enc = normalize_encoding_name(&from_enc);
-    let to_enc = normalize_encoding_name(&to_enc);
-
-    let result: Vec<Option<String>> = chars
-        .iter()
-        .map(|s| {
-            s.as_ref()
-                .map(|s| iconv_one(s, &from_enc, &to_enc, sub.as_deref()))
-        })
-        .collect();
-
-    Ok(RValue::vec(Vector::Character(result.into())))
-}
-
-/// Normalize an encoding name to a canonical form.
-fn normalize_encoding_name(name: &str) -> String {
-    let upper = name.to_uppercase();
-    match upper.as_str() {
-        "" | "NATIVE" | "NATIVE.ENC" => "UTF-8".to_string(),
-        "LATIN1" | "LATIN-1" | "ISO-8859-1" | "ISO8859-1" | "ISO88591" => "LATIN-1".to_string(),
-        "UTF8" | "UTF-8" => "UTF-8".to_string(),
-        "ASCII" | "US-ASCII" => "ASCII".to_string(),
-        "BYTES" => "BYTES".to_string(),
-        _ => upper,
-    }
-}
-
-/// Convert a single string between encodings using bstr for byte-level access.
-fn iconv_one(s: &str, from: &str, to: &str, sub: Option<&str>) -> String {
-    // If encodings are the same, return as-is
-    if from == to {
-        return s.to_string();
-    }
-
-    // Since miniR strings are always valid UTF-8 internally, "from" is
-    // effectively always UTF-8 regardless of what the user claims.
-    // We convert FROM UTF-8 TO the target encoding, then back if needed.
-    match to {
-        "UTF-8" => {
-            // Already UTF-8; nothing to do
-            s.to_string()
-        }
-        "ASCII" => {
-            // Replace non-ASCII with substitution or lossy replacement
-            s.chars()
-                .map(|c| {
-                    if c.is_ascii() {
-                        c.to_string()
-                    } else {
-                        match sub {
-                            Some("byte") => {
-                                // Hex escape each UTF-8 byte
-                                let mut buf = [0u8; 4];
-                                let bytes = c.encode_utf8(&mut buf).as_bytes();
-                                bytes.iter().map(|b| format!("<{b:02x}>")).collect()
-                            }
-                            Some(replacement) => replacement.to_string(),
-                            None => String::new(), // R returns NA for unconvertible without sub, but we use empty
-                        }
-                    }
-                })
-                .collect()
-        }
-        "LATIN-1" => {
-            // Convert UTF-8 to Latin-1: chars in 0..=255 map directly,
-            // others need substitution
-            s.chars()
-                .map(|c| {
-                    if u32::from(c) <= 255 {
-                        c.to_string()
-                    } else {
-                        match sub {
-                            Some("byte") => {
-                                let mut buf = [0u8; 4];
-                                let bytes = c.encode_utf8(&mut buf).as_bytes();
-                                bytes.iter().map(|b| format!("<{b:02x}>")).collect()
-                            }
-                            Some(replacement) => replacement.to_string(),
-                            None => String::new(),
-                        }
-                    }
-                })
-                .collect()
-        }
-        "BYTES" => {
-            // Convert to hex representation of UTF-8 bytes
-            s.as_bytes().iter().map(|b| format!("\\x{b:02x}")).collect()
-        }
-        _ => {
-            // Unsupported target encoding — return with warning-like behavior
-            // In R this would produce NA with a warning; we do lossy passthrough
-            s.to_string()
-        }
-    }
 }
 
 /// Convert character vector to UTF-8 encoding (passthrough in miniR).

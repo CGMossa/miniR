@@ -1,7 +1,5 @@
 //! S3 method dispatch helpers for UseMethod/NextMethod and class-based lookup.
 
-use log::debug;
-
 use crate::interpreter::call::{retarget_call_expr, S3DispatchContext};
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::{RError, RFlow, RFunction, RSignal, RValue, Vector};
@@ -181,7 +179,6 @@ impl Interpreter {
         for (i, class) in classes.iter().enumerate() {
             let method_name = format!("{}.{}", generic, class);
             if let Some(method) = env.get(&method_name) {
-                debug!("S3 dispatch: {} -> {}", generic, method_name);
                 return self.call_s3_method(S3MethodCall {
                     method: &method,
                     method_name: &method_name,
@@ -199,7 +196,6 @@ impl Interpreter {
 
         let default_name = format!("{}.default", generic);
         if let Some(method) = env.get(&default_name) {
-            debug!("S3 dispatch: {} -> {} (default)", generic, default_name);
             return self.call_s3_method(S3MethodCall {
                 method: &method,
                 method_name: &default_name,
@@ -214,10 +210,6 @@ impl Interpreter {
             });
         }
 
-        debug!(
-            "S3 dispatch failed: no method for '{}' on class {:?}",
-            generic, classes
-        );
         Err(RError::other(format!(
             "no applicable method for '{}' applied to an object of class \"{}\"",
             generic,

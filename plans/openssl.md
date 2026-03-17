@@ -41,13 +41,3 @@ reproducible builds. Consider `rustls` as a lighter, pure-Rust alternative if
 we don't need OpenSSL-specific features.
 
 **Effort:** Build dependency only — transparent to code.
-
-## Decision (2026-03-17)
-
-We chose `rustls` over `openssl` for TLS support. Rationale:
-
-- Pure Rust — no system C library dependency, no build-time complexity
-- `rustls-native-certs` loads system CA certificates; `webpki-roots` provides Mozilla roots as fallback
-- Only 16 transitive dependencies (vs openssl's C build chain)
-- Feature-gated behind `tls` (not in default features)
-- Implemented in `src/interpreter/builtins/net.rs`

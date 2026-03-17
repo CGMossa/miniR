@@ -10,8 +10,6 @@ use r::repl::{RCompleter, RHighlighter, RPrompt, RValidator};
 use r::Session;
 
 fn main() {
-    r::init_logging();
-
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
@@ -39,7 +37,7 @@ fn run_expr(source: &str) {
             }
         }
         Err(e) => {
-            eprintln!("{}", e);
+            eprint!("{}", e.render());
             std::process::exit(1);
         }
     }
@@ -51,7 +49,7 @@ fn run_file(filename: &str) {
     match session.eval_file(filename) {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{}", e);
+            eprint!("{}", e.render());
             std::process::exit(1);
         }
     }
@@ -134,7 +132,8 @@ Type 'q()' to quit.
                 Err(e) => {
                     // Just print the error — interrupt errors display as
                     // "Interrupted" via their Display impl, no special case needed.
-                    eprintln!("{}", e);
+                    // Parse errors use miette rendering when `diagnostics` is on.
+                    eprint!("{}", e.render());
                 }
             },
             Ok(Signal::CtrlC) => {

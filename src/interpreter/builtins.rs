@@ -16,8 +16,6 @@ pub mod io;
 #[cfg(feature = "json")]
 mod json;
 pub mod math;
-#[cfg(feature = "tls")]
-mod net;
 mod pre_eval;
 #[cfg(feature = "random")]
 mod random;

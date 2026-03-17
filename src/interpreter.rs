@@ -15,8 +15,6 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use log::{debug, info, trace};
-
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
 pub(crate) use call::{CallFrame, S3DispatchContext};
@@ -126,11 +124,6 @@ pub struct Interpreter {
     /// TCP stream handles, keyed by connection ID. Stored separately from
     /// `ConnectionInfo` because `TcpStream` is not `Clone`.
     pub(crate) tcp_streams: RefCell<std::collections::HashMap<usize, std::net::TcpStream>>,
-    /// Buffered response bodies for URL connections, keyed by connection ID.
-    /// URL connections eagerly fetch the entire HTTP response body, which is
-    /// stored here for subsequent `readLines()` calls.
-    #[cfg(feature = "tls")]
-    pub(crate) url_bodies: RefCell<std::collections::HashMap<usize, Vec<u8>>>,
     /// Finalizers registered with reg.finalizer(onexit = TRUE), run when the
     /// interpreter is dropped.
     pub(crate) finalizers: RefCell<Vec<RValue>>,
@@ -211,7 +204,6 @@ impl Interpreter {
     }
 
     pub fn new() -> Self {
-        info!("creating new interpreter");
         let base_env = Environment::new_global();
         base_env.set_name("base".to_string());
         builtins::register_builtins(&base_env);
@@ -237,8 +229,6 @@ impl Interpreter {
             collections: RefCell::new(Vec::new()),
             connections: RefCell::new(Vec::new()),
             tcp_streams: RefCell::new(std::collections::HashMap::new()),
-            #[cfg(feature = "tls")]
-            url_bodies: RefCell::new(std::collections::HashMap::new()),
             finalizers: RefCell::new(Vec::new()),
             interrupted: Arc::new(AtomicBool::new(false)),
             options: RefCell::new(Self::default_options()),
@@ -254,7 +244,6 @@ impl Interpreter {
     pub(crate) fn check_interrupt(&self) -> Result<(), RFlow> {
         if self.interrupted.load(Ordering::Relaxed) {
             self.interrupted.store(false, Ordering::Relaxed);
-            debug!("interrupt detected");
             Err(RFlow::Error(RError::interrupt()))
         } else {
             Ok(())
@@ -389,7 +378,6 @@ impl Interpreter {
     }
 
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
-        trace!("eval: {:?}", expr);
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
@@ -410,10 +398,9 @@ impl Interpreter {
             Expr::Complex(f) => Ok(RValue::vec(Vector::Complex(
                 vec![Some(num_complex::Complex64::new(0.0, *f))].into(),
             ))),
-            Expr::Symbol(name) => env.get(name).ok_or_else(|| {
-                debug!("symbol not found: {}", name);
-                RError::new(RErrorKind::Name, name.clone()).into()
-            }),
+            Expr::Symbol(name) => env
+                .get(name)
+                .ok_or_else(|| RError::new(RErrorKind::Name, name.clone()).into()),
             Expr::Dots => {
                 // Return the ... list from the current environment
                 env.get("...").ok_or_else(|| {
