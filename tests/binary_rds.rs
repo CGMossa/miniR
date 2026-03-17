@@ -864,3 +864,338 @@ fn read_binary_rds_ascii_format_gives_clear_error() {
 }
 
 // endregion
+
+// region: XDR writer round-trip tests
+
+#[test]
+fn roundtrip_xdr_integer_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-int");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1L, 2L, NA_integer_, 4L)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(identical(x, y))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_double_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-dbl");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1.5, NA_real_, -Inf, 0.0)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.double(y))
+stopifnot(y[1] == 1.5)
+stopifnot(is.na(y[2]))
+stopifnot(y[3] == -Inf)
+stopifnot(y[4] == 0.0)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_logical_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-lgl");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(TRUE, FALSE, NA)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.logical(y))
+stopifnot(y[1] == TRUE)
+stopifnot(y[2] == FALSE)
+stopifnot(is.na(y[3]))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_character_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-chr");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c("hello", NA_character_, "world", "")
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.character(y))
+stopifnot(y[1] == "hello")
+stopifnot(is.na(y[2]))
+stopifnot(y[3] == "world")
+stopifnot(y[4] == "")
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_complex_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-cplx");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1+2i, 3-4i, NA_complex_)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.complex(y))
+stopifnot(Re(y[1]) == 1)
+stopifnot(Im(y[1]) == 2)
+stopifnot(Re(y[2]) == 3)
+stopifnot(Im(y[2]) == -4)
+stopifnot(is.na(y[3]))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_raw_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-raw");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- as.raw(c(0, 255, 42))
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.raw(y))
+stopifnot(length(y) == 3)
+stopifnot(y[1] == as.raw(0))
+stopifnot(y[2] == as.raw(255))
+stopifnot(y[3] == as.raw(42))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_null() {
+    let mut s = Session::new();
+    let path = temp_path("rt-null");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(NULL, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.null(y))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_named_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-named");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(a = 1L, b = 2L, c = 3L)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(identical(names(y), c("a", "b", "c")))
+stopifnot(y[["a"]] == 1L)
+stopifnot(y[["c"]] == 3L)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_list_with_names() {
+    let mut s = Session::new();
+    let path = temp_path("rt-list");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- list(a = 1L, b = "hello", c = TRUE)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.list(y))
+stopifnot(length(y) == 3)
+stopifnot(y$a == 1L)
+stopifnot(y$b == "hello")
+stopifnot(y$c == TRUE)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_nested_list() {
+    let mut s = Session::new();
+    let path = temp_path("rt-nested");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- list(inner = list(a = 1L, b = 2L), value = 42.0)
+saveRDS(x, "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.list(y))
+stopifnot(y$inner$a == 1L)
+stopifnot(y$inner$b == 2L)
+stopifnot(y$value == 42.0)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_empty_vectors() {
+    let mut s = Session::new();
+    let path = temp_path("rt-empty");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(integer(0), "{p}", compress = FALSE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(length(y) == 0)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_data_frame() {
+    let mut s = Session::new();
+    let path = temp_path("rt-df");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+df <- data.frame(x = c(1L, 2L), y = c("a", "b"))
+saveRDS(df, "{p}", compress = FALSE)
+df2 <- readRDS("{p}")
+stopifnot(is.data.frame(df2))
+stopifnot(identical(names(df2), c("x", "y")))
+stopifnot(nrow(df2) == 2)
+stopifnot(df2$x[1] == 1L)
+stopifnot(df2$y[2] == "b")
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[cfg(feature = "compression")]
+#[test]
+fn roundtrip_xdr_gzip_compressed() {
+    let mut s = Session::new();
+    let path = temp_path("rt-gz");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1L, 2L, 3L)
+saveRDS(x, "{p}", compress = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(identical(x, y))
+"#
+    ))
+    .unwrap();
+
+    // Verify the file is actually gzip-compressed (magic bytes 0x1f 0x8b)
+    let bytes = fs::read(&path).unwrap();
+    assert!(
+        bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b,
+        "expected gzip-compressed output, first bytes: {:?}",
+        &bytes[..bytes.len().min(4)]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[cfg(feature = "compression")]
+#[test]
+fn roundtrip_xdr_compress_false_is_uncompressed() {
+    let mut s = Session::new();
+    let path = temp_path("rt-nocomp");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(42L, "{p}", compress = FALSE)
+"#
+    ))
+    .unwrap();
+
+    // Should start with "X\n", not gzip magic
+    let bytes = fs::read(&path).unwrap();
+    assert!(
+        bytes.len() >= 2 && bytes[0] == b'X' && bytes[1] == b'\n',
+        "expected uncompressed XDR header 'X\\n', first bytes: {:?}",
+        &bytes[..bytes.len().min(4)]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_matrix_with_dimnames() {
+    let mut s = Session::new();
+    let path = temp_path("rt-matrix");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+m <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("c1", "c2")))
+saveRDS(m, "{p}", compress = FALSE)
+m2 <- readRDS("{p}")
+stopifnot(is.matrix(m2))
+stopifnot(nrow(m2) == 2)
+stopifnot(ncol(m2) == 2)
+stopifnot(identical(rownames(m2), c("r1", "r2")))
+stopifnot(identical(colnames(m2), c("c1", "c2")))
+stopifnot(m2[1,1] == 1L)
+stopifnot(m2[2,2] == 4L)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_xdr_factor() {
+    let mut s = Session::new();
+    let path = temp_path("rt-factor");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+f <- factor(c("b", "a", "b"))
+saveRDS(f, "{p}", compress = FALSE)
+f2 <- readRDS("{p}")
+stopifnot(is.factor(f2))
+stopifnot(identical(levels(f2), levels(f)))
+stopifnot(identical(as.integer(f2), as.integer(f)))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+// endregion

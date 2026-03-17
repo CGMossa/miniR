@@ -563,10 +563,14 @@ fn interp_read_rds(
     read_minirds(&path, "readRDS", "saveRDS", context.interpreter())
 }
 
-/// Serialize a single R object to a miniRDS file.
+/// Serialize a single R object to an RDS file in GNU R-compatible XDR binary format.
+///
+/// By default the output is gzip-compressed (matching GNU R behavior).
+/// Pass `compress = FALSE` to write uncompressed XDR binary.
 ///
 /// @param object any R value to serialize
 /// @param file character scalar: path to write the .rds file
+/// @param compress logical: whether to gzip-compress the output (default TRUE)
 /// @return NULL (invisibly)
 #[interpreter_builtin(name = "saveRDS", min_args = 2)]
 fn builtin_save_rds(
@@ -583,7 +587,17 @@ fn builtin_save_rds(
     })?;
     let path = resolved_path_string(context.interpreter(), &call_args.string("file", 1)?);
 
-    write_minirds(&path, object)?;
+    // Default to compress = TRUE, matching GNU R.
+    let compress = call_args
+        .value("compress", 2)
+        .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
+        .unwrap_or(true);
+
+    let bytes = super::serialize::serialize_rds(object, compress);
+    std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
+        path: path.clone(),
+        source,
+    })?;
     Ok(RValue::Null)
 }
 
@@ -623,6 +637,19 @@ fn interp_load(
 
     if let Some(names) = try_load_binary_rdata(&raw_bytes, &target_env)? {
         return Ok(RValue::vec(Vector::Character(names.into())));
+    }
+
+    // If the file looks like binary data (RDS, gzip, etc.) but not an RData
+    // workspace, reject it early instead of trying text parse.
+    if super::serialize::is_binary_rds(&raw_bytes) {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "unsupported load() format in '{}': not a recognized workspace file \
+                 (this looks like an RDS file — use readRDS() instead of load())",
+                path
+            ),
+        ));
     }
 
     // Fall back to miniRDS text format.

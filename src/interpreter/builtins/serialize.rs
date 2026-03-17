@@ -696,6 +696,279 @@ pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
 
 // endregion
 
+// region: XdrWriter
+
+/// Cursor-based writer for big-endian (XDR) binary data.
+struct XdrWriter {
+    buf: Vec<u8>,
+}
+
+impl XdrWriter {
+    fn new() -> Self {
+        XdrWriter { buf: Vec::new() }
+    }
+
+    /// Write a big-endian i32.
+    fn write_int(&mut self, val: i32) {
+        self.buf.extend_from_slice(&val.to_be_bytes());
+    }
+
+    /// Write a big-endian f64.
+    fn write_double(&mut self, val: f64) {
+        self.buf.extend_from_slice(&val.to_be_bytes());
+    }
+
+    /// Write flags for an object: SEXPTYPE in bits 0:7, has-attr in bit 9, has-tag in bit 10.
+    fn write_flags(&mut self, sxp_type: u8, has_attr: bool, has_tag: bool) {
+        let mut flags: u32 = u32::from(sxp_type);
+        if has_attr {
+            flags |= HAS_ATTR_MASK;
+        }
+        if has_tag {
+            flags |= HAS_TAG_MASK;
+        }
+        self.write_int(flags as i32);
+    }
+
+    /// Write a CHARSXP: flags + length + raw bytes. Pass `None` for NA_STRING.
+    fn write_charsxp(&mut self, s: Option<&str>) {
+        match s {
+            Some(text) => {
+                // CHARSXP flags: type 9, UTF-8 encoding (bit 12)
+                let flags: u32 = u32::from(CHARSXP) | (1 << 12);
+                self.write_int(flags as i32);
+                let bytes = text.as_bytes();
+                self.write_int(i32::try_from(bytes.len()).unwrap_or(i32::MAX));
+                self.buf.extend_from_slice(bytes);
+            }
+            None => {
+                // NA_STRING: CHARSXP with length -1
+                let flags: u32 = u32::from(CHARSXP);
+                self.write_int(flags as i32);
+                self.write_int(-1);
+            }
+        }
+    }
+
+    /// Write NILVALUE_SXP sentinel (end of pairlists, etc.)
+    fn write_nilvalue(&mut self) {
+        self.write_flags(NILVALUE_SXP, false, false);
+    }
+
+    /// Write a length value. Uses the standard i32 encoding for lengths < 2^31.
+    fn write_length(&mut self, len: usize) {
+        if let Ok(n) = i32::try_from(len) {
+            self.write_int(n);
+        } else {
+            // Long vector: write -1 sentinel, then upper/lower 32-bit halves.
+            self.write_int(-1);
+            let long_len = len as u64;
+            self.write_int((long_len >> 32) as i32);
+            self.write_int(long_len as i32);
+        }
+    }
+
+    /// Write attributes as a pairlist. Each entry becomes a LISTSXP node with a
+    /// SYMSXP tag and the value as CAR. The chain terminates with NILVALUE_SXP.
+    fn write_attributes(&mut self, attrs: &Attributes) {
+        for (name, value) in attrs {
+            self.write_flags(LISTSXP, false, true); // has_tag = true
+                                                    // Tag: SYMSXP containing a CHARSXP
+            self.write_flags(SYMSXP, false, false);
+            self.write_charsxp(Some(name));
+            // Value: the attribute value
+            self.write_item(value);
+        }
+        self.write_nilvalue();
+    }
+
+    /// Write a single R value recursively.
+    fn write_item(&mut self, value: &RValue) {
+        match value {
+            RValue::Null => {
+                self.write_flags(NILVALUE_SXP, false, false);
+            }
+            RValue::Vector(rv) => {
+                let has_attr = rv.attrs.as_ref().is_some_and(|a| !a.is_empty());
+                match &rv.inner {
+                    Vector::Logical(vals) => {
+                        self.write_flags(LGLSXP, has_attr, false);
+                        self.write_length(vals.len());
+                        for v in vals.iter() {
+                            match v {
+                                Some(true) => self.write_int(1),
+                                Some(false) => self.write_int(0),
+                                None => self.write_int(R_NA_LOGICAL),
+                            }
+                        }
+                    }
+                    Vector::Integer(vals) => {
+                        self.write_flags(INTSXP, has_attr, false);
+                        self.write_length(vals.len());
+                        for v in vals.iter() {
+                            match v {
+                                Some(i) => {
+                                    // R integers are i32; clamp to i32 range.
+                                    let clamped = i32::try_from(*i).unwrap_or_else(|_| {
+                                        if *i > i64::from(i32::MAX) {
+                                            i32::MAX
+                                        } else {
+                                            // i32::MIN is NA, so use MIN + 1
+                                            i32::MIN + 1
+                                        }
+                                    });
+                                    // Guard against accidentally writing NA_INTEGER
+                                    // for a non-NA value.
+                                    if clamped == R_NA_INTEGER {
+                                        self.write_int(R_NA_INTEGER + 1);
+                                    } else {
+                                        self.write_int(clamped);
+                                    }
+                                }
+                                None => self.write_int(R_NA_INTEGER),
+                            }
+                        }
+                    }
+                    Vector::Double(vals) => {
+                        self.write_flags(REALSXP, has_attr, false);
+                        self.write_length(vals.len());
+                        for v in vals.iter() {
+                            match v {
+                                Some(d) => self.write_double(*d),
+                                None => self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes()),
+                            }
+                        }
+                    }
+                    Vector::Complex(vals) => {
+                        self.write_flags(CPLXSXP, has_attr, false);
+                        self.write_length(vals.len());
+                        for v in vals.iter() {
+                            match v {
+                                Some(c) => {
+                                    self.write_double(c.re);
+                                    self.write_double(c.im);
+                                }
+                                None => {
+                                    self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes());
+                                    self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes());
+                                }
+                            }
+                        }
+                    }
+                    Vector::Character(vals) => {
+                        self.write_flags(STRSXP, has_attr, false);
+                        self.write_length(vals.len());
+                        for v in vals.iter() {
+                            self.write_charsxp(v.as_deref());
+                        }
+                    }
+                    Vector::Raw(bytes) => {
+                        self.write_flags(RAWSXP, has_attr, false);
+                        self.write_length(bytes.len());
+                        self.buf.extend_from_slice(bytes);
+                    }
+                }
+                if has_attr {
+                    self.write_attributes(rv.attrs.as_ref().unwrap());
+                }
+            }
+            RValue::List(list) => {
+                // Build the effective attributes: merge list names into attrs.
+                let has_names = list.values.iter().any(|(name, _)| name.is_some());
+                let mut effective_attrs: Attributes = list
+                    .attrs
+                    .as_ref()
+                    .map(|a| a.as_ref().clone())
+                    .unwrap_or_default();
+                if has_names && !effective_attrs.contains_key("names") {
+                    let names: Vec<Option<String>> =
+                        list.values.iter().map(|(n, _)| n.clone()).collect();
+                    effective_attrs.insert(
+                        "names".to_string(),
+                        RValue::vec(Vector::Character(names.into())),
+                    );
+                }
+                let has_attr = !effective_attrs.is_empty();
+
+                self.write_flags(VECSXP, has_attr, false);
+                self.write_length(list.values.len());
+                for (_, val) in &list.values {
+                    self.write_item(val);
+                }
+                if has_attr {
+                    self.write_attributes(&effective_attrs);
+                }
+            }
+            // Functions, environments, and language objects cannot be serialized
+            // in a meaningful way; write NULL as a placeholder.
+            RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) => {
+                self.write_flags(NILVALUE_SXP, false, false);
+            }
+        }
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.buf
+    }
+}
+
+// endregion
+
+// region: serialize public API
+
+/// Serialize an R value to XDR binary format (version 2).
+///
+/// Returns the complete byte stream including the "X\n" header, version triple,
+/// and the recursively serialized object. The output is compatible with GNU R's
+/// `readRDS()` / `unserialize()`.
+pub fn serialize_xdr(value: &RValue) -> Vec<u8> {
+    let mut w = XdrWriter::new();
+
+    // Format header: "X\n"
+    w.buf.extend_from_slice(b"X\n");
+
+    // Version 2
+    w.write_int(2);
+    // R version that wrote: encode as 4.3.0 (0x00040300)
+    w.write_int(0x00040300);
+    // Minimum R version to read: 2.3.0 (0x00020300)
+    w.write_int(0x00020300);
+
+    // The actual object
+    w.write_item(value);
+
+    w.finish()
+}
+
+/// Serialize an R value to an RDS byte stream, optionally gzip-compressed.
+///
+/// When `compress` is true and the `compression` feature is enabled, the output
+/// is gzip-compressed (matching GNU R's default `saveRDS(compress = TRUE)`).
+#[cfg(feature = "compression")]
+pub fn serialize_rds(value: &RValue, compress: bool) -> Vec<u8> {
+    let raw = serialize_xdr(value);
+    if compress {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        // write_all is infallible for a Vec<u8> backed encoder
+        encoder.write_all(&raw).expect("gzip encoding failed");
+        encoder.finish().expect("gzip finish failed")
+    } else {
+        raw
+    }
+}
+
+/// Serialize an R value to an RDS byte stream (no-compression fallback).
+#[cfg(not(feature = "compression"))]
+pub fn serialize_rds(value: &RValue, _compress: bool) -> Vec<u8> {
+    serialize_xdr(value)
+}
+
+// endregion
+
 #[cfg(test)]
 mod tests {
     use super::*;
