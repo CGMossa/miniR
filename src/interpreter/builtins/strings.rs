@@ -7,6 +7,7 @@ use crate::interpreter::value::*;
 use derive_more::{Display, Error};
 use minir_macros::builtin;
 use regex::Regex;
+use super::CallArgs;
 
 use crate::interpreter::value::deparse_expr;
 
@@ -2522,6 +2523,104 @@ fn builtin_substr_assign(args: &[RValue], _named: &[(String, RValue)]) -> Result
     Ok(RValue::vec(Vector::Character(
         vec![Some(result.into_iter().collect())].into(),
     )))
+}
+
+// endregion
+
+// region: strwrap
+
+/// Wrap character strings to a specified width.
+///
+/// Breaks long strings into lines of at most `width` characters. Supports
+/// first-line indentation (`indent`) and subsequent-line indentation (`exdent`).
+///
+/// @param x character vector to wrap
+/// @param width target line width (default: 0.9 * getOption("width"))
+/// @param indent indentation of first line (default: 0)
+/// @param exdent indentation of subsequent lines (default: 0)
+/// @param prefix prefix for each line (default: "")
+/// @param simplify if TRUE return a character vector, if FALSE return a list
+/// @return character vector (or list) of wrapped strings
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_strwrap(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
+
+    let x = match call_args.value("x", 0) {
+        Some(v) => match v.as_vector() {
+            Some(v) => v.to_characters(),
+            None => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "invalid 'x' argument".to_string(),
+                ))
+            }
+        },
+        None => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'x' is missing".to_string(),
+            ))
+        }
+    };
+
+    let width = call_args.integer_or("width", 1, 80) as usize;
+    let indent = call_args.integer_or("indent", 2, 0) as usize;
+    let exdent = call_args.integer_or("exdent", 3, 0) as usize;
+    let prefix = call_args.optional_string("prefix", 4).unwrap_or_default();
+    let initial = call_args
+        .optional_string("initial", 5)
+        .unwrap_or_else(|| prefix.clone());
+    let simplify = call_args.logical_flag("simplify", 6, true);
+
+    let indent_str = " ".repeat(indent);
+    let exdent_str = " ".repeat(exdent);
+
+    let mut all_lines: Vec<Vec<Option<String>>> = Vec::new();
+    for s_opt in &x {
+        match s_opt {
+            None => all_lines.push(vec![None]),
+            Some(s) => {
+                let effective_width = width.saturating_sub(initial.len() + indent);
+                if effective_width == 0 {
+                    all_lines.push(vec![Some(format!("{initial}{indent_str}{s}"))]);
+                    continue;
+                }
+                let wrapped = textwrap::wrap(s, effective_width);
+                let mut lines = Vec::new();
+                for (i, line) in wrapped.iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Some(format!("{initial}{indent_str}{line}")));
+                    } else {
+                        let ew = width.saturating_sub(prefix.len() + exdent);
+                        let rewrapped = if ew > 0 && line.len() > ew {
+                            textwrap::wrap(line, ew)
+                        } else {
+                            vec![std::borrow::Cow::Borrowed(line.as_ref())]
+                        };
+                        for subline in rewrapped {
+                            lines.push(Some(format!("{prefix}{exdent_str}{subline}")));
+                        }
+                    }
+                }
+                if lines.is_empty() {
+                    lines.push(Some(format!("{initial}{indent_str}")));
+                }
+                all_lines.push(lines);
+            }
+        }
+    }
+
+    if simplify {
+        let flat: Vec<Option<String>> = all_lines.into_iter().flatten().collect();
+        Ok(RValue::vec(Vector::Character(flat.into())))
+    } else {
+        let list_vals: Vec<(Option<String>, RValue)> = all_lines
+            .into_iter()
+            .map(|lines| (None, RValue::vec(Vector::Character(lines.into()))))
+            .collect();
+        Ok(RValue::List(RList::new(list_vals)))
+    }
 }
 
 // endregion

@@ -93,6 +93,7 @@ rustls = { version = "0.23", optional = true, default-features = false, features
 rustls-native-certs = { version = "0.8", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 flate2 = { version = "1", optional = true }
+textwrap = { version = "0.16", default-features = false }
 
 [features]
 default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "toml", "diagnostics", "arena", "compression"]

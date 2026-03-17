@@ -1050,6 +1050,7 @@ dependencies = [
  "tabled",
  "tabwriter",
  "temp-dir",
+ "textwrap",
  "toml_edit",
  "unicase",
  "unicode-segmentation",
