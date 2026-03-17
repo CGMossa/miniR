@@ -448,6 +448,29 @@ fn workspace_target_env(
     }
 }
 
+fn workspace_bool_arg(
+    args: &[Arg],
+    env: &Environment,
+    interp: &Interpreter,
+    name: &str,
+    default: bool,
+) -> Result<bool, RError> {
+    match args.iter().find(|arg| arg.name.as_deref() == Some(name)) {
+        Some(arg) => {
+            let val = eval_arg_value(arg, env, interp)?;
+            val.as_vector()
+                .and_then(|v| v.as_logical_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        format!("invalid '{}' argument: expected TRUE or FALSE", name),
+                    )
+                })
+        }
+        None => Ok(default),
+    }
+}
+
 fn workspace_requested_names(
     args: &[Arg],
     env: &Environment,
@@ -567,10 +590,12 @@ fn interp_read_rds(
 ///
 /// By default the output is gzip-compressed (matching GNU R behavior).
 /// Pass `compress = FALSE` to write uncompressed XDR binary.
+/// Pass `ascii = TRUE` to write miniRDS text format instead.
 ///
 /// @param object any R value to serialize
 /// @param file character scalar: path to write the .rds file
-/// @param compress logical: whether to gzip-compress the output (default TRUE)
+/// @param ascii logical: if TRUE, write miniRDS text format (default FALSE)
+/// @param compress logical: whether to gzip-compress binary output (default TRUE)
 /// @return NULL (invisibly)
 #[interpreter_builtin(name = "saveRDS", min_args = 2)]
 fn builtin_save_rds(
@@ -587,17 +612,27 @@ fn builtin_save_rds(
     })?;
     let path = resolved_path_string(context.interpreter(), &call_args.string("file", 1)?);
 
-    // Default to compress = TRUE, matching GNU R.
-    let compress = call_args
-        .value("compress", 2)
+    // Check ascii parameter (default FALSE).
+    let ascii = call_args
+        .value("ascii", 2)
         .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
-        .unwrap_or(true);
+        .unwrap_or(false);
 
-    let bytes = super::serialize::serialize_rds(object, compress);
-    std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
-        path: path.clone(),
-        source,
-    })?;
+    if ascii {
+        write_minirds(&path, object)?;
+    } else {
+        // Default to compress = TRUE, matching GNU R.
+        let compress = call_args
+            .value("compress", 3)
+            .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
+            .unwrap_or(true);
+
+        let bytes = super::serialize::serialize_rds(object, compress);
+        std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
+            path: path.clone(),
+            source,
+        })?;
+    }
     Ok(RValue::Null)
 }
 
@@ -744,11 +779,16 @@ fn try_load_binary_rdata(
     Ok(Some(loaded_names))
 }
 
-/// Save named R objects to a workspace file in miniRDS format.
+/// Save named R objects to a workspace file in GNU R binary format (RDX2).
+///
+/// By default writes gzip-compressed RDX2 binary format, compatible with GNU R's
+/// `load()`. Pass `ascii = TRUE` to fall back to the miniRDS text format.
 ///
 /// @param ... bare names of objects to save
 /// @param list character vector of additional object names
 /// @param file character scalar: path to write the workspace file
+/// @param ascii logical: if TRUE, write miniRDS text format instead of binary (default FALSE)
+/// @param compress logical: whether to gzip-compress binary output (default TRUE)
 /// @param envir environment to look up objects in (default: calling environment)
 /// @return NULL (invisibly)
 #[pre_eval_builtin(name = "save")]
@@ -761,8 +801,10 @@ fn pre_eval_save(
     let path = workspace_file_arg(args, env, interp)?;
     let target_env = workspace_target_env(args, env, interp)?;
     let requested_names = workspace_requested_names(args, env, interp)?;
+    let ascii = workspace_bool_arg(args, env, interp, "ascii", false)?;
+    let compress = workspace_bool_arg(args, env, interp, "compress", true)?;
 
-    let mut values = Vec::with_capacity(requested_names.len());
+    let mut bindings = Vec::with_capacity(requested_names.len());
     for name in requested_names {
         let value = target_env.get(&name).ok_or_else(|| {
             RError::new(
@@ -770,12 +812,85 @@ fn pre_eval_save(
                 format!("object '{}' not found in save()", name),
             )
         })?;
-        values.push((Some(name), value));
+        bindings.push((name, value));
     }
 
-    let mut workspace = RList::new(values);
-    workspace.set_attr("class".to_string(), workspace_class_value());
-    write_minirds(&path, &RValue::List(workspace))?;
+    if ascii {
+        // Legacy miniRDS text format
+        let values = bindings
+            .into_iter()
+            .map(|(name, value)| (Some(name), value))
+            .collect();
+        let mut workspace = RList::new(values);
+        workspace.set_attr("class".to_string(), workspace_class_value());
+        write_minirds(&path, &RValue::List(workspace))?;
+    } else {
+        // GNU R binary RDX2 format
+        let bytes = super::serialize::serialize_rdata(&bindings, compress);
+        std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
+            path: path.clone(),
+            source,
+        })?;
+    }
+    Ok(RValue::Null)
+}
+
+/// Save all objects in the global environment to ".RData".
+///
+/// Equivalent to `save(list = ls(envir = .GlobalEnv), file = ".RData")`.
+///
+/// @param file character scalar: path to write (default ".RData")
+/// @return NULL (invisibly)
+#[pre_eval_builtin(name = "save.image")]
+fn pre_eval_save_image(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let interp = context.interpreter();
+
+    // Determine the output file path (default ".RData").
+    let path = args
+        .iter()
+        .find(|arg| arg.name.as_deref() == Some("file"))
+        .or_else(|| {
+            args.iter()
+                .find(|arg| arg.name.is_none() && arg.value.is_some())
+        })
+        .map(|arg| eval_arg_value(arg, env, interp))
+        .transpose()?
+        .and_then(|v| v.as_vector().and_then(|vec| vec.as_character_scalar()))
+        .unwrap_or_else(|| ".RData".to_string());
+    let path = resolved_path_string(interp, &path);
+
+    let ascii = workspace_bool_arg(args, env, interp, "ascii", false)?;
+    let compress = workspace_bool_arg(args, env, interp, "compress", true)?;
+
+    // Collect all bindings from the global environment.
+    let global_env = &interp.global_env;
+    let all_names = global_env.ls();
+    let mut bindings = Vec::with_capacity(all_names.len());
+    for name in all_names {
+        if let Some(value) = global_env.get(&name) {
+            bindings.push((name, value));
+        }
+    }
+
+    if ascii {
+        let values = bindings
+            .into_iter()
+            .map(|(name, value)| (Some(name), value))
+            .collect();
+        let mut workspace = RList::new(values);
+        workspace.set_attr("class".to_string(), workspace_class_value());
+        write_minirds(&path, &RValue::List(workspace))?;
+    } else {
+        let bytes = super::serialize::serialize_rdata(&bindings, compress);
+        std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
+            path: path.clone(),
+            source,
+        })?;
+    }
     Ok(RValue::Null)
 }
 

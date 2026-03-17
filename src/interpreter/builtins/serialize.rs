@@ -907,6 +907,28 @@ impl XdrWriter {
         }
     }
 
+    /// Write a SYMSXP (symbol): flags + CHARSXP for the name.
+    fn write_symbol(&mut self, name: &str) {
+        self.write_flags(SYMSXP, false, false);
+        self.write_charsxp(Some(name));
+    }
+
+    /// Write a pairlist: a chain of LISTSXP nodes, each with a TAG (symbol) and
+    /// CAR (value), terminated by NILVALUE_SXP. This is the format used by GNU R's
+    /// `save()` for writing workspace files (RDX2 format).
+    fn write_pairlist(&mut self, bindings: &[(String, RValue)]) {
+        for (name, value) in bindings {
+            // Each node: LISTSXP with has_tag = true
+            self.write_flags(LISTSXP, false, true);
+            // TAG: symbol with the binding name
+            self.write_symbol(name);
+            // CAR: the value
+            self.write_item(value);
+        }
+        // Terminate with NILVALUE_SXP
+        self.write_nilvalue();
+    }
+
     fn finish(self) -> Vec<u8> {
         self.buf
     }
@@ -965,6 +987,72 @@ pub fn serialize_rds(value: &RValue, compress: bool) -> Vec<u8> {
 #[cfg(not(feature = "compression"))]
 pub fn serialize_rds(value: &RValue, _compress: bool) -> Vec<u8> {
     serialize_xdr(value)
+}
+
+/// Serialize named bindings to GNU R binary .RData format (RDX2).
+///
+/// Writes the "RDX2\n" header followed by the XDR serialization stream containing
+/// a pairlist where each node has TAG=symbol(name) and CAR=value. When `compress`
+/// is true, the entire output is gzip-compressed.
+///
+/// This is compatible with GNU R's `load()`.
+#[cfg(feature = "compression")]
+pub fn serialize_rdata(bindings: &[(String, RValue)], compress: bool) -> Vec<u8> {
+    let mut w = XdrWriter::new();
+
+    // RDX2 header
+    w.buf.extend_from_slice(b"RDX2\n");
+
+    // XDR format header: "X\n"
+    w.buf.extend_from_slice(b"X\n");
+
+    // Version 2
+    w.write_int(2);
+    // R version that wrote: 4.3.0 (0x00040300)
+    w.write_int(0x00040300);
+    // Minimum R version to read: 2.3.0 (0x00020300)
+    w.write_int(0x00020300);
+
+    // Write the pairlist of bindings
+    w.write_pairlist(bindings);
+
+    let raw = w.finish();
+
+    if compress {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&raw).expect("gzip encoding failed");
+        encoder.finish().expect("gzip finish failed")
+    } else {
+        raw
+    }
+}
+
+/// Serialize named bindings to GNU R binary .RData format (no-compression fallback).
+#[cfg(not(feature = "compression"))]
+pub fn serialize_rdata(bindings: &[(String, RValue)], _compress: bool) -> Vec<u8> {
+    let mut w = XdrWriter::new();
+
+    // RDX2 header
+    w.buf.extend_from_slice(b"RDX2\n");
+
+    // XDR format header: "X\n"
+    w.buf.extend_from_slice(b"X\n");
+
+    // Version 2
+    w.write_int(2);
+    // R version that wrote: 4.3.0 (0x00040300)
+    w.write_int(0x00040300);
+    // Minimum R version to read: 2.3.0 (0x00020300)
+    w.write_int(0x00020300);
+
+    // Write the pairlist of bindings
+    w.write_pairlist(bindings);
+
+    w.finish()
 }
 
 // endregion
