@@ -1487,12 +1487,21 @@ fn builtin_mean(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// Median value.
 ///
 /// @param x numeric vector
-/// @return scalar double
+/// @param na.rm logical; if TRUE, remove NAs before computing
+/// @return scalar double (NA if input contains NAs and na.rm is FALSE)
 #[builtin(min_args = 1, namespace = "stats")]
-fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_median(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named.iter().any(|(n, v)| {
+        n == "na.rm" && v.as_vector().and_then(|v| v.as_logical_scalar()) == Some(true)
+    });
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let mut vals: Vec<f64> = v.to_doubles().into_iter().flatten().collect();
+            let doubles = v.to_doubles();
+            // Check for NAs before filtering
+            if !na_rm && doubles.iter().any(|x| x.is_none()) {
+                return Ok(RValue::vec(Vector::Double(vec![None].into())));
+            }
+            let mut vals: Vec<f64> = doubles.into_iter().flatten().collect();
             if vals.is_empty() {
                 return Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())));
             }
@@ -1512,12 +1521,21 @@ fn builtin_median(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 /// Sample variance (Bessel-corrected, divides by n-1).
 ///
 /// @param x numeric vector
-/// @return scalar double
+/// @param na.rm logical; if TRUE, remove NAs before computing
+/// @return scalar double (NA if input contains NAs and na.rm is FALSE)
 #[builtin(min_args = 1, namespace = "stats")]
-fn builtin_var(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_var(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named.iter().any(|(n, v)| {
+        n == "na.rm" && v.as_vector().and_then(|v| v.as_logical_scalar()) == Some(true)
+    });
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let vals: Vec<f64> = v.to_doubles().into_iter().flatten().collect();
+            let doubles = v.to_doubles();
+            // Check for NAs before filtering
+            if !na_rm && doubles.iter().any(|x| x.is_none()) {
+                return Ok(RValue::vec(Vector::Double(vec![None].into())));
+            }
+            let vals: Vec<f64> = doubles.into_iter().flatten().collect();
             let n = usize_to_f64(vals.len());
             if n < 2.0 {
                 return Ok(RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())));
@@ -1552,6 +1570,8 @@ fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Cumulative sum.
 ///
+/// Once an NA is encountered, all subsequent values become NA.
+///
 /// @param x numeric vector
 /// @return numeric vector of running sums
 #[builtin(min_args = 1)]
@@ -1559,14 +1579,24 @@ fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match args.first() {
         Some(RValue::Vector(v)) => {
             let mut acc = 0.0;
+            let mut seen_na = false;
             let result: Vec<Option<f64>> = v
                 .to_doubles()
                 .iter()
                 .map(|x| {
-                    x.map(|f| {
-                        acc += f;
-                        acc
-                    })
+                    if seen_na {
+                        return None;
+                    }
+                    match *x {
+                        Some(f) => {
+                            acc += f;
+                            Some(acc)
+                        }
+                        None => {
+                            seen_na = true;
+                            None
+                        }
+                    }
                 })
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
@@ -1580,6 +1610,8 @@ fn builtin_cumsum(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Cumulative product.
 ///
+/// Once an NA is encountered, all subsequent values become NA.
+///
 /// @param x numeric vector
 /// @return numeric vector of running products
 #[builtin(min_args = 1)]
@@ -1587,14 +1619,24 @@ fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     match args.first() {
         Some(RValue::Vector(v)) => {
             let mut acc = 1.0;
+            let mut seen_na = false;
             let result: Vec<Option<f64>> = v
                 .to_doubles()
                 .iter()
                 .map(|x| {
-                    x.map(|f| {
-                        acc *= f;
-                        acc
-                    })
+                    if seen_na {
+                        return None;
+                    }
+                    match *x {
+                        Some(f) => {
+                            acc *= f;
+                            Some(acc)
+                        }
+                        None => {
+                            seen_na = true;
+                            None
+                        }
+                    }
                 })
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
@@ -1608,6 +1650,8 @@ fn builtin_cumprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 
 /// Cumulative maximum.
 ///
+/// Once an NA is encountered, all subsequent values become NA.
+///
 /// @param x numeric vector
 /// @return numeric vector of running maxima
 #[builtin(min_args = 1)]
@@ -1615,14 +1659,24 @@ fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match args.first() {
         Some(RValue::Vector(v)) => {
             let mut acc = f64::NEG_INFINITY;
+            let mut seen_na = false;
             let result: Vec<Option<f64>> = v
                 .to_doubles()
                 .iter()
                 .map(|x| {
-                    x.map(|f| {
-                        acc = acc.max(f);
-                        acc
-                    })
+                    if seen_na {
+                        return None;
+                    }
+                    match *x {
+                        Some(f) => {
+                            acc = acc.max(f);
+                            Some(acc)
+                        }
+                        None => {
+                            seen_na = true;
+                            None
+                        }
+                    }
                 })
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
@@ -1636,6 +1690,8 @@ fn builtin_cummax(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Cumulative minimum.
 ///
+/// Once an NA is encountered, all subsequent values become NA.
+///
 /// @param x numeric vector
 /// @return numeric vector of running minima
 #[builtin(min_args = 1)]
@@ -1643,14 +1699,24 @@ fn builtin_cummin(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
     match args.first() {
         Some(RValue::Vector(v)) => {
             let mut acc = f64::INFINITY;
+            let mut seen_na = false;
             let result: Vec<Option<f64>> = v
                 .to_doubles()
                 .iter()
                 .map(|x| {
-                    x.map(|f| {
-                        acc = acc.min(f);
-                        acc
-                    })
+                    if seen_na {
+                        return None;
+                    }
+                    match *x {
+                        Some(f) => {
+                            acc = acc.min(f);
+                            Some(acc)
+                        }
+                        None => {
+                            seen_na = true;
+                            None
+                        }
+                    }
                 })
                 .collect();
             Ok(RValue::vec(Vector::Double(result.into())))
@@ -2503,19 +2569,31 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// Range (minimum and maximum) of all values.
 ///
 /// @param ... numeric vectors
-/// @return numeric vector of length 2: c(min, max)
+/// @param na.rm logical; if TRUE, remove NAs before computing
+/// @return numeric vector of length 2: c(min, max) (c(NA, NA) if NAs present and na.rm is FALSE)
 #[builtin(min_args = 0)]
-fn builtin_range(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_range(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named.iter().any(|(n, v)| {
+        n == "na.rm" && v.as_vector().and_then(|v| v.as_logical_scalar()) == Some(true)
+    });
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
     for arg in args {
         if let RValue::Vector(v) = arg {
-            for x in v.to_doubles().into_iter().flatten() {
-                if x < min {
-                    min = x;
-                }
-                if x > max {
-                    max = x;
+            for x in v.to_doubles() {
+                match x {
+                    Some(f) => {
+                        if f < min {
+                            min = f;
+                        }
+                        if f > max {
+                            max = f;
+                        }
+                    }
+                    None if !na_rm => {
+                        return Ok(RValue::vec(Vector::Double(vec![None, None].into())));
+                    }
+                    None => {}
                 }
             }
         }
