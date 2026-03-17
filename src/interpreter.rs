@@ -145,6 +145,34 @@ pub struct Interpreter {
     /// Visibility flag — set to `true` by `invisible()` to suppress auto-printing
     /// of the return value. Reset to `false` before each top-level eval.
     pub(crate) last_value_invisible: std::cell::Cell<bool>,
+    /// S4 class registry: class name -> class definition.
+    pub(crate) s4_classes: RefCell<std::collections::HashMap<String, S4ClassDef>>,
+    /// S4 generic registry: generic name -> generic definition.
+    pub(crate) s4_generics: RefCell<std::collections::HashMap<String, S4GenericDef>>,
+    /// S4 method dispatch table: (generic, signature) -> method function.
+    pub(crate) s4_methods: RefCell<std::collections::HashMap<S4MethodKey, value::RValue>>,
+}
+
+/// S4 class definition stored in the per-interpreter class registry.
+#[derive(Debug, Clone)]
+pub struct S4ClassDef {
+    pub name: String,
+    pub slots: Vec<(String, String)>,
+    pub contains: Vec<String>,
+    pub prototype: Vec<(String, value::RValue)>,
+    pub is_virtual: bool,
+    pub validity: Option<value::RValue>,
+}
+
+/// Key for S4 method dispatch table: (generic_name, signature).
+pub(crate) type S4MethodKey = (String, Vec<String>);
+
+/// S4 generic function definition.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct S4GenericDef {
+    pub name: String,
+    pub default: Option<value::RValue>,
 }
 
 impl Default for Interpreter {
@@ -252,6 +280,9 @@ impl Interpreter {
             options: RefCell::new(Self::default_options()),
             rd_help_index: RefCell::new(packages::rd::RdHelpIndex::new()),
             last_value_invisible: std::cell::Cell::new(false),
+            s4_classes: RefCell::new(std::collections::HashMap::new()),
+            s4_generics: RefCell::new(std::collections::HashMap::new()),
+            s4_methods: RefCell::new(std::collections::HashMap::new()),
         }
     }
 
