@@ -125,7 +125,7 @@ fn load_rejects_non_workspace_minirds_files() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("workspace files written by save()"),
+        stderr.contains("not a recognized workspace file"),
         "unexpected stderr: {stderr}"
     );
 

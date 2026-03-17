@@ -650,18 +650,18 @@ pub fn is_binary_rds(data: &[u8]) -> bool {
         return true;
     }
     // Gzip magic number
-    is_gzip(data)
+    is_gzip_data(data)
 }
 
 /// Check for gzip magic number (0x1f 0x8b).
-fn is_gzip(data: &[u8]) -> bool {
+pub fn is_gzip_data(data: &[u8]) -> bool {
     data.len() >= 2 && data[0] == 0x1f && data[1] == 0x8b
 }
 
 /// Decompress gzip data and then deserialize.
 #[cfg(feature = "compression")]
 pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
-    if is_gzip(data) {
+    if is_gzip_data(data) {
         use flate2::read::GzDecoder;
         use std::io::Read;
 
@@ -682,7 +682,7 @@ pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
 /// Decompress gzip data and then deserialize (no-compression fallback).
 #[cfg(not(feature = "compression"))]
 pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
-    if is_gzip(data) {
+    if is_gzip_data(data) {
         Err(RError::new(
             RErrorKind::Other,
             "RDS file is gzip-compressed but miniR was built without the 'compression' feature; \

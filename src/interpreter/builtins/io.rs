@@ -606,12 +606,23 @@ fn interp_load(
         .transpose()?
         .unwrap_or_else(|| env.clone());
 
+    // Try GNU R binary .RData format first.
+    let raw_bytes = std::fs::read(&path).map_err(|source| IoError::CannotOpen {
+        path: path.clone(),
+        source,
+    })?;
+
+    if let Some(names) = try_load_binary_rdata(&raw_bytes, &target_env)? {
+        return Ok(RValue::vec(Vector::Character(names.into())));
+    }
+
+    // Fall back to miniRDS text format.
     let value = read_minirds(&path, "load", "save", context.interpreter())?;
     if !is_workspace_value(&value) {
         return Err(RError::new(
             RErrorKind::Argument,
             format!(
-                "unsupported load() format in '{}': miniR currently loads only workspace files written by save()",
+                "unsupported load() format in '{}': not a recognized workspace file",
                 path
             ),
         ));
@@ -628,6 +639,73 @@ fn interp_load(
     }
 
     Ok(RValue::vec(Vector::Character(loaded_names.into())))
+}
+
+/// Try to load a GNU R binary .RData file (RDX2 header + serialized pairlist).
+///
+/// Returns Ok(Some(loaded_names)) if the file is a valid binary .RData,
+/// Ok(None) if it's not a recognized binary format (fall back to text).
+fn try_load_binary_rdata(
+    data: &[u8],
+    target_env: &Environment,
+) -> Result<Option<Vec<Option<String>>>, RError> {
+    // Check for RDX2\n header (binary save format).
+    // Also handle gzip-compressed .RData files.
+    let working_data = if data.starts_with(b"RDX2\n") {
+        data.to_vec()
+    } else if super::serialize::is_gzip_data(data) {
+        #[cfg(feature = "compression")]
+        {
+            use flate2::read::GzDecoder;
+            use std::io::Read;
+            let mut decoder = GzDecoder::new(data);
+            let mut buf = Vec::new();
+            decoder.read_to_end(&mut buf).map_err(|e| {
+                RError::new(
+                    RErrorKind::Other,
+                    format!("failed to decompress .RData file: {}", e),
+                )
+            })?;
+            if buf.starts_with(b"RDX2\n") {
+                buf
+            } else {
+                return Ok(None);
+            }
+        }
+        #[cfg(not(feature = "compression"))]
+        {
+            return Ok(None);
+        }
+    } else {
+        return Ok(None);
+    };
+    let payload = &working_data[5..];
+
+    // Deserialize the pairlist — it's a standard serialization stream.
+    let value = super::serialize::unserialize_xdr(payload)?;
+
+    // The top-level object should be a list (from the pairlist).
+    // Each named element is a binding to assign.
+    let loaded_names = match value {
+        RValue::List(list) => {
+            let mut names = Vec::new();
+            for (name, val) in list.values {
+                if let Some(n) = name {
+                    target_env.set(n.clone(), val);
+                    names.push(Some(n));
+                }
+            }
+            names
+        }
+        RValue::Null => Vec::new(),
+        _ => {
+            // Single unnamed value — unusual but assign as ".Data"
+            target_env.set(".Data".to_string(), value);
+            vec![Some(".Data".to_string())]
+        }
+    };
+
+    Ok(Some(loaded_names))
 }
 
 /// Save named R objects to a workspace file in miniRDS format.
