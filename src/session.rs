@@ -106,12 +106,19 @@ impl Session {
     ///
     /// This should be called once at startup (e.g. before entering the REPL).
     /// On platforms where SIGINT is not available this is a no-op.
+    #[cfg(feature = "signal")]
     pub fn install_signal_handler(&self) -> std::io::Result<()> {
         #[cfg(unix)]
         {
             use signal_hook::consts::SIGINT;
             signal_hook::flag::register(SIGINT, self.interrupt_flag())?;
         }
+        Ok(())
+    }
+
+    /// No-op stub when signal-hook is not available.
+    #[cfg(not(feature = "signal"))]
+    pub fn install_signal_handler(&self) -> std::io::Result<()> {
         Ok(())
     }
 }

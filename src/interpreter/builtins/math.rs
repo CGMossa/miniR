@@ -1,14 +1,20 @@
 use std::collections::BTreeSet;
 
+#[cfg(feature = "linalg")]
 use derive_more::{Display, Error};
 use itertools::Itertools;
+#[cfg(feature = "linalg")]
 use ndarray::{Array1, Array2, ShapeBuilder};
 
 use crate::interpreter::coerce::{f64_to_i32, usize_to_f64};
 use crate::interpreter::value::*;
+#[cfg(feature = "linalg")]
 use crate::interpreter::BuiltinContext;
+#[cfg(feature = "linalg")]
 use crate::parser::ast::Expr;
-use minir_macros::{builtin, interpreter_builtin};
+use minir_macros::builtin;
+#[cfg(feature = "linalg")]
+use minir_macros::interpreter_builtin;
 
 type DimNameVec = Vec<Option<String>>;
 type MatrixDimNames = (Option<DimNameVec>, Option<DimNameVec>);
@@ -16,6 +22,7 @@ type MatrixDimNames = (Option<DimNameVec>, Option<DimNameVec>);
 // region: MathError
 
 /// Structured error type for math/linear algebra operations.
+#[cfg(feature = "linalg")]
 #[derive(Debug, Display, Error)]
 pub enum MathError {
     #[display("matrix shape error: {}", source)]
@@ -25,6 +32,7 @@ pub enum MathError {
     },
 }
 
+#[cfg(feature = "linalg")]
 impl From<MathError> for RError {
     fn from(e: MathError) -> Self {
         RError::from_source(RErrorKind::Other, e)
@@ -2323,6 +2331,7 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 }
 
 /// Convert an RValue to an ndarray Array2 (column-major)
+#[cfg(feature = "linalg")]
 fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     let (data, dim_attr) = match val {
         RValue::Vector(rv) => (rv.to_doubles(), rv.get_attr("dim")),
@@ -2349,6 +2358,7 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
 }
 
 /// Convert an ndarray Array2 back to an RValue matrix
+#[cfg(feature = "linalg")]
 fn array2_to_rvalue(arr: &Array2<f64>) -> RValue {
     let (nrow, ncol) = (arr.nrows(), arr.ncols());
     let mut result = Vec::with_capacity(nrow * ncol);
@@ -2411,6 +2421,7 @@ fn set_matrix_attrs(
 }
 
 /// crossprod(x, y) = t(x) %*% y
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_crossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2442,6 +2453,7 @@ fn builtin_crossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 }
 
 /// tcrossprod(x, y) = x %*% t(y)
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_tcrossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let x = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2477,6 +2489,7 @@ fn builtin_tcrossprod(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 /// `norm(x, type = "O")` — matrix/vector norm.
 ///
 /// Supported types: "O"/"1" (one-norm), "I" (infinity-norm), "F" (Frobenius), "M" (max modulus).
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_norm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let norm_type = named
@@ -2533,6 +2546,7 @@ fn builtin_norm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// - `solve(a)`: returns the inverse of matrix a
 /// - `solve(a, b)`: solves the linear system Ax = b
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2644,6 +2658,7 @@ fn builtin_solve(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 }
 
 /// `det(x)` — matrix determinant via Gaussian elimination with partial pivoting.
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2694,6 +2709,7 @@ fn builtin_det(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 }
 
 /// `chol(x)` — Cholesky decomposition (upper triangular R such that x = R'R).
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2738,6 +2754,7 @@ fn builtin_chol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 ///    vectors in lower triangle)
 /// - `$rank`: integer rank estimate
 /// - `$pivot`: integer vector 1:ncol (no column pivoting)
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2839,6 +2856,7 @@ fn builtin_qr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError>
 /// - `$d`: numeric vector of singular values (descending)
 /// - `$u`: left singular vectors (m x min(m,n) matrix)
 /// - `$v`: right singular vectors (n x min(m,n) matrix)
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_svd(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -2996,6 +3014,7 @@ fn builtin_svd(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 ///
 /// Currently only supports real symmetric matrices. Non-symmetric input
 /// produces an informative error.
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1)]
 fn builtin_eigen(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let a = rvalue_to_array2(args.first().unwrap_or(&RValue::Null))?;
@@ -3387,6 +3406,7 @@ fn builtin_as_complex(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 // region: Linear models (lm, summary.lm, coef)
 
+#[cfg(feature = "linalg")]
 /// Extract a named column from a data frame (RList) as a Vec<Option<f64>>.
 fn df_column_doubles(list: &RList, name: &str) -> Result<Vec<Option<f64>>, RError> {
     for (col_name, col_val) in &list.values {
@@ -3416,6 +3436,7 @@ fn df_column_doubles(list: &RList, name: &str) -> Result<Vec<Option<f64>>, RErro
     ))
 }
 
+#[cfg(feature = "linalg")]
 /// Extract the response and predictor names from a formula expression.
 ///
 /// For `y ~ x`, returns `("y", vec!["x"])`.
@@ -3460,6 +3481,7 @@ fn parse_formula_terms(expr: &Expr) -> Result<(String, Vec<String>), RError> {
     }
 }
 
+#[cfg(feature = "linalg")]
 /// Recursively collect symbol names from additive terms (x1 + x2 + x3).
 fn collect_additive_terms(expr: &Expr, out: &mut Vec<String>) -> Result<(), RError> {
     match expr {
@@ -3496,6 +3518,7 @@ fn collect_additive_terms(expr: &Expr, out: &mut Vec<String>) -> Result<(), RErr
 /// @param data a data frame containing the variables in the formula
 /// @return a list of class "lm" with components: coefficients, residuals,
 ///         fitted.values, and call
+#[cfg(feature = "linalg")]
 #[interpreter_builtin(min_args = 1, namespace = "stats")]
 fn interp_lm(
     args: &[RValue],
@@ -3673,6 +3696,7 @@ fn interp_lm(
     Ok(RValue::List(result))
 }
 
+#[cfg(feature = "linalg")]
 /// Solve a linear system A * x = b using Gaussian elimination with partial pivoting.
 /// A must be square (ncol x ncol), b must have length ncol.
 fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Result<Vec<f64>, RError> {
@@ -3755,6 +3779,7 @@ fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Result<Vec<f64>, REr
 ///
 /// @param object an lm object (result of lm())
 /// @return the object, invisibly
+#[cfg(feature = "linalg")]
 #[builtin(name = "summary.lm", min_args = 1, namespace = "stats")]
 fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let obj = args.first().ok_or_else(|| {
@@ -3846,6 +3871,7 @@ fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param object a fitted model object with a coefficients component
 /// @return a named numeric vector of coefficients
+#[cfg(feature = "linalg")]
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_coef(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let obj = args.first().ok_or_else(|| {

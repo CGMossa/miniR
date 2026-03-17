@@ -56,11 +56,11 @@ derive_more = { version = "2.1", features = [
 ] }
 indexmap = "2"
 linkme = "0.3"
-ndarray = "0.17"
+ndarray = { version = "0.17", optional = true }
 csv = { version = "1.4", optional = true }
 itertools = "0.14.0"
 regex = "1"
-tabled = "0.20"
+tabled = { version = "0.20", optional = true }
 pest = "2.8"
 pest_derive = "2.8"
 rand = { version = "0.10.0", optional = true }
@@ -72,8 +72,8 @@ temp-dir = "0.2.0"
 glob = "0.3"
 num-complex = "0.4"
 libm = "0.2"
-signal-hook = "0.4.3"
-tabwriter = "1"
+signal-hook = { version = "0.4.3", optional = true }
+tabwriter = { version = "1", optional = true }
 unicode-segmentation = "1"
 unicode-width = "0.2"
 unicase = "2"
@@ -85,7 +85,7 @@ globset = { version = "0.4", optional = true }
 serde_json = {version = "1", optional = true}
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support"]
+default = ["random", "datetime", "io", "collections", "digest", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal"]
 random = ["dep:rand", "dep:rand_distr"]
 datetime = ["dep:jiff"]
 io = ["dep:csv"]
@@ -95,4 +95,7 @@ json = ["dep:serde_json"]
 dirs-support = ["dep:dirs"]
 walkdir-support = ["dep:walkdir"]
 globset-support = ["dep:globset"]
+linalg = ["dep:ndarray"]
+tables = ["dep:tabled", "dep:tabwriter"]
+signal = ["dep:signal-hook"]
 parallel = ["dep:rayon"]

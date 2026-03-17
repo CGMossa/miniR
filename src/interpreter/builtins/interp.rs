@@ -179,6 +179,7 @@ fn interp_format(
 ///
 /// @param x a data.frame to print
 /// @return x, invisibly
+#[cfg(feature = "tables")]
 #[interpreter_builtin(name = "print.data.frame", min_args = 1)]
 fn interp_print_data_frame(
     args: &[RValue],
@@ -288,6 +289,7 @@ fn interp_print_data_frame(
     Ok(val.clone())
 }
 
+#[cfg(feature = "tables")]
 /// Format individual elements of a vector column for data frame printing.
 fn format_column_elements(v: &Vector, nrow: usize) -> Vec<String> {
     let len = v.len();

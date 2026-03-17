@@ -25,6 +25,7 @@ pub mod strings;
 mod stubs;
 pub mod system;
 mod tables;
+#[cfg(feature = "tables")]
 mod tables_display;
 mod types;
 
@@ -1362,6 +1363,7 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
     match args.first() {
         Some(val) => {
             // Check for data.frame first — use tabled-based structured display
+            #[cfg(feature = "tables")]
             if let Some(output) = tables_display::str_data_frame(val) {
                 print!("{}", output);
                 return Ok(RValue::Null);

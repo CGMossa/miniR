@@ -2,8 +2,10 @@
 //! multiplication operators. All functions are pure — they operate on values
 //! without needing interpreter state.
 
+#[cfg(feature = "linalg")]
 use ndarray::{Array2, ShapeBuilder};
 
+#[cfg(feature = "linalg")]
 use crate::interpreter::builtins;
 use crate::interpreter::coerce::f64_to_i64;
 use crate::interpreter::value::*;
@@ -576,6 +578,7 @@ fn eval_in_op(left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
 // region: matrix multiplication
 
 /// Matrix multiplication using ndarray
+#[cfg(feature = "linalg")]
 fn eval_matmul(left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
     fn to_matrix(val: &RValue) -> Result<(Array2<f64>, usize, usize), RError> {
         let (data, dim_attr) = match val {
@@ -637,6 +640,11 @@ fn eval_matmul(left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
         )),
     );
     Ok(RValue::Vector(rv))
+}
+
+#[cfg(not(feature = "linalg"))]
+fn eval_matmul(_left: &RValue, _right: &RValue) -> Result<RValue, RFlow> {
+    Err(RError::other("matrix multiplication requires the 'linalg' feature").into())
 }
 
 // endregion
