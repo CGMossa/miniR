@@ -3,8 +3,8 @@
 
 use crate::interpreter::coerce::usize_to_f64;
 use crate::interpreter::value::*;
+use indexmap::IndexMap;
 use minir_macros::builtin;
-use std::collections::HashMap;
 use std::f64::consts::{FRAC_1_SQRT_2, PI};
 
 // region: Helpers
@@ -348,7 +348,7 @@ fn builtin_scale(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         })
         .collect();
 
-    let mut attrs: HashMap<String, RValue> = HashMap::new();
+    let mut attrs: IndexMap<String, RValue> = IndexMap::new();
     if do_center {
         attrs.insert(
             "scaled:center".to_string(),
@@ -469,7 +469,7 @@ fn builtin_na_omit(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValu
 
     let result = filter_non_na(vec, &na_flags);
 
-    let mut attrs: HashMap<String, RValue> = HashMap::new();
+    let mut attrs: IndexMap<String, RValue> = IndexMap::new();
     if !na_indices.is_empty() {
         attrs.insert(
             "na.action".to_string(),

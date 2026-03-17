@@ -165,7 +165,7 @@ fn serialize_vector(value: &Vector) -> String {
 }
 
 fn serialize_attr_pairs(
-    attrs: Option<&std::collections::HashMap<String, RValue>>,
+    attrs: Option<&indexmap::IndexMap<String, RValue>>,
     synthetic_names: Option<Vec<Option<String>>>,
 ) -> Result<Vec<(String, String)>, RError> {
     let mut pairs = Vec::new();

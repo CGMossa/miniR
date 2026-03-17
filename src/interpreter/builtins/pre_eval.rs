@@ -156,10 +156,10 @@ fn maybe_factorize_strings(value: RValue, strings_as_factors: bool) -> Result<RV
 fn strip_names_attr(value: &mut RValue) {
     match value {
         RValue::Vector(rv) => {
-            rv.attrs.as_mut().map(|attrs| attrs.remove("names"));
+            rv.attrs.as_mut().map(|attrs| attrs.shift_remove("names"));
         }
         RValue::List(list) => {
-            list.attrs.as_mut().map(|attrs| attrs.remove("names"));
+            list.attrs.as_mut().map(|attrs| attrs.shift_remove("names"));
         }
         _ => {}
     }

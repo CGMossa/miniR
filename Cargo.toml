@@ -53,6 +53,7 @@ derive_more = { version = "2.1", features = [
     # "try_unwrap",     # derive try_unwrap() methods for enums
     # "unwrap",         # derive unwrap() methods for enums
 ] }
+indexmap = "2"
 linkme = "0.3"
 ndarray = "0.17"
 csv = { version = "1.4", optional = true }
