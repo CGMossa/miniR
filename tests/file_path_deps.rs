@@ -169,3 +169,152 @@ unlink(base, recursive = TRUE)
 }
 
 // endregion
+
+// region: list.files all.files parameter
+
+#[test]
+fn list_files_all_files_controls_hidden_files() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+td <- tempdir()
+base <- paste0(td, "/test_allfiles")
+dir.create(base, recursive = TRUE)
+
+# Create visible and hidden files
+file.create(paste0(base, "/visible.txt"))
+file.create(paste0(base, "/.hidden.txt"))
+
+# Default (all.files = FALSE) should skip hidden files
+visible <- list.files(base)
+stopifnot(!any(grepl("^\\.hidden", visible)))
+stopifnot("visible.txt" %in% visible)
+
+# all.files = TRUE should include hidden files
+all <- list.files(base, all.files = TRUE)
+stopifnot(".hidden.txt" %in% all)
+stopifnot("visible.txt" %in% all)
+
+# Recursive with all.files
+dir.create(paste0(base, "/sub"), recursive = TRUE)
+file.create(paste0(base, "/sub/.secret"))
+deep_hidden <- list.files(base, recursive = TRUE, all.files = TRUE)
+stopifnot(any(grepl("\\.secret", deep_hidden)))
+deep_no_hidden <- list.files(base, recursive = TRUE, all.files = FALSE)
+stopifnot(!any(grepl("\\.secret", deep_no_hidden)))
+
+unlink(base, recursive = TRUE)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: list.dirs
+
+#[test]
+fn list_dirs_finds_subdirectories() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+td <- tempdir()
+base <- paste0(td, "/test_listdirs")
+dir.create(paste0(base, "/a"), recursive = TRUE)
+dir.create(paste0(base, "/b"), recursive = TRUE)
+dir.create(paste0(base, "/b/c"), recursive = TRUE)
+file.create(paste0(base, "/file.txt"))
+
+# Recursive (default) should find all dirs including base
+dirs_r <- list.dirs(base, full.names = FALSE)
+stopifnot("." %in% dirs_r)
+stopifnot("a" %in% dirs_r)
+stopifnot("b" %in% dirs_r)
+
+# Non-recursive should only find immediate children
+dirs_nr <- list.dirs(base, recursive = FALSE, full.names = FALSE)
+stopifnot("." %in% dirs_nr)
+stopifnot("a" %in% dirs_nr)
+stopifnot("b" %in% dirs_nr)
+# b/c should NOT appear in non-recursive mode
+stopifnot(!any(grepl("b/c", dirs_nr)))
+
+# full.names = TRUE should return full paths
+dirs_full <- list.dirs(base, full.names = TRUE, recursive = FALSE)
+stopifnot(all(nchar(dirs_full) > 1))
+
+unlink(base, recursive = TRUE)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: file.mtime
+
+#[test]
+fn file_mtime_returns_posixct_timestamps() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+td <- tempdir()
+f <- paste0(td, "/test_mtime.txt")
+file.create(f)
+
+mt <- file.mtime(f)
+
+# Should be a numeric value (seconds since epoch)
+stopifnot(is.numeric(mt))
+
+# Should be a reasonable timestamp (after 2020-01-01)
+stopifnot(mt > 1577836800)
+
+# Should have POSIXct class
+stopifnot(inherits(mt, "POSIXct"))
+
+# Non-existent file should return NA
+mt_bad <- file.mtime(paste0(td, "/no_such_file_xyz"))
+stopifnot(is.na(mt_bad))
+
+unlink(f)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: dir.create parameters
+
+#[test]
+fn dir_create_supports_recursive_and_show_warnings() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+td <- tempdir()
+base <- paste0(td, "/test_dircreate")
+
+# recursive = TRUE (default in miniR) creates nested dirs
+deep <- paste0(base, "/a/b/c")
+result <- dir.create(deep)
+stopifnot(result == TRUE)
+stopifnot(dir.exists(deep))
+
+# showWarnings = TRUE (default) returns FALSE on failure instead of error
+result2 <- dir.create(deep, showWarnings = TRUE)
+# dir already exists, so this is a no-op that may return FALSE
+# (for create_dir_all it succeeds; for create_dir it fails)
+
+# recursive = FALSE should fail for nested non-existent paths
+deep2 <- paste0(base, "/x/y/z")
+result3 <- dir.create(deep2, recursive = FALSE, showWarnings = TRUE)
+stopifnot(result3 == FALSE)
+
+unlink(base, recursive = TRUE)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion

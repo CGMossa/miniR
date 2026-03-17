@@ -260,6 +260,41 @@ fn builtin_file_size(
     Ok(RValue::vec(Vector::Double(results.into())))
 }
 
+/// Get file modification times as POSIXct timestamps (seconds since Unix epoch).
+///
+/// @param ... character scalars: file paths to query
+/// @return double vector of modification times (NA for non-existent files)
+#[interpreter_builtin(name = "file.mtime", min_args = 1)]
+fn builtin_file_mtime(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let results: Vec<Option<f64>> = args
+        .iter()
+        .map(|arg| {
+            let path = arg
+                .as_vector()
+                .and_then(|v| v.as_character_scalar())
+                .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
+            fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+        })
+        .collect();
+    let mut rv = RVector::from(Vector::Double(results.into()));
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("POSIXct".to_string()), Some("POSIXt".to_string())].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
 /// Delete files or directories.
 ///
 /// @param x character scalar: path to remove
@@ -424,14 +459,17 @@ fn builtin_file_info(
 
 // === Directory operations ===
 
-/// Create a directory (recursively by default, diverging from R).
+/// Create a directory, optionally with parent directories.
 ///
 /// @param path character scalar: directory path to create
-/// @return logical scalar: TRUE on success
+/// @param showWarnings logical: if TRUE (default), warn on failure instead of erroring
+/// @param recursive logical: if TRUE, create parent directories as needed (default TRUE,
+///   diverging from R's default of FALSE for better ergonomics)
+/// @return logical scalar: TRUE on success, FALSE on failure (when showWarnings is TRUE)
 #[interpreter_builtin(name = "dir.create", min_args = 1)]
 fn builtin_dir_create(
     args: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let path = args
@@ -444,12 +482,39 @@ fn builtin_dir_create(
             )
         })?;
 
-    // miniR diverges from R: recursive by default
+    let show_warnings = named
+        .iter()
+        .find(|(n, _)| n == "showWarnings")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    // miniR diverges from R: recursive = TRUE by default
+    let recursive = named
+        .iter()
+        .find(|(n, _)| n == "recursive")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
     let path = resolved_path_string(context.interpreter(), &path);
 
-    match fs::create_dir_all(&path) {
+    let result = if recursive {
+        fs::create_dir_all(&path)
+    } else {
+        fs::create_dir(&path)
+    };
+
+    match result {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
-        Err(source) => Err(SystemError::CreateDir { path, source }.into()),
+        Err(source) => {
+            if show_warnings {
+                // Return FALSE with a warning (matching R behavior for showWarnings=TRUE)
+                // In R, this issues a warning rather than an error. We return FALSE to
+                // signal failure without aborting.
+                Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+            } else {
+                Err(SystemError::CreateDir { path, source }.into())
+            }
+        }
     }
 }
 
@@ -481,10 +546,11 @@ fn builtin_dir_exists(
 ///
 /// @param path character scalar: directory path (default ".")
 /// @param pattern character scalar: regex pattern to filter file names
+/// @param all.files logical: if TRUE, include hidden files starting with "." (default FALSE)
+/// @param full.names logical: if TRUE, return full paths (default FALSE)
 /// @param recursive logical: if TRUE, recurse into subdirectories (default FALSE).
 ///   When the `walkdir-support` feature is enabled, uses walkdir for efficient
 ///   recursive traversal.
-/// @param full.names logical: if TRUE, return full paths (default FALSE)
 /// @return character vector of matching file names (sorted)
 #[interpreter_builtin(name = "list.files", names = ["dir"])]
 fn builtin_list_files(
@@ -502,6 +568,12 @@ fn builtin_list_files(
         .iter()
         .find(|(n, _)| n == "pattern")
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
+
+    let all_files = named
+        .iter()
+        .find(|(n, _)| n == "all.files")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
 
     let recursive = named
         .iter()
@@ -523,9 +595,9 @@ fn builtin_list_files(
     };
 
     let result = if recursive {
-        list_files_recursive(&path, &regex, full_names)?
+        list_files_recursive(&path, &regex, all_files, full_names)?
     } else {
-        list_files_flat(&path, &regex, full_names)?
+        list_files_flat(&path, &regex, all_files, full_names)?
     };
 
     Ok(RValue::vec(Vector::Character(result.into())))
@@ -535,6 +607,7 @@ fn builtin_list_files(
 fn list_files_flat(
     path: &str,
     regex: &Option<regex::Regex>,
+    all_files: bool,
     full_names: bool,
 ) -> Result<Vec<Option<String>>, RError> {
     let entries = fs::read_dir(path).map_err(|source| SystemError::ReadDir {
@@ -546,6 +619,10 @@ fn list_files_flat(
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let name = entry.file_name().into_string().ok()?;
+            // Skip hidden files (starting with '.') unless all.files is TRUE
+            if !all_files && name.starts_with('.') {
+                return None;
+            }
             if let Some(ref re) = regex {
                 if !re.is_match(&name) {
                     return None;
@@ -568,6 +645,7 @@ fn list_files_flat(
 fn list_files_recursive(
     path: &str,
     regex: &Option<regex::Regex>,
+    all_files: bool,
     full_names: bool,
 ) -> Result<Vec<Option<String>>, RError> {
     let base = Path::new(path);
@@ -577,6 +655,10 @@ fn list_files_recursive(
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let name = entry.file_name().to_string_lossy().to_string();
+            // Skip hidden files unless all.files is TRUE
+            if !all_files && name.starts_with('.') {
+                return None;
+            }
             if let Some(ref re) = regex {
                 if !re.is_match(&name) {
                     return None;
@@ -604,6 +686,7 @@ fn list_files_recursive(
 fn list_files_recursive(
     path: &str,
     regex: &Option<regex::Regex>,
+    all_files: bool,
     full_names: bool,
 ) -> Result<Vec<Option<String>>, RError> {
     let mut result: Vec<String> = Vec::new();
@@ -611,6 +694,7 @@ fn list_files_recursive(
         Path::new(path),
         Path::new(path),
         regex,
+        all_files,
         full_names,
         &mut result,
     )?;
@@ -623,6 +707,7 @@ fn list_files_recursive_fallback(
     base: &Path,
     dir: &Path,
     regex: &Option<regex::Regex>,
+    all_files: bool,
     full_names: bool,
     out: &mut Vec<String>,
 ) -> Result<(), RError> {
@@ -638,8 +723,13 @@ fn list_files_recursive_fallback(
         let name = entry.file_name().to_string_lossy().to_string();
         let entry_path = entry.path();
 
+        // Skip hidden files unless all.files is TRUE
+        if !all_files && name.starts_with('.') {
+            continue;
+        }
+
         if entry_path.is_dir() {
-            list_files_recursive_fallback(base, &entry_path, regex, full_names, out)?;
+            list_files_recursive_fallback(base, &entry_path, regex, all_files, full_names, out)?;
         } else {
             if let Some(ref re) = regex {
                 if !re.is_match(&name) {
@@ -648,15 +738,165 @@ fn list_files_recursive_fallback(
             }
             if full_names {
                 out.push(entry_path.to_string_lossy().to_string());
-            } else {
-                if let Ok(rel) = entry_path.strip_prefix(base) {
-                    out.push(rel.to_string_lossy().to_string());
-                }
+            } else if let Ok(rel) = entry_path.strip_prefix(base) {
+                out.push(rel.to_string_lossy().to_string());
             }
         }
     }
     Ok(())
 }
+
+// region: list.dirs
+
+/// List subdirectories of a directory.
+///
+/// @param path character scalar: directory path (default ".")
+/// @param full.names logical: if TRUE, return full paths (default TRUE, matching R)
+/// @param recursive logical: if TRUE, recurse into subdirectories (default TRUE).
+///   When the `walkdir-support` feature is enabled, uses walkdir for efficient
+///   recursive traversal.
+/// @return character vector of directory paths (sorted)
+#[interpreter_builtin(name = "list.dirs")]
+fn builtin_list_dirs(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let path = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| ".".to_string());
+    let path = resolved_path_string(context.interpreter(), &path);
+
+    // R defaults: full.names = TRUE, recursive = TRUE
+    let full_names = named
+        .iter()
+        .find(|(n, _)| n == "full.names")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let recursive = named
+        .iter()
+        .find(|(n, _)| n == "recursive")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let result = if recursive {
+        list_dirs_recursive(&path, full_names)?
+    } else {
+        list_dirs_flat(&path, full_names)?
+    };
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+/// Non-recursive directory listing (immediate subdirectories only).
+fn list_dirs_flat(path: &str, full_names: bool) -> Result<Vec<Option<String>>, RError> {
+    let base = Path::new(path);
+    let entries = fs::read_dir(path).map_err(|source| SystemError::ReadDir {
+        path: path.to_string(),
+        source,
+    })?;
+
+    // Include the base directory itself, matching R behavior
+    let mut result: Vec<String> = vec![if full_names {
+        base.to_string_lossy().to_string()
+    } else {
+        ".".to_string()
+    }];
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let entry_path = entry.path();
+        if !entry_path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().into_string().unwrap_or_default();
+        if full_names {
+            result.push(entry_path.to_string_lossy().to_string());
+        } else {
+            result.push(name);
+        }
+    }
+
+    result.sort();
+    Ok(result.into_iter().map(Some).collect())
+}
+
+/// Recursive directory listing using walkdir.
+#[cfg(feature = "walkdir-support")]
+fn list_dirs_recursive(path: &str, full_names: bool) -> Result<Vec<Option<String>>, RError> {
+    let base = Path::new(path);
+    let mut result: Vec<String> = walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if !entry.file_type().is_dir() {
+                return None;
+            }
+            if full_names {
+                Some(entry.path().to_string_lossy().to_string())
+            } else {
+                let rel = entry.path().strip_prefix(base).ok()?;
+                let s = rel.to_string_lossy().to_string();
+                Some(if s.is_empty() { ".".to_string() } else { s })
+            }
+        })
+        .collect();
+    result.sort();
+    Ok(result.into_iter().map(Some).collect())
+}
+
+/// Recursive directory listing fallback without walkdir.
+#[cfg(not(feature = "walkdir-support"))]
+fn list_dirs_recursive(path: &str, full_names: bool) -> Result<Vec<Option<String>>, RError> {
+    let base = Path::new(path);
+    let mut result: Vec<String> = Vec::new();
+    list_dirs_recursive_fallback(base, base, full_names, &mut result)?;
+    result.sort();
+    Ok(result.into_iter().map(Some).collect())
+}
+
+#[cfg(not(feature = "walkdir-support"))]
+fn list_dirs_recursive_fallback(
+    base: &Path,
+    dir: &Path,
+    full_names: bool,
+    out: &mut Vec<String>,
+) -> Result<(), RError> {
+    // Add the current directory
+    if full_names {
+        out.push(dir.to_string_lossy().to_string());
+    } else {
+        let rel = dir
+            .strip_prefix(base)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        out.push(if rel.is_empty() { ".".to_string() } else { rel });
+    }
+
+    let entries = fs::read_dir(dir).map_err(|source| SystemError::ReadDir {
+        path: dir.to_string_lossy().to_string(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            list_dirs_recursive_fallback(base, &entry_path, full_names, out)?;
+        }
+    }
+    Ok(())
+}
+
+// endregion
 
 // === Temp paths ===
 
