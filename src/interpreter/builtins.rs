@@ -578,8 +578,12 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 /// @param file a connection or file name to write to (default: "" meaning stdout)
 /// @param append logical; if TRUE, append to file (default: FALSE)
 /// @return NULL (invisibly)
-#[builtin]
-fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "cat")]
+fn builtin_cat(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let sep = named
         .iter()
         .find(|(n, _)| n == "sep")
@@ -641,15 +645,19 @@ fn builtin_cat(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         Some(ref path) if !path.is_empty() => {
             use std::fs::OpenOptions;
             use std::io::Write;
+            let path = context.interpreter().resolve_path(path);
             let mut f = OpenOptions::new()
                 .write(true)
                 .create(true)
                 .append(append)
                 .truncate(!append)
-                .open(path)
-                .map_err(|e| RError::other(format!("cannot open file '{}': {}", path, e)))?;
-            f.write_all(output.as_bytes())
-                .map_err(|e| RError::other(format!("error writing to '{}': {}", path, e)))?;
+                .open(&path)
+                .map_err(|e| {
+                    RError::other(format!("cannot open file '{}': {}", path.display(), e))
+                })?;
+            f.write_all(output.as_bytes()).map_err(|e| {
+                RError::other(format!("error writing to '{}': {}", path.display(), e))
+            })?;
         }
         _ => {
             print!("{}", output);

@@ -56,6 +56,10 @@ impl From<IoError> for RError {
 
 // endregion
 
+fn resolved_path_string(interp: &Interpreter, path: &str) -> String {
+    interp.resolve_path(path).to_string_lossy().to_string()
+}
+
 fn escape_r_string(value: &str) -> String {
     let mut escaped = String::new();
     for ch in value.chars() {
@@ -424,6 +428,7 @@ fn workspace_file_arg(
                     RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string())
                 })
         })
+        .map(|path| resolved_path_string(interp, &path))
 }
 
 fn workspace_target_env(
@@ -542,7 +547,7 @@ fn interp_read_rds(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let path = read_rds_path(args, named)?;
+    let path = resolved_path_string(context.interpreter(), &read_rds_path(args, named)?);
 
     // Try reading as binary first by checking the file header.
     let raw_bytes = std::fs::read(&path).map_err(|source| IoError::CannotOpen {
@@ -563,8 +568,12 @@ fn interp_read_rds(
 /// @param object any R value to serialize
 /// @param file character scalar: path to write the .rds file
 /// @return NULL (invisibly)
-#[builtin(name = "saveRDS", min_args = 2)]
-fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "saveRDS", min_args = 2)]
+fn builtin_save_rds(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
     let object = call_args.value("object", 0).ok_or_else(|| {
         RError::new(
@@ -572,7 +581,7 @@ fn builtin_save_rds(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
             "argument 'object' is missing".to_string(),
         )
     })?;
-    let path = call_args.string("file", 1)?;
+    let path = resolved_path_string(context.interpreter(), &call_args.string("file", 1)?);
 
     write_minirds(&path, object)?;
     Ok(RValue::Null)
@@ -589,7 +598,7 @@ fn interp_load(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let path = read_rds_path(positional, named)?;
+    let path = resolved_path_string(context.interpreter(), &read_rds_path(positional, named)?);
     let env = context.env();
     let target_env = named
         .iter()
@@ -767,8 +776,12 @@ fn builtin_file_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
 ///
 /// @param ... character scalars: file paths to check
 /// @return logical vector indicating existence of each file
-#[builtin(name = "file.exists", min_args = 1)]
-fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.exists", min_args = 1)]
+fn builtin_file_exists(
+    args: &[RValue],
+    _: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
         .iter()
         .map(|arg| {
@@ -776,6 +789,7 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
             Some(std::path::Path::new(&path).exists())
         })
         .collect();
@@ -788,10 +802,14 @@ fn builtin_file_exists(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 /// @param header logical: does the file have a header row? (default TRUE)
 /// @param sep character scalar: field separator (default ",")
 /// @return data.frame with columns coerced to numeric where possible
-#[builtin(name = "read.csv", min_args = 1, namespace = "utils")]
-fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "read.csv", min_args = 1, namespace = "utils")]
+fn builtin_read_csv(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let call_args = CallArgs::new(args, named);
-    let path = call_args.string("file", 0)?;
+    let path = resolved_path_string(context.interpreter(), &call_args.string("file", 0)?);
 
     let header = call_args.logical_flag("header", usize::MAX, true);
 
@@ -906,8 +924,12 @@ fn builtin_read_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 /// @param file character scalar: output file path
 /// @param row.names logical: include row names? (default TRUE)
 /// @return NULL (invisibly)
-#[builtin(name = "write.csv", min_args = 1, namespace = "utils")]
-fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "write.csv", min_args = 1, namespace = "utils")]
+fn builtin_write_csv(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let data = args
         .first()
         .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
@@ -921,6 +943,7 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
                 "argument 'file' is missing".to_string(),
             )
         })?;
+    let file = resolved_path_string(context.interpreter(), &file);
 
     let row_names = named
         .iter()
@@ -995,8 +1018,12 @@ fn builtin_write_csv(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
 /// @param what example value determining the return type (default: character)
 /// @param sep character scalar: token separator (default: whitespace)
 /// @return vector of tokens coerced to the type of `what`
-#[builtin]
-fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "scan")]
+fn builtin_scan(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let file = args
         .first()
         .and_then(|v| match v {
@@ -1011,6 +1038,8 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             "scan() requires a file path — reading from stdin is not yet supported".to_string(),
         ));
     }
+
+    let file = resolved_path_string(context.interpreter(), &file);
 
     let content = std::fs::read_to_string(&file).map_err(|source| IoError::CannotOpen {
         path: file.clone(),
@@ -1076,8 +1105,12 @@ fn builtin_scan(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// @param header logical: does the file have a header row? (default FALSE)
 /// @param sep character scalar: field separator (default: whitespace)
 /// @return data.frame (list of columns) with columns coerced to numeric where possible
-#[builtin(name = "read.table", min_args = 1, namespace = "utils")]
-fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "read.table", min_args = 1, namespace = "utils")]
+fn builtin_read_table(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let file = match &args[0] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
             RError::new(
@@ -1110,6 +1143,8 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
             _ => None,
         })
         .unwrap_or_else(|| "".to_string()); // empty = whitespace
+
+    let file = resolved_path_string(context.interpreter(), &file);
 
     let content = std::fs::read_to_string(&file).map_err(|source| IoError::CannotOpen {
         path: file.clone(),
@@ -1191,8 +1226,12 @@ fn builtin_read_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 /// @param col.names logical: include column names? (default TRUE)
 /// @param quote logical: quote character fields? (default TRUE)
 /// @return NULL (invisibly)
-#[builtin(name = "write.table", min_args = 2, namespace = "utils")]
-fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "write.table", min_args = 2, namespace = "utils")]
+fn builtin_write_table(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let file = match &args[1] {
         RValue::Vector(rv) => rv.inner.as_character_scalar().ok_or_else(|| {
             RError::new(
@@ -1207,6 +1246,7 @@ fn builtin_write_table(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
             ))
         }
     };
+    let file = resolved_path_string(context.interpreter(), &file);
 
     let sep = named
         .iter()

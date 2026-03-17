@@ -4,7 +4,7 @@
 
 use crate::interpreter::coerce::*;
 use crate::interpreter::value::*;
-use crate::interpreter::BuiltinContext;
+use crate::interpreter::{BuiltinContext, Interpreter};
 use derive_more::{Display, Error};
 use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin};
@@ -69,6 +69,39 @@ impl From<SystemError> for RError {
 
 // endregion
 
+fn resolved_path_string(interp: &Interpreter, path: &str) -> String {
+    interp.resolve_path(path).to_string_lossy().to_string()
+}
+
+fn home_dir_string(interp: &Interpreter) -> Option<String> {
+    interp
+        .get_env_var("HOME")
+        .or_else(|| interp.get_env_var("USERPROFILE"))
+        .or_else(|| {
+            #[cfg(feature = "dirs-support")]
+            {
+                dirs::home_dir().map(|home| home.to_string_lossy().to_string())
+            }
+            #[cfg(not(feature = "dirs-support"))]
+            {
+                None
+            }
+        })
+}
+
+fn minir_data_dir(interp: &Interpreter) -> String {
+    #[cfg(feature = "dirs-support")]
+    {
+        if let Some(data) = dirs::data_dir() {
+            return data.join("miniR").to_string_lossy().to_string();
+        }
+    }
+
+    home_dir_string(interp)
+        .map(|h| format!("{}/.miniR", h))
+        .unwrap_or_else(|| "/tmp/miniR".to_string())
+}
+
 // === File operations ===
 
 /// Copy a file from one path to another.
@@ -76,8 +109,12 @@ impl From<SystemError> for RError {
 /// @param from character scalar: source file path
 /// @param to character scalar: destination file path
 /// @return logical scalar: TRUE on success
-#[builtin(name = "file.copy", min_args = 2)]
-fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.copy", min_args = 2)]
+fn builtin_file_copy(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let from = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -97,6 +134,9 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
             )
         })?;
 
+    let from = resolved_path_string(context.interpreter(), &from);
+    let to = resolved_path_string(context.interpreter(), &to);
+
     match fs::copy(&from, &to) {
         Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
         Err(source) => Err(SystemError::Copy { from, to, source }.into()),
@@ -107,8 +147,12 @@ fn builtin_file_copy(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 ///
 /// @param ... character scalars: file paths to create
 /// @return logical vector: TRUE for each file successfully created
-#[builtin(name = "file.create", min_args = 1)]
-fn builtin_file_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.create", min_args = 1)]
+fn builtin_file_create(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
         .iter()
         .map(|arg| {
@@ -116,6 +160,7 @@ fn builtin_file_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
             match fs::File::create(&path) {
                 Ok(_) => Some(true),
                 Err(_) => Some(false),
@@ -129,8 +174,12 @@ fn builtin_file_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 ///
 /// @param ... character scalars: file paths to remove
 /// @return logical vector: TRUE for each file successfully removed
-#[builtin(name = "file.remove", min_args = 1)]
-fn builtin_file_remove(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.remove", min_args = 1)]
+fn builtin_file_remove(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
         .iter()
         .map(|arg| {
@@ -138,6 +187,7 @@ fn builtin_file_remove(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
             match fs::remove_file(&path) {
                 Ok(()) => Some(true),
                 Err(_) => Some(false),
@@ -152,8 +202,12 @@ fn builtin_file_remove(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 /// @param from character scalar: current file path
 /// @param to character scalar: new file path
 /// @return logical scalar: TRUE on success
-#[builtin(name = "file.rename", min_args = 2)]
-fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.rename", min_args = 2)]
+fn builtin_file_rename(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let from = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -173,6 +227,9 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
             )
         })?;
 
+    let from = resolved_path_string(context.interpreter(), &from);
+    let to = resolved_path_string(context.interpreter(), &to);
+
     match fs::rename(&from, &to) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
         Err(source) => Err(SystemError::Rename { from, to, source }.into()),
@@ -183,8 +240,12 @@ fn builtin_file_rename(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 ///
 /// @param ... character scalars: file paths to query
 /// @return double vector of file sizes (NA for non-existent files)
-#[builtin(name = "file.size", min_args = 1)]
-fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.size", min_args = 1)]
+fn builtin_file_size(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let results: Vec<Option<f64>> = args
         .iter()
         .map(|arg| {
@@ -192,6 +253,7 @@ fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
             fs::metadata(&path).ok().map(|m| u64_to_f64(m.len()))
         })
         .collect();
@@ -203,8 +265,12 @@ fn builtin_file_size(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 /// @param x character scalar: path to remove
 /// @param recursive logical: if TRUE, remove directories recursively (default FALSE)
 /// @return integer scalar: 0 on success, 1 on failure
-#[builtin(min_args = 1)]
-fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "unlink", min_args = 1)]
+fn builtin_unlink(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -220,6 +286,7 @@ fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
 
+    let path = resolved_path_string(context.interpreter(), &path);
     let p = Path::new(&path);
     let result = if p.is_dir() {
         if recursive {
@@ -243,11 +310,16 @@ fn builtin_unlink(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param ... character scalars: file paths to query
 /// @return data.frame with columns: size, isdir, mode, mtime, ctime, atime
-#[builtin(name = "file.info", min_args = 1)]
-fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "file.info", min_args = 1)]
+fn builtin_file_info(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let paths: Vec<String> = args
         .iter()
         .filter_map(|v| v.as_vector()?.as_character_scalar())
+        .map(|path| resolved_path_string(context.interpreter(), &path))
         .collect();
 
     if paths.is_empty() {
@@ -356,8 +428,12 @@ fn builtin_file_info(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 ///
 /// @param path character scalar: directory path to create
 /// @return logical scalar: TRUE on success
-#[builtin(name = "dir.create", min_args = 1)]
-fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "dir.create", min_args = 1)]
+fn builtin_dir_create(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -369,6 +445,8 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
         })?;
 
     // miniR diverges from R: recursive by default
+    let path = resolved_path_string(context.interpreter(), &path);
+
     match fs::create_dir_all(&path) {
         Ok(()) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
         Err(source) => Err(SystemError::CreateDir { path, source }.into()),
@@ -379,8 +457,12 @@ fn builtin_dir_create(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 ///
 /// @param ... character scalars: directory paths to check
 /// @return logical vector indicating existence of each directory
-#[builtin(name = "dir.exists", min_args = 1)]
-fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "dir.exists", min_args = 1)]
+fn builtin_dir_exists(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let results: Vec<Option<bool>> = args
         .iter()
         .map(|arg| {
@@ -388,6 +470,7 @@ fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
                 .as_vector()
                 .and_then(|v| v.as_character_scalar())
                 .unwrap_or_default();
+            let path = resolved_path_string(context.interpreter(), &path);
             Some(Path::new(&path).is_dir())
         })
         .collect();
@@ -403,12 +486,17 @@ fn builtin_dir_exists(args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 ///   recursive traversal.
 /// @param full.names logical: if TRUE, return full paths (default FALSE)
 /// @return character vector of matching file names (sorted)
-#[builtin(name = "list.files", names = ["dir"])]
-fn builtin_list_files(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "list.files", names = ["dir"])]
+fn builtin_list_files(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_else(|| ".".to_string());
+    let path = resolved_path_string(context.interpreter(), &path);
 
     let pattern = named
         .iter()
@@ -639,8 +727,12 @@ fn interp_tempfile(
 ///
 /// @param ... character scalars: glob patterns (e.g. "*.R", "src/**/*.rs")
 /// @return character vector of matching file paths
-#[builtin(name = "Sys.glob", min_args = 1)]
-fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "Sys.glob", min_args = 1)]
+fn builtin_sys_glob(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let patterns: Vec<String> = args
         .iter()
         .filter_map(|v| v.as_vector()?.as_character_scalar())
@@ -648,10 +740,11 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 
     let mut results: Vec<Option<String>> = Vec::new();
     for pattern in &patterns {
+        let resolved_pattern = resolved_path_string(context.interpreter(), pattern);
         // Validate the pattern with globset when available, for better errors
         #[cfg(feature = "globset-support")]
         {
-            if let Err(e) = globset::Glob::new(pattern) {
+            if let Err(e) = globset::Glob::new(&resolved_pattern) {
                 return Err(RError::other(format!(
                     "invalid glob pattern '{}': {}",
                     pattern, e
@@ -659,7 +752,7 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
             }
         }
 
-        match glob::glob(pattern) {
+        match glob::glob(&resolved_pattern) {
             Ok(paths) => {
                 for path in paths.flatten() {
                     results.push(Some(path.to_string_lossy().to_string()));
@@ -685,8 +778,12 @@ fn builtin_sys_glob(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// @param mustWork if TRUE, error when the path cannot be resolved; if FALSE/NA, return
 ///   the original path on failure
 /// @return character scalar: the canonical path (or the original if resolution fails)
-#[builtin(name = "normalizePath", min_args = 1)]
-fn builtin_normalize_path(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "normalizePath", min_args = 1)]
+fn builtin_normalize_path(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -705,7 +802,9 @@ fn builtin_normalize_path(args: &[RValue], named: &[(String, RValue)]) -> Result
         .or_else(|| args.get(2).and_then(|v| v.as_vector()?.as_logical_scalar()))
         .unwrap_or(false);
 
-    match fs::canonicalize(&path) {
+    let resolved = context.interpreter().resolve_path(&path);
+
+    match fs::canonicalize(&resolved) {
         Ok(p) => Ok(RValue::vec(Vector::Character(
             vec![Some(p.to_string_lossy().to_string())].into(),
         ))),
@@ -732,8 +831,12 @@ fn builtin_normalize_path(args: &[RValue], named: &[(String, RValue)]) -> Result
 ///
 /// @param path character scalar: path possibly starting with ~
 /// @return character scalar: the expanded path
-#[builtin(name = "path.expand", min_args = 1)]
-fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "path.expand", min_args = 1)]
+fn builtin_path_expand(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let path = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -745,7 +848,7 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
         })?;
 
     let expanded = if path.starts_with('~') {
-        let home = home_dir_string();
+        let home = home_dir_string(context.interpreter());
         match home {
             Some(h) => path.replacen('~', &h, 1),
             None => path,
@@ -755,20 +858,6 @@ fn builtin_path_expand(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
     };
 
     Ok(RValue::vec(Vector::Character(vec![Some(expanded)].into())))
-}
-
-/// Resolve the user's home directory, preferring `dirs::home_dir()` when
-/// the `dirs-support` feature is enabled, falling back to environment variables.
-fn home_dir_string() -> Option<String> {
-    #[cfg(feature = "dirs-support")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            return Some(home.to_string_lossy().to_string());
-        }
-    }
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
 }
 
 // region: R.home / .libPaths
@@ -781,14 +870,18 @@ fn home_dir_string() -> Option<String> {
 ///
 /// @param component character scalar: optional sub-path within R home (default "")
 /// @return character scalar: the miniR home directory path
-#[builtin(name = "R.home")]
-fn builtin_r_home(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "R.home")]
+fn builtin_r_home(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let component = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
 
-    let base = minir_data_dir();
+    let base = minir_data_dir(context.interpreter());
     let result = if component.is_empty() {
         base
     } else {
@@ -801,20 +894,6 @@ fn builtin_r_home(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
-/// Compute the miniR data directory path.
-fn minir_data_dir() -> String {
-    #[cfg(feature = "dirs-support")]
-    {
-        if let Some(data) = dirs::data_dir() {
-            return data.join("miniR").to_string_lossy().to_string();
-        }
-    }
-    // Fallback: ~/.miniR
-    home_dir_string()
-        .map(|h| format!("{}/.miniR", h))
-        .unwrap_or_else(|| "/tmp/miniR".to_string())
-}
-
 /// Return the library search paths for package installation.
 ///
 /// miniR does not yet have a full package system, but many CRAN packages
@@ -823,9 +902,13 @@ fn minir_data_dir() -> String {
 ///
 /// @param new character vector: if provided, sets new library paths (currently ignored)
 /// @return character vector of library search paths
-#[builtin(name = ".libPaths")]
-fn builtin_lib_paths(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let lib_dir = format!("{}/library", minir_data_dir());
+#[interpreter_builtin(name = ".libPaths")]
+fn builtin_lib_paths(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let lib_dir = format!("{}/library", minir_data_dir(context.interpreter()));
     Ok(RValue::vec(Vector::Character(vec![Some(lib_dir)].into())))
 }
 
@@ -837,8 +920,12 @@ fn builtin_lib_paths(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 ///
 /// @param command character scalar: the shell command to run
 /// @return integer scalar: the process exit code
-#[builtin(min_args = 1)]
-fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "system", min_args = 1)]
+fn builtin_system(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let command = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -849,14 +936,18 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
             )
         })?;
 
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&command)
-        .status()
-        .map_err(|source| SystemError::Command {
+    let output = context.with_interpreter(|interp| {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c")
+            .arg(&command)
+            .current_dir(interp.get_working_dir())
+            .env_clear()
+            .envs(interp.env_vars_snapshot());
+        cmd.status().map_err(|source| SystemError::Command {
             command: command.clone(),
             source,
-        })?;
+        })
+    })?;
 
     let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
@@ -867,8 +958,12 @@ fn builtin_system(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue
 /// @param command character scalar: the program to run
 /// @param args character vector: command-line arguments
 /// @return integer scalar: the process exit code
-#[builtin(min_args = 1)]
-fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "system2", min_args = 1)]
+fn builtin_system2(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let command = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -886,13 +981,17 @@ fn builtin_system2(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
         .map(|v| v.to_characters().into_iter().flatten().collect())
         .unwrap_or_default();
 
-    let output = std::process::Command::new(&command)
-        .args(&cmd_args)
-        .status()
-        .map_err(|source| SystemError::Command {
+    let output = context.with_interpreter(|interp| {
+        let mut cmd = std::process::Command::new(&command);
+        cmd.args(&cmd_args)
+            .current_dir(interp.get_working_dir())
+            .env_clear()
+            .envs(interp.env_vars_snapshot());
+        cmd.status().map_err(|source| SystemError::Command {
             command: command.clone(),
             source,
-        })?;
+        })
+    })?;
 
     let code = i64::from(output.code().unwrap_or(-1));
     Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
@@ -1022,8 +1121,12 @@ fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 /// Return system information (OS, machine, hostname, user).
 ///
 /// @return named list with sysname, nodename, machine, login, and user
-#[builtin(name = "Sys.info")]
-fn builtin_sys_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "Sys.info")]
+fn builtin_sys_info(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let sysname = if cfg!(target_os = "macos") {
         "Darwin"
     } else if cfg!(target_os = "linux") {
@@ -1049,9 +1152,13 @@ fn builtin_sys_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let user = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "unknown".to_string());
+    let user = context
+        .with_interpreter(|interp| {
+            interp
+                .get_env_var("USER")
+                .or_else(|| interp.get_env_var("USERNAME"))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
 
     let mut list = RList::new(vec![
         (
@@ -1089,9 +1196,15 @@ fn builtin_sys_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 /// Get the current timezone from the TZ environment variable.
 ///
 /// @return character scalar: timezone string (defaults to "UTC")
-#[builtin(name = "Sys.timezone")]
-fn builtin_sys_timezone(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let tz = std::env::var("TZ").unwrap_or_else(|_| "UTC".to_string());
+#[interpreter_builtin(name = "Sys.timezone")]
+fn builtin_sys_timezone(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let tz = context
+        .with_interpreter(|interp| interp.get_env_var("TZ"))
+        .unwrap_or_else(|| "UTC".to_string());
     Ok(RValue::vec(Vector::Character(vec![Some(tz)].into())))
 }
 
@@ -1189,8 +1302,15 @@ fn interp_proc_time(
 /// Return session information (miniR version, platform, locale).
 ///
 /// @return named list with R.version, platform, and locale
-#[builtin(name = "sessionInfo")]
-fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "sessionInfo")]
+fn builtin_session_info(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let locale = context
+        .with_interpreter(|interp| interp.get_env_var("LANG"))
+        .unwrap_or_else(|| "C".to_string());
     Ok(RValue::List(RList::new(vec![
         (
             Some("R.version".to_string()),
@@ -1224,12 +1344,7 @@ fn builtin_session_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result
         ),
         (
             Some("locale".to_string()),
-            RValue::vec(Vector::Character(
-                vec![Some(
-                    std::env::var("LANG").unwrap_or_else(|_| "C".to_string()),
-                )]
-                .into(),
-            )),
+            RValue::vec(Vector::Character(vec![Some(locale)].into())),
         ),
     ])))
 }

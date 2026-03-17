@@ -940,17 +940,25 @@ fn interp_source(
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
-    let source = match std::fs::read_to_string(&path) {
+    let resolved_path = context.interpreter().resolve_path(&path);
+    let display_path = resolved_path.to_string_lossy().to_string();
+    let source = match std::fs::read_to_string(&resolved_path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            let bytes = std::fs::read(&path)
-                .map_err(|e2| RError::other(format!("cannot open file '{}': {}", path, e2)))?;
+            let bytes = std::fs::read(&resolved_path).map_err(|e2| {
+                RError::other(format!("cannot open file '{}': {}", display_path, e2))
+            })?;
             String::from_utf8_lossy(&bytes).into_owned()
         }
-        Err(e) => return Err(RError::other(format!("cannot open file '{}': {}", path, e))),
+        Err(e) => {
+            return Err(RError::other(format!(
+                "cannot open file '{}': {}",
+                display_path, e
+            )))
+        }
     };
     let ast = crate::parser::parse_program(&source)
-        .map_err(|e| RError::other(format!("parse error in '{}': {}", path, e)))?;
+        .map_err(|e| RError::other(format!("parse error in '{}': {}", display_path, e)))?;
     context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
 }
 
@@ -973,6 +981,8 @@ fn interp_sys_source(
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid 'file' argument".to_string()))?;
+    let resolved_path = context.interpreter().resolve_path(&path);
+    let display_path = resolved_path.to_string_lossy().to_string();
 
     // Get environment from named 'envir' argument or second positional
     let env = named
@@ -981,18 +991,24 @@ fn interp_sys_source(
         .map(|(_, v)| v)
         .or_else(|| positional.get(1));
 
-    let source = match std::fs::read_to_string(&path) {
+    let source = match std::fs::read_to_string(&resolved_path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            let bytes = std::fs::read(&path)
-                .map_err(|e2| RError::other(format!("cannot open file '{}': {}", path, e2)))?;
+            let bytes = std::fs::read(&resolved_path).map_err(|e2| {
+                RError::other(format!("cannot open file '{}': {}", display_path, e2))
+            })?;
             String::from_utf8_lossy(&bytes).into_owned()
         }
-        Err(e) => return Err(RError::other(format!("cannot open file '{}': {}", path, e))),
+        Err(e) => {
+            return Err(RError::other(format!(
+                "cannot open file '{}': {}",
+                display_path, e
+            )))
+        }
     };
 
     let ast = crate::parser::parse_program(&source)
-        .map_err(|e| RError::other(format!("parse error in '{}': {}", path, e)))?;
+        .map_err(|e| RError::other(format!("parse error in '{}': {}", display_path, e)))?;
 
     match env {
         Some(RValue::Environment(target_env)) => context

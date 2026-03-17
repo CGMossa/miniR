@@ -159,3 +159,34 @@ fn file_exists_before_and_after_writing() {
     )
     .expect("file.exists before/after write failed");
 }
+
+#[test]
+fn relative_file_operations_respect_setwd() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        base <- tempfile()
+        dir.create(base)
+        setwd(base)
+
+        df <- data.frame(x = c(1L, 2L), y = c("a", "b"))
+        write.csv(df, "data.csv", row.names = FALSE)
+        df_csv <- read.csv("data.csv")
+        stopifnot(identical(df_csv$x, c(1L, 2L)))
+        stopifnot(identical(df_csv$y, c("a", "b")))
+
+        write.table(df, "data.txt", col.names = TRUE)
+        df_table <- read.table("data.txt", header = TRUE)
+        stopifnot(identical(df_table[[1]], c(1, 2)))
+
+        saveRDS(c(1L, 2L), "data.rds")
+        vec_rds <- readRDS("data.rds")
+        stopifnot(identical(vec_rds, c(1L, 2L)))
+
+        writeLines("answer <- 42L", "script.R")
+        source("script.R")
+        stopifnot(answer == 42L)
+    "#,
+    )
+    .expect("relative file operations should respect setwd");
+}

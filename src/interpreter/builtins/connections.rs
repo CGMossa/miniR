@@ -26,6 +26,14 @@ use minir_macros::interpreter_builtin;
 
 // region: ConnectionKind + ConnectionInfo
 
+fn resolved_path_string(context: &BuiltinContext, path: &str) -> String {
+    context
+        .interpreter()
+        .resolve_path(path)
+        .to_string_lossy()
+        .to_string()
+}
+
 /// Discriminates what kind of I/O backing a connection has.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionKind {
@@ -498,6 +506,7 @@ fn interp_read_lines(
     } else {
         call_args.string("con", 0)?
     };
+    let path = resolved_path_string(context, &path);
 
     // Read as raw bytes via bstr so we can handle non-UTF-8 files
     let raw_bytes = std::fs::read(&path).map_err(|e| {
@@ -628,6 +637,7 @@ fn interp_write_lines(
             println!("{}", output);
         }
         Dest::File(path) => {
+            let path = resolved_path_string(context, &path);
             std::fs::write(&path, format!("{}{}", output, sep)).map_err(|e| {
                 RError::new(
                     RErrorKind::Other,

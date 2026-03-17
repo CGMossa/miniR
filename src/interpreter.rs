@@ -109,12 +109,12 @@ pub struct Interpreter {
     pub(crate) temp_dir: temp_dir::TempDir,
     /// Counter for unique tempfile names within the session.
     pub(crate) temp_counter: std::cell::Cell<u64>,
-    /// Per-interpreter environment variable overrides.
-    /// Keys present here shadow process env; absent keys fall through to process env.
+    /// Per-interpreter environment variables, snapshotted at interpreter creation
+    /// and then mutated locally via Sys.setenv().
     pub(crate) env_vars: RefCell<std::collections::HashMap<String, String>>,
-    /// Per-interpreter working directory override.
-    /// If None, falls through to the process working directory.
-    pub(crate) working_dir: RefCell<Option<std::path::PathBuf>>,
+    /// Per-interpreter working directory, snapshotted at interpreter creation
+    /// and then mutated locally via setwd().
+    pub(crate) working_dir: RefCell<std::path::PathBuf>,
     /// Instant when the interpreter was created, used by proc.time() for elapsed time.
     pub(crate) start_instant: std::time::Instant,
     /// Collection objects (HashMap, BTreeMap, HashSet, BinaryHeap, VecDeque).
@@ -230,8 +230,10 @@ impl Interpreter {
             }),
             temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
             temp_counter: std::cell::Cell::new(0),
-            env_vars: RefCell::new(std::collections::HashMap::new()),
-            working_dir: RefCell::new(None),
+            env_vars: RefCell::new(std::env::vars().collect()),
+            working_dir: RefCell::new(
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            ),
             start_instant: std::time::Instant::now(),
             #[cfg(feature = "collections")]
             collections: RefCell::new(Vec::new()),
@@ -356,13 +358,14 @@ impl Interpreter {
         &self.rng
     }
 
-    /// Get an environment variable — checks interpreter-local overrides first,
-    /// then falls through to process env.
+    /// Get an environment variable from the interpreter-local snapshot.
     pub(crate) fn get_env_var(&self, name: &str) -> Option<String> {
-        if let Some(val) = self.env_vars.borrow().get(name) {
-            return Some(val.clone());
-        }
-        std::env::var(name).ok()
+        self.env_vars.borrow().get(name).cloned()
+    }
+
+    /// Return a clone of the interpreter-local environment snapshot.
+    pub(crate) fn env_vars_snapshot(&self) -> std::collections::HashMap<String, String> {
+        self.env_vars.borrow().clone()
     }
 
     /// Set a per-interpreter environment variable (does not mutate process state).
@@ -370,18 +373,24 @@ impl Interpreter {
         self.env_vars.borrow_mut().insert(name, value);
     }
 
-    /// Get the working directory — uses interpreter-local override if set,
-    /// otherwise the process working directory.
+    /// Get the interpreter-local working directory.
     pub(crate) fn get_working_dir(&self) -> std::path::PathBuf {
-        self.working_dir
-            .borrow()
-            .clone()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+        self.working_dir.borrow().clone()
     }
 
     /// Set the per-interpreter working directory (does not mutate process state).
     pub(crate) fn set_working_dir(&self, path: std::path::PathBuf) {
-        *self.working_dir.borrow_mut() = Some(path);
+        *self.working_dir.borrow_mut() = path;
+    }
+
+    /// Resolve a user-supplied path against the interpreter-local working directory.
+    pub(crate) fn resolve_path(&self, path: impl AsRef<std::path::Path>) -> std::path::PathBuf {
+        let path = path.as_ref();
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.get_working_dir().join(path)
+        }
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
