@@ -562,6 +562,17 @@ fn build_primary(pair: Pair<Rule>) -> Expr {
             let n: u32 = s[2..].parse().unwrap_or(1);
             Expr::DotDot(n)
         }
+        Rule::formula_literal => {
+            let rhs = pair
+                .into_inner()
+                .next()
+                .map(build_expr)
+                .unwrap_or(Expr::Null);
+            Expr::Formula {
+                lhs: None,
+                rhs: Some(Box::new(rhs)),
+            }
+        }
         Rule::ident => {
             let name = parse_ident_str(pair);
             Expr::Symbol(name)

@@ -105,7 +105,7 @@ and_op = { "&&" | "&" }
 
 // "!"
 not_expr = {
-      "!" ~ GAP ~ not_expr
+      "!" ~ GAP ~ help_expr
     | compare_expr
 }
 
@@ -150,7 +150,7 @@ colon_expr = {
 // expressions like !a == b → !(a == b). Adding it here too allows
 // a == !b → a == (!b), where !b appears inside a comparison operand.
 unary_expr = {
-      "!" ~ GAP ~ unary_expr
+      "!" ~ GAP ~ help_expr
     | unary_op ~ GAP ~ unary_expr
     | power_expr
 }
@@ -254,6 +254,7 @@ primary_expr = {
     | string
     | dots
     | dotdot
+    | formula_literal
     | if_expr
     | for_expr
     | while_expr
@@ -266,6 +267,10 @@ primary_expr = {
     | next_expr
     | return_expr
     | ident
+}
+
+formula_literal = {
+    "~" ~ GAP ~ formula_expr
 }
 
 // -------------------- constants --------------------

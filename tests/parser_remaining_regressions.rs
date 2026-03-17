@@ -59,3 +59,20 @@ fn parser_accepts_pipe_placeholder_underscore() {
 fn parser_accepts_escaped_backticks_in_backtick_identifiers() {
     parse_program("`\\``").expect("parser should accept escaped backticks inside backtick names");
 }
+
+#[test]
+fn parser_accepts_formula_literals_as_comparison_operands() {
+    parse_program(
+        r#"
+stopifnot(exprs = {
+  formula(ttF) == ~ b + offset(h)
+})
+"#,
+    )
+    .expect("parser should accept unary formula literals on the right-hand side of comparisons");
+}
+
+#[test]
+fn parser_accepts_help_operator_inside_unary_chains() {
+    parse_program("quote(~+-!?x)").expect("parser should accept '?' after other unary operators");
+}
