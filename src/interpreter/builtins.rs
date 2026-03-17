@@ -3630,15 +3630,28 @@ pub(crate) fn has_class(val: &RValue, class_name: &str) -> bool {
 
 /// Create a new environment.
 ///
+/// @param hash logical; if TRUE, use a hashed environment (always TRUE in miniR since we use HashMap)
 /// @param parent parent environment (or NULL for an empty environment)
+/// @param size integer; initial size hint (ignored — HashMap handles resizing)
 /// @return new environment
 #[builtin(name = "new.env")]
 fn builtin_new_env(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let parent_val = named
-        .iter()
-        .find(|(n, _)| n == "parent")
-        .map(|(_, v)| v)
-        .or_else(|| args.first());
+    // R signature: new.env(hash = TRUE, parent = parent.frame(), size = 29L)
+    // Positional order: hash, parent, size
+    // We accept all three but only parent affects behavior.
+
+    let named_hash = named.iter().find(|(n, _)| n == "hash").map(|(_, v)| v);
+    let named_parent = named.iter().find(|(n, _)| n == "parent").map(|(_, v)| v);
+    let named_size = named.iter().find(|(n, _)| n == "size").map(|(_, v)| v);
+
+    // Resolve positional args (hash, parent, size) skipping those provided as named
+    let mut positional_iter = args.iter();
+    let _hash_val = named_hash.or_else(|| positional_iter.next());
+    // hash is always TRUE in miniR — we use HashMap regardless
+    let parent_val = named_parent.or_else(|| positional_iter.next());
+    let _size_val = named_size.or_else(|| positional_iter.next());
+    // size is a no-op — HashMap resizes dynamically
+
     let parent = parent_val.and_then(|v| {
         if let RValue::Environment(e) = v {
             Some(e.clone())
@@ -3799,9 +3812,10 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// Performs exact and then partial matching against the choices vector.
 /// If arg is NULL, returns the first choice (the default).
 ///
-/// @param arg character scalar to match
+/// @param arg character scalar (or vector if several.ok=TRUE) to match
 /// @param choices character vector of allowed values
-/// @return the matched value
+/// @param several.ok logical; if TRUE, allow arg to have length > 1
+/// @return the matched value(s)
 #[builtin(name = "match.arg", min_args = 1)]
 fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let arg = args.first().cloned().unwrap_or(RValue::Null);
@@ -3809,11 +3823,19 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         .get(1)
         .or_else(|| named.iter().find(|(n, _)| n == "choices").map(|(_, v)| v));
 
-    let arg_str = match &arg {
-        RValue::Vector(v) => v.as_character_scalar(),
-        RValue::Null => None,
-        _ => None,
-    };
+    let several_ok = args
+        .get(2)
+        .or_else(|| {
+            named
+                .iter()
+                .find(|(n, _)| n == "several.ok")
+                .map(|(_, v)| v)
+        })
+        .and_then(|v| match v {
+            RValue::Vector(rv) => rv.as_logical_scalar(),
+            _ => None,
+        })
+        .unwrap_or(false);
 
     let choices_vec = match choices {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
@@ -3833,44 +3855,82 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         return Ok(arg);
     }
 
-    match arg_str {
-        None => {
-            // NULL arg: return first choice (R behavior)
-            Ok(RValue::vec(Vector::Character(
-                vec![Some(choices_vec[0].clone())].into(),
-            )))
-        }
-        Some(ref s) => {
-            // Exact match first
-            if choices_vec.contains(s) {
-                return Ok(RValue::vec(Vector::Character(vec![Some(s.clone())].into())));
+    // Extract the argument strings
+    let arg_strings: Vec<Option<String>> = match &arg {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(v) => v.iter().cloned().collect(),
+            _ => vec![None],
+        },
+        RValue::Null => vec![],
+        _ => vec![None],
+    };
+
+    // NULL or empty arg: return first choice (R behavior)
+    if arg_strings.is_empty() {
+        return Ok(RValue::vec(Vector::Character(
+            vec![Some(choices_vec[0].clone())].into(),
+        )));
+    }
+
+    // If several.ok is FALSE, arg must be length 1
+    if !several_ok && arg_strings.len() > 1 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "'arg' should be one of {}, not a vector of length {}",
+                choices_vec.iter().map(|c| format!("'{c}'")).join(", "),
+                arg_strings.len()
+            ),
+        ));
+    }
+
+    // Match each element
+    let mut matched = Vec::with_capacity(arg_strings.len());
+    for s_opt in &arg_strings {
+        let s = match s_opt {
+            Some(s) => s,
+            None => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "'arg' should be one of the choices".to_string(),
+                ))
             }
-            // Partial match
-            let matches: Vec<&String> = choices_vec
-                .iter()
-                .filter(|c| c.starts_with(s.as_str()))
-                .collect();
-            match matches.len() {
-                1 => Ok(RValue::vec(Vector::Character(
-                    vec![Some(matches[0].clone())].into(),
-                ))),
-                0 => Err(RError::new(
+        };
+
+        // Exact match first
+        if choices_vec.contains(s) {
+            matched.push(Some(s.clone()));
+            continue;
+        }
+        // Partial match
+        let partial: Vec<&String> = choices_vec
+            .iter()
+            .filter(|c| c.starts_with(s.as_str()))
+            .collect();
+        match partial.len() {
+            1 => matched.push(Some(partial[0].clone())),
+            0 => {
+                return Err(RError::new(
                     RErrorKind::Argument,
                     format!(
                         "'arg' should be one of {}",
-                        choices_vec.iter().map(|c| format!("'{}'", c)).join(", ")
+                        choices_vec.iter().map(|c| format!("'{c}'")).join(", ")
                     ),
-                )),
-                _ => Err(RError::new(
+                ))
+            }
+            _ => {
+                return Err(RError::new(
                     RErrorKind::Argument,
                     format!(
                         "'arg' should be one of {}",
-                        choices_vec.iter().map(|c| format!("'{}'", c)).join(", ")
+                        choices_vec.iter().map(|c| format!("'{c}'")).join(", ")
                     ),
-                )),
+                ))
             }
         }
     }
+
+    Ok(RValue::vec(Vector::Character(matched.into())))
 }
 
 /// Terminate the R session.
