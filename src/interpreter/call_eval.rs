@@ -1,6 +1,6 @@
 //! Call evaluation and dispatch helpers used by the evaluator.
 
-use log::trace;
+use tracing::trace;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
@@ -82,6 +82,7 @@ pub(super) fn call_function(
     call_function_with_call(interp, func, positional, named, env, None)
 }
 
+#[tracing::instrument(level = "trace", name = "call_function", skip_all, fields(func_type))]
 pub(crate) fn call_function_with_call(
     interp: &Interpreter,
     func: &RValue,
@@ -97,11 +98,12 @@ pub(crate) fn call_function_with_call(
             min_args,
             max_args,
         }) => {
+            tracing::Span::current().record("func_type", "builtin");
             trace!(
-                "call builtin: {}({} positional, {} named)",
-                name,
-                positional.len(),
-                named.len()
+                builtin = name.as_str(),
+                positional = positional.len(),
+                named = named.len(),
+                "call builtin"
             );
             let actual_args = positional.len() + named.len();
             Interpreter::ensure_builtin_min_arity(name, *min_args, actual_args)
@@ -121,11 +123,12 @@ pub(crate) fn call_function_with_call(
             body,
             env: closure_env,
         }) => {
+            tracing::Span::current().record("func_type", "closure");
             trace!(
-                "call closure({} params, {} positional, {} named)",
-                params.len(),
-                positional.len(),
-                named.len()
+                params = params.len(),
+                positional = positional.len(),
+                named = named.len(),
+                "call closure"
             );
             call_closure(
                 interp,

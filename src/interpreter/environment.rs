@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use itertools::Itertools;
-use log::trace;
+use tracing::trace;
 
 use crate::interpreter::value::RValue;
 use crate::parser::ast::Expr;
