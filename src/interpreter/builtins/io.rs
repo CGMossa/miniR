@@ -586,15 +586,16 @@ fn interp_read_rds(
     read_minirds(&path, "readRDS", "saveRDS", context.interpreter())
 }
 
-/// Serialize a single R object to an RDS file in GNU R-compatible XDR binary format.
+/// Serialize a single R object to an RDS file in GNU R-compatible format.
 ///
-/// By default the output is gzip-compressed (matching GNU R behavior).
+/// By default the output is gzip-compressed XDR binary (matching GNU R behavior).
 /// Pass `compress = FALSE` to write uncompressed XDR binary.
-/// Pass `ascii = TRUE` to write miniRDS text format instead.
+/// Pass `ascii = TRUE` to write ASCII text format (format 'A'), which is
+/// human-readable and compatible with GNU R's `readRDS()`.
 ///
 /// @param object any R value to serialize
 /// @param file character scalar: path to write the .rds file
-/// @param ascii logical: if TRUE, write miniRDS text format (default FALSE)
+/// @param ascii logical: if TRUE, write ASCII text format (default FALSE)
 /// @param compress logical: whether to gzip-compress binary output (default TRUE)
 /// @return NULL (invisibly)
 #[interpreter_builtin(name = "saveRDS", min_args = 2)]
@@ -618,21 +619,17 @@ fn builtin_save_rds(
         .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
         .unwrap_or(false);
 
-    if ascii {
-        write_minirds(&path, object)?;
-    } else {
-        // Default to compress = TRUE, matching GNU R.
-        let compress = call_args
-            .value("compress", 3)
-            .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
-            .unwrap_or(true);
+    // Default to compress = TRUE, matching GNU R.
+    let compress = call_args
+        .value("compress", 3)
+        .and_then(|v| v.as_vector().and_then(|vec| vec.as_logical_scalar()))
+        .unwrap_or(true);
 
-        let bytes = super::serialize::serialize_rds(object, compress);
-        std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
-            path: path.clone(),
-            source,
-        })?;
-    }
+    let bytes = super::serialize::serialize_rds(object, compress, ascii);
+    std::fs::write(&path, bytes).map_err(|source| IoError::WriteFailed {
+        path: path.clone(),
+        source,
+    })?;
     Ok(RValue::Null)
 }
 

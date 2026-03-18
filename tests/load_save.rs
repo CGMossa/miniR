@@ -491,7 +491,7 @@ stopifnot(y == "hello")
 // region: saveRDS ascii parameter tests
 
 #[test]
-fn save_rds_ascii_true_writes_minirds() {
+fn save_rds_ascii_true_writes_ascii_format() {
     let mut s = Session::new();
     let path = temp_path("saverds-ascii");
     let p = quote_path(&path);
@@ -504,8 +504,8 @@ saveRDS(42L, "{p}", ascii = TRUE)
 
     let content = fs::read_to_string(&path).unwrap();
     assert!(
-        content.starts_with("miniRDS1\n"),
-        "expected miniRDS header with ascii=TRUE, got: {:?}",
+        content.starts_with("A\n"),
+        "expected ASCII format header with ascii=TRUE, got: {:?}",
         &content[..content.len().min(20)]
     );
 

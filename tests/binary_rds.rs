@@ -837,28 +837,27 @@ stopifnot(length(f) == 3)
 // region: error handling tests
 
 #[test]
-fn read_binary_rds_ascii_format_gives_clear_error() {
-    let path = temp_path("ascii-fmt");
-    let mut data = Vec::new();
-    data.extend_from_slice(b"A\n");
-    // Some version bytes
-    data.extend_from_slice(&2i32.to_be_bytes());
-    data.extend_from_slice(&0x00040300i32.to_be_bytes());
-    data.extend_from_slice(&0x00020300i32.to_be_bytes());
+fn read_ascii_rds_hand_crafted_integer() {
+    // Hand-craft an ASCII format RDS file for integer vector c(10L, 20L, 30L)
+    let path = temp_path("ascii-int");
+    let content = "A\n2\n262912\n131840\n13\n3\n10\n20\n30\n";
+    // Format: A\n, version=2, R_wrote=0x40300=262912, R_min=0x20300=131840
+    // INTSXP=13, length=3, values 10 20 30
+    fs::write(&path, content).unwrap();
 
-    fs::write(&path, data).unwrap();
-
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_r"))
-        .args(["-e", &format!("readRDS(\"{}\")", quote_path(&path))])
-        .output()
-        .expect("failed to run miniR");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("ASCII") || stderr.contains("ascii"),
-        "expected ASCII format error, got: {stderr}"
+    let mut s = Session::new();
+    let script = format!(
+        r#"
+x <- readRDS("{path}")
+stopifnot(is.integer(x))
+stopifnot(length(x) == 3)
+stopifnot(x[1] == 10L)
+stopifnot(x[2] == 20L)
+stopifnot(x[3] == 30L)
+"#,
+        path = quote_path(&path)
     );
+    s.eval_source(&script).unwrap();
 
     let _ = fs::remove_file(path);
 }
@@ -1192,6 +1191,357 @@ f2 <- readRDS("{p}")
 stopifnot(is.factor(f2))
 stopifnot(identical(levels(f2), levels(f)))
 stopifnot(identical(as.integer(f2), as.integer(f)))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+// endregion
+
+// region: ASCII format round-trip tests
+
+#[test]
+fn roundtrip_ascii_integer_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-int");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1L, 2L, NA_integer_, 4L)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(identical(x, y))
+"#
+    ))
+    .unwrap();
+
+    // Verify the file starts with "A\n" (ASCII format header)
+    let bytes = fs::read(&path).unwrap();
+    assert!(
+        bytes.len() >= 2 && bytes[0] == b'A' && bytes[1] == b'\n',
+        "expected ASCII format header 'A\\n', first bytes: {:?}",
+        &bytes[..bytes.len().min(4)]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_double_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-dbl");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1.5, NA_real_, -Inf, 0.0, Inf, 0.1)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.double(y))
+stopifnot(y[1] == 1.5)
+stopifnot(is.na(y[2]))
+stopifnot(y[3] == -Inf)
+stopifnot(y[4] == 0.0)
+stopifnot(y[5] == Inf)
+stopifnot(y[6] == 0.1)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_logical_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-lgl");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(TRUE, FALSE, NA)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.logical(y))
+stopifnot(y[1] == TRUE)
+stopifnot(y[2] == FALSE)
+stopifnot(is.na(y[3]))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_character_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-chr");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c("hello", NA_character_, "world", "", "with spaces")
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.character(y))
+stopifnot(y[1] == "hello")
+stopifnot(is.na(y[2]))
+stopifnot(y[3] == "world")
+stopifnot(y[4] == "")
+stopifnot(y[5] == "with spaces")
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_complex_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-cplx");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(1+2i, 3-4i, NA_complex_)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.complex(y))
+stopifnot(Re(y[1]) == 1)
+stopifnot(Im(y[1]) == 2)
+stopifnot(Re(y[2]) == 3)
+stopifnot(Im(y[2]) == -4)
+stopifnot(is.na(y[3]))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_raw_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-raw");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- as.raw(c(0, 255, 42))
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.raw(y))
+stopifnot(length(y) == 3)
+stopifnot(y[1] == as.raw(0))
+stopifnot(y[2] == as.raw(255))
+stopifnot(y[3] == as.raw(42))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_null() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-null");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(NULL, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.null(y))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_named_vector() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-named");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(a = 1L, b = 2L, c = 3L)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(identical(names(y), c("a", "b", "c")))
+stopifnot(y[["a"]] == 1L)
+stopifnot(y[["c"]] == 3L)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_list_with_names() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-list");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- list(a = 1L, b = "hello", c = TRUE)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.list(y))
+stopifnot(length(y) == 3)
+stopifnot(y$a == 1L)
+stopifnot(y$b == "hello")
+stopifnot(y$c == TRUE)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_nested_list() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-nested");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- list(inner = list(a = 1L, b = 2L), value = 42.0)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.list(y))
+stopifnot(y$inner$a == 1L)
+stopifnot(y$inner$b == 2L)
+stopifnot(y$value == 42.0)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_empty_vectors() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-empty");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(integer(0), "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.integer(y))
+stopifnot(length(y) == 0)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_data_frame() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-df");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+df <- data.frame(x = c(1L, 2L), y = c("a", "b"))
+saveRDS(df, "{p}", ascii = TRUE)
+df2 <- readRDS("{p}")
+stopifnot(is.data.frame(df2))
+stopifnot(identical(names(df2), c("x", "y")))
+stopifnot(nrow(df2) == 2)
+stopifnot(df2$x[1] == 1L)
+stopifnot(df2$y[2] == "b")
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_matrix_with_dimnames() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-matrix");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+m <- matrix(1:4, nrow = 2, dimnames = list(c("r1", "r2"), c("c1", "c2")))
+saveRDS(m, "{p}", ascii = TRUE)
+m2 <- readRDS("{p}")
+stopifnot(is.matrix(m2))
+stopifnot(nrow(m2) == 2)
+stopifnot(ncol(m2) == 2)
+stopifnot(identical(rownames(m2), c("r1", "r2")))
+stopifnot(identical(colnames(m2), c("c1", "c2")))
+stopifnot(m2[1,1] == 1L)
+stopifnot(m2[2,2] == 4L)
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_factor() {
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-factor");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+f <- factor(c("b", "a", "b"))
+saveRDS(f, "{p}", ascii = TRUE)
+f2 <- readRDS("{p}")
+stopifnot(is.factor(f2))
+stopifnot(identical(levels(f2), levels(f)))
+stopifnot(identical(as.integer(f2), as.integer(f)))
+"#
+    ))
+    .unwrap();
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ascii_format_is_human_readable() {
+    // Verify the ASCII format is actually text-based and human-readable
+    let mut s = Session::new();
+    let path = temp_path("ascii-readable");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+saveRDS(c(1L, 2L, 3L), "{p}", ascii = TRUE)
+"#
+    ))
+    .unwrap();
+
+    let content = fs::read_to_string(&path).unwrap();
+    // Should be valid UTF-8 text
+    assert!(content.starts_with("A\n"), "should start with ASCII header");
+    // Should contain the version number as text
+    assert!(
+        content.contains("2\n"),
+        "should contain version number as text"
+    );
+    // Should contain the integer values as decimal text
+    assert!(content.contains("\n1\n"), "should contain value 1 as text");
+    assert!(content.contains("\n2\n"), "should contain value 2 as text");
+    assert!(content.contains("\n3\n"), "should contain value 3 as text");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn roundtrip_ascii_special_doubles() {
+    // Test edge cases for hex float formatting/parsing
+    let mut s = Session::new();
+    let path = temp_path("rt-ascii-special-dbl");
+    let p = quote_path(&path);
+    s.eval_source(&format!(
+        r#"
+x <- c(0.0, -0.0, 1.0, -1.0, 0.1, 1e-300, 1e300, .Machine$double.eps)
+saveRDS(x, "{p}", ascii = TRUE)
+y <- readRDS("{p}")
+stopifnot(is.double(y))
+stopifnot(length(y) == length(x))
+stopifnot(y[1] == 0.0)
+stopifnot(y[3] == 1.0)
+stopifnot(y[4] == -1.0)
+stopifnot(y[5] == 0.1)
+stopifnot(y[6] == 1e-300)
+stopifnot(y[7] == 1e300)
+stopifnot(y[8] == .Machine$double.eps)
 "#
     ))
     .unwrap();
