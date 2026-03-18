@@ -103,11 +103,25 @@ indicatif = { version = "0.17", optional = true }
 crossterm = "0.29"
 
 [features]
-default = ["random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "linalg", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress"]
+# Full build — everything enabled. This is what CI tests.
+full = ["default", "tls", "linalg"]
+
+# Default — a practical everyday build without the heaviest deps.
+# Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
+default = ["random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress"]
+
+# Minimal — just the core interpreter + parser. No optional deps at all.
+# Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
+# Usage: cargo build --no-default-features --features minimal
+minimal = []
+
+# Fast — core + the most-used features, skipping heavy compile-time deps.
+# Adds random, datetime, io, compression on top of minimal.
+# Usage: cargo build --no-default-features --features fast
+fast = ["random", "datetime", "io", "compression", "diagnostics", "signal"]
 
 logging = ["dep:env_logger"]
 tracing-output = ["dep:tracing-subscriber"]
-
 
 diagnostics = ["dep:miette"]
 random = ["dep:rand", "dep:rand_chacha", "dep:rand_distr"]
