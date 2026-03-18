@@ -680,6 +680,37 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     if name.is_empty() {
         return Ok(RValue::Null);
     }
+
+    // Check if it's a namespace name (e.g. ?base, ?stats, ?utils)
+    if BUILTIN_REGISTRY.iter().any(|d| d.namespace == name) {
+        let mut fns: Vec<&str> = BUILTIN_REGISTRY
+            .iter()
+            .filter(|d| d.namespace == name)
+            .map(|d| d.name)
+            .collect();
+        fns.sort();
+        fns.dedup();
+        println!("Package '{name}'");
+        println!("{}", "─".repeat(20 + name.len()));
+        println!();
+        println!("{} functions:", fns.len());
+        println!();
+        let max_width = fns.iter().map(|f| f.len()).max().unwrap_or(10) + 2;
+        let cols = 80 / max_width.max(1);
+        for (i, f) in fns.iter().enumerate() {
+            print!("{:<width$}", f, width = max_width);
+            if (i + 1) % cols == 0 {
+                println!();
+            }
+        }
+        if fns.len() % cols != 0 {
+            println!();
+        }
+        println!();
+        println!("Use ?{name}::name for help on a specific function.");
+        return Ok(RValue::Null);
+    }
+
     // Support namespace::name syntax (e.g. "base::sum")
     let descriptor = if let Some((ns, n)) = name.split_once("::") {
         find_builtin_ns(ns, n)
@@ -1716,13 +1747,17 @@ fn vectors_identical(a: &Vector, b: &Vector) -> bool {
 
 /// Test near-equality of two objects within a tolerance.
 ///
-/// For numeric vectors, checks that all corresponding elements differ by
-/// at most `tolerance`. Returns TRUE or a descriptive character string.
+/// Returns TRUE if the objects are nearly equal, or a character vector of
+/// strings describing the differences. Matches R's `all.equal()` semantics:
+/// numeric comparison uses mean relative/absolute difference with a
+/// configurable tolerance.
 ///
 /// @param target first object
 /// @param current second object
 /// @param tolerance maximum allowed difference (default: 1.5e-8)
-/// @return TRUE if equal, or character string describing the difference
+/// @param check.attributes if TRUE, also compare attributes
+/// @param check.names if TRUE, compare names attributes
+/// @return TRUE if equal, or character string(s) describing the difference(s)
 #[builtin(min_args = 2)]
 fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let tolerance = named
@@ -1731,37 +1766,370 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         .and_then(|(_, v)| v.as_vector()?.as_double_scalar())
         .unwrap_or(1.5e-8);
 
+    let check_attributes = named
+        .iter()
+        .find(|(n, _)| n == "check.attributes")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let check_names = named
+        .iter()
+        .find(|(n, _)| n == "check.names")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
     if args.len() < 2 {
         return Err(RError::new(
             RErrorKind::Argument,
             "need 2 arguments".to_string(),
         ));
     }
-    match (&args[0], &args[1]) {
-        (RValue::Vector(v1), RValue::Vector(v2)) => {
-            let d1 = v1.to_doubles();
-            let d2 = v2.to_doubles();
-            if d1.len() != d2.len() {
-                return Ok(RValue::vec(Vector::Character(
-                    vec![Some(format!("lengths ({}, {}) differ", d1.len(), d2.len()))].into(),
-                )));
-            }
-            for (a, b) in d1.iter().zip(d2.iter()) {
-                match (a, b) {
-                    (Some(a), Some(b)) if (a - b).abs() > tolerance => {
-                        return Ok(RValue::vec(Vector::Character(
-                            vec![Some(format!("Mean relative difference: {}", (a - b).abs()))]
-                                .into(),
-                        )));
-                    }
-                    _ => {}
-                }
-            }
-            Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+
+    let mut diffs = Vec::new();
+    eprintln!(
+        "[DEBUG all.equal] target={:?}, current={:?}",
+        args[0].type_name(),
+        args[1].type_name()
+    );
+    all_equal_recurse(
+        &args[0],
+        &args[1],
+        tolerance,
+        check_attributes,
+        check_names,
+        "",
+        &mut diffs,
+    );
+    eprintln!("[DEBUG all.equal] diffs={:?}", diffs);
+
+    if diffs.is_empty() {
+        Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+    } else {
+        let msgs: Vec<Option<String>> = diffs.into_iter().map(Some).collect();
+        Ok(RValue::vec(Vector::Character(msgs.into())))
+    }
+}
+
+/// Recursively compare two R values, collecting difference messages.
+fn all_equal_recurse(
+    target: &RValue,
+    current: &RValue,
+    tolerance: f64,
+    check_attributes: bool,
+    check_names: bool,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    match (target, current) {
+        // NULL == NULL
+        (RValue::Null, RValue::Null) => {}
+
+        // Type mismatch involving NULL
+        (RValue::Null, _) | (_, RValue::Null) => {
+            diffs.push(format!(
+                "{}target is {}, current is {}",
+                prefix,
+                target.type_name(),
+                current.type_name()
+            ));
         }
+
+        // Both vectors
+        (RValue::Vector(v1), RValue::Vector(v2)) => {
+            all_equal_vectors(
+                v1,
+                v2,
+                tolerance,
+                check_attributes,
+                check_names,
+                prefix,
+                diffs,
+            );
+        }
+
+        // Both lists
+        (RValue::List(l1), RValue::List(l2)) => {
+            all_equal_lists(
+                l1,
+                l2,
+                tolerance,
+                check_attributes,
+                check_names,
+                prefix,
+                diffs,
+            );
+        }
+
+        // Mismatched types
         _ => {
-            let result = format!("{:?}", args[0]) == format!("{:?}", args[1]);
-            Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
+            diffs.push(format!(
+                "{}target is {}, current is {}",
+                prefix,
+                target.type_name(),
+                current.type_name()
+            ));
+        }
+    }
+}
+
+/// Compare two vectors, collecting difference messages.
+fn all_equal_vectors(
+    v1: &RVector,
+    v2: &RVector,
+    tolerance: f64,
+    check_attributes: bool,
+    check_names: bool,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    let t1 = v1.inner.type_name();
+    let t2 = v2.inner.type_name();
+
+    // Numeric types (double, integer, logical) can be compared numerically
+    let is_numeric = |t: &str| matches!(t, "double" | "integer" | "logical");
+
+    if t1 == "character" && t2 == "character" {
+        all_equal_character(v1, v2, prefix, diffs);
+    } else if is_numeric(t1) && is_numeric(t2) {
+        all_equal_numeric(v1, v2, tolerance, prefix, diffs);
+    } else if t1 != t2 {
+        diffs.push(format!("{}target is {}, current is {}", prefix, t1, t2));
+        return;
+    } else {
+        // Same non-numeric, non-character type (complex, raw) — coerce to doubles
+        all_equal_numeric(v1, v2, tolerance, prefix, diffs);
+    }
+
+    // Check attributes if requested
+    if check_attributes {
+        all_equal_attrs(
+            v1.attrs.as_deref(),
+            v2.attrs.as_deref(),
+            check_names,
+            prefix,
+            diffs,
+        );
+    } else if check_names {
+        // Even with check.attributes=FALSE, check.names=TRUE checks names
+        all_equal_names_attr(v1.attrs.as_deref(), v2.attrs.as_deref(), prefix, diffs);
+    }
+}
+
+/// Compare numeric vectors using R's mean relative/absolute difference.
+fn all_equal_numeric(
+    v1: &RVector,
+    v2: &RVector,
+    tolerance: f64,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    let d1 = v1.to_doubles();
+    let d2 = v2.to_doubles();
+
+    if d1.len() != d2.len() {
+        diffs.push(format!(
+            "{}Lengths ({}, {}) differ",
+            prefix,
+            d1.len(),
+            d2.len()
+        ));
+        return;
+    }
+
+    if d1.is_empty() {
+        return;
+    }
+
+    // Compute mean absolute difference and mean absolute target (R's algorithm)
+    let mut sum_abs_diff = 0.0;
+    let mut sum_abs_target = 0.0;
+    let mut count = 0usize;
+
+    for (a, b) in d1.iter().zip(d2.iter()) {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                sum_abs_diff += (a - b).abs();
+                sum_abs_target += a.abs();
+                count += 1;
+            }
+            (None, None) => {} // both NA — equal
+            _ => {
+                // One is NA, the other is not
+                count += 1;
+                sum_abs_diff += f64::INFINITY;
+            }
+        }
+    }
+
+    if count == 0 {
+        return;
+    }
+
+    let mean_abs_diff = sum_abs_diff / count as f64;
+    let mean_abs_target = sum_abs_target / count as f64;
+
+    // R uses relative difference when mean(abs(target)) > tolerance,
+    // otherwise absolute difference
+    if mean_abs_target.is_finite() && mean_abs_target > tolerance {
+        let relative_diff = mean_abs_diff / mean_abs_target;
+        if relative_diff > tolerance {
+            diffs.push(format!(
+                "{}Mean relative difference: {}",
+                prefix, relative_diff
+            ));
+        }
+    } else if mean_abs_diff > tolerance {
+        diffs.push(format!(
+            "{}Mean absolute difference: {}",
+            prefix, mean_abs_diff
+        ));
+    }
+}
+
+/// Compare character vectors element-wise.
+fn all_equal_character(v1: &RVector, v2: &RVector, prefix: &str, diffs: &mut Vec<String>) {
+    let c1 = v1.to_characters();
+    let c2 = v2.to_characters();
+
+    if c1.len() != c2.len() {
+        diffs.push(format!(
+            "{}Lengths ({}, {}) differ",
+            prefix,
+            c1.len(),
+            c2.len()
+        ));
+        return;
+    }
+
+    let mut mismatches = 0usize;
+    for (a, b) in c1.iter().zip(c2.iter()) {
+        if a != b {
+            mismatches += 1;
+        }
+    }
+
+    if mismatches > 0 {
+        diffs.push(format!(
+            "{}{} string mismatch{}",
+            prefix,
+            mismatches,
+            if mismatches == 1 { "" } else { "es" }
+        ));
+    }
+}
+
+/// Compare two lists recursively.
+fn all_equal_lists(
+    l1: &RList,
+    l2: &RList,
+    tolerance: f64,
+    check_attributes: bool,
+    check_names: bool,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    if l1.values.len() != l2.values.len() {
+        diffs.push(format!(
+            "{}Lengths ({}, {}) differ",
+            prefix,
+            l1.values.len(),
+            l2.values.len()
+        ));
+        return;
+    }
+
+    // Check names if requested
+    if check_names {
+        let names1: Vec<Option<&str>> = l1.values.iter().map(|(n, _)| n.as_deref()).collect();
+        let names2: Vec<Option<&str>> = l2.values.iter().map(|(n, _)| n.as_deref()).collect();
+        if names1 != names2 {
+            diffs.push(format!("{}Component names differ", prefix));
+        }
+    }
+
+    // Recursively compare elements
+    for (i, ((_, v1), (name, v2))) in l1.values.iter().zip(l2.values.iter()).enumerate() {
+        let elem_prefix = match name {
+            Some(n) => format!("Component \"{}\": ", n),
+            None => format!("Component {}: ", i + 1),
+        };
+        all_equal_recurse(
+            v1,
+            v2,
+            tolerance,
+            check_attributes,
+            check_names,
+            &elem_prefix,
+            diffs,
+        );
+    }
+
+    // Check list-level attributes
+    if check_attributes {
+        all_equal_attrs(
+            l1.attrs.as_deref(),
+            l2.attrs.as_deref(),
+            check_names,
+            prefix,
+            diffs,
+        );
+    }
+}
+
+/// Compare attributes of two objects.
+fn all_equal_attrs(
+    attrs1: Option<&Attributes>,
+    attrs2: Option<&Attributes>,
+    check_names: bool,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    let empty = indexmap::IndexMap::new();
+    let a1 = attrs1.unwrap_or(&empty);
+    let a2 = attrs2.unwrap_or(&empty);
+
+    let mut keys1: Vec<&str> = a1.keys().map(|s| s.as_str()).collect();
+    let mut keys2: Vec<&str> = a2.keys().map(|s| s.as_str()).collect();
+
+    if !check_names {
+        keys1.retain(|k| *k != "names");
+        keys2.retain(|k| *k != "names");
+    }
+
+    keys1.sort();
+    keys2.sort();
+
+    if keys1 != keys2 {
+        diffs.push(format!("{}Attributes differ", prefix));
+        return;
+    }
+
+    for key in &keys1 {
+        if let (Some(v1), Some(v2)) = (a1.get(*key), a2.get(*key)) {
+            let attr_prefix = format!("{}Attributes: <{}> - ", prefix, key);
+            all_equal_recurse(v1, v2, 1.5e-8, true, true, &attr_prefix, diffs);
+        }
+    }
+}
+
+/// Check only the "names" attribute.
+fn all_equal_names_attr(
+    attrs1: Option<&Attributes>,
+    attrs2: Option<&Attributes>,
+    prefix: &str,
+    diffs: &mut Vec<String>,
+) {
+    let n1 = attrs1.and_then(|a| a.get("names"));
+    let n2 = attrs2.and_then(|a| a.get("names"));
+
+    match (n1, n2) {
+        (None, None) => {}
+        (Some(_), None) | (None, Some(_)) => {
+            diffs.push(format!("{}Names differ", prefix));
+        }
+        (Some(v1), Some(v2)) => {
+            let attr_prefix = format!("{}Names: ", prefix);
+            all_equal_recurse(v1, v2, 1.5e-8, false, false, &attr_prefix, diffs);
         }
     }
 }
