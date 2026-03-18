@@ -1425,6 +1425,89 @@ fn pre_eval_local(
         .map_err(RError::from)
 }
 
+/// Remove objects from an environment.
+///
+/// Supports non-standard evaluation: bare symbol names are interpreted as the
+/// names of objects to remove (e.g., `rm(x)` removes the variable `x`).
+/// Also accepts character strings for compatibility: `rm("x")`.
+///
+/// @param ... names of objects to remove (bare symbols or character strings)
+/// @param list character vector of names to remove
+/// @param envir environment from which to remove (default: calling environment)
+/// @return NULL (invisibly)
+#[pre_eval_builtin(name = "rm", names = ["remove"])]
+fn pre_eval_rm(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let mut names_to_remove: Vec<String> = Vec::new();
+    let mut target_env: Option<Environment> = None;
+
+    for arg in args {
+        match (&arg.name, &arg.value) {
+            // Named arg: envir = <expr>
+            (Some(name), Some(expr)) if name == "envir" => {
+                let val = context.with_interpreter(|interp| interp.eval_in(expr, env))?;
+                match val {
+                    RValue::Environment(e) => target_env = Some(e),
+                    _ => {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            "invalid 'envir' argument".to_string(),
+                        ))
+                    }
+                }
+            }
+            // Named arg: list = <expr>
+            (Some(name), Some(expr)) if name == "list" => {
+                let val = context.with_interpreter(|interp| interp.eval_in(expr, env))?;
+                if let Some(Vector::Character(c)) = val.as_vector() {
+                    for s in c.iter().flatten() {
+                        names_to_remove.push(s.clone());
+                    }
+                }
+            }
+            // Positional arg: bare symbol → use symbol name
+            (None, Some(Expr::Symbol(name))) => {
+                names_to_remove.push(name.clone());
+            }
+            // Positional arg: string literal → use string value
+            (None, Some(Expr::String(s))) => {
+                names_to_remove.push(s.clone());
+            }
+            // Positional arg: other expression → evaluate and use as character
+            (None, Some(expr)) => {
+                let val = context.with_interpreter(|interp| interp.eval_in(expr, env))?;
+                match val.as_vector() {
+                    Some(Vector::Character(c)) => {
+                        for s in c.iter().flatten() {
+                            names_to_remove.push(s.clone());
+                        }
+                    }
+                    _ => {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            format!(
+                                "rm() expects names of objects to remove, got {}",
+                                val.type_name()
+                            ),
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let target = target_env.unwrap_or_else(|| env.clone());
+    for name in &names_to_remove {
+        target.remove(name);
+    }
+
+    Ok(RValue::Null)
+}
+
 /// Convert an RValue back to an AST expression (for substitute).
 fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {

@@ -208,6 +208,11 @@ fn interp_format(
         .find(|(k, _)| k == "nsmall")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
         .and_then(|i| usize::try_from(i).ok());
+    let digits: Option<usize> = named
+        .iter()
+        .find(|(k, _)| k == "digits")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok());
     let width: Option<usize> = named
         .iter()
         .find(|(k, _)| k == "width")
@@ -222,8 +227,11 @@ fn interp_format(
         .find(|(k, _)| k == "scientific")
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar());
 
-    let has_format_opts =
-        nsmall.is_some() || width.is_some() || big_mark.is_some() || scientific.is_some();
+    let has_format_opts = nsmall.is_some()
+        || digits.is_some()
+        || width.is_some()
+        || big_mark.is_some()
+        || scientific.is_some();
 
     match args.first() {
         Some(RValue::Vector(rv)) if has_format_opts => {
@@ -232,7 +240,13 @@ fn interp_format(
                     .iter()
                     .map(|x| {
                         x.map(|f| {
-                            format_double_with_opts(f, nsmall, big_mark.as_deref(), scientific)
+                            format_double_with_opts(
+                                f,
+                                nsmall,
+                                digits,
+                                big_mark.as_deref(),
+                                scientific,
+                            )
                         })
                     })
                     .collect(),
@@ -275,10 +289,11 @@ fn interp_format(
     }
 }
 
-/// Format a double value with nsmall, big.mark, and scientific options.
+/// Format a double value with nsmall, digits, big.mark, and scientific options.
 fn format_double_with_opts(
     f: f64,
     nsmall: Option<usize>,
+    digits: Option<usize>,
     big_mark: Option<&str>,
     scientific: Option<bool>,
 ) -> String {
@@ -294,11 +309,21 @@ fn format_double_with_opts(
     }
 
     let s = match scientific {
-        Some(true) => format!("{:e}", f),
+        Some(true) => {
+            if let Some(d) = digits {
+                // digits controls significant digits; in scientific notation
+                // that means d-1 decimal places after the leading digit
+                format!("{:.prec$e}", f, prec = d.saturating_sub(1))
+            } else {
+                format!("{:e}", f)
+            }
+        }
         Some(false) => {
             // Suppress scientific notation
             if let Some(ns) = nsmall {
                 format!("{:.prec$}", f, prec = ns)
+            } else if let Some(d) = digits {
+                format_significant_digits(f, d)
             } else if f == f.floor() && f.abs() < 1e15 {
                 use crate::interpreter::coerce;
                 format!("{}", coerce::f64_to_i64(f).unwrap_or(0))
@@ -309,6 +334,8 @@ fn format_double_with_opts(
         None => {
             if let Some(ns) = nsmall {
                 format!("{:.prec$}", f, prec = ns)
+            } else if let Some(d) = digits {
+                format_significant_digits(f, d)
             } else {
                 use crate::interpreter::value::vector::format_r_double;
                 format_r_double(f)
@@ -320,6 +347,17 @@ fn format_double_with_opts(
         Some(mark) if !mark.is_empty() => insert_thousands_sep(&s, mark),
         _ => s,
     }
+}
+
+/// Format a double value to a specified number of significant digits.
+fn format_significant_digits(f: f64, digits: usize) -> String {
+    if f == 0.0 {
+        return format!("{:.prec$}", 0.0, prec = digits.saturating_sub(1));
+    }
+    let magnitude = f.abs().log10().floor() as i32;
+    let decimal_places = (i64::from(digits as i32) - 1 - i64::from(magnitude)).max(0);
+    let decimal_places = usize::try_from(decimal_places).unwrap_or(0);
+    format!("{:.prec$}", f, prec = decimal_places)
 }
 
 /// Format an integer value with big.mark option.
@@ -2056,80 +2094,8 @@ fn interp_ls(
     Ok(RValue::vec(Vector::Character(chars.into())))
 }
 
-/// Remove objects from an environment.
-///
-/// Accepts variable names as character strings (positional args or via `list`).
-/// Ignores names not found when `inherits` is FALSE (default).
-///
-/// @param ... names of objects to remove (character strings)
-/// @param list character vector of names to remove
-/// @param envir environment from which to remove (default: calling environment)
-/// @return NULL (invisibly)
-#[interpreter_builtin(name = "rm", names = ["remove"])]
-fn interp_rm(
-    positional: &[RValue],
-    named: &[(String, RValue)],
-    context: &BuiltinContext,
-) -> Result<RValue, RError> {
-    let env = context.env();
-
-    // Collect the target environment from `envir` arg, defaulting to calling env
-    let target_env = {
-        let mut found_env: Option<Environment> = None;
-        for (n, v) in named {
-            if n == "envir" {
-                if let RValue::Environment(e) = v {
-                    found_env = Some(e.clone());
-                } else {
-                    return Err(RError::new(
-                        RErrorKind::Argument,
-                        "invalid 'envir' argument".to_string(),
-                    ));
-                }
-            }
-        }
-        found_env.unwrap_or_else(|| env.clone())
-    };
-
-    // Collect names to remove from positional args (character strings)
-    let mut names_to_remove: Vec<String> = Vec::new();
-    for val in positional {
-        match val.as_vector() {
-            Some(Vector::Character(c)) => {
-                for name in c.iter().flatten() {
-                    names_to_remove.push(name.clone());
-                }
-            }
-            _ => {
-                return Err(RError::new(
-                    RErrorKind::Argument,
-                    format!(
-                        "rm() expects character strings naming objects to remove, got {}",
-                        val.type_name()
-                    ),
-                ));
-            }
-        }
-    }
-
-    // Collect names from `list` argument
-    for (n, v) in named {
-        if n == "list" {
-            if let Some(Vector::Character(c)) = v.as_vector() {
-                for name in c.iter().flatten() {
-                    names_to_remove.push(name.clone());
-                }
-            }
-        }
-    }
-
-    // Remove each name from the target environment
-    for name in &names_to_remove {
-        target_env.remove(name);
-    }
-
-    Ok(RValue::Null)
-}
+// rm() / remove() is implemented as a pre_eval builtin in pre_eval.rs
+// to support NSE (bare symbol names like `rm(x)` instead of `rm("x")`)
 
 /// Lock an environment so no new bindings can be added.
 ///
@@ -3445,13 +3411,14 @@ fn interp_unsplit(
 ///
 /// Supports two calling conventions:
 ///   aggregate(x, by, FUN) — x is a vector/matrix, by is a list of grouping vectors
-///   aggregate(formula, data, FUN) — formula interface (x ~ group)
+///   aggregate(formula, data, FUN) — formula interface (y ~ x, data=df, FUN=mean)
 ///
-/// @param x numeric vector or data frame column to aggregate
-/// @param by list of grouping vectors (each same length as x)
+/// @param x numeric vector or data frame column to aggregate, or a formula
+/// @param by list of grouping vectors (each same length as x), or data frame (formula interface)
 /// @param FUN function to apply to each group
-/// @return data frame with Group.1, ..., and x columns
-#[interpreter_builtin(min_args = 3)]
+/// @param data data frame (named argument, formula interface)
+/// @return data frame with grouping columns and aggregated value columns
+#[interpreter_builtin(min_args = 2)]
 fn interp_aggregate(
     positional: &[RValue],
     named: &[(String, RValue)],
@@ -3460,22 +3427,365 @@ fn interp_aggregate(
     let env = context.env();
     let (fail_fast, extra_named) = extract_fail_fast(named);
 
-    let x = positional
+    let first = positional
         .first()
         .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'x' is missing".to_string()))?;
+
+    // Check if first argument is a formula (Language with class "formula")
+    let is_formula = match first {
+        RValue::Language(lang) => lang
+            .get_attr("class")
+            .and_then(|v| v.as_vector()?.as_character_scalar())
+            .is_some_and(|c| c == "formula"),
+        _ => false,
+    };
+
+    if is_formula {
+        return aggregate_formula(
+            first,
+            positional,
+            named,
+            &extra_named,
+            fail_fast,
+            env,
+            context,
+        );
+    }
+
+    // Standard interface: aggregate(x, by, FUN)
     let by = positional
         .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "by").map(|(_, v)| v))
         .ok_or_else(|| RError::new(RErrorKind::Argument, "argument 'by' is missing".to_string()))?;
-    let fun = match_fun(
-        positional.get(2).ok_or_else(|| {
+    let fun_val = positional
+        .get(2)
+        .or_else(|| named.iter().find(|(n, _)| n == "FUN").map(|(_, v)| v))
+        .ok_or_else(|| {
             RError::new(
                 RErrorKind::Argument,
                 "argument 'FUN' is missing".to_string(),
             )
-        })?,
-        env,
-    )?;
+        })?;
+    let fun = match_fun(fun_val, env)?;
 
+    aggregate_standard(first, by, &fun, &extra_named, fail_fast, env, context)
+}
+
+/// Extract column names from a formula expression (e.g., y ~ x parses to lhs=y, rhs=x).
+fn extract_formula_vars(expr: &Expr) -> (Vec<String>, Vec<String>) {
+    match expr {
+        Expr::Formula { lhs, rhs } => {
+            let lhs_vars = lhs
+                .as_ref()
+                .map(|e| collect_symbol_names(e))
+                .unwrap_or_default();
+            let rhs_vars = rhs
+                .as_ref()
+                .map(|e| collect_symbol_names(e))
+                .unwrap_or_default();
+            (lhs_vars, rhs_vars)
+        }
+        _ => (Vec::new(), Vec::new()),
+    }
+}
+
+/// Collect all symbol names from an expression (handles +, ., and bare symbols).
+fn collect_symbol_names(expr: &Expr) -> Vec<String> {
+    match expr {
+        Expr::Symbol(name) if name == "." => {
+            // "." means all other columns — handled by the caller
+            vec![".".to_string()]
+        }
+        Expr::Symbol(name) => vec![name.clone()],
+        Expr::BinaryOp {
+            op: BinaryOp::Add,
+            lhs,
+            rhs,
+        } => {
+            let mut names = collect_symbol_names(lhs);
+            names.extend(collect_symbol_names(rhs));
+            names
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Get a column from a data frame by name.
+fn df_get_column<'a>(df: &'a RList, name: &str) -> Option<&'a RValue> {
+    // First try by named values
+    for (col_name, val) in &df.values {
+        if col_name.as_deref() == Some(name) {
+            return Some(val);
+        }
+    }
+    // Try the "names" attribute
+    if let Some(names_val) = df.get_attr("names") {
+        if let Some(Vector::Character(names)) = names_val.as_vector() {
+            for (i, n) in names.iter().enumerate() {
+                if n.as_deref() == Some(name) {
+                    if let Some((_, val)) = df.values.get(i) {
+                        return Some(val);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get all column names from a data frame.
+fn df_column_names(df: &RList) -> Vec<String> {
+    if let Some(names_val) = df.get_attr("names") {
+        if let Some(Vector::Character(names)) = names_val.as_vector() {
+            return names.iter().filter_map(|n| n.clone()).collect();
+        }
+    }
+    df.values
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| name.clone().unwrap_or_else(|| format!("V{}", i + 1)))
+        .collect()
+}
+
+/// Formula interface for aggregate: aggregate(y ~ x, data=df, FUN=mean)
+fn aggregate_formula(
+    formula_val: &RValue,
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    extra_named: &[(String, RValue)],
+    fail_fast: bool,
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let formula_expr = match formula_val {
+        RValue::Language(lang) => &*lang.inner,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "first argument must be a formula".to_string(),
+            ))
+        }
+    };
+
+    // Extract response and grouping variable names from the formula
+    let (response_vars, grouping_vars) = extract_formula_vars(formula_expr);
+
+    // Get the data argument (second positional or named "data")
+    let data = positional
+        .get(1)
+        .or_else(|| named.iter().find(|(n, _)| n == "data").map(|(_, v)| v))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'data' is missing for formula interface".to_string(),
+            )
+        })?;
+
+    let df = match data {
+        RValue::List(l) => l,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "'data' must be a data frame".to_string(),
+            ))
+        }
+    };
+
+    // Get FUN argument (third positional or named "FUN")
+    let fun_val = positional
+        .get(2)
+        .or_else(|| named.iter().find(|(n, _)| n == "FUN").map(|(_, v)| v))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "argument 'FUN' is missing".to_string(),
+            )
+        })?;
+    let fun = match_fun(fun_val, env)?;
+
+    let all_col_names = df_column_names(df);
+
+    // Resolve "." in grouping vars (means all columns not in response)
+    let resolved_grouping: Vec<String> = if grouping_vars.iter().any(|v| v == ".") {
+        all_col_names
+            .iter()
+            .filter(|n| !response_vars.contains(n))
+            .cloned()
+            .collect()
+    } else {
+        grouping_vars.clone()
+    };
+
+    // Resolve "." in response vars (means all columns not in grouping)
+    let resolved_response: Vec<String> = if response_vars.iter().any(|v| v == ".") {
+        all_col_names
+            .iter()
+            .filter(|n| !resolved_grouping.contains(n))
+            .cloned()
+            .collect()
+    } else {
+        response_vars
+    };
+
+    // Extract grouping columns from the data frame
+    let mut by_vectors: Vec<(Option<String>, Vec<RValue>)> = Vec::new();
+    for gv_name in &resolved_grouping {
+        let col = df_get_column(df, gv_name).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                format!("column '{}' not found in data frame", gv_name),
+            )
+        })?;
+        by_vectors.push((Some(gv_name.clone()), rvalue_to_items(col)));
+    }
+
+    // For each response variable, run the standard aggregation
+    let mut all_result_cols: Vec<(Option<String>, RValue)> = Vec::new();
+    let mut group_cols_built = false;
+    let mut n_groups = 0usize;
+
+    for resp_name in &resolved_response {
+        let resp_col = df_get_column(df, resp_name).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                format!("column '{}' not found in data frame", resp_name),
+            )
+        })?;
+
+        let x_items = rvalue_to_items(resp_col);
+        let n = x_items.len();
+
+        // Validate grouping vectors match response length
+        for (i, (_, gv)) in by_vectors.iter().enumerate() {
+            if gv.len() != n {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "grouping vector {} has length {} but response '{}' has length {}",
+                        i + 1,
+                        gv.len(),
+                        resp_name,
+                        n
+                    ),
+                ));
+            }
+        }
+
+        // Build composite group keys
+        let mut group_keys: Vec<Vec<String>> = Vec::with_capacity(n);
+        for i in 0..n {
+            let key: Vec<String> = by_vectors
+                .iter()
+                .map(|(_, gv)| match &gv[i] {
+                    RValue::Vector(rv) => rv
+                        .inner
+                        .as_character_scalar()
+                        .unwrap_or_else(|| format!("{}", gv[i])),
+                    other => format!("{}", other),
+                })
+                .collect();
+            group_keys.push(key);
+        }
+
+        // Collect unique keys preserving first-seen order
+        let mut unique_keys: Vec<Vec<String>> = Vec::new();
+        let mut seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+        for key in &group_keys {
+            if seen.insert(key.clone()) {
+                unique_keys.push(key.clone());
+            }
+        }
+
+        // Group items by composite key
+        let mut groups: std::collections::HashMap<Vec<String>, Vec<RValue>> =
+            std::collections::HashMap::new();
+        for (item, key) in x_items.into_iter().zip(group_keys.iter()) {
+            groups.entry(key.clone()).or_default().push(item);
+        }
+
+        n_groups = unique_keys.len();
+
+        // Build grouping columns (only for the first response variable)
+        if !group_cols_built {
+            for (gi, _) in by_vectors.iter().enumerate() {
+                let col_vals: Vec<Option<String>> = unique_keys
+                    .iter()
+                    .map(|key| Some(key[gi].clone()))
+                    .collect();
+                let col_name = by_vectors
+                    .get(gi)
+                    .and_then(|(n, _)| n.clone())
+                    .unwrap_or_else(|| format!("Group.{}", gi + 1));
+                all_result_cols.push((
+                    Some(col_name),
+                    RValue::vec(Vector::Character(col_vals.into())),
+                ));
+            }
+            group_cols_built = true;
+        }
+
+        // Apply FUN to each group
+        let mut result_vals: Vec<RValue> = Vec::with_capacity(n_groups);
+        context.with_interpreter(|interp| {
+            for key in &unique_keys {
+                let items = groups.remove(key).unwrap_or_default();
+                let group_vec = combine_items_to_vector(&items);
+                if fail_fast {
+                    let result = interp.call_function(&fun, &[group_vec], extra_named, env)?;
+                    result_vals.push(result);
+                } else {
+                    match interp.call_function(&fun, &[group_vec], extra_named, env) {
+                        Ok(result) => result_vals.push(result),
+                        Err(_) => result_vals.push(RValue::Null),
+                    }
+                }
+            }
+            Ok::<(), RError>(())
+        })?;
+
+        // Add result column
+        let all_scalar = result_vals.iter().all(|r| r.length() == 1);
+        if all_scalar && !result_vals.is_empty() {
+            let simplified = combine_items_to_vector(&result_vals);
+            all_result_cols.push((Some(resp_name.clone()), simplified));
+        } else {
+            let entries: Vec<(Option<String>, RValue)> =
+                result_vals.into_iter().map(|v| (None, v)).collect();
+            all_result_cols.push((Some(resp_name.clone()), RValue::List(RList::new(entries))));
+        }
+    }
+
+    let mut result = RList::new(all_result_cols);
+    result.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("data.frame".to_string())].into(),
+        )),
+    );
+    let row_names: Vec<Option<i64>> = (1..=i64::try_from(n_groups)?).map(Some).collect();
+    result.set_attr(
+        "row.names".to_string(),
+        RValue::vec(Vector::Integer(row_names.into())),
+    );
+    let col_names: Vec<Option<String>> = result.values.iter().map(|(n, _)| n.clone()).collect();
+    result.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(col_names.into())),
+    );
+
+    Ok(RValue::List(result))
+}
+
+/// Standard (non-formula) aggregate: aggregate(x, by, FUN)
+fn aggregate_standard(
+    x: &RValue,
+    by: &RValue,
+    fun: &RValue,
+    extra_named: &[(String, RValue)],
+    fail_fast: bool,
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     // by must be a list of grouping vectors
     let by_vectors: Vec<(Option<String>, Vec<RValue>)> = match by {
         RValue::List(l) => l
@@ -3555,10 +3865,10 @@ fn interp_aggregate(
             let items = groups.remove(key).unwrap_or_default();
             let group_vec = combine_items_to_vector(&items);
             if fail_fast {
-                let result = interp.call_function(&fun, &[group_vec], &extra_named, env)?;
+                let result = interp.call_function(fun, &[group_vec], extra_named, env)?;
                 result_vals.push(result);
             } else {
-                match interp.call_function(&fun, &[group_vec], &extra_named, env) {
+                match interp.call_function(fun, &[group_vec], extra_named, env) {
                     Ok(result) => result_vals.push(result),
                     Err(_) => result_vals.push(RValue::Null),
                 }
