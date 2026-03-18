@@ -39,6 +39,22 @@ pub enum RandomError {
 
     #[display("argument '{}' is missing, with no default", param)]
     MissingParam { param: &'static str },
+
+    #[display("NA in probability vector")]
+    NaInProb,
+
+    #[display("negative probability")]
+    NegativeProb,
+
+    #[display(
+        "'prob' must have the same length as the population ({} != {})",
+        prob_len,
+        pop_len
+    )]
+    ProbLengthMismatch { prob_len: usize, pop_len: usize },
+
+    #[display("too few positive probabilities")]
+    TooFewPositiveProbs,
 }
 
 impl RandomError {
@@ -745,24 +761,82 @@ fn interp_sample(
         .and_then(|v| v.as_logical_scalar())
         .unwrap_or(false);
 
+    // Extract prob weights (positional 3 or named "prob")
+    let prob_arg = named
+        .iter()
+        .find(|(k, _)| k == "prob")
+        .map(|(_, v)| v)
+        .or(args.get(3));
+
+    let prob_weights = match prob_arg {
+        Some(RValue::Null) | None => None,
+        Some(v) => {
+            let rv = v
+                .as_vector()
+                .ok_or(RandomError::InvalidParam { param: "prob" })?;
+            let doubles = rv.to_doubles();
+            if doubles.len() != pop_len {
+                return Err(RandomError::ProbLengthMismatch {
+                    prob_len: doubles.len(),
+                    pop_len,
+                }
+                .into());
+            }
+            // Validate: no NA, no negative
+            let mut weights = Vec::with_capacity(pop_len);
+            for w in &doubles {
+                match w {
+                    None => return Err(RandomError::NaInProb.into()),
+                    Some(p) if *p < 0.0 => return Err(RandomError::NegativeProb.into()),
+                    Some(p) => weights.push(*p),
+                }
+            }
+            Some(weights)
+        }
+    };
+
     if !replace && size > pop_len {
         return Err(RandomError::SampleTooLarge { size, pop_len }.into());
     }
 
+    // For weighted without replacement, additionally check that enough items have nonzero weight
+    if !replace {
+        if let Some(ref weights) = prob_weights {
+            let nonzero_count = weights.iter().filter(|&&w| w > 0.0).count();
+            if nonzero_count < size {
+                return Err(RandomError::TooFewPositiveProbs.into());
+            }
+        }
+    }
+
     let result: Vec<Option<i64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
-        if replace {
-            (0..size)
-                .map(|_| Some(population[rng.random_range(0..pop_len)]))
-                .collect()
-        } else {
-            // Fisher-Yates partial shuffle
-            let mut pool = population;
-            for i in 0..size {
-                let j = rng.random_range(i..pool.len());
-                pool.swap(i, j);
+        match prob_weights {
+            None => {
+                // Unweighted sampling
+                if replace {
+                    (0..size)
+                        .map(|_| Some(population[rng.random_range(0..pop_len)]))
+                        .collect()
+                } else {
+                    // Fisher-Yates partial shuffle
+                    let mut pool = population;
+                    for i in 0..size {
+                        let j = rng.random_range(i..pool.len());
+                        pool.swap(i, j);
+                    }
+                    pool.into_iter().take(size).map(Some).collect()
+                }
             }
-            pool.into_iter().take(size).map(Some).collect()
+            Some(weights) => {
+                if replace {
+                    // Weighted sampling with replacement using cumulative probabilities
+                    weighted_sample_with_replacement(&population, &weights, size, &mut *rng)
+                } else {
+                    // Weighted sampling without replacement: sequential draws
+                    weighted_sample_without_replacement(&population, &weights, size, &mut *rng)
+                }
+            }
         }
     });
 
@@ -774,6 +848,83 @@ fn interp_sample(
     } else {
         Ok(RValue::vec(Vector::Integer(result.into())))
     }
+}
+
+/// Weighted sampling with replacement using cumulative probability + binary search.
+fn weighted_sample_with_replacement(
+    population: &[i64],
+    weights: &[f64],
+    size: usize,
+    rng: &mut impl rand::Rng,
+) -> Vec<Option<i64>> {
+    // Normalize weights to cumulative probabilities
+    let total: f64 = weights.iter().sum();
+    if total <= 0.0 {
+        // All weights are zero — return empty or repeat first non-zero? R errors here.
+        return vec![None; size];
+    }
+
+    let mut cumulative = Vec::with_capacity(weights.len());
+    let mut acc = 0.0;
+    for &w in weights {
+        acc += w / total;
+        cumulative.push(acc);
+    }
+    // Fix rounding: ensure last entry is exactly 1.0
+    if let Some(last) = cumulative.last_mut() {
+        *last = 1.0;
+    }
+
+    let dist = rand_distr::Uniform::new(0.0, 1.0).unwrap();
+    (0..size)
+        .map(|_| {
+            let u: f64 = dist.sample(rng);
+            let idx = cumulative.partition_point(|&c| c < u);
+            let idx = idx.min(population.len() - 1);
+            Some(population[idx])
+        })
+        .collect()
+}
+
+/// Weighted sampling without replacement: sequential weighted draws, removing selected items.
+fn weighted_sample_without_replacement(
+    population: &[i64],
+    weights: &[f64],
+    size: usize,
+    rng: &mut impl rand::Rng,
+) -> Vec<Option<i64>> {
+    let mut remaining: Vec<(i64, f64)> = population
+        .iter()
+        .copied()
+        .zip(weights.iter().copied())
+        .collect();
+    let mut result = Vec::with_capacity(size);
+    let dist = rand_distr::Uniform::new(0.0, 1.0).unwrap();
+
+    for _ in 0..size {
+        // Compute total weight of remaining items
+        let total: f64 = remaining.iter().map(|(_, w)| w).sum();
+        if total <= 0.0 {
+            break;
+        }
+
+        // Pick a random point in [0, total)
+        let u: f64 = dist.sample(rng) * total;
+        let mut acc = 0.0;
+        let mut chosen_idx = remaining.len() - 1;
+        for (i, (_, w)) in remaining.iter().enumerate() {
+            acc += w;
+            if acc > u {
+                chosen_idx = i;
+                break;
+            }
+        }
+
+        let (val, _) = remaining.remove(chosen_idx);
+        result.push(Some(val));
+    }
+
+    result
 }
 
 // endregion
