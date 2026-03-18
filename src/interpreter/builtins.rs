@@ -715,7 +715,22 @@ fn interp_help(
         return Ok(RValue::Null);
     }
 
-    // Support namespace::name syntax (e.g. "base::sum")
+    // 1. Check Rd help index (package man/ pages) first
+    let rd_result = {
+        let index = context.interpreter().rd_help_index.borrow();
+        if let Some((ns, n)) = name.split_once("::") {
+            index.lookup_in_package(n, ns).map(|e| e.doc.format_text())
+        } else {
+            index.lookup(&name).first().map(|e| e.doc.format_text())
+        }
+    };
+    if let Some(text) = rd_result {
+        context.write(&text);
+        context.write("\n");
+        return Ok(RValue::Null);
+    }
+
+    // 2. Fall back to builtin registry (rustdoc-based help)
     let descriptor = if let Some((ns, n)) = name.split_once("::") {
         find_builtin_ns(ns, n)
     } else {
