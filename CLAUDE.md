@@ -128,6 +128,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
 - **Prefer `From`/`TryFrom` over `as` casts** — use `TryFrom` and `From` trait conversions instead of `as`-casts; propagate the error rather than silently truncating or wrapping
 - **Collect all errors, not just the first** — in operations that can fail at multiple points (e.g. vectorized ops, argument validation), collect all errors and propagate them together rather than bailing on the first one
+- **No `println!`/`print!`/`eprintln!` in builtins** — all output must go through the interpreter's session-scoped writers (`ctx.interpreter().write_stdout()`/`write_stderr()`), not directly to process stdout/stderr. This is required for reentrancy (multiple interpreters in one process) and testability (captured output). See `plans/session-output.md`. Migration is in progress — new code must use the session writer; do not add new `println!` calls.
 
 ## Reviews
 
