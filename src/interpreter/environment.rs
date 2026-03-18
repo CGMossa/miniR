@@ -176,6 +176,17 @@ impl Environment {
             .collect()
     }
 
+    /// Return all local (non-active) bindings as name-value pairs, sorted by name.
+    pub fn local_bindings(&self) -> Vec<(String, RValue)> {
+        let inner = self.inner.borrow();
+        inner
+            .bindings
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .sorted_by(|(a, _), (b, _)| a.cmp(b))
+            .collect()
+    }
+
     pub fn name(&self) -> Option<String> {
         self.inner.borrow().name.clone()
     }

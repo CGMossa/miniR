@@ -4,7 +4,9 @@
 //! (format 'A') used by `readRDS()`/`saveRDS()`.
 //! See R-ints.texi "Serialization Formats" for the spec.
 
+use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
+use crate::parser::ast::{Expr, Param};
 use indexmap::IndexMap;
 use std::fmt::Write as FmtWrite;
 
@@ -19,12 +21,16 @@ const R_NA_LOGICAL: i32 = i32::MIN;
 /// R's NA_REAL bit pattern: 0x7FF00000000007A2 (a specific NaN)
 const R_NA_REAL_BITS: u64 = 0x7FF00000000007A2;
 
-// SEXPTYPE codes
+// SEXPTYPE codes (must match GNU R's Rinternals.h)
 const NILSXP: u8 = 0;
 const SYMSXP: u8 = 1;
 const LISTSXP: u8 = 2;
-const CLOSXP: u8 = 4;
+const CLOSXP: u8 = 3;
+const ENVSXP: u8 = 4;
+const PROMSXP: u8 = 5;
 const LANGSXP: u8 = 6;
+const SPECIALSXP: u8 = 7;
+const BUILTINSXP: u8 = 8;
 const CHARSXP: u8 = 9;
 const LGLSXP: u8 = 10;
 const INTSXP: u8 = 13;
@@ -245,10 +251,24 @@ impl<'a> XdrReader<'a> {
             NILVALUE_SXP => Ok(RValue::Null),
             NILSXP => Ok(RValue::Null),
 
-            EMPTYENV_SXP | BASEENV_SXP | GLOBALENV_SXP | BASENAMESPACE_SXP => {
-                // Environment singletons — we can't reconstruct full R environments,
-                // but we register them so reference indices stay correct.
-                let val = RValue::Null;
+            EMPTYENV_SXP => {
+                let env = Environment::new_empty();
+                let val = RValue::Environment(env);
+                Ok(self.ref_add(val))
+            }
+
+            BASEENV_SXP | BASENAMESPACE_SXP => {
+                // Base env and base namespace are both represented as a named
+                // environment. We use a simple named env as a stand-in.
+                let env = Environment::new_empty();
+                env.set_name("base".to_string());
+                let val = RValue::Environment(env);
+                Ok(self.ref_add(val))
+            }
+
+            GLOBALENV_SXP => {
+                let env = Environment::new_global();
+                let val = RValue::Environment(env);
                 Ok(self.ref_add(val))
             }
 
@@ -464,23 +484,110 @@ impl<'a> XdrReader<'a> {
             }
 
             CLOSXP => {
-                // Closure: environment + formals (pairlist) + body (LANGSXP).
-                // We can't fully reconstruct closures, but we need to read past them
-                // so the stream stays in sync.
-                let _env = self.read_item()?; // environment
-                let _formals = self.read_item()?; // formals pairlist
-                let _body = self.read_item()?; // body
-                let val = RValue::Null; // placeholder
+                // Closure: environment + formals (pairlist) + body.
+                let env_val = self.read_item()?;
+                let formals_val = self.read_item()?;
+                let body_val = self.read_item()?;
+
+                // Extract environment (fall back to an empty env if not available).
+                let env = match env_val {
+                    RValue::Environment(e) => e,
+                    _ => Environment::new_global(),
+                };
+
+                // Convert formals pairlist to Vec<Param>.
+                let params = self.pairlist_to_params(&formals_val);
+
+                // Convert body to an Expr.
+                // If the body was serialized as a LANGSXP, it was read as a list;
+                // we try to reconstruct the AST from a deparsed string attribute
+                // or fall back to a deparsed string body.
+                let body = self.rvalue_to_body(&body_val);
+
                 if has_attr {
                     let _attrs = self.read_attributes()?;
                 }
+
+                Ok(RValue::Function(RFunction::Closure { params, body, env }))
+            }
+
+            ENVSXP => {
+                // Non-singleton environment: locked flag + enclos + frame + hashtab + attrs.
+                // Register a placeholder first so back-references to this env work.
+                let env = Environment::new_empty();
+                let val = RValue::Environment(env.clone());
+                let val = self.ref_add(val);
+
+                let locked = self.read_int()?;
+                let _enclos = self.read_item()?; // enclosing env
+                let frame = self.read_item()?; // frame (pairlist of bindings)
+                let _hashtab = self.read_item()?; // hash table (VECSXP or NULL)
+
+                if has_attr {
+                    let _attrs = self.read_attributes()?;
+                }
+
+                if locked != 0 {
+                    env.lock(false);
+                }
+
+                // Set enclosing environment if available.
+                if let RValue::Environment(parent) = &_enclos {
+                    env.set_parent(Some(parent.clone()));
+                }
+
+                // Populate bindings from the frame pairlist.
+                if let RValue::List(list) = &frame {
+                    for (name, value) in &list.values {
+                        if let Some(n) = name {
+                            env.set(n.clone(), value.clone());
+                        }
+                    }
+                }
+
                 Ok(val)
             }
 
+            PROMSXP => {
+                // Promise: environment + value + expr.
+                // We skip the promise wrapper and return the value (or expr if unforced).
+                let _env = self.read_item()?;
+                let value = self.read_item()?;
+                let expr = self.read_item()?;
+                if has_attr {
+                    let _attrs = self.read_attributes()?;
+                }
+                // If the value is UNBOUNDVALUE_SXP (read as Null), use the expression.
+                if value.is_null() {
+                    Ok(expr)
+                } else {
+                    Ok(value)
+                }
+            }
+
+            SPECIALSXP | BUILTINSXP => {
+                // Builtin/special functions: stored as a length + name string.
+                let len = self.read_length()?;
+                let name_bytes = self.read_bytes(len)?;
+                let name = String::from_utf8_lossy(name_bytes).to_string();
+                // We can't reconstruct builtin function pointers, so return a
+                // placeholder symbol indicating the builtin name.
+                Ok(RValue::vec(Vector::Character(
+                    vec![Some(format!(".Primitive(\"{}\")", name))].into(),
+                )))
+            }
+
             LANGSXP => {
-                // Language object: same structure as pairlist (TAG + CAR + CDR).
-                // Read as a list for now.
-                self.read_pairlist_as_list(has_attr, has_tag, flags)
+                // Language object: pairlist where CAR is function, CDR is args.
+                // Read as a pairlist and then try to reconstruct a Language/Expr.
+                let list_val = self.read_pairlist_as_list(has_attr, has_tag, flags)?;
+                // Try to convert the pairlist representation to an Expr.
+                if let Some(expr) = self.list_to_call_expr(&list_val) {
+                    Ok(RValue::Language(Language::new(expr)))
+                } else {
+                    // Fall back to keeping as a list if we can't reconstruct.
+                    Ok(list_val)
+                }
             }
 
             // S4 object (type 25)
@@ -575,6 +682,145 @@ impl<'a> XdrReader<'a> {
             list.attrs = Some(Box::new(attrs));
         }
         Ok(RValue::List(list))
+    }
+
+    /// Convert a pairlist (read as RList) into function parameters.
+    ///
+    /// Each pairlist node has TAG = param name and CAR = default value.
+    /// MISSINGARG_SXP becomes a parameter with no default.
+    fn pairlist_to_params(&self, val: &RValue) -> Vec<Param> {
+        match val {
+            RValue::Null => Vec::new(),
+            RValue::List(list) => list
+                .values
+                .iter()
+                .map(|(name, default_val)| {
+                    let param_name = name.clone().unwrap_or_default();
+                    let is_dots = param_name == "...";
+                    let default = if default_val.is_null() {
+                        None
+                    } else {
+                        // Try to recover the default expression from the value.
+                        Some(self.rvalue_to_body(default_val))
+                    };
+                    Param {
+                        name: param_name,
+                        default,
+                        is_dots,
+                    }
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Best-effort conversion of an RValue to an Expr for use as a function body
+    /// or default value.
+    ///
+    /// If the value is a Language object, use its inner Expr directly.
+    /// If it's a scalar literal, convert to the corresponding Expr literal.
+    /// If it has a "miniR.source" attribute, re-parse the deparsed source string.
+    /// Otherwise deparse to a string and wrap as a symbol (identifier).
+    fn rvalue_to_body(&self, val: &RValue) -> Expr {
+        match val {
+            RValue::Null => Expr::Null,
+            RValue::Language(lang) => (*lang.inner).clone(),
+            RValue::Vector(rv) => {
+                // Check for miniR.source attribute — indicates a deparsed expr string.
+                if rv.get_attr("miniR.source").is_some() {
+                    if let Vector::Character(vals) = &rv.inner {
+                        if let Some(Some(source)) = vals.first() {
+                            if let Ok(parsed) = crate::parser::parse_program(source) {
+                                return match parsed {
+                                    Expr::Program(mut exprs) if exprs.len() == 1 => exprs.remove(0),
+                                    Expr::Program(exprs) => Expr::Block(exprs),
+                                    other => other,
+                                };
+                            }
+                            // Parse failed — fall through to string literal.
+                        }
+                    }
+                }
+                match &rv.inner {
+                    Vector::Logical(vals) if vals.len() == 1 => match vals.first() {
+                        Some(Some(b)) => Expr::Bool(*b),
+                        _ => Expr::Na(crate::parser::ast::NaType::Logical),
+                    },
+                    Vector::Integer(vals) if vals.len() == 1 => match vals.first() {
+                        Some(Some(i)) => Expr::Integer(*i),
+                        _ => Expr::Na(crate::parser::ast::NaType::Integer),
+                    },
+                    Vector::Double(vals) if vals.len() == 1 => match vals.first() {
+                        Some(Some(d)) => {
+                            if *d == f64::INFINITY {
+                                Expr::Inf
+                            } else if d.is_nan() {
+                                Expr::NaN
+                            } else {
+                                Expr::Double(*d)
+                            }
+                        }
+                        _ => Expr::Na(crate::parser::ast::NaType::Real),
+                    },
+                    Vector::Character(vals) if vals.len() == 1 => match vals.first() {
+                        Some(Some(s)) => Expr::String(s.clone()),
+                        _ => Expr::Na(crate::parser::ast::NaType::Character),
+                    },
+                    _ => {
+                        // Multi-element vectors: deparse as a symbol reference.
+                        let deparsed = format!("{}", val);
+                        Expr::Symbol(deparsed)
+                    }
+                }
+            }
+            RValue::Function(RFunction::Closure { params, body, .. }) => Expr::Function {
+                params: params.clone(),
+                body: Box::new(body.clone()),
+            },
+            _ => {
+                let deparsed = format!("{}", val);
+                Expr::Symbol(deparsed)
+            }
+        }
+    }
+
+    /// Try to convert a LANGSXP pairlist (read as an RList) into a Call Expr.
+    ///
+    /// The first element is the function (usually a symbol), the rest are arguments.
+    fn list_to_call_expr(&self, val: &RValue) -> Option<Expr> {
+        let list = match val {
+            RValue::List(l) => l,
+            _ => return None,
+        };
+        if list.values.is_empty() {
+            return None;
+        }
+
+        let (_, func_val) = &list.values[0];
+        let func_expr = match func_val {
+            RValue::Vector(rv) => match &rv.inner {
+                Vector::Character(c) => {
+                    let name = c.first().and_then(|s| s.clone()).unwrap_or_default();
+                    Expr::Symbol(name)
+                }
+                _ => return None,
+            },
+            RValue::Language(lang) => (*lang.inner).clone(),
+            _ => return None,
+        };
+
+        let args: Vec<crate::parser::ast::Arg> = list.values[1..]
+            .iter()
+            .map(|(name, val)| crate::parser::ast::Arg {
+                name: name.clone(),
+                value: Some(self.rvalue_to_body(val)),
+            })
+            .collect();
+
+        Some(Expr::Call {
+            func: Box::new(func_expr),
+            args,
+        })
     }
 }
 
@@ -1784,10 +2030,32 @@ impl XdrWriter {
                     self.write_attributes(&effective_attrs);
                 }
             }
-            // Functions, environments, and language objects cannot be serialized
-            // in a meaningful way; write NULL as a placeholder.
-            RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) => {
-                self.write_flags(NILVALUE_SXP, false, false);
+            RValue::Function(func) => match func {
+                RFunction::Closure { params, body, env } => {
+                    self.write_flags(CLOSXP, false, false);
+                    // Environment
+                    self.write_environment(env);
+                    // Formals: pairlist of parameters
+                    self.write_formals(params);
+                    // Body: serialize the AST as a LANGSXP.
+                    // We deparse the body to a string and store it as a STRSXP
+                    // so it can be re-parsed on deserialization. This ensures
+                    // round-tripping even for complex bodies.
+                    self.write_body_expr(body);
+                }
+                RFunction::Builtin { name, .. } => {
+                    // Builtins are serialized as BUILTINSXP with the name.
+                    let name_bytes = name.as_bytes();
+                    self.write_flags(BUILTINSXP, false, false);
+                    self.write_length(name_bytes.len());
+                    self.buf.extend_from_slice(name_bytes);
+                }
+            },
+            RValue::Environment(env) => {
+                self.write_environment(env);
+            }
+            RValue::Language(lang) => {
+                self.write_langsxp_expr(&lang.inner);
             }
         }
     }
@@ -1812,6 +2080,198 @@ impl XdrWriter {
         }
         // Terminate with NILVALUE_SXP
         self.write_nilvalue();
+    }
+
+    /// Write an environment. Singleton environments (global, base, empty)
+    /// are written as their pseudo-SEXPTYPE codes. Other environments are
+    /// written as ENVSXP with their bindings.
+    fn write_environment(&mut self, env: &Environment) {
+        match env.name().as_deref() {
+            Some("R_GlobalEnv") => {
+                self.write_flags(GLOBALENV_SXP, false, false);
+            }
+            Some("R_EmptyEnv") => {
+                self.write_flags(EMPTYENV_SXP, false, false);
+            }
+            Some("base") => {
+                self.write_flags(BASEENV_SXP, false, false);
+            }
+            _ => {
+                // Non-singleton: write as ENVSXP.
+                let bindings = env.local_bindings();
+                self.write_flags(ENVSXP, false, false);
+                // locked flag
+                self.write_int(i32::from(env.is_locked()));
+                // Enclosing environment
+                if let Some(parent) = env.parent() {
+                    self.write_environment(&parent);
+                } else {
+                    self.write_flags(EMPTYENV_SXP, false, false);
+                }
+                // Frame: pairlist of bindings
+                if bindings.is_empty() {
+                    self.write_nilvalue();
+                } else {
+                    self.write_pairlist(&bindings);
+                }
+                // Hash table: write NULL (we don't use R's hash table structure)
+                self.write_nilvalue();
+            }
+        }
+    }
+
+    /// Write function formals as a pairlist.
+    ///
+    /// Each parameter becomes a LISTSXP node: TAG = param name (SYMSXP),
+    /// CAR = default value (or MISSINGARG_SXP if no default).
+    fn write_formals(&mut self, params: &[Param]) {
+        if params.is_empty() {
+            self.write_nilvalue();
+            return;
+        }
+        for param in params {
+            self.write_flags(LISTSXP, false, true); // has_tag = true
+                                                    // TAG: parameter name
+            self.write_symbol(if param.is_dots { "..." } else { &param.name });
+            // CAR: default value or MISSINGARG_SXP
+            match &param.default {
+                Some(default_expr) => {
+                    self.write_body_expr(default_expr);
+                }
+                None => {
+                    self.write_flags(MISSINGARG_SXP, false, false);
+                }
+            }
+        }
+        self.write_nilvalue();
+    }
+
+    /// Write an AST expression as a LANGSXP (language object).
+    ///
+    /// Simple literals are written directly as their R serialized form.
+    /// Complex expressions (calls, blocks, etc.) are deparsed to a string and
+    /// written as a STRSXP with a "miniR.source" attribute, enabling re-parsing.
+    fn write_body_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Null => self.write_nilvalue(),
+            Expr::Bool(b) => {
+                self.write_flags(LGLSXP, false, false);
+                self.write_length(1);
+                self.write_int(i32::from(*b));
+            }
+            Expr::Integer(i) => {
+                self.write_flags(INTSXP, false, false);
+                self.write_length(1);
+                let clamped =
+                    i32::try_from(*i).unwrap_or(if *i > 0 { i32::MAX } else { i32::MIN + 1 });
+                self.write_int(clamped);
+            }
+            Expr::Double(d) => {
+                self.write_flags(REALSXP, false, false);
+                self.write_length(1);
+                self.write_double(*d);
+            }
+            Expr::String(s) => {
+                self.write_flags(STRSXP, false, false);
+                self.write_length(1);
+                self.write_charsxp(Some(s));
+            }
+            Expr::Na(na_type) => {
+                use crate::parser::ast::NaType;
+                match na_type {
+                    NaType::Logical => {
+                        self.write_flags(LGLSXP, false, false);
+                        self.write_length(1);
+                        self.write_int(R_NA_LOGICAL);
+                    }
+                    NaType::Integer => {
+                        self.write_flags(INTSXP, false, false);
+                        self.write_length(1);
+                        self.write_int(R_NA_INTEGER);
+                    }
+                    NaType::Real => {
+                        self.write_flags(REALSXP, false, false);
+                        self.write_length(1);
+                        self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes());
+                    }
+                    NaType::Character => {
+                        self.write_flags(STRSXP, false, false);
+                        self.write_length(1);
+                        self.write_charsxp(None);
+                    }
+                    NaType::Complex => {
+                        self.write_flags(CPLXSXP, false, false);
+                        self.write_length(1);
+                        self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes());
+                        self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes());
+                    }
+                }
+            }
+            Expr::Inf => {
+                self.write_flags(REALSXP, false, false);
+                self.write_length(1);
+                self.write_double(f64::INFINITY);
+            }
+            Expr::NaN => {
+                self.write_flags(REALSXP, false, false);
+                self.write_length(1);
+                self.write_double(f64::NAN);
+            }
+            // For complex expressions (calls, blocks, etc.), deparse and store
+            // as a STRSXP with a "miniR.source" attribute so it can be re-parsed.
+            _ => {
+                let deparsed = deparse_expr(expr);
+                // Write as STRSXP with a "miniR.source" attr to mark it as deparsed.
+                self.write_flags(STRSXP, true, false); // has_attr = true
+                self.write_length(1);
+                self.write_charsxp(Some(&deparsed));
+                // Attribute: "miniR.source" = TRUE (marker)
+                let mut attrs: Attributes = IndexMap::new();
+                attrs.insert(
+                    "miniR.source".to_string(),
+                    RValue::vec(Vector::Logical(vec![Some(true)].into())),
+                );
+                self.write_attributes(&attrs);
+            }
+        }
+    }
+
+    /// Write a Language (LANGSXP) from an Expr.
+    ///
+    /// Call expressions are written as proper LANGSXP pairlists.
+    /// Other expressions are deparsed and written as STRSXP with the source marker.
+    fn write_langsxp_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Call { func, args } => {
+                // LANGSXP: CAR = func symbol, CDR = args pairlist
+                let has_named_args = args.iter().any(|a| a.name.is_some());
+                self.write_flags(LANGSXP, false, has_named_args);
+                // First element (CAR): the function
+                if !has_named_args {
+                    self.write_body_expr(func);
+                } else {
+                    // If any arg is named, the first node has no tag
+                    self.write_body_expr(func);
+                }
+                // CDR: argument chain as pairlist nodes
+                for arg in args {
+                    let has_tag = arg.name.is_some();
+                    self.write_flags(LISTSXP, false, has_tag);
+                    if let Some(name) = &arg.name {
+                        self.write_symbol(name);
+                    }
+                    match &arg.value {
+                        Some(val_expr) => self.write_body_expr(val_expr),
+                        None => self.write_flags(MISSINGARG_SXP, false, false),
+                    }
+                }
+                self.write_nilvalue();
+            }
+            _ => {
+                // Non-call language object: deparse as body expression.
+                self.write_body_expr(expr);
+            }
+        }
     }
 
     fn finish(self) -> Vec<u8> {
@@ -2052,6 +2512,203 @@ mod tests {
                 );
             }
             other => panic!("expected Vector, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unit_test_closure_round_trip() {
+        use crate::interpreter::environment::Environment;
+        use crate::parser::ast::{BinaryOp, Expr, Param};
+
+        // Build a simple closure: function(x) x + 1
+        let closure = RValue::Function(RFunction::Closure {
+            params: vec![Param {
+                name: "x".to_string(),
+                default: None,
+                is_dots: false,
+            }],
+            body: Expr::BinaryOp {
+                op: BinaryOp::Add,
+                lhs: Box::new(Expr::Symbol("x".to_string())),
+                rhs: Box::new(Expr::Integer(1)),
+            },
+            env: Environment::new_global(),
+        });
+
+        let bytes = serialize_xdr(&closure);
+        let result = unserialize_xdr(&bytes).unwrap();
+
+        match &result {
+            RValue::Function(RFunction::Closure { params, body, .. }) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].name, "x");
+                assert!(params[0].default.is_none());
+                // The body should be reconstructed from the deparsed string.
+                let deparsed = deparse_expr(body);
+                assert_eq!(deparsed, "x + 1L");
+            }
+            other => panic!("expected Function(Closure), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unit_test_closure_with_defaults_round_trip() {
+        use crate::interpreter::environment::Environment;
+        use crate::parser::ast::{BinaryOp, Expr, Param};
+
+        // function(x, y = 10) x + y
+        let closure = RValue::Function(RFunction::Closure {
+            params: vec![
+                Param {
+                    name: "x".to_string(),
+                    default: None,
+                    is_dots: false,
+                },
+                Param {
+                    name: "y".to_string(),
+                    default: Some(Expr::Integer(10)),
+                    is_dots: false,
+                },
+            ],
+            body: Expr::BinaryOp {
+                op: BinaryOp::Add,
+                lhs: Box::new(Expr::Symbol("x".to_string())),
+                rhs: Box::new(Expr::Symbol("y".to_string())),
+            },
+            env: Environment::new_global(),
+        });
+
+        let bytes = serialize_xdr(&closure);
+        let result = unserialize_xdr(&bytes).unwrap();
+
+        match &result {
+            RValue::Function(RFunction::Closure { params, body, .. }) => {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0].name, "x");
+                assert!(params[0].default.is_none());
+                assert_eq!(params[1].name, "y");
+                assert!(params[1].default.is_some());
+                // Body should be reconstructed
+                let deparsed = deparse_expr(body);
+                assert_eq!(deparsed, "x + y");
+            }
+            other => panic!("expected Function(Closure), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unit_test_parse_program_deparsed() {
+        // Verify parse_program works on deparsed R expressions.
+        // Note: parse_program may return a single expression directly (not always Program).
+        let result = crate::parser::parse_program("x + 1L");
+        match result {
+            Ok(expr) => {
+                assert!(
+                    matches!(&expr, Expr::BinaryOp { .. }),
+                    "expected BinaryOp, got {:?}",
+                    expr
+                );
+            }
+            Err(e) => panic!("parse failed: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn unit_test_closure_body_debug() {
+        use crate::interpreter::environment::Environment;
+        use crate::parser::ast::{BinaryOp, Expr, Param};
+
+        // Build a simple closure: function(x) x + 1
+        let closure = RValue::Function(RFunction::Closure {
+            params: vec![Param {
+                name: "x".to_string(),
+                default: None,
+                is_dots: false,
+            }],
+            body: Expr::BinaryOp {
+                op: BinaryOp::Add,
+                lhs: Box::new(Expr::Symbol("x".to_string())),
+                rhs: Box::new(Expr::Integer(1)),
+            },
+            env: Environment::new_global(),
+        });
+
+        let bytes = serialize_xdr(&closure);
+        // Read back and inspect the raw body value
+        let result = unserialize_xdr(&bytes).unwrap();
+        match &result {
+            RValue::Function(RFunction::Closure { body, .. }) => {
+                let deparsed = deparse_expr(body);
+                // If the body is Expr::String("x + 1L"), deparsed would be "\"x + 1L\""
+                // If correctly parsed, deparsed would be "x + 1L"
+                assert!(
+                    !deparsed.starts_with('"'),
+                    "body was stored as string literal instead of being re-parsed: {}",
+                    deparsed
+                );
+            }
+            other => panic!("expected Function(Closure), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unit_test_strsxp_with_minir_source_attr() {
+        // Manually build an STRSXP with "miniR.source" attribute and check
+        // that the reader preserves the attribute.
+        let mut w = super::XdrWriter::new();
+        w.buf.extend_from_slice(b"X\n");
+        w.write_int(2);
+        w.write_int(0x00040300);
+        w.write_int(0x00020300);
+
+        // Write STRSXP with has_attr = true
+        w.write_flags(STRSXP, true, false);
+        w.write_length(1);
+        w.write_charsxp(Some("x + 1L"));
+        // Attribute pairlist
+        let mut attrs: Attributes = IndexMap::new();
+        attrs.insert(
+            "miniR.source".to_string(),
+            RValue::vec(Vector::Logical(vec![Some(true)].into())),
+        );
+        w.write_attributes(&attrs);
+
+        let bytes = w.finish();
+        let result = unserialize_xdr(&bytes).unwrap();
+        match &result {
+            RValue::Vector(rv) => {
+                assert!(
+                    rv.get_attr("miniR.source").is_some(),
+                    "miniR.source attribute missing; attrs: {:?}",
+                    rv.attrs
+                );
+            }
+            other => panic!("expected Vector, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unit_test_env_singleton_round_trip() {
+        use crate::interpreter::environment::Environment;
+
+        let global = RValue::Environment(Environment::new_global());
+        let bytes = serialize_xdr(&global);
+        let result = unserialize_xdr(&bytes).unwrap();
+        match &result {
+            RValue::Environment(env) => {
+                assert_eq!(env.name().as_deref(), Some("R_GlobalEnv"));
+            }
+            other => panic!("expected Environment, got {:?}", other),
+        }
+
+        let empty = RValue::Environment(Environment::new_empty());
+        let bytes = serialize_xdr(&empty);
+        let result = unserialize_xdr(&bytes).unwrap();
+        match &result {
+            RValue::Environment(env) => {
+                assert_eq!(env.name().as_deref(), Some("R_EmptyEnv"));
+            }
+            other => panic!("expected Environment, got {:?}", other),
         }
     }
 

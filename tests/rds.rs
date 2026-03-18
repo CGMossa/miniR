@@ -83,6 +83,249 @@ stopifnot(
     }
 }
 
+// region: closure and environment serialization round-trip tests
+
+#[test]
+fn rds_round_trip_simple_closure() {
+    let path = temp_path("closure-simple");
+
+    let script = format!(
+        r#"
+f <- function(x) x + 1
+saveRDS(f, "{path}")
+f2 <- readRDS("{path}")
+stopifnot(is.function(f2))
+stopifnot(identical(f2(10), 11))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rds_round_trip_closure_with_defaults() {
+    let path = temp_path("closure-defaults");
+
+    let script = format!(
+        r#"
+f <- function(x, y = 10, z = "hello") x + y
+saveRDS(f, "{path}")
+f2 <- readRDS("{path}")
+stopifnot(is.function(f2))
+stopifnot(identical(f2(5), 15))
+stopifnot(identical(f2(5, 20), 25))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rds_round_trip_closure_with_body_block() {
+    let path = temp_path("closure-block");
+
+    let script = format!(
+        r#"
+f <- function(x) {{
+    y <- x * 2
+    y + 1
+}}
+saveRDS(f, "{path}")
+f2 <- readRDS("{path}")
+stopifnot(is.function(f2))
+stopifnot(identical(f2(5), 11))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rds_round_trip_closure_with_dots() {
+    let path = temp_path("closure-dots");
+
+    let script = format!(
+        r#"
+f <- function(x, ...) x
+saveRDS(f, "{path}")
+f2 <- readRDS("{path}")
+stopifnot(is.function(f2))
+stopifnot(identical(f2(42), 42))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rds_round_trip_closure_no_args() {
+    let path = temp_path("closure-noargs");
+
+    let script = format!(
+        r#"
+f <- function() 42
+saveRDS(f, "{path}")
+f2 <- readRDS("{path}")
+stopifnot(is.function(f2))
+stopifnot(identical(f2(), 42))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rds_round_trip_list_containing_closure() {
+    let path = temp_path("list-with-closure");
+
+    let script = format!(
+        r#"
+f <- function(x) x * 2
+obj <- list(name = "test", fn = f, value = 42L)
+saveRDS(obj, "{path}")
+obj2 <- readRDS("{path}")
+stopifnot(identical(obj2$name, "test"))
+stopifnot(identical(obj2$value, 42L))
+stopifnot(is.function(obj2$fn))
+stopifnot(identical(obj2$fn(5), 10))
+"#,
+        path = quote_path(&path),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_r"))
+        .args(["-e", &script])
+        .output()
+        .expect("failed to run miniR");
+
+    assert!(
+        output.status.success(),
+        "process failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+// endregion
+
+// region: serialize unit tests (programmatic round-trips via the Rust API)
+
+#[test]
+fn serialize_closure_round_trip_api() {
+    use r::session::Session;
+
+    let mut session = Session::new();
+
+    // Define a closure, serialize it, read it back, and call it.
+    session
+        .eval_source("f <- function(x, y = 1) x + y")
+        .expect("define closure");
+    session
+        .eval_source("saveRDS(f, '/tmp/minir-api-closure.rds')")
+        .expect("saveRDS");
+    session
+        .eval_source("g <- readRDS('/tmp/minir-api-closure.rds')")
+        .expect("readRDS");
+
+    let result = session
+        .eval_source("g(10)")
+        .expect("call deserialized closure");
+    assert_eq!(format!("{}", result.value), "[1] 11");
+
+    let result2 = session
+        .eval_source("g(10, 20)")
+        .expect("call with explicit second arg");
+    assert_eq!(format!("{}", result2.value), "[1] 30");
+
+    let _ = fs::remove_file("/tmp/minir-api-closure.rds");
+}
+
+#[test]
+fn serialize_environment_singletons_api() {
+    use r::session::Session;
+
+    let mut session = Session::new();
+
+    // Global environment should round-trip as an environment.
+    session
+        .eval_source("saveRDS(globalenv(), '/tmp/minir-api-globalenv.rds')")
+        .expect("saveRDS globalenv");
+    let result = session
+        .eval_source("is.environment(readRDS('/tmp/minir-api-globalenv.rds'))")
+        .expect("readRDS globalenv");
+    assert_eq!(format!("{}", result.value), "[1] TRUE");
+
+    let _ = fs::remove_file("/tmp/minir-api-globalenv.rds");
+}
+
+// endregion
+
 #[test]
 fn read_rds_rejects_non_minirds_files() {
     let path = temp_path("invalid");
