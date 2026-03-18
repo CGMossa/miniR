@@ -183,11 +183,54 @@ fn builtin_tan(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 
 /// Sign of each element (-1, 0, or 1).
 ///
+/// R's sign() returns 0 for zero inputs (unlike Rust's f64::signum which returns 1.0).
+/// For integer inputs, returns an integer vector; for double inputs, returns a double vector.
+///
 /// @param x numeric vector
 /// @return numeric vector of signs
 #[builtin(min_args = 1)]
 fn builtin_sign(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    math_unary(args, f64::signum)
+    match args.first() {
+        Some(RValue::Vector(v)) => match &v.inner {
+            Vector::Integer(vals) => {
+                let result: Vec<Option<i64>> = vals
+                    .iter()
+                    .map(|x| {
+                        x.map(|i| match i.cmp(&0) {
+                            std::cmp::Ordering::Greater => 1i64,
+                            std::cmp::Ordering::Equal => 0i64,
+                            std::cmp::Ordering::Less => -1i64,
+                        })
+                    })
+                    .collect();
+                Ok(RValue::vec(Vector::Integer(result.into())))
+            }
+            _ => {
+                let result: Vec<Option<f64>> = v
+                    .to_doubles()
+                    .iter()
+                    .map(|x| {
+                        x.map(|f| {
+                            if f.is_nan() {
+                                f64::NAN
+                            } else if f > 0.0 {
+                                1.0
+                            } else if f < 0.0 {
+                                -1.0
+                            } else {
+                                0.0
+                            }
+                        })
+                    })
+                    .collect();
+                Ok(RValue::vec(Vector::Double(result.into())))
+            }
+        },
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "non-numeric argument to mathematical function".to_string(),
+        )),
+    }
 }
 
 use super::math_unary_op as math_unary;
