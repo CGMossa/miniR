@@ -551,10 +551,16 @@ impl Interpreter {
             Expr::Complex(f) => Ok(RValue::vec(Vector::Complex(
                 vec![Some(num_complex::Complex64::new(0.0, *f))].into(),
             ))),
-            Expr::Symbol(name) => env.get(name).ok_or_else(|| {
-                debug!(symbol = name.as_str(), "symbol not found");
-                RError::new(RErrorKind::Name, name.clone()).into()
-            }),
+            Expr::Symbol(name) => {
+                // Check for active bindings first — these re-evaluate a function on every access
+                if let Some(fun) = env.get_active_binding(name) {
+                    return self.call_function(&fun, &[], &[], env);
+                }
+                env.get(name).ok_or_else(|| {
+                    debug!(symbol = name.as_str(), "symbol not found");
+                    RError::new(RErrorKind::Name, name.clone()).into()
+                })
+            }
             Expr::Dots => {
                 // Return the ... list from the current environment
                 env.get("...").ok_or_else(|| {

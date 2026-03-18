@@ -265,16 +265,90 @@ fn lock_environment_with_bindings_true() {
 
 // endregion
 
-// region: makeActiveBinding() stub
+// region: makeActiveBinding / isActiveBinding
 
 #[test]
-fn make_active_binding_stub_assigns_value() {
+fn active_binding_basic_access() {
     let mut r = Session::new();
     r.eval_source(
         r#"
         e <- new.env(parent = emptyenv())
         makeActiveBinding("x", function() 42, e)
         stopifnot(get("x", envir = e) == 42)
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn active_binding_re_evaluates_on_each_access() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        counter <- 0L
+        e <- new.env(parent = environment())
+        makeActiveBinding("x", function() { counter <<- counter + 1L; counter }, e)
+        a <- get("x", envir = e)
+        b <- get("x", envir = e)
+        c <- get("x", envir = e)
+        stopifnot(a == 1L)
+        stopifnot(b == 2L)
+        stopifnot(c == 3L)
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn active_binding_via_symbol_access() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        counter <- 0L
+        makeActiveBinding("x", function() { counter <<- counter + 1L; counter }, environment())
+        a <- x
+        b <- x
+        stopifnot(a == 1L)
+        stopifnot(b == 2L)
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn is_active_binding_true() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        e <- new.env(parent = emptyenv())
+        makeActiveBinding("x", function() 42, e)
+        stopifnot(isActiveBinding("x", e))
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn is_active_binding_false_for_regular() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        e <- new.env(parent = emptyenv())
+        assign("x", 42, envir = e)
+        stopifnot(!isActiveBinding("x", e))
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn active_binding_visible_in_ls() {
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        e <- new.env(parent = emptyenv())
+        makeActiveBinding("x", function() 42, e)
+        stopifnot("x" %in% ls(envir = e))
     "#,
     )
     .unwrap();

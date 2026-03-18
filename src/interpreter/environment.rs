@@ -32,6 +32,8 @@ pub(crate) struct EnvInner {
     locked: bool,
     /// Set of binding names that are individually locked (cannot be modified).
     locked_bindings: std::collections::HashSet<String>,
+    /// Active bindings: names mapped to zero-argument functions that are called on every access.
+    active_bindings: HashMap<String, RValue>,
 }
 
 impl Environment {
@@ -44,6 +46,7 @@ impl Environment {
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
+                active_bindings: HashMap::new(),
             })),
         }
     }
@@ -61,6 +64,7 @@ impl Environment {
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
+                active_bindings: HashMap::new(),
             })),
         }
     }
@@ -110,11 +114,15 @@ impl Environment {
     }
 
     pub fn has_local(&self, name: &str) -> bool {
-        self.inner.borrow().bindings.contains_key(name)
+        let inner = self.inner.borrow();
+        inner.bindings.contains_key(name) || inner.active_bindings.contains_key(name)
     }
 
     pub fn remove(&self, name: &str) -> bool {
-        self.inner.borrow_mut().bindings.remove(name).is_some()
+        let mut inner = self.inner.borrow_mut();
+        let removed_binding = inner.bindings.remove(name).is_some();
+        let removed_active = inner.active_bindings.remove(name).is_some();
+        removed_binding || removed_active
     }
 
     /// Register an expression to run when this frame exits (on.exit).
@@ -152,15 +160,17 @@ impl Environment {
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
+                active_bindings: HashMap::new(),
             })),
         }
     }
 
     pub fn ls(&self) -> Vec<String> {
-        self.inner
-            .borrow()
+        let inner = self.inner.borrow();
+        inner
             .bindings
             .keys()
+            .chain(inner.active_bindings.keys())
             .cloned()
             .sorted()
             .collect()
@@ -230,4 +240,51 @@ impl Environment {
     pub fn binding_is_locked(&self, name: &str) -> bool {
         self.inner.borrow().locked_bindings.contains(name)
     }
+
+    // region: Active bindings
+
+    /// Register an active binding: a zero-argument function called on every access.
+    pub fn set_active_binding(&self, name: String, fun: RValue) {
+        let mut inner = self.inner.borrow_mut();
+        // Remove any regular binding with the same name
+        inner.bindings.remove(&name);
+        inner.active_bindings.insert(name, fun);
+    }
+
+    /// Get the function for an active binding in this environment (local only).
+    pub fn get_local_active_binding(&self, name: &str) -> Option<RValue> {
+        self.inner.borrow().active_bindings.get(name).cloned()
+    }
+
+    /// Walk the environment chain looking for an active binding.
+    /// Returns the function if found.
+    pub fn get_active_binding(&self, name: &str) -> Option<RValue> {
+        let inner = self.inner.borrow();
+        if let Some(fun) = inner.active_bindings.get(name) {
+            Some(fun.clone())
+        } else if let Some(ref parent) = inner.parent {
+            parent.get_active_binding(name)
+        } else {
+            None
+        }
+    }
+
+    /// Check if a name is an active binding (walks the chain).
+    pub fn is_active_binding(&self, name: &str) -> bool {
+        let inner = self.inner.borrow();
+        if inner.active_bindings.contains_key(name) {
+            true
+        } else if let Some(ref parent) = inner.parent {
+            parent.is_active_binding(name)
+        } else {
+            false
+        }
+    }
+
+    /// Check if a name is a local active binding (does not walk the chain).
+    pub fn is_local_active_binding(&self, name: &str) -> bool {
+        self.inner.borrow().active_bindings.contains_key(name)
+    }
+
+    // endregion
 }

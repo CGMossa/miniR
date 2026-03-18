@@ -1167,6 +1167,17 @@ fn interp_get(
     let call_args = CallArgs::new(positional, named);
     let name = call_args.string("x", 0)?;
     let target_env = call_args.environment_or("envir", usize::MAX, env)?;
+
+    // Check for active bindings — these re-evaluate a function on every access
+    if let Some(fun) = target_env.get_active_binding(&name) {
+        return context
+            .with_interpreter(|interp| interp.call_function(&fun, &[], &[], &target_env))
+            .map_err(|flow| match flow {
+                RFlow::Error(e) => e,
+                other => RError::other(format!("{:?}", other)),
+            });
+    }
+
     target_env
         .get(&name)
         .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
@@ -2213,11 +2224,11 @@ fn interp_binding_is_locked(
     Ok(RValue::vec(Vector::Logical(vec![Some(locked)].into())))
 }
 
-/// Create an active binding (stub).
+/// Create an active binding.
 ///
 /// Active bindings call a function every time they are accessed.
-/// This is a placeholder that simply assigns the result of calling `fun()`
-/// as a regular binding, since full active binding support is not yet implemented.
+/// The function `fun` is stored in the environment and re-evaluated
+/// on every read of `sym`.
 ///
 /// @param sym name for the binding (character string)
 /// @param fun zero-argument function to call on access
@@ -2227,7 +2238,7 @@ fn interp_binding_is_locked(
 fn interp_make_active_binding(
     positional: &[RValue],
     _named: &[(String, RValue)],
-    context: &BuiltinContext,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let sym = positional
         .first()
@@ -2249,10 +2260,37 @@ fn interp_make_active_binding(
         }
     };
 
-    // Stub: call fun() once and store the result as a regular binding
-    let result = context.with_interpreter(|interp| interp.call_function(fun, &[], &[], &env))?;
-    env.set(sym, result);
+    env.set_active_binding(sym, fun.clone());
     Ok(RValue::Null)
+}
+
+/// Check whether a binding is an active binding.
+///
+/// @param sym name of the binding (character string)
+/// @param env environment in which to check
+/// @return logical scalar
+#[interpreter_builtin(name = "isActiveBinding", min_args = 2)]
+fn interp_is_active_binding(
+    positional: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let sym = positional
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "not a valid symbol name".to_string()))?;
+    let env = match positional.get(1) {
+        Some(RValue::Environment(e)) => e.clone(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "not an environment".to_string(),
+            ))
+        }
+    };
+
+    let is_active = env.is_local_active_binding(&sym);
+    Ok(RValue::vec(Vector::Logical(vec![Some(is_active)].into())))
 }
 
 /// Evaluate an expression in a specified environment.
