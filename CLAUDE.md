@@ -136,6 +136,13 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Each review file should describe: what was attempted, what went wrong, and what it implies about missing functionality
 - Name files descriptively, e.g. `reviews/missing-named-arg-matching.md`
 
+## Agent Worktrees
+
+- Agents should always run in **worktrees** (`isolation: "worktree"`) so they don't collide with each other or main
+- Agents should **remove `.cargo/config.toml`** in their worktree (`rm -f .cargo/config.toml`) so `cargo` fetches from crates.io instead of the vendor dir — this avoids "package not found" errors when agents add new dependencies
+- After an agent finishes, the parent merges its work into main, then re-vendors with `just vendor-force`
+- Never delete a worktree until its changes have been verified as merged into main
+
 ## Vendor Audit
 
 - When dependencies change (new crates added, `just vendor` run), audit the vendor/ directory for R-relevant crates
@@ -146,6 +153,15 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - The vendor directory uses an absolute path in `.cargo/config.toml` — this is required because subagents and worktrees run from different working directories
 - **Adding new dependencies**: `.cargo/config.toml` replaces crates-io with the vendor dir, so `cargo add` and `cargo update` fail for new crates. Workaround: (1) add the dep to `Cargo.toml` manually, (2) temporarily `mv .cargo/config.toml .cargo/config.toml.bak`, (3) run `cargo update`, (4) `mv .cargo/config.toml.bak .cargo/config.toml`, (5) `just vendor-force` to vendor the new crate
 - **Cargo.lock merge conflicts**: When `Cargo.lock` has merge conflicts, don't try to resolve them manually — delete it and run `cargo generate-lockfile` to regenerate from scratch, then re-vendor
+
+## File Deletion Safety
+
+- **Never use `rm` or any permanent deletion command.**
+- Always use a safe delete mechanism that moves files to the system trash/recycle bin instead of permanently removing them.
+- This ensures files can be recovered if an action was incorrect, unintended, or unsafe.
+- Use a trash command (e.g. `trash`, `gio trash`, `gvfs-trash`, or platform equivalent).
+- If no trash utility is available, **stop and ask for guidance** instead of deleting.
+- Permanent deletion is irreversible and unsafe in automated or agent-driven workflows. Using the trash provides a recovery path.
 
 ## Tool Rules
 
