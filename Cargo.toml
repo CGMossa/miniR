@@ -108,7 +108,7 @@ full = ["default", "tls", "linalg"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress"]
+default = ["random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
