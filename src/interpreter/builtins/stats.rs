@@ -543,6 +543,66 @@ fn filter_non_na(v: &Vector, na_flags: &[bool]) -> Vector {
 
 // endregion
 
+// region: Distribution parameter helpers
+
+/// Extract the `log` flag from named arguments (for d* density functions).
+fn extract_log_flag(named: &[(String, RValue)]) -> bool {
+    named
+        .iter()
+        .find(|(n, _)| n == "log")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false)
+}
+
+/// Extract the `lower.tail` flag from named arguments (for p*/q* functions).
+fn extract_lower_tail(named: &[(String, RValue)]) -> bool {
+    named
+        .iter()
+        .find(|(n, _)| n == "lower.tail")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true)
+}
+
+/// Extract the `log.p` flag from named arguments (for p*/q* functions).
+fn extract_log_p(named: &[(String, RValue)]) -> bool {
+    named
+        .iter()
+        .find(|(n, _)| n == "log.p")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false)
+}
+
+/// Post-process a density value: apply log if requested.
+fn apply_d_log(val: f64, log_flag: bool) -> f64 {
+    if log_flag {
+        val.ln()
+    } else {
+        val
+    }
+}
+
+/// Post-process a probability value: apply lower.tail and log.p.
+fn apply_p_flags(val: f64, lower_tail: bool, log_p: bool) -> f64 {
+    let p = if lower_tail { val } else { 1.0 - val };
+    if log_p {
+        p.ln()
+    } else {
+        p
+    }
+}
+
+/// Pre-process a probability input for quantile functions: undo log.p and lower.tail.
+fn apply_q_flags(p: f64, lower_tail: bool, log_p: bool) -> f64 {
+    let p = if log_p { p.exp() } else { p };
+    if lower_tail {
+        p
+    } else {
+        1.0 - p
+    }
+}
+
+// endregion
+
 // region: Normal distribution (dnorm, pnorm, qnorm)
 
 /// Standard normal PDF: exp(-x^2/2) / sqrt(2*pi)
@@ -645,11 +705,13 @@ fn std_normal_quantile(p: f64) -> f64 {
 /// @param x quantile vector
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
+/// @param log logical; if TRUE, return log-density (default FALSE)
 /// @return numeric vector of densities
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if sd < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -669,7 +731,7 @@ fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .iter()
         .map(|x| {
             x.map(|v| {
-                if sd == 0.0 {
+                let d = if sd == 0.0 {
                     if v == mean {
                         f64::INFINITY
                     } else {
@@ -678,7 +740,8 @@ fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 } else {
                     let z = (v - mean) / sd;
                     std_normal_pdf(z) / sd
-                }
+                };
+                apply_d_log(d, log_flag)
             })
         })
         .collect();
@@ -690,11 +753,15 @@ fn builtin_dnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param q quantile vector
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
+/// @param lower.tail logical; if TRUE (default), return P(X <= q), else P(X > q)
+/// @param log.p logical; if TRUE, return log-probability (default FALSE)
 /// @return numeric vector of probabilities
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if sd < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -714,7 +781,7 @@ fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .iter()
         .map(|x| {
             x.map(|v| {
-                if sd == 0.0 {
+                let p = if sd == 0.0 {
                     if v < mean {
                         0.0
                     } else {
@@ -723,7 +790,8 @@ fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 } else {
                     let z = (v - mean) / sd;
                     std_normal_cdf(z)
-                }
+                };
+                apply_p_flags(p, lower_tail, log_p)
             })
         })
         .collect();
@@ -735,11 +803,15 @@ fn builtin_pnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @param p probability vector
 /// @param mean mean of the distribution (default 0)
 /// @param sd standard deviation (default 1)
+/// @param lower.tail logical; if TRUE (default), p is P(X <= q), else P(X > q)
+/// @param log.p logical; if TRUE, p is given as log(p) (default FALSE)
 /// @return numeric vector of quantiles
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_qnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let mean = extract_param(args, named, "mean", 1, 0.0);
     let sd = extract_param(args, named, "sd", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if sd < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -758,7 +830,8 @@ fn builtin_qnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let result: Vec<Option<f64>> = vals
         .iter()
         .map(|x| {
-            x.map(|p| {
+            x.map(|raw_p| {
+                let p = apply_q_flags(raw_p, lower_tail, log_p);
                 if !(0.0..=1.0).contains(&p) {
                     f64::NAN
                 } else {
@@ -784,6 +857,7 @@ fn builtin_qnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if min > max {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -803,7 +877,7 @@ fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .iter()
         .map(|x| {
             x.map(|v| {
-                if min == max {
+                let d = if min == max {
                     if v == min {
                         f64::INFINITY
                     } else {
@@ -813,7 +887,8 @@ fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                     1.0 / (max - min)
                 } else {
                     0.0
-                }
+                };
+                apply_d_log(d, log_flag)
             })
         })
         .collect();
@@ -830,6 +905,8 @@ fn builtin_dunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if min > max {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -849,7 +926,7 @@ fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .iter()
         .map(|x| {
             x.map(|v| {
-                if min == max {
+                let p = if min == max {
                     if v < min {
                         0.0
                     } else {
@@ -861,7 +938,8 @@ fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                     1.0
                 } else {
                     (v - min) / (max - min)
-                }
+                };
+                apply_p_flags(p, lower_tail, log_p)
             })
         })
         .collect();
@@ -878,6 +956,8 @@ fn builtin_punif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_qunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let min = extract_param(args, named, "min", 1, 0.0);
     let max = extract_param(args, named, "max", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if min > max {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -896,7 +976,8 @@ fn builtin_qunif(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
     let result: Vec<Option<f64>> = vals
         .iter()
         .map(|x| {
-            x.map(|p| {
+            x.map(|raw_p| {
+                let p = apply_q_flags(raw_p, lower_tail, log_p);
                 if !(0.0..=1.0).contains(&p) {
                     f64::NAN
                 } else {
@@ -1138,6 +1219,40 @@ fn dist_vectorize(args: &[RValue], fname: &str, f: impl Fn(f64) -> f64) -> Resul
     Ok(RValue::vec(Vector::Double(result.into())))
 }
 
+/// Like `dist_vectorize` but applies `log` post-processing for density functions.
+fn dist_vectorize_d(
+    args: &[RValue],
+    fname: &str,
+    log_flag: bool,
+    f: impl Fn(f64) -> f64,
+) -> Result<RValue, RError> {
+    dist_vectorize(args, fname, |x| apply_d_log(f(x), log_flag))
+}
+
+/// Like `dist_vectorize` but applies `lower.tail`/`log.p` post-processing for CDF functions.
+fn dist_vectorize_p(
+    args: &[RValue],
+    fname: &str,
+    lower_tail: bool,
+    log_p: bool,
+    f: impl Fn(f64) -> f64,
+) -> Result<RValue, RError> {
+    dist_vectorize(args, fname, |x| apply_p_flags(f(x), lower_tail, log_p))
+}
+
+/// Like `dist_vectorize` but applies `lower.tail`/`log.p` pre-processing for quantile functions.
+fn dist_vectorize_q(
+    args: &[RValue],
+    fname: &str,
+    lower_tail: bool,
+    log_p: bool,
+    f: impl Fn(f64) -> f64,
+) -> Result<RValue, RError> {
+    dist_vectorize(args, fname, |raw_p| {
+        f(apply_q_flags(raw_p, lower_tail, log_p))
+    })
+}
+
 // endregion
 
 // region: Exponential distribution (dexp, pexp, qexp)
@@ -1150,13 +1265,14 @@ fn dist_vectorize(args: &[RValue], fname: &str, f: impl Fn(f64) -> f64) -> Resul
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_dexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let rate = extract_param(args, named, "rate", 1, 1.0);
+    let log_flag = extract_log_flag(named);
     if rate <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "dexp(): 'rate' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "dexp", |x| {
+    dist_vectorize_d(args, "dexp", log_flag, |x| {
         if x < 0.0 {
             0.0
         } else {
@@ -1173,13 +1289,15 @@ fn builtin_dexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_pexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let rate = extract_param(args, named, "rate", 1, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if rate <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "pexp(): 'rate' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pexp", |q| {
+    dist_vectorize_p(args, "pexp", lower_tail, log_p, |q| {
         if q < 0.0 {
             0.0
         } else {
@@ -1196,13 +1314,15 @@ fn builtin_pexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 #[builtin(min_args = 1, namespace = "stats")]
 fn builtin_qexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let rate = extract_param(args, named, "rate", 1, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if rate <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "qexp(): 'rate' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qexp", |p| {
+    dist_vectorize_q(args, "qexp", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 1.0 {
@@ -1227,6 +1347,7 @@ fn builtin_qexp(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 fn builtin_dgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let rate = extract_param(args, named, "rate", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if shape <= 0.0 || rate <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1235,7 +1356,7 @@ fn builtin_dgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
     let scale = 1.0 / rate;
     let log_norm = shape * scale.ln() + ln_gamma(shape);
-    dist_vectorize(args, "dgamma", |x| {
+    dist_vectorize_d(args, "dgamma", log_flag, |x| {
         if x < 0.0 {
             0.0
         } else if x == 0.0 {
@@ -1264,6 +1385,8 @@ fn builtin_dgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_pgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let rate = extract_param(args, named, "rate", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape <= 0.0 || rate <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1271,7 +1394,7 @@ fn builtin_pgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let scale = 1.0 / rate;
-    dist_vectorize(args, "pgamma", |q| {
+    dist_vectorize_p(args, "pgamma", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else {
@@ -1292,6 +1415,8 @@ fn builtin_pgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_qgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let rate = extract_param(args, named, "rate", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape <= 0.0 || rate <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1299,7 +1424,7 @@ fn builtin_qgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let scale = 1.0 / rate;
-    dist_vectorize(args, "qgamma", |p| {
+    dist_vectorize_q(args, "qgamma", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1329,6 +1454,7 @@ fn builtin_qgamma(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_dbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape1 = extract_param(args, named, "shape1", 1, f64::NAN);
     let shape2 = extract_param(args, named, "shape2", 2, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if shape1 <= 0.0 || shape2 <= 0.0 || shape1.is_nan() || shape2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1336,7 +1462,7 @@ fn builtin_dbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         ));
     }
     let log_beta = ln_gamma(shape1) + ln_gamma(shape2) - ln_gamma(shape1 + shape2);
-    dist_vectorize(args, "dbeta", |x| {
+    dist_vectorize_d(args, "dbeta", log_flag, |x| {
         if !(0.0..=1.0).contains(&x) {
             0.0
         } else if x == 0.0 {
@@ -1373,13 +1499,15 @@ fn builtin_dbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_pbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape1 = extract_param(args, named, "shape1", 1, f64::NAN);
     let shape2 = extract_param(args, named, "shape2", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape1 <= 0.0 || shape2 <= 0.0 || shape1.is_nan() || shape2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "pbeta(): 'shape1' and 'shape2' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pbeta", |q| {
+    dist_vectorize_p(args, "pbeta", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else if q >= 1.0 {
@@ -1402,13 +1530,15 @@ fn builtin_pbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_qbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape1 = extract_param(args, named, "shape1", 1, f64::NAN);
     let shape2 = extract_param(args, named, "shape2", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape1 <= 0.0 || shape2 <= 0.0 || shape1.is_nan() || shape2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qbeta(): 'shape1' and 'shape2' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qbeta", |p| {
+    dist_vectorize_q(args, "qbeta", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1435,13 +1565,14 @@ fn builtin_qbeta(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 fn builtin_dcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let location = extract_param(args, named, "location", 1, 0.0);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if scale <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "dcauchy(): 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "dcauchy", |x| {
+    dist_vectorize_d(args, "dcauchy", log_flag, |x| {
         let z = (x - location) / scale;
         1.0 / (PI * scale * (1.0 + z * z))
     })
@@ -1457,13 +1588,15 @@ fn builtin_dcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
 fn builtin_pcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let location = extract_param(args, named, "location", 1, 0.0);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if scale <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "pcauchy(): 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pcauchy", |q| {
+    dist_vectorize_p(args, "pcauchy", lower_tail, log_p, |q| {
         0.5 + ((q - location) / scale).atan() / PI
     })
 }
@@ -1478,13 +1611,15 @@ fn builtin_pcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
 fn builtin_qcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let location = extract_param(args, named, "location", 1, 0.0);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if scale <= 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "qcauchy(): 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qcauchy", |p| {
+    dist_vectorize_q(args, "qcauchy", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1511,13 +1646,14 @@ fn builtin_qcauchy(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
 fn builtin_dweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if shape <= 0.0 || scale <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "dweibull(): 'shape' and 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "dweibull", |x| {
+    dist_vectorize_d(args, "dweibull", log_flag, |x| {
         if x < 0.0 {
             0.0
         } else if x == 0.0 {
@@ -1545,13 +1681,15 @@ fn builtin_dweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 fn builtin_pweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape <= 0.0 || scale <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "pweibull(): 'shape' and 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pweibull", |q| {
+    dist_vectorize_p(args, "pweibull", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else {
@@ -1570,13 +1708,15 @@ fn builtin_pweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 fn builtin_qweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let shape = extract_param(args, named, "shape", 1, f64::NAN);
     let scale = extract_param(args, named, "scale", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if shape <= 0.0 || scale <= 0.0 || shape.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qweibull(): 'shape' and 'scale' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qweibull", |p| {
+    dist_vectorize_q(args, "qweibull", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1603,13 +1743,14 @@ fn builtin_qweibull(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 fn builtin_dlnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let meanlog = extract_param(args, named, "meanlog", 1, 0.0);
     let sdlog = extract_param(args, named, "sdlog", 2, 1.0);
+    let log_flag = extract_log_flag(named);
     if sdlog < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "dlnorm(): 'sdlog' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "dlnorm", |x| {
+    dist_vectorize_d(args, "dlnorm", log_flag, |x| {
         if x <= 0.0 {
             0.0
         } else if sdlog == 0.0 {
@@ -1635,13 +1776,15 @@ fn builtin_dlnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_plnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let meanlog = extract_param(args, named, "meanlog", 1, 0.0);
     let sdlog = extract_param(args, named, "sdlog", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if sdlog < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "plnorm(): 'sdlog' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "plnorm", |q| {
+    dist_vectorize_p(args, "plnorm", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else if sdlog == 0.0 {
@@ -1667,13 +1810,15 @@ fn builtin_plnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_qlnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let meanlog = extract_param(args, named, "meanlog", 1, 0.0);
     let sdlog = extract_param(args, named, "sdlog", 2, 1.0);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if sdlog < 0.0 {
         return Err(RError::new(
             RErrorKind::Argument,
             "qlnorm(): 'sdlog' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "qlnorm", |p| {
+    dist_vectorize_q(args, "qlnorm", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1701,6 +1846,7 @@ fn builtin_qlnorm(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_dchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1710,7 +1856,7 @@ fn builtin_dchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let shape = df / 2.0;
     let scale: f64 = 2.0;
     let log_norm = shape * scale.ln() + ln_gamma(shape);
-    dist_vectorize(args, "dchisq", |x| {
+    dist_vectorize_d(args, "dchisq", log_flag, |x| {
         if x < 0.0 {
             0.0
         } else if x == 0.0 {
@@ -1735,6 +1881,8 @@ fn builtin_dchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_pchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1742,7 +1890,7 @@ fn builtin_pchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let shape = df / 2.0;
-    dist_vectorize(args, "pchisq", |q| {
+    dist_vectorize_p(args, "pchisq", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else {
@@ -1759,6 +1907,8 @@ fn builtin_pchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_qchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1766,7 +1916,7 @@ fn builtin_qchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let shape = df / 2.0;
-    dist_vectorize(args, "qchisq", |p| {
+    dist_vectorize_q(args, "qchisq", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1795,6 +1945,7 @@ fn builtin_qchisq(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_dt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1802,7 +1953,7 @@ fn builtin_dt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
         ));
     }
     let log_const = ln_gamma((df + 1.0) / 2.0) - ln_gamma(df / 2.0) - 0.5 * (df * PI).ln();
-    dist_vectorize(args, "dt", |x| {
+    dist_vectorize_d(args, "dt", log_flag, |x| {
         (log_const + (-(df + 1.0) / 2.0) * (1.0 + x * x / df).ln()).exp()
     })
 }
@@ -1818,13 +1969,15 @@ fn builtin_dt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_pt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "pt(): 'df' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pt", |q| {
+    dist_vectorize_p(args, "pt", lower_tail, log_p, |q| {
         let x2 = q * q;
         let t = df / (df + x2);
         let half_ib = 0.5 * regularized_beta(t, df / 2.0, 0.5);
@@ -1846,13 +1999,15 @@ fn builtin_pt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_qt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df = extract_param(args, named, "df", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df <= 0.0 || df.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qt(): 'df' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qt", |p| {
+    dist_vectorize_q(args, "qt", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -1892,6 +2047,7 @@ fn builtin_qt(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 fn builtin_df_dist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df1 = extract_param(args, named, "df1", 1, f64::NAN);
     let df2 = extract_param(args, named, "df2", 2, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if df1 <= 0.0 || df2 <= 0.0 || df1.is_nan() || df2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -1901,7 +2057,7 @@ fn builtin_df_dist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
     let log_const = 0.5 * (df1 * df1.ln() + df2 * df2.ln()) + ln_gamma((df1 + df2) / 2.0)
         - ln_gamma(df1 / 2.0)
         - ln_gamma(df2 / 2.0);
-    dist_vectorize(args, "df", |x| {
+    dist_vectorize_d(args, "df", log_flag, |x| {
         if x < 0.0 {
             0.0
         } else if x == 0.0 {
@@ -1932,13 +2088,15 @@ fn builtin_df_dist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
 fn builtin_pf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df1 = extract_param(args, named, "df1", 1, f64::NAN);
     let df2 = extract_param(args, named, "df2", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df1 <= 0.0 || df2 <= 0.0 || df1.is_nan() || df2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "pf(): 'df1' and 'df2' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "pf", |q| {
+    dist_vectorize_p(args, "pf", lower_tail, log_p, |q| {
         if q <= 0.0 {
             0.0
         } else {
@@ -1960,13 +2118,15 @@ fn builtin_pf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 fn builtin_qf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let df1 = extract_param(args, named, "df1", 1, f64::NAN);
     let df2 = extract_param(args, named, "df2", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if df1 <= 0.0 || df2 <= 0.0 || df1.is_nan() || df2.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qf(): 'df1' and 'df2' must be positive".to_string(),
         ));
     }
-    dist_vectorize(args, "qf", |p| {
+    dist_vectorize_q(args, "qf", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -2000,6 +2160,7 @@ fn builtin_qf(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
 fn builtin_dbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let size = extract_param(args, named, "size", 1, f64::NAN);
     let prob = extract_param(args, named, "prob", 2, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if size < 0.0 || size.is_nan() || size != size.floor() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2013,7 +2174,7 @@ fn builtin_dbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let n = size;
-    dist_vectorize(args, "dbinom", |x| {
+    dist_vectorize_d(args, "dbinom", log_flag, |x| {
         let k = x.round();
         if (x - k).abs() > 1e-7 || k < 0.0 || k > n {
             0.0
@@ -2048,6 +2209,8 @@ fn builtin_dbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_pbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let size = extract_param(args, named, "size", 1, f64::NAN);
     let prob = extract_param(args, named, "prob", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if size < 0.0 || size.is_nan() || size != size.floor() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2061,7 +2224,7 @@ fn builtin_pbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let n = size as i64;
-    dist_vectorize(args, "pbinom", |q| {
+    dist_vectorize_p(args, "pbinom", lower_tail, log_p, |q| {
         if q < 0.0 {
             0.0
         } else if q >= size {
@@ -2086,6 +2249,8 @@ fn builtin_pbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 fn builtin_qbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let size = extract_param(args, named, "size", 1, f64::NAN);
     let prob = extract_param(args, named, "prob", 2, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if size < 0.0 || size.is_nan() || size != size.floor() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2099,7 +2264,7 @@ fn builtin_qbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let n = size as i64;
-    dist_vectorize(args, "qbinom", |p| {
+    dist_vectorize_q(args, "qbinom", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -2129,13 +2294,14 @@ fn builtin_qbinom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_dpois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let lambda = extract_param(args, named, "lambda", 1, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if lambda < 0.0 || lambda.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "dpois(): 'lambda' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "dpois", |x| {
+    dist_vectorize_d(args, "dpois", log_flag, |x| {
         let k = x.round();
         if (x - k).abs() > 1e-7 || k < 0.0 {
             0.0
@@ -2162,13 +2328,15 @@ fn builtin_dpois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_ppois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let lambda = extract_param(args, named, "lambda", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if lambda < 0.0 || lambda.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "ppois(): 'lambda' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "ppois", |q| {
+    dist_vectorize_p(args, "ppois", lower_tail, log_p, |q| {
         if q < 0.0 {
             0.0
         } else if lambda == 0.0 {
@@ -2190,13 +2358,15 @@ fn builtin_ppois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_qpois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let lambda = extract_param(args, named, "lambda", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if lambda < 0.0 || lambda.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qpois(): 'lambda' must be non-negative".to_string(),
         ));
     }
-    dist_vectorize(args, "qpois", |p| {
+    dist_vectorize_q(args, "qpois", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -2229,13 +2399,14 @@ fn builtin_qpois(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_dgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let prob = extract_param(args, named, "prob", 1, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if !(0.0..=1.0).contains(&prob) || prob.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "dgeom(): 'prob' must be in (0, 1]".to_string(),
         ));
     }
-    dist_vectorize(args, "dgeom", |x| {
+    dist_vectorize_d(args, "dgeom", log_flag, |x| {
         let k = x.round();
         if (x - k).abs() > 1e-7 || k < 0.0 {
             0.0
@@ -2255,13 +2426,15 @@ fn builtin_dgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_pgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let prob = extract_param(args, named, "prob", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if !(0.0..=1.0).contains(&prob) || prob.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "pgeom(): 'prob' must be in (0, 1]".to_string(),
         ));
     }
-    dist_vectorize(args, "pgeom", |q| {
+    dist_vectorize_p(args, "pgeom", lower_tail, log_p, |q| {
         if q < 0.0 {
             0.0
         } else {
@@ -2280,13 +2453,15 @@ fn builtin_pgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 #[builtin(min_args = 2, namespace = "stats")]
 fn builtin_qgeom(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let prob = extract_param(args, named, "prob", 1, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if !(0.0..=1.0).contains(&prob) || prob.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
             "qgeom(): 'prob' must be in (0, 1]".to_string(),
         ));
     }
-    dist_vectorize(args, "qgeom", |p| {
+    dist_vectorize_q(args, "qgeom", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {
@@ -2319,6 +2494,7 @@ fn builtin_dhyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let m = extract_param(args, named, "m", 1, f64::NAN);
     let n = extract_param(args, named, "n", 2, f64::NAN);
     let k = extract_param(args, named, "k", 3, f64::NAN);
+    let log_flag = extract_log_flag(named);
     if m < 0.0 || n < 0.0 || k < 0.0 || m.is_nan() || n.is_nan() || k.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2331,7 +2507,7 @@ fn builtin_dhyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
             "dhyper(): 'k' must not exceed 'm + n'".to_string(),
         ));
     }
-    dist_vectorize(args, "dhyper", |x| {
+    dist_vectorize_d(args, "dhyper", log_flag, |x| {
         let xi = x.round();
         if (x - xi).abs() > 1e-7 || xi < 0.0 || xi > m || xi > k || (k - xi) > n {
             0.0
@@ -2353,6 +2529,8 @@ fn builtin_phyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let m = extract_param(args, named, "m", 1, f64::NAN);
     let n = extract_param(args, named, "n", 2, f64::NAN);
     let k = extract_param(args, named, "k", 3, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if m < 0.0 || n < 0.0 || k < 0.0 || m.is_nan() || n.is_nan() || k.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2366,7 +2544,7 @@ fn builtin_phyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         ));
     }
     let lo = (k - n).max(0.0) as i64;
-    dist_vectorize(args, "phyper", |q| {
+    dist_vectorize_p(args, "phyper", lower_tail, log_p, |q| {
         if q < lo as f64 {
             0.0
         } else if q >= m.min(k) {
@@ -2395,6 +2573,8 @@ fn builtin_qhyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     let m = extract_param(args, named, "m", 1, f64::NAN);
     let n = extract_param(args, named, "n", 2, f64::NAN);
     let k = extract_param(args, named, "k", 3, f64::NAN);
+    let lower_tail = extract_lower_tail(named);
+    let log_p = extract_log_p(named);
     if m < 0.0 || n < 0.0 || k < 0.0 || m.is_nan() || n.is_nan() || k.is_nan() {
         return Err(RError::new(
             RErrorKind::Argument,
@@ -2409,7 +2589,7 @@ fn builtin_qhyper(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     }
     let lo = (k - n).max(0.0) as i64;
     let hi = m.min(k) as i64;
-    dist_vectorize(args, "qhyper", |p| {
+    dist_vectorize_q(args, "qhyper", lower_tail, log_p, |p| {
         if !(0.0..=1.0).contains(&p) {
             f64::NAN
         } else if p == 0.0 {

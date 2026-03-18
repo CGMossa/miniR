@@ -603,3 +603,285 @@ fn distribution_parameter_errors() {
 }
 
 // endregion
+
+// region: lower.tail, log.p, and log parameters
+
+#[test]
+fn pnorm_lower_tail() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pnorm(0) ~ 0.5 (erfc approx has ~1e-9 precision)
+stopifnot(abs(pnorm(0) - 0.5) < 1e-7)
+
+# pnorm(0, lower.tail=FALSE) = 1 - pnorm(0) ~ 0.5
+stopifnot(abs(pnorm(0, lower.tail = FALSE) - 0.5) < 1e-7)
+
+# pnorm(1, lower.tail=FALSE) = 1 - pnorm(1)
+p1 <- pnorm(1)
+stopifnot(abs(pnorm(1, lower.tail = FALSE) - (1 - p1)) < 1e-10)
+
+# pnorm(-Inf, lower.tail=FALSE) = 1
+stopifnot(abs(pnorm(-Inf, lower.tail = FALSE) - 1) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dnorm_log() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# dnorm(0, log=TRUE) should equal log(dnorm(0))
+stopifnot(abs(dnorm(0, log = TRUE) - log(dnorm(0))) < 1e-10)
+
+# dnorm(1, log=TRUE) should equal log(dnorm(1))
+stopifnot(abs(dnorm(1, log = TRUE) - log(dnorm(1))) < 1e-10)
+
+# dnorm(-2, log=TRUE) should equal log(dnorm(-2))
+stopifnot(abs(dnorm(-2, log = TRUE) - log(dnorm(-2))) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn qnorm_log_p() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# qnorm(log(0.5), log.p=TRUE) should equal qnorm(0.5) = 0
+stopifnot(abs(qnorm(log(0.5), log.p = TRUE) - 0) < 1e-7)
+
+# qnorm(log(0.975), log.p=TRUE) should equal qnorm(0.975)
+stopifnot(abs(qnorm(log(0.975), log.p = TRUE) - qnorm(0.975)) < 1e-7)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn qnorm_lower_tail_false() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# qnorm(0.5, lower.tail=FALSE) should equal qnorm(0.5) = 0
+# because 1-0.5 = 0.5, and qnorm(0.5) = 0
+stopifnot(abs(qnorm(0.5, lower.tail = FALSE) - 0) < 1e-7)
+
+# qnorm(0.025, lower.tail=FALSE) should equal qnorm(0.975)
+stopifnot(abs(qnorm(0.025, lower.tail = FALSE) - qnorm(0.975)) < 1e-5)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pnorm_log_p() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pnorm(0, log.p=TRUE) should equal log(0.5) (erfc approx precision ~1e-9)
+stopifnot(abs(pnorm(0, log.p = TRUE) - log(0.5)) < 1e-7)
+
+# pnorm(0, lower.tail=FALSE, log.p=TRUE) should also equal log(0.5)
+stopifnot(abs(pnorm(0, lower.tail = FALSE, log.p = TRUE) - log(0.5)) < 1e-7)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pexp_lower_tail_and_log_p() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pexp(1, lower.tail=FALSE) = exp(-1)
+stopifnot(abs(pexp(1, lower.tail = FALSE) - exp(-1)) < 1e-10)
+
+# pexp(1, log.p=TRUE) = log(1-exp(-1))
+stopifnot(abs(pexp(1, log.p = TRUE) - log(1 - exp(-1))) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dexp_log() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# dexp(0, log=TRUE) = log(1) = 0
+stopifnot(abs(dexp(0, log = TRUE) - 0) < 1e-10)
+
+# dexp(1, log=TRUE) = log(exp(-1)) = -1
+stopifnot(abs(dexp(1, log = TRUE) - (-1)) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn qexp_lower_tail_and_log_p() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# qexp(0.5, lower.tail=FALSE) = qexp(0.5)
+# because 1-0.5=0.5
+stopifnot(abs(qexp(0.5, lower.tail = FALSE) - qexp(0.5)) < 1e-10)
+
+# qexp(log(0.5), log.p=TRUE) = qexp(0.5)
+stopifnot(abs(qexp(log(0.5), log.p = TRUE) - qexp(0.5)) < 1e-7)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dunif_log() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# dunif(0.5, log=TRUE) = log(1) = 0
+stopifnot(abs(dunif(0.5, log = TRUE) - 0) < 1e-10)
+
+# dunif(2, log=TRUE) = log(0) = -Inf
+stopifnot(dunif(2, log = TRUE) == -Inf)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn punif_lower_tail() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# punif(0.5, lower.tail=FALSE) = 1 - 0.5 = 0.5
+stopifnot(abs(punif(0.5, lower.tail = FALSE) - 0.5) < 1e-10)
+
+# punif(0.25, lower.tail=FALSE) = 0.75
+stopifnot(abs(punif(0.25, lower.tail = FALSE) - 0.75) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dbinom_log() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# dbinom(5, 10, 0.5, log=TRUE) should equal log(dbinom(5, 10, 0.5))
+stopifnot(abs(dbinom(5, 10, 0.5, log = TRUE) - log(dbinom(5, 10, 0.5))) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pbinom_lower_tail() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pbinom(5, 10, 0.5, lower.tail=FALSE) = 1 - pbinom(5, 10, 0.5)
+stopifnot(abs(pbinom(5, 10, 0.5, lower.tail = FALSE) - (1 - pbinom(5, 10, 0.5))) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dpois_log() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# dpois(3, 5, log=TRUE) should equal log(dpois(3, 5))
+stopifnot(abs(dpois(3, 5, log = TRUE) - log(dpois(3, 5))) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pt_lower_tail() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pt(0, df=5, lower.tail=FALSE) = 0.5
+stopifnot(abs(pt(0, df = 5, lower.tail = FALSE) - 0.5) < 1e-7)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pchisq_lower_tail_log_p() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# pchisq(5, df=3, lower.tail=FALSE) = 1 - pchisq(5, df=3)
+p <- pchisq(5, df = 3)
+stopifnot(abs(pchisq(5, df = 3, lower.tail = FALSE) - (1 - p)) < 1e-10)
+
+# pchisq(5, df=3, log.p=TRUE) = log(pchisq(5, df=3))
+stopifnot(abs(pchisq(5, df = 3, log.p = TRUE) - log(p)) < 1e-10)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn all_distributions_log_flag_for_density() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Test log flag for all d* functions
+check_log <- function(name, d, d_log) {
+    expected <- log(d)
+    tol <- 1e-8
+    if (is.finite(expected)) {
+        stopifnot(abs(d_log - expected) < tol)
+    }
+}
+
+check_log("dgamma", dgamma(2, shape = 2), dgamma(2, shape = 2, log = TRUE))
+check_log("dbeta", dbeta(0.5, 2, 3), dbeta(0.5, 2, 3, log = TRUE))
+check_log("dcauchy", dcauchy(1), dcauchy(1, log = TRUE))
+check_log("dweibull", dweibull(1, shape = 2), dweibull(1, shape = 2, log = TRUE))
+check_log("dlnorm", dlnorm(1), dlnorm(1, log = TRUE))
+check_log("dchisq", dchisq(2, df = 3), dchisq(2, df = 3, log = TRUE))
+check_log("dt", dt(1, df = 5), dt(1, df = 5, log = TRUE))
+check_log("df", df(1, 3, 5), df(1, 3, 5, log = TRUE))
+check_log("dgeom", dgeom(2, 0.3), dgeom(2, 0.3, log = TRUE))
+check_log("dhyper", dhyper(2, 5, 5, 3), dhyper(2, 5, 5, 3, log = TRUE))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn all_distributions_lower_tail_for_cdf() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+check_lt <- function(name, p, p_ut) {
+    tol <- 1e-8
+    stopifnot(abs(p_ut - (1 - p)) < tol)
+}
+
+check_lt("pgamma", pgamma(2, shape = 2), pgamma(2, shape = 2, lower.tail = FALSE))
+check_lt("pbeta", pbeta(0.5, 2, 3), pbeta(0.5, 2, 3, lower.tail = FALSE))
+check_lt("pcauchy", pcauchy(1), pcauchy(1, lower.tail = FALSE))
+check_lt("pweibull", pweibull(1, shape = 2), pweibull(1, shape = 2, lower.tail = FALSE))
+check_lt("plnorm", plnorm(1), plnorm(1, lower.tail = FALSE))
+check_lt("pf", pf(1, 3, 5), pf(1, 3, 5, lower.tail = FALSE))
+check_lt("pgeom", pgeom(2, 0.3), pgeom(2, 0.3, lower.tail = FALSE))
+check_lt("phyper", phyper(2, 5, 5, 3), phyper(2, 5, 5, 3, lower.tail = FALSE))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
