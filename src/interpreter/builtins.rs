@@ -703,7 +703,7 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                 println!();
             }
         }
-        if fns.len() % cols != 0 {
+        if !fns.len().is_multiple_of(cols) {
             println!();
         }
         println!();
@@ -1786,11 +1786,6 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
     }
 
     let mut diffs = Vec::new();
-    eprintln!(
-        "[DEBUG all.equal] target={:?}, current={:?}",
-        args[0].type_name(),
-        args[1].type_name()
-    );
     all_equal_recurse(
         &args[0],
         &args[1],
@@ -1800,7 +1795,6 @@ fn builtin_all_equal(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         "",
         &mut diffs,
     );
-    eprintln!("[DEBUG all.equal] diffs={:?}", diffs);
 
     if diffs.is_empty() {
         Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))

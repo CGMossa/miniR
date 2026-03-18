@@ -1831,72 +1831,152 @@ fn builtin_seq_along(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 /// Replicate elements of a vector.
 ///
 /// @param x a vector
-/// @param times number of times to repeat (default 1)
+/// @param times number of times to repeat the whole vector (default 1)
+/// @param each number of times to repeat each element before moving to the next
+/// @param length.out desired output length (truncates or extends the result)
 /// @return vector with elements repeated
 #[builtin(min_args = 1)]
 fn builtin_rep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let each = named
+        .iter()
+        .find(|(n, _)| n == "each")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar());
+
+    let length_out = named
+        .iter()
+        .find(|(n, _)| n == "length.out")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar());
+
     let times = named
         .iter()
         .find(|(n, _)| n == "times")
         .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
-        .or_else(|| args.get(1)?.as_vector()?.as_integer_scalar())
+        .or_else(|| {
+            // Only use positional arg 1 for times if `each` is not set
+            if each.is_none() {
+                args.get(1)?.as_vector()?.as_integer_scalar()
+            } else {
+                None
+            }
+        })
         .unwrap_or(1);
     let times = usize::try_from(times)?;
 
+    let each_n = each.map(usize::try_from).transpose()?.unwrap_or(1);
+
     match args.first() {
-        Some(RValue::Vector(v)) => match &v.inner {
-            Vector::Raw(vals) => Ok(RValue::vec(Vector::Raw(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .copied()
-                    .collect(),
-            ))),
-            Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into(),
-            ))),
-            Vector::Integer(vals) => Ok(RValue::vec(Vector::Integer(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into(),
-            ))),
-            Vector::Logical(vals) => Ok(RValue::vec(Vector::Logical(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into(),
-            ))),
-            Vector::Complex(vals) => Ok(RValue::vec(Vector::Complex(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into(),
-            ))),
-            Vector::Character(vals) => Ok(RValue::vec(Vector::Character(
-                vals.iter()
-                    .cycle()
-                    .take(vals.len() * times)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into(),
-            ))),
-        },
+        Some(RValue::Vector(v)) => {
+            let result = rep_vector(&v.inner, each_n, times, length_out)?;
+            Ok(RValue::vec(result))
+        }
         _ => Err(RError::new(
             RErrorKind::Argument,
             "invalid argument".to_string(),
         )),
+    }
+}
+
+/// Helper: replicate a vector with `each`, `times`, and optional `length.out`.
+///
+/// Algorithm: first apply `each` (repeat each element), then apply `times`
+/// (repeat the whole result), then truncate/extend to `length.out` if given.
+fn rep_vector(
+    v: &Vector,
+    each: usize,
+    times: usize,
+    length_out: Option<i64>,
+) -> Result<Vector, RError> {
+    // Apply `each` first, then `times`, using the doubles representation as a
+    // type-agnostic strategy won't work — we need to preserve the original type.
+    // Instead, convert to doubles, do the replication, then figure out the type.
+    // Actually, let's handle it per-type to preserve type fidelity.
+    let result = match v {
+        Vector::Double(vals) => {
+            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            Vector::Double(apply_length_out_cloneable(expanded, length_out)?.into())
+        }
+        Vector::Integer(vals) => {
+            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            Vector::Integer(apply_length_out_cloneable(expanded, length_out)?.into())
+        }
+        Vector::Logical(vals) => {
+            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            Vector::Logical(apply_length_out_cloneable(expanded, length_out)?.into())
+        }
+        Vector::Character(vals) => {
+            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            Vector::Character(apply_length_out_cloneable(expanded, length_out)?.into())
+        }
+        Vector::Complex(vals) => {
+            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            Vector::Complex(apply_length_out_cloneable(expanded, length_out)?.into())
+        }
+        Vector::Raw(vals) => {
+            let expanded = rep_each_then_times_copy(vals, each, times);
+            let final_vec = if let Some(lo) = length_out {
+                let lo = usize::try_from(lo)?;
+                if expanded.is_empty() {
+                    vec![]
+                } else {
+                    expanded.iter().cycle().take(lo).copied().collect()
+                }
+            } else {
+                expanded
+            };
+            Vector::Raw(final_vec)
+        }
+    };
+    Ok(result)
+}
+
+/// Repeat each element `each` times, then repeat the whole result `times` times.
+fn rep_each_then_times<T: Clone>(vals: &[T], each: usize, times: usize) -> Vec<T> {
+    let with_each: Vec<T> = if each <= 1 {
+        vals.to_vec()
+    } else {
+        vals.iter()
+            .flat_map(|v| std::iter::repeat_n(v.clone(), each))
+            .collect()
+    };
+    if times <= 1 {
+        with_each
+    } else {
+        let len = with_each.len();
+        with_each.into_iter().cycle().take(len * times).collect()
+    }
+}
+
+/// Same as `rep_each_then_times` but for Copy types (Raw/u8).
+fn rep_each_then_times_copy<T: Copy>(vals: &[T], each: usize, times: usize) -> Vec<T> {
+    let with_each: Vec<T> = if each <= 1 {
+        vals.to_vec()
+    } else {
+        vals.iter()
+            .flat_map(|&v| std::iter::repeat_n(v, each))
+            .collect()
+    };
+    if times <= 1 {
+        with_each
+    } else {
+        let len = with_each.len();
+        with_each.into_iter().cycle().take(len * times).collect()
+    }
+}
+
+/// Truncate or cycle-extend a Vec<T: Clone> to the requested `length.out`.
+fn apply_length_out_cloneable<T: Clone>(
+    v: Vec<T>,
+    length_out: Option<i64>,
+) -> Result<Vec<T>, RError> {
+    match length_out {
+        None => Ok(v),
+        Some(lo) => {
+            let lo = usize::try_from(lo)?;
+            if v.is_empty() {
+                return Ok(vec![]);
+            }
+            Ok(v.iter().cycle().take(lo).cloned().collect())
+        }
     }
 }
 
@@ -1950,6 +2030,7 @@ fn builtin_rev(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
 ///
 /// @param x a vector
 /// @param decreasing logical; sort in descending order? (default FALSE)
+/// @param na.last logical; TRUE puts NAs at end, FALSE at beginning, NA removes them (default TRUE)
 /// @return sorted vector
 #[builtin(min_args = 1)]
 fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -1958,37 +2039,112 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .find(|(n, _)| n == "decreasing")
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
+
+    // na.last: TRUE (default) = NAs at end, FALSE = NAs at beginning, NA = remove NAs
+    // R's sort() defaults to na.last = NA (remove NAs), unlike order() which defaults to TRUE
+    let na_last_val = named.iter().find(|(n, _)| n == "na.last").map(|(_, v)| v);
+    let na_last: Option<bool> = match na_last_val {
+        Some(RValue::Vector(rv)) => rv.inner.as_logical_scalar(),
+        Some(RValue::Null) => None,
+        None => None, // R default for sort is na.last=NA (remove NAs)
+        _ => None,
+    };
+
     match args.first() {
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
                 Vector::Double(vals) => {
-                    let mut v: Vec<Option<f64>> = vals.0.clone();
-                    v.sort_by(|a, b| {
-                        let a = a.unwrap_or(f64::NAN);
-                        let b = b.unwrap_or(f64::NAN);
+                    let (mut non_na, na_count) = partition_na_doubles(&vals.0);
+                    non_na.sort_by(|a, b| {
                         if decreasing {
-                            b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal)
+                            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
                         } else {
-                            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                         }
                     });
-                    Vector::Double(v.into())
+                    let result = reassemble_with_na(
+                        non_na.into_iter().map(Some).collect(),
+                        na_count,
+                        na_last,
+                    );
+                    Vector::Double(result.into())
                 }
                 Vector::Integer(vals) => {
-                    let mut v = vals.clone();
-                    v.sort_by(|a, b| if decreasing { b.cmp(a) } else { a.cmp(b) });
-                    Vector::Integer(v)
+                    let (mut non_na, na_count) = partition_na_options(vals.as_slice());
+                    non_na.sort_by(|a, b| if decreasing { b.cmp(a) } else { a.cmp(b) });
+                    let result = reassemble_with_na(
+                        non_na.into_iter().map(Some).collect(),
+                        na_count,
+                        na_last,
+                    );
+                    Vector::Integer(result.into())
                 }
                 Vector::Character(vals) => {
-                    let mut v = vals.clone();
-                    v.sort_by(|a, b| if decreasing { b.cmp(a) } else { a.cmp(b) });
-                    Vector::Character(v)
+                    let (mut non_na, na_count) = partition_na_options(vals.as_slice());
+                    non_na.sort_by(|a, b| if decreasing { b.cmp(a) } else { a.cmp(b) });
+                    let result = reassemble_with_na(
+                        non_na.into_iter().map(Some).collect(),
+                        na_count,
+                        na_last,
+                    );
+                    Vector::Character(result.into())
                 }
                 other => other.clone(),
             };
             Ok(RValue::vec(result))
         }
         _ => Ok(RValue::Null),
+    }
+}
+
+/// Separate non-NA f64 values from NA count.
+fn partition_na_doubles(vals: &[Option<f64>]) -> (Vec<f64>, usize) {
+    let mut non_na = Vec::with_capacity(vals.len());
+    let mut na_count = 0;
+    for v in vals {
+        match v {
+            Some(f) if !f.is_nan() => non_na.push(*f),
+            _ => na_count += 1,
+        }
+    }
+    (non_na, na_count)
+}
+
+/// Separate non-NA Option values from NA count for Clone types.
+fn partition_na_options<T: Clone>(vals: &[Option<T>]) -> (Vec<T>, usize) {
+    let mut non_na = Vec::with_capacity(vals.len());
+    let mut na_count = 0;
+    for v in vals {
+        match v {
+            Some(x) => non_na.push(x.clone()),
+            None => na_count += 1,
+        }
+    }
+    (non_na, na_count)
+}
+
+/// Reassemble sorted non-NA values with NAs placed according to `na_last`.
+///
+/// - `Some(true)` — NAs go at end
+/// - `Some(false)` — NAs go at beginning
+/// - `None` — NAs are removed
+fn reassemble_with_na<T: Clone>(
+    sorted: Vec<Option<T>>,
+    na_count: usize,
+    na_last: Option<bool>,
+) -> Vec<Option<T>> {
+    match na_last {
+        None => sorted, // remove NAs
+        Some(true) => {
+            let mut result = sorted;
+            result.extend(std::iter::repeat_n(None, na_count));
+            result
+        }
+        Some(false) => {
+            let mut result: Vec<Option<T>> = std::iter::repeat_n(None, na_count).collect();
+            result.extend(sorted);
+            result
+        }
     }
 }
 
@@ -2607,7 +2763,8 @@ fn builtin_range(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 ///
 /// @param x numeric vector
 /// @param lag the lag to use (default 1)
-/// @return numeric vector of length(x) - lag
+/// @param differences number of times to apply differencing (default 1)
+/// @return numeric vector of length(x) - lag * differences
 #[builtin(min_args = 1)]
 fn builtin_diff(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
     let lag = named
@@ -2629,25 +2786,180 @@ fn builtin_diff(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             "'lag' must be a positive integer, got 0".to_string(),
         ));
     }
+
+    let differences = named
+        .iter()
+        .find(|(n, _)| n == "differences")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1);
+    let differences = usize::try_from(differences).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("'differences' must be a positive integer, got {differences}"),
+        )
+    })?;
+    if differences == 0 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "'differences' must be a positive integer, got 0".to_string(),
+        ));
+    }
+
     match args.first() {
         Some(RValue::Vector(v)) => {
-            let vals = v.to_doubles();
-            if vals.len() <= lag {
-                return Ok(RValue::vec(Vector::Double(vec![].into())));
+            let mut vals = v.to_doubles();
+            for _ in 0..differences {
+                if vals.len() <= lag {
+                    return Ok(RValue::vec(Vector::Double(vec![].into())));
+                }
+                vals = (lag..vals.len())
+                    .map(|i| match (vals[i - lag], vals[i]) {
+                        (Some(a), Some(b)) => Some(b - a),
+                        _ => None,
+                    })
+                    .collect();
             }
-            let result: Vec<Option<f64>> = (lag..vals.len())
-                .map(|i| match (vals[i - lag], vals[i]) {
-                    (Some(a), Some(b)) => Some(b - a),
-                    _ => None,
-                })
-                .collect();
-            Ok(RValue::vec(Vector::Double(result.into())))
+            Ok(RValue::vec(Vector::Double(vals.into())))
         }
         _ => Err(RError::new(
             RErrorKind::Argument,
             "invalid argument".to_string(),
         )),
     }
+}
+
+/// Sample quantiles.
+///
+/// Computes quantiles using type 7 (R default): for probability p and sorted
+/// data of length n, h = (n-1)*p, result = x[floor(h)] + (h - floor(h)) *
+/// (x[ceil(h)] - x[floor(h)]).
+///
+/// @param x numeric vector
+/// @param probs numeric vector of probabilities (default: c(0, 0.25, 0.5, 0.75, 1))
+/// @param na.rm logical; remove NAs before computing? (default FALSE)
+/// @param type integer; quantile algorithm type (only type 7 supported)
+/// @return named numeric vector of quantiles
+#[builtin(min_args = 1)]
+fn builtin_quantile(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let na_rm = named
+        .iter()
+        .find(|(n, _)| n == "na.rm")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let qtype = named
+        .iter()
+        .find(|(n, _)| n == "type")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(7);
+    if qtype != 7 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "only quantile type 7 is currently supported, got type {qtype}. \
+                 Type 7 is R's default and the most commonly used algorithm."
+            ),
+        ));
+    }
+
+    // Parse probs: named arg, positional arg 1, or default c(0, 0.25, 0.5, 0.75, 1)
+    let default_probs = vec![Some(0.0), Some(0.25), Some(0.5), Some(0.75), Some(1.0)];
+    let probs: Vec<Option<f64>> = named
+        .iter()
+        .find(|(n, _)| n == "probs")
+        .map(|(_, v)| v)
+        .or(args.get(1))
+        .map(|v| match v {
+            RValue::Vector(rv) => rv.to_doubles(),
+            RValue::Null => vec![],
+            _ => default_probs.clone(),
+        })
+        .unwrap_or(default_probs);
+
+    // Get and sort the data
+    let vals = match args.first() {
+        Some(RValue::Vector(v)) => v.to_doubles(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "non-numeric argument to quantile".to_string(),
+            ))
+        }
+    };
+
+    // Filter NAs
+    let mut data: Vec<f64> = if na_rm {
+        vals.iter()
+            .filter_map(|v| *v)
+            .filter(|f| !f.is_nan())
+            .collect()
+    } else {
+        // If any NA/NaN present without na.rm, check and error
+        let mut d = Vec::with_capacity(vals.len());
+        for v in &vals {
+            match v {
+                Some(f) if !f.is_nan() => d.push(*f),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "missing values and NaN's not allowed if 'na.rm' is FALSE".to_string(),
+                    ));
+                }
+            }
+        }
+        d
+    };
+
+    data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = data.len();
+
+    // Compute quantiles using type 7
+    let mut result_vals: Vec<Option<f64>> = Vec::with_capacity(probs.len());
+    let mut names: Vec<Option<String>> = Vec::with_capacity(probs.len());
+
+    for prob in &probs {
+        match prob {
+            Some(p) => {
+                if !(0.0..=1.0).contains(p) {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        format!("'probs' outside [0, 1], got {p}"),
+                    ));
+                }
+                if n == 0 {
+                    result_vals.push(None);
+                } else if n == 1 {
+                    result_vals.push(Some(data[0]));
+                } else {
+                    let h = (n - 1) as f64 * p;
+                    let lo = h.floor() as usize;
+                    let hi = h.ceil() as usize;
+                    let frac = h - h.floor();
+                    let val = data[lo] + frac * (data[hi] - data[lo]);
+                    result_vals.push(Some(val));
+                }
+                // Format name: e.g. "0%", "25%", "50%", "75%", "100%"
+                let pct = p * 100.0;
+                let name = if pct == pct.floor() {
+                    format!("{}%", pct as i64)
+                } else {
+                    format!("{pct}%")
+                };
+                names.push(Some(name));
+            }
+            None => {
+                result_vals.push(None);
+                names.push(None);
+            }
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(result_vals.into()));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(names.into())),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 /// Replicate elements to a specified length.

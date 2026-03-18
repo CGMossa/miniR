@@ -147,6 +147,30 @@ fn builtin_factor(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::Vector(rv))
 }
 
+/// Construct an ordered factor.
+///
+/// Delegates to `factor()` with `ordered = TRUE`. Ordered factors represent
+/// ordinal data where the levels have a meaningful order.
+///
+/// @param x vector to encode (default: character())
+/// @param levels character vector of allowed levels (default: sorted unique values)
+/// @param labels character vector of display labels for the levels
+/// @return an ordered factor (integer vector with "levels" and "class" attributes)
+#[builtin]
+fn builtin_ordered(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Build a new named args list with ordered=TRUE forced
+    let mut new_named: Vec<(String, RValue)> = named
+        .iter()
+        .filter(|(n, _)| n != "ordered")
+        .cloned()
+        .collect();
+    new_named.push((
+        "ordered".to_string(),
+        RValue::vec(Vector::Logical(vec![Some(true)].into())),
+    ));
+    builtin_factor(args, &new_named)
+}
+
 /// `levels(x)` — get the levels of a factor.
 #[builtin(min_args = 1)]
 fn builtin_levels(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
