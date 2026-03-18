@@ -142,6 +142,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - Agents should always run in **worktrees** (`isolation: "worktree"`) so they don't collide with each other or main
 - Agents should **remove `.cargo/config.toml`** in their worktree (`rm -f .cargo/config.toml`) so `cargo` fetches from crates.io instead of the vendor dir — this avoids "package not found" errors when agents add new dependencies
 - After an agent finishes, the parent merges its work into main, then re-vendors with `just vendor-force`
+- **Never copy entire files** from a worktree to main — apply patches surgically with `git diff` + `git apply`. Copying whole files overwrites unrelated changes that were made on main since the worktree branched.
 - Never delete a worktree until its changes have been verified as merged into main
 
 ## Vendor Audit
