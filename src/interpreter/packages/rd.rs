@@ -352,16 +352,31 @@ impl<'a> RdParser<'a> {
     }
 
     /// Read a brace-delimited argument in verbatim mode.
-    /// In verbatim mode (`\preformatted{}`, `\verb{}`), `%` is literal text
-    /// and Rd commands are not expanded — only `\{`, `\}`, `\\` escapes apply.
     fn read_brace_arg_verbatim(&mut self) -> Result<String, RdError> {
-        self.read_brace_arg_inner(true)
+        self.read_brace_arg_ex(true, false)
     }
 
-    /// Inner implementation for reading brace-delimited arguments.
-    /// When `verbatim` is true, `%` is treated as literal text and commands
-    /// other than escape sequences are not expanded.
+    /// Read a brace-delimited argument in R-code mode.
+    ///
+    /// Like normal mode (Rd commands still expanded via `\` + alpha → break),
+    /// but tracks R string literals so `{` inside `"..."` or `'...'` doesn't
+    /// affect brace depth. `%` still acts as Rd comment. `#` comments still
+    /// count braces (matching GNU R's gramRd.y behavior — `## END}` closes).
+    ///
+    /// Used for `\examples{}` (RSECTIONHEADER) and `\code{}` (RCODEMACRO).
+    fn read_brace_arg_rcode(&mut self) -> Result<String, RdError> {
+        self.read_brace_arg_ex(false, true)
+    }
+
     fn read_brace_arg_inner(&mut self, verbatim: bool) -> Result<String, RdError> {
+        self.read_brace_arg_ex(verbatim, false)
+    }
+
+    /// Core brace-delimited argument reader.
+    ///
+    /// `verbatim`: no Rd command expansion, `%` is literal.
+    /// `rlike`: track R string literals (don't count braces inside strings).
+    fn read_brace_arg_ex(&mut self, verbatim: bool, rlike: bool) -> Result<String, RdError> {
         // Expect opening brace
         if self.peek() != Some('{') {
             return Ok(String::new());
@@ -371,9 +386,78 @@ impl<'a> RdParser<'a> {
         let mut depth: usize = 1;
         let mut text = String::new();
         let start_line = self.line;
+        // R string tracking (RLIKE mode from GNU R's gramRd.y).
+        // When inside "...", '...', or `...`, braces don't affect depth.
+        let mut in_r_string: Option<char> = None;
 
         while !self.at_end() && depth > 0 {
             let ch = self.peek().unwrap();
+
+            // Inside an R string: consume chars, don't count braces.
+            // Only the matching unescaped close quote exits string mode.
+            // Backslash inside string: if followed by the quote char or
+            // another backslash, it's an escape — consume both chars.
+            if rlike {
+                if let Some(quote) = in_r_string {
+                    self.advance();
+                    text.push(ch);
+                    if ch == '\\' {
+                        // Could be R escape (\") or Rd escape (\\).
+                        // In both cases, consume the next char to avoid
+                        // mistaking it for a closing quote.
+                        if let Some(next) = self.peek() {
+                            self.advance();
+                            text.push(next);
+                        }
+                    } else if ch == quote {
+                        in_r_string = None;
+                    }
+                    continue;
+                }
+                // Outside string: enter string mode on quote characters.
+                if ch == '"' || ch == '\'' || ch == '`' {
+                    in_r_string = Some(ch);
+                    self.advance();
+                    text.push(ch);
+                    continue;
+                }
+                // R comment (#): consume to end of line, but STILL count
+                // braces (matching GNU R). Don't enter string mode for '
+                // inside comments like "# it's a test".
+                if ch == '#' {
+                    while !self.at_end() {
+                        let c = self.peek().unwrap();
+                        self.advance();
+                        text.push(c);
+                        if c == '\\' {
+                            // Rd escape in comment — check for \{ \} \\
+                            if let Some(next) = self.peek() {
+                                if next == '{' || next == '}' || next == '\\' || next == '%' {
+                                    self.advance();
+                                    text.push(next);
+                                    continue;
+                                }
+                            }
+                        }
+                        if c == '{' {
+                            depth += 1;
+                        } else if c == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                // Brace that closes the section — put it back
+                                // so the outer loop handles it.
+                                text.pop(); // remove the }
+                                self.pos -= 1; // un-advance
+                                break;
+                            }
+                        }
+                        if c == '\n' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
 
             match ch {
                 '{' => {
@@ -455,6 +539,9 @@ impl<'a> RdParser<'a> {
     fn handle_inline_command(&mut self, cmd: &str, out: &mut String) -> Result<(), RdError> {
         match cmd {
             // Commands whose content is included as-is
+            // NOTE: \code{} uses normal mode, not RLIKE, because \code{}
+            // appears in text sections where ' is an apostrophe, not a string.
+            // RLIKE is only safe for top-level sections (\examples, \usage).
             "code" | "bold" | "strong" | "emph" | "samp" | "file" | "pkg" | "var" | "env"
             | "option" | "command" | "dfn" | "cite" | "acronym" | "sQuote" | "dQuote" => {
                 if self.peek() == Some('{') {
@@ -827,6 +914,8 @@ impl<'a> RdParser<'a> {
                 doc.description = Some(clean_text(&content));
             }
             "usage" => {
+                // Normal mode (not RLIKE) because \usage{} mixes R code with
+                // Rd markup like \method{generic}{class} and \dots.
                 let content = self.read_brace_arg()?;
                 doc.usage = Some(clean_usage(&content));
             }
@@ -838,7 +927,7 @@ impl<'a> RdParser<'a> {
                 doc.value = Some(clean_text(&content));
             }
             "examples" => {
-                let content = self.read_brace_arg()?;
+                let content = self.read_brace_arg_rcode()?;
                 doc.examples = Some(clean_examples(&content));
             }
             "seealso" => {
