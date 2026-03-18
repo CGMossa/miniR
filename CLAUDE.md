@@ -141,7 +141,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 
 - Agents should always run in **worktrees** (`isolation: "worktree"`) so they don't collide with each other or main
 - Agents should **remove `.cargo/config.toml`** in their worktree (`rm -f .cargo/config.toml`) so `cargo` fetches from crates.io instead of the vendor dir — this avoids "package not found" errors when agents add new dependencies
-- After an agent finishes, **rebase its worktree onto main** (`git -C "$WT" rebase main`), then merge into main (`git merge worktree-branch --no-edit`), then re-vendor with `just vendor-force`
+- After an agent finishes, **rebase its worktree onto local main** (`git -C "$WT" rebase main`) — worktrees share the local repo so this uses the local `main` branch directly, no remote needed. Then merge into main (`git merge worktree-branch --no-edit`), then re-vendor with `just vendor-force`
 - **Never copy entire files** from a worktree to main — rebase + merge is the correct workflow. Copying whole files overwrites unrelated changes that were made on main since the worktree branched.
 - If the agent didn't commit, commit its work in the worktree first (`git -C "$WT" add -A && git -C "$WT" commit -m "msg"`), then rebase + merge
 - Never delete a worktree until its changes have been verified as merged into main
