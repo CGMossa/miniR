@@ -24,6 +24,66 @@ pub(crate) use call::{CallFrame, S3DispatchContext};
 use environment::Environment;
 use value::*;
 
+// region: InterpreterRng
+
+/// Selectable RNG backend for the interpreter.
+///
+/// `Fast` (default) uses `SmallRng` (Xoshiro256++) — fast, non-cryptographic,
+/// suitable for R's statistical RNG. `Deterministic` uses ChaCha20 — slower
+/// but produces identical sequences across all platforms and Rust versions,
+/// which is important for cross-platform reproducibility.
+#[cfg(feature = "random")]
+pub(crate) enum InterpreterRng {
+    Fast(rand::rngs::SmallRng),
+    Deterministic(Box<rand_chacha::ChaCha20Rng>),
+}
+
+#[cfg(feature = "random")]
+impl rand::TryRng for InterpreterRng {
+    type Error = std::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        match self {
+            InterpreterRng::Fast(rng) => rng.try_next_u32(),
+            InterpreterRng::Deterministic(rng) => rng.try_next_u32(),
+        }
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        match self {
+            InterpreterRng::Fast(rng) => rng.try_next_u64(),
+            InterpreterRng::Deterministic(rng) => rng.try_next_u64(),
+        }
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        match self {
+            InterpreterRng::Fast(rng) => rng.try_fill_bytes(dest),
+            InterpreterRng::Deterministic(rng) => rng.try_fill_bytes(dest),
+        }
+    }
+}
+
+/// The kind of RNG currently selected, for reporting via `RNGkind()`.
+#[cfg(feature = "random")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RngKind {
+    Xoshiro,
+    ChaCha20,
+}
+
+#[cfg(feature = "random")]
+impl std::fmt::Display for RngKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RngKind::Xoshiro => write!(f, "Xoshiro"),
+            RngKind::ChaCha20 => write!(f, "ChaCha20"),
+        }
+    }
+}
+
+// endregion
+
 thread_local! {
     static INTERPRETER: RefCell<Interpreter> = RefCell::new(Interpreter::new());
 }
@@ -93,19 +153,21 @@ pub struct Interpreter {
     call_stack: RefCell<Vec<CallFrame>>,
     /// Stack of handler sets from withCallingHandlers() calls.
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
-    /// Per-interpreter RNG state. Uses `SmallRng` (Xoshiro256PlusPlus on 64-bit)
-    /// which is fast and non-cryptographic — appropriate for R's statistical RNG.
+    /// Per-interpreter RNG state. Defaults to `SmallRng` (Xoshiro256++) for
+    /// speed; can be switched to `ChaCha20Rng` via `RNGkind("ChaCha20")` for
+    /// cross-platform deterministic reproducibility.
     ///
     /// # Parallel RNG considerations
     ///
     /// The RNG is behind `RefCell` on the single-threaded `Interpreter`, so there
     /// are no data races. If we ever add rayon-based parallel operations, each
     /// worker thread must get its own RNG seeded deterministically from the parent
-    /// (e.g. `SmallRng::seed_from_u64(parent_seed + thread_id)`) to avoid
-    /// contention and ensure reproducibility. The current single-threaded design
-    /// is correct as-is.
+    /// to avoid contention and ensure reproducibility.
     #[cfg(feature = "random")]
-    rng: RefCell<rand::rngs::SmallRng>,
+    rng: RefCell<InterpreterRng>,
+    /// Which RNG algorithm is currently selected.
+    #[cfg(feature = "random")]
+    pub(crate) rng_kind: std::cell::Cell<RngKind>,
     /// Session-scoped temporary directory, auto-cleaned on drop.
     pub(crate) temp_dir: temp_dir::TempDir,
     /// Counter for unique tempfile names within the session.
@@ -267,8 +329,10 @@ impl Interpreter {
             rng: RefCell::new({
                 use rand::SeedableRng;
                 let mut thread_rng = rand::rng();
-                rand::rngs::SmallRng::from_rng(&mut thread_rng)
+                InterpreterRng::Fast(rand::rngs::SmallRng::from_rng(&mut thread_rng))
             }),
+            #[cfg(feature = "random")]
+            rng_kind: std::cell::Cell::new(RngKind::Xoshiro),
             temp_dir: temp_dir::TempDir::new().expect("failed to create session temp directory"),
             temp_counter: std::cell::Cell::new(0),
             env_vars: RefCell::new(std::env::vars().collect()),
@@ -422,7 +486,7 @@ impl Interpreter {
     }
 
     #[cfg(feature = "random")]
-    pub fn rng(&self) -> &RefCell<rand::rngs::SmallRng> {
+    pub(crate) fn rng(&self) -> &RefCell<InterpreterRng> {
         &self.rng
     }
 

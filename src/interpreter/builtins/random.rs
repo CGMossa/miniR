@@ -124,9 +124,12 @@ fn require_param(
 /// Set the random number generator seed for reproducibility.
 ///
 /// Seeds the per-interpreter RNG deterministically so that subsequent random
-/// draws produce the same sequence.  Also stores the seed value in
-/// `.Random.seed` in the global environment (as an integer vector whose first
-/// element is the seed), matching R's convention of exposing RNG state there.
+/// draws produce the same sequence. The RNG algorithm seeded depends on the
+/// current `RNGkind()` setting — either Xoshiro (default) or ChaCha20.
+///
+/// Also stores the seed value in `.Random.seed` in the global environment
+/// (as an integer vector whose first element is the seed), matching R's
+/// convention of exposing RNG state there.
 ///
 /// @param seed integer seed value (or NULL to re-seed from system entropy)
 /// @return NULL, invisibly
@@ -136,11 +139,21 @@ fn interp_set_seed(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    use crate::interpreter::{InterpreterRng, RngKind};
+
     // set.seed(NULL) re-seeds from system entropy (like a fresh interpreter)
     if matches!(args[0], RValue::Null) {
         context.with_interpreter(|interp| {
             let mut thread_rng = rand::rng();
-            *interp.rng().borrow_mut() = rand::rngs::SmallRng::from_rng(&mut thread_rng);
+            let new_rng = match interp.rng_kind.get() {
+                RngKind::Xoshiro => {
+                    InterpreterRng::Fast(rand::rngs::SmallRng::from_rng(&mut thread_rng))
+                }
+                RngKind::ChaCha20 => InterpreterRng::Deterministic(Box::new(
+                    rand_chacha::ChaCha20Rng::from_rng(&mut thread_rng),
+                )),
+            };
+            *interp.rng().borrow_mut() = new_rng;
             // Remove .Random.seed when re-seeding from entropy
             interp.global_env.remove(".Random.seed");
         });
@@ -153,18 +166,120 @@ fn interp_set_seed(
         .ok_or(RandomError::InvalidParam { param: "seed" })?;
     let seed = f64_to_u64(seed_f64)?;
     context.with_interpreter(|interp| {
-        *interp.rng().borrow_mut() = rand::rngs::SmallRng::seed_from_u64(seed);
+        let kind = interp.rng_kind.get();
+        let new_rng = match kind {
+            RngKind::Xoshiro => InterpreterRng::Fast(rand::rngs::SmallRng::seed_from_u64(seed)),
+            RngKind::ChaCha20 => InterpreterRng::Deterministic(Box::new(
+                rand_chacha::ChaCha20Rng::seed_from_u64(seed),
+            )),
+        };
+        *interp.rng().borrow_mut() = new_rng;
         // Store the seed in .Random.seed in the global env.
         // R's .Random.seed is an integer vector; we store the u64 seed as two
-        // i64 values: a "kind" marker (0 = SmallRng/Xoshiro) and the seed.
+        // i64 values: a "kind" marker (0 = Xoshiro, 1 = ChaCha20) and the seed.
         // This is a simplified version of R's full .Random.seed protocol.
+        let kind_code = match kind {
+            RngKind::Xoshiro => 0i64,
+            RngKind::ChaCha20 => 1i64,
+        };
         let seed_i64 = i64::try_from(seed).unwrap_or(i64::MAX);
         interp.global_env.set(
             ".Random.seed".to_string(),
-            RValue::vec(Vector::Integer(vec![Some(0), Some(seed_i64)].into())),
+            RValue::vec(Vector::Integer(
+                vec![Some(kind_code), Some(seed_i64)].into(),
+            )),
         );
     });
     Ok(RValue::Null)
+}
+
+// endregion
+
+// region: RNGkind
+
+/// Query or set the RNG algorithm.
+///
+/// With no arguments, returns the name of the current RNG kind as a character
+/// vector. With a `kind` argument, switches to the specified algorithm.
+///
+/// Supported kinds:
+/// - `"Xoshiro"` (default) — fast, non-cryptographic (`SmallRng` / Xoshiro256++)
+/// - `"ChaCha20"` — deterministic across platforms and Rust versions
+///
+/// After switching the RNG kind, call `set.seed()` to seed the new algorithm.
+/// The switch itself does NOT re-seed — the new RNG starts from system entropy.
+///
+/// @param kind character string naming the RNG algorithm (optional)
+/// @return character vector with the previous RNG kind (invisibly when setting)
+#[interpreter_builtin(name = "RNGkind")]
+fn interp_rng_kind(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    use crate::interpreter::{InterpreterRng, RngKind};
+
+    let old_kind = context.with_interpreter(|interp| interp.rng_kind.get());
+    let old_kind_str = old_kind.to_string();
+
+    // Extract kind argument (positional or named)
+    let kind_arg = named
+        .iter()
+        .find(|(k, _)| k == "kind")
+        .map(|(_, v)| v)
+        .or(args.first());
+
+    if let Some(kind_val) = kind_arg {
+        // NULL means query-only (same as no argument)
+        if matches!(kind_val, RValue::Null) {
+            return Ok(RValue::vec(Vector::Character(
+                vec![Some(old_kind_str)].into(),
+            )));
+        }
+
+        let kind_str = kind_val
+            .as_vector()
+            .and_then(|v| v.as_character_scalar())
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "RNGkind() requires a character string argument".to_string(),
+                )
+            })?;
+
+        let new_kind = match kind_str.as_str() {
+            "Xoshiro" | "xoshiro" => RngKind::Xoshiro,
+            "ChaCha20" | "chacha20" | "ChaCha" | "chacha" => RngKind::ChaCha20,
+            other => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "RNGkind(\"{other}\") is not a recognized RNG kind.\n  \
+                         Valid choices: \"Xoshiro\" (default, fast) or \"ChaCha20\" (deterministic, cross-platform)."
+                    ),
+                ));
+            }
+        };
+
+        context.with_interpreter(|interp| {
+            interp.rng_kind.set(new_kind);
+            // Replace the RNG with a fresh instance of the new kind, seeded from entropy.
+            let mut thread_rng = rand::rng();
+            let new_rng = match new_kind {
+                RngKind::Xoshiro => {
+                    InterpreterRng::Fast(rand::rngs::SmallRng::from_rng(&mut thread_rng))
+                }
+                RngKind::ChaCha20 => InterpreterRng::Deterministic(Box::new(
+                    rand_chacha::ChaCha20Rng::from_rng(&mut thread_rng),
+                )),
+            };
+            *interp.rng().borrow_mut() = new_rng;
+        });
+    }
+
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(old_kind_str)].into(),
+    )))
 }
 
 // endregion
