@@ -4695,8 +4695,9 @@ fn interp_find_on_search_path(
 
 /// Get a namespace environment by name.
 ///
-/// Returns the namespace environment for a loaded package, or the base
-/// environment for builtin namespaces.
+/// Returns the namespace environment for a loaded package. If the namespace
+/// is not yet loaded, attempts to load it (like GNU R's getNamespace).
+/// Falls back to the base environment for builtin namespaces like "base".
 ///
 /// @param ns character scalar: namespace name
 /// @return environment
@@ -4725,7 +4726,14 @@ fn interp_get_namespace(
         return Ok(RValue::Environment(env));
     }
 
-    // Fall back to base env for builtin namespaces
+    // Try to load the namespace if it's not already loaded
+    let loaded_env = context.with_interpreter(|interp| interp.load_namespace(&ns).ok());
+
+    if let Some(env) = loaded_env {
+        return Ok(RValue::Environment(env));
+    }
+
+    // Fall back to base env for builtin namespaces (base, utils, stats, etc.)
     let env = context.with_interpreter(|interp| interp.base_env());
     Ok(RValue::Environment(env))
 }
@@ -4757,6 +4765,78 @@ fn interp_is_namespace_loaded(
     // Fall back to builtin registry
     let exists = super::BUILTIN_REGISTRY.iter().any(|d| d.namespace == ns);
     Ok(RValue::vec(Vector::Logical(vec![Some(exists)].into())))
+}
+
+/// Get the version of an installed package from its DESCRIPTION file.
+///
+/// @param pkg character scalar: the package name
+/// @param lib.loc character vector: library paths to search (defaults to .libPaths())
+/// @return character scalar: the version string (e.g. "1.4.2")
+/// @namespace utils
+#[interpreter_builtin(name = "packageVersion", min_args = 1, namespace = "utils")]
+fn interp_package_version(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'pkg' must be a character string".to_string(),
+            )
+        })?;
+
+    // Optional lib.loc argument
+    let lib_loc: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "lib.loc")
+            .and_then(|(_, v)| {
+                let vec = v.as_vector()?;
+                Some(
+                    vec.to_characters()
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<String>>(),
+                )
+            });
+
+    let version = context.with_interpreter(|interp| {
+        // Check loaded namespaces first — avoids re-reading DESCRIPTION from disk
+        if let Some(ns) = interp.loaded_namespaces.borrow().get(&pkg) {
+            return Some(ns.description.version.clone());
+        }
+
+        // Search on disk
+        let lib_paths = lib_loc.unwrap_or_else(|| interp.get_lib_paths());
+        for lib_path in &lib_paths {
+            let desc_path = std::path::Path::new(lib_path)
+                .join(&pkg)
+                .join("DESCRIPTION");
+            if let Ok(text) = std::fs::read_to_string(&desc_path) {
+                if let Ok(desc) = crate::interpreter::packages::PackageDescription::parse(&text) {
+                    return Some(desc.version);
+                }
+            }
+        }
+        None
+    });
+
+    match version {
+        Some(v) => Ok(RValue::vec(Vector::Character(vec![Some(v)].into()))),
+        None => Err(RError::new(
+            RErrorKind::Other,
+            format!(
+                "package '{}' not found\n  \
+                 Hint: check that the package is installed in one of the library paths \
+                 returned by .libPaths()",
+                pkg
+            ),
+        )),
+    }
 }
 
 /// Return the number of builtins registered, optionally filtered by namespace.
