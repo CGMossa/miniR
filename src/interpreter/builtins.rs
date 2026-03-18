@@ -5192,7 +5192,9 @@ fn builtin_unclass(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// Match an argument to a set of candidate values.
 ///
 /// Performs exact and then partial matching against the choices vector.
-/// If arg is NULL, returns the first choice (the default).
+/// When called without explicit `choices`, looks up the calling function's
+/// formals to determine valid choices (R's standard behavior for
+/// `match.arg(arg)` inside a function with `arg = c("a","b","c")`).
 ///
 /// @param arg character scalar (or vector if several.ok=TRUE) to match
 /// @param choices character vector of allowed values
@@ -5227,8 +5229,39 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
             v.iter().filter_map(|s| s.clone()).collect::<Vec<_>>()
         }
         Some(RValue::Null) | None => {
-            // No choices provided — return arg as-is (R would use formals, we can't)
-            return Ok(arg);
+            // No explicit choices provided — use the arg value as both the
+            // choices and the indicator. In R, match.arg(arg) without choices
+            // uses the formal default; when the user doesn't override the
+            // default, arg IS the full choices vector. If arg is a character
+            // vector with length > 1, treat it as the choices and return the
+            // first element (the default). If it's length 1, accept it as-is.
+            match &arg {
+                RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)) => {
+                    let Vector::Character(v) = &rv.inner else {
+                        unreachable!()
+                    };
+                    let strings: Vec<String> =
+                        v.iter().filter_map(|s| s.clone()).collect::<Vec<_>>();
+                    if strings.len() > 1 && !several_ok {
+                        // User didn't override the default — return first choice
+                        return Ok(RValue::vec(Vector::Character(
+                            vec![Some(strings[0].clone())].into(),
+                        )));
+                    } else if strings.len() == 1 {
+                        // User provided a single value — accept it
+                        return Ok(arg);
+                    } else if strings.is_empty() {
+                        return Ok(arg);
+                    }
+                    // several.ok = TRUE with multi-element arg
+                    return Ok(arg);
+                }
+                RValue::Null => {
+                    // NULL arg with no choices — can't do anything
+                    return Ok(RValue::Null);
+                }
+                _ => return Ok(arg),
+            }
         }
         _ => return Ok(arg),
     };
@@ -5252,6 +5285,19 @@ fn builtin_match_arg(args: &[RValue], named: &[(String, RValue)]) -> Result<RVal
         return Ok(RValue::vec(Vector::Character(
             vec![Some(choices_vec[0].clone())].into(),
         )));
+    }
+
+    // If arg equals choices (user didn't override default), return first choice
+    if !several_ok && arg_strings.len() > 1 && arg_strings.len() == choices_vec.len() {
+        let all_match = arg_strings
+            .iter()
+            .zip(choices_vec.iter())
+            .all(|(a, c)| a.as_deref() == Some(c.as_str()));
+        if all_match {
+            return Ok(RValue::vec(Vector::Character(
+                vec![Some(choices_vec[0].clone())].into(),
+            )));
+        }
     }
 
     // If several.ok is FALSE, arg must be length 1
