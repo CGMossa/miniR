@@ -136,10 +136,7 @@ sample(3, size = 2, replace = TRUE, prob = c(1, NA, 1))
     );
     assert!(result.is_err(), "NA in prob should error");
     let err = format!("{}", result.unwrap_err());
-    assert!(
-        err.contains("NA"),
-        "error should mention NA: {err}"
-    );
+    assert!(err.contains("NA"), "error should mention NA: {err}");
 }
 
 #[test]
