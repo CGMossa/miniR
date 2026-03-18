@@ -1,6 +1,5 @@
-cran/vctrs/man/howto-faq-coercion.Rd	PANIC during parse
-cran/methods/man/LanguageClasses.Rd	parse error: Rd parse error: unbalanced braces near line 23
-cran/rlang/man/glue-operators.Rd	parse error: Rd parse error: unbalanced braces near line 5
-cran/base/man/body.Rd	parse error: Rd parse error: unbalanced braces near line 57
-cran/base/man/call.Rd	parse error: Rd parse error: unbalanced braces near line 89
-cran/Matrix/inst/NEWS.Rd	parse error: Rd parse error: unbalanced braces near line 918
+cran/methods/man/LanguageClasses.Rd	Rd parse error: unbalanced braces near line 23
+cran/rlang/man/glue-operators.Rd	Rd parse error: unbalanced braces near line 5
+cran/base/man/body.Rd	Rd parse error: unbalanced braces near line 57
+cran/base/man/call.Rd	Rd parse error: unbalanced braces near line 89
+cran/Matrix/inst/NEWS.Rd	Rd parse error: unbalanced braces near line 918

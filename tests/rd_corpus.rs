@@ -2,6 +2,7 @@
 //!
 //! Validates the Rd parser against real-world package documentation.
 //! Only runs when MINIR_PARSE_CRAN=1 is set. Uses rayon for parallelism.
+//! No catch_unwind — panics are bugs, not expected behavior.
 
 #![cfg(feature = "parallel")]
 
@@ -52,7 +53,6 @@ fn rd_corpus_parses() {
     let had_usage = AtomicUsize::new(0);
     let had_arguments = AtomicUsize::new(0);
     let had_examples = AtomicUsize::new(0);
-
     let failures: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 
     files.par_iter().for_each(|path| {
@@ -64,11 +64,8 @@ fn rd_corpus_parses() {
             },
         };
 
-        // catch_unwind so a panic in one file doesn't kill the whole test
-        let result = std::panic::catch_unwind(|| RdDoc::parse(&content));
-
-        match result {
-            Ok(Ok(doc)) => {
+        match RdDoc::parse(&content) {
+            Ok(doc) => {
                 passed.fetch_add(1, Ordering::Relaxed);
                 if doc.name.is_some() {
                     had_name.fetch_add(1, Ordering::Relaxed);
@@ -86,29 +83,14 @@ fn rd_corpus_parses() {
                     had_examples.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 failed.fetch_add(1, Ordering::Relaxed);
                 let rel = path
                     .strip_prefix(repo_root)
                     .unwrap_or(path)
                     .to_string_lossy()
                     .to_string();
-                failures
-                    .lock()
-                    .unwrap()
-                    .push((rel, format!("parse error: {e}")));
-            }
-            Err(_) => {
-                failed.fetch_add(1, Ordering::Relaxed);
-                let rel = path
-                    .strip_prefix(repo_root)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .to_string();
-                failures
-                    .lock()
-                    .unwrap()
-                    .push((rel, "PANIC during parse".to_string()));
+                failures.lock().unwrap().push((rel, format!("{e}")));
             }
         }
     });
@@ -121,32 +103,32 @@ fn rd_corpus_parses() {
     } else {
         0.0
     };
-
     let n = p.max(1) as f64;
+
     eprintln!();
     eprintln!("=== Rd Corpus: {total} files, {p} passed ({rate:.1}%), {f} failed ===");
     eprintln!(
-        "  \\name:      {}/{p} ({:.0}%)",
+        "  \\name:      {:>5}/{p} ({:>3.0}%)",
         had_name.load(Ordering::Relaxed),
         had_name.load(Ordering::Relaxed) as f64 / n * 100.0
     );
     eprintln!(
-        "  \\title:     {}/{p} ({:.0}%)",
+        "  \\title:     {:>5}/{p} ({:>3.0}%)",
         had_title.load(Ordering::Relaxed),
         had_title.load(Ordering::Relaxed) as f64 / n * 100.0
     );
     eprintln!(
-        "  \\usage:     {}/{p} ({:.0}%)",
+        "  \\usage:     {:>5}/{p} ({:>3.0}%)",
         had_usage.load(Ordering::Relaxed),
         had_usage.load(Ordering::Relaxed) as f64 / n * 100.0
     );
     eprintln!(
-        "  \\arguments: {}/{p} ({:.0}%)",
+        "  \\arguments: {:>5}/{p} ({:>3.0}%)",
         had_arguments.load(Ordering::Relaxed),
         had_arguments.load(Ordering::Relaxed) as f64 / n * 100.0
     );
     eprintln!(
-        "  \\examples:  {}/{p} ({:.0}%)",
+        "  \\examples:  {:>5}/{p} ({:>3.0}%)",
         had_examples.load(Ordering::Relaxed),
         had_examples.load(Ordering::Relaxed) as f64 / n * 100.0
     );
@@ -155,11 +137,9 @@ fn rd_corpus_parses() {
     all_failures.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
 
     if !all_failures.is_empty() {
-        // Group by error message to see patterns
         let mut by_error: std::collections::BTreeMap<String, Vec<String>> =
             std::collections::BTreeMap::new();
         for (path, err) in &all_failures {
-            // Truncate error to first 80 chars for grouping
             let key = if err.len() > 80 {
                 format!("{}...", &err[..80])
             } else {
@@ -171,16 +151,15 @@ fn rd_corpus_parses() {
         eprintln!();
         eprintln!("Failures by error type ({} total):", all_failures.len());
         for (err, paths) in &by_error {
-            eprintln!("  [{} files] {err}", paths.len());
+            eprintln!("  [{:>3} files] {err}", paths.len());
             for path in paths.iter().take(3) {
-                eprintln!("    - {path}");
+                eprintln!("           - {path}");
             }
             if paths.len() > 3 {
-                eprintln!("    ... and {} more", paths.len() - 3);
+                eprintln!("           ... and {} more", paths.len() - 3);
             }
         }
 
-        // Write full failure list to a file for analysis
         let failure_path = repo_root.join("reviews/rd-corpus-failures.txt");
         let mut report = String::new();
         for (path, err) in &all_failures {
@@ -188,11 +167,11 @@ fn rd_corpus_parses() {
         }
         let _ = std::fs::write(&failure_path, &report);
         eprintln!();
-        eprintln!("Full failure list written to: reviews/rd-corpus-failures.txt");
+        eprintln!("Full failure list: reviews/rd-corpus-failures.txt");
     }
 
     assert!(
-        rate >= 90.0,
+        rate >= 99.0,
         "Rd parse rate too low: {rate:.1}% ({p}/{total})"
     );
 }

@@ -294,10 +294,15 @@ impl<'a> RdParser<'a> {
         self.input[self.pos..].chars().next()
     }
 
-    /// Peek at the next n characters as a string slice.
+    /// Peek at the next n characters as a string slice (char-aware, not byte-aware).
     fn peek_str(&self, n: usize) -> &'a str {
-        let end = (self.pos + n).min(self.input.len());
-        &self.input[self.pos..end]
+        let remaining = &self.input[self.pos..];
+        let end = remaining
+            .char_indices()
+            .nth(n)
+            .map(|(i, _)| i)
+            .unwrap_or(remaining.len());
+        &remaining[..end]
     }
 
     /// Advance by one character and return it.
@@ -649,6 +654,38 @@ impl<'a> RdParser<'a> {
             }
             // \Rdversion{...}, \RdOpts{...}, \encoding{...} — skip
             "Rdversion" | "RdOpts" | "encoding" | "concept" | "source" => {
+                if self.peek() == Some('{') {
+                    let _ = self.read_brace_arg()?;
+                }
+            }
+            // \out{...} — raw output (HTML/LaTeX), just include as text
+            "out" => {
+                if self.peek() == Some('{') {
+                    let content = self.read_brace_arg_verbatim()?;
+                    // Strip HTML tags for plain text display
+                    out.push_str(&content);
+                }
+            }
+            // \subsection{title}{body} — nested section
+            "subsection" => {
+                if self.peek() == Some('{') {
+                    let title = self.read_brace_arg()?;
+                    out.push('\n');
+                    out.push_str(&title);
+                    out.push('\n');
+                }
+                if self.peek() == Some('{') {
+                    let body = self.read_brace_arg()?;
+                    out.push_str(&body);
+                    out.push('\n');
+                }
+            }
+            // \special{...}, \method{...}{...}, \S3method, \S4method
+            "special" | "method" | "S3method" | "S4method" => {
+                if self.peek() == Some('{') {
+                    let content = self.read_brace_arg()?;
+                    out.push_str(&content);
+                }
                 if self.peek() == Some('{') {
                     let _ = self.read_brace_arg()?;
                 }
