@@ -194,10 +194,11 @@ impl Interpreter {
         // Populate imports into the namespace env
         self.populate_imports(&namespace, &namespace_env)?;
 
-        // Source all R files from the R/ directory
+        // Source all R files from the R/ directory, respecting Collate order
         let r_dir = pkg_dir.join("R");
         if r_dir.is_dir() {
-            self.source_r_directory(&r_dir, &namespace_env)?;
+            let collate = description.fields.get("Collate").map(|s| s.as_str());
+            self.source_r_directory(&r_dir, &namespace_env, collate)?;
         }
 
         // Build exports environment
@@ -292,8 +293,20 @@ impl Interpreter {
     }
 
     /// Source all .R files from a directory into an environment.
-    fn source_r_directory(&self, r_dir: &Path, env: &Environment) -> Result<(), RError> {
-        let mut r_files: Vec<PathBuf> = Vec::new();
+    ///
+    /// If `collate` is provided (from the DESCRIPTION `Collate` field), files
+    /// listed there are sourced first in that exact order. Any files in the
+    /// directory not mentioned in the Collate list are sourced afterwards in
+    /// alphabetical order (C locale). If `collate` is `None`, all R/S files
+    /// are sourced alphabetically (the default).
+    fn source_r_directory(
+        &self,
+        r_dir: &Path,
+        env: &Environment,
+        collate: Option<&str>,
+    ) -> Result<(), RError> {
+        // Collect all R/S files present in the directory
+        let mut all_files: Vec<PathBuf> = Vec::new();
 
         let entries = std::fs::read_dir(r_dir).map_err(|e| {
             RError::other(format!(
@@ -310,13 +323,44 @@ impl Interpreter {
             if let Some(ext) = path.extension() {
                 let ext_lower = ext.to_string_lossy().to_lowercase();
                 if ext_lower == "r" || ext_lower == "s" {
-                    r_files.push(path);
+                    all_files.push(path);
                 }
             }
         }
 
-        // Sort for deterministic load order (R sorts alphabetically)
-        r_files.sort();
+        // Sort all files alphabetically for the fallback / remainder ordering
+        all_files.sort();
+
+        // Build the ordered file list based on Collate field
+        let r_files = if let Some(collate_str) = collate {
+            let collate_names = parse_collate_field(collate_str);
+            let mut ordered: Vec<PathBuf> = Vec::new();
+
+            // First: files listed in Collate, in that exact order
+            for name in &collate_names {
+                let path = r_dir.join(name);
+                if path.is_file() {
+                    ordered.push(path);
+                }
+                // If a Collate entry doesn't exist on disk, silently skip it
+                // (matches R CMD build behavior)
+            }
+
+            // Second: files in R/ not mentioned in Collate, alphabetically
+            let collate_set: std::collections::HashSet<&str> =
+                collate_names.iter().map(|s| s.as_str()).collect();
+            for path in &all_files {
+                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if !collate_set.contains(file_name) {
+                        ordered.push(path.clone());
+                    }
+                }
+            }
+
+            ordered
+        } else {
+            all_files
+        };
 
         let mut errors = Vec::new();
         for r_file in &r_files {
@@ -530,6 +574,57 @@ impl Interpreter {
     }
 }
 
+/// Parse the `Collate` field from a DESCRIPTION file into an ordered list of
+/// filenames.
+///
+/// The Collate field is a whitespace-separated list of filenames (possibly
+/// spanning multiple continuation lines). Filenames may be quoted with single
+/// or double quotes (required when they contain spaces).
+fn parse_collate_field(collate: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut chars = collate.chars().peekable();
+
+    while let Some(&ch) = chars.peek() {
+        // Skip whitespace (including newlines from DCF continuation)
+        if ch.is_whitespace() {
+            chars.next();
+            continue;
+        }
+
+        // Quoted filename
+        if ch == '\'' || ch == '"' {
+            let quote = ch;
+            chars.next(); // consume opening quote
+            let mut name = String::new();
+            for c in chars.by_ref() {
+                if c == quote {
+                    break;
+                }
+                name.push(c);
+            }
+            if !name.is_empty() {
+                names.push(name);
+            }
+            continue;
+        }
+
+        // Unquoted filename — runs until whitespace
+        let mut name = String::new();
+        while let Some(&c) = chars.peek() {
+            if c.is_whitespace() {
+                break;
+            }
+            name.push(c);
+            chars.next();
+        }
+        if !name.is_empty() {
+            names.push(name);
+        }
+    }
+
+    names
+}
+
 /// Check if a package name refers to a "base" package that's always available.
 fn is_base_package(name: &str) -> bool {
     matches!(
@@ -548,4 +643,57 @@ fn is_base_package(name: &str) -> bool {
             | "parallel"
             | "tcltk"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_collate_simple() {
+        let collate = "aaa.R bbb.R ccc.R";
+        let result = parse_collate_field(collate);
+        assert_eq!(result, vec!["aaa.R", "bbb.R", "ccc.R"]);
+    }
+
+    #[test]
+    fn parse_collate_multiline() {
+        // DCF continuation joins with newlines
+        let collate = "aaa.R bbb.R\nccc.R\nddd.R";
+        let result = parse_collate_field(collate);
+        assert_eq!(result, vec!["aaa.R", "bbb.R", "ccc.R", "ddd.R"]);
+    }
+
+    #[test]
+    fn parse_collate_quoted_filenames() {
+        let collate = r#"'aaa.R' "bbb.R" ccc.R"#;
+        let result = parse_collate_field(collate);
+        assert_eq!(result, vec!["aaa.R", "bbb.R", "ccc.R"]);
+    }
+
+    #[test]
+    fn parse_collate_quoted_with_spaces() {
+        let collate = r#"'file with spaces.R' normal.R"#;
+        let result = parse_collate_field(collate);
+        assert_eq!(result, vec!["file with spaces.R", "normal.R"]);
+    }
+
+    #[test]
+    fn parse_collate_extra_whitespace() {
+        let collate = "  aaa.R   bbb.R  \n  ccc.R  ";
+        let result = parse_collate_field(collate);
+        assert_eq!(result, vec!["aaa.R", "bbb.R", "ccc.R"]);
+    }
+
+    #[test]
+    fn parse_collate_empty() {
+        let result = parse_collate_field("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_collate_whitespace_only() {
+        let result = parse_collate_field("   \n  \n  ");
+        assert!(result.is_empty());
+    }
 }

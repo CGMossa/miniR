@@ -445,3 +445,186 @@ fn is_namespace_loaded_reports_correctly() {
 }
 
 // endregion
+
+// region: Collate order
+
+#[test]
+fn collate_field_controls_source_order() {
+    let tmp = temp_dir::TempDir::new().unwrap();
+    let lib_dir = tmp.path().to_path_buf();
+    let pkg_dir = lib_dir.join("collatepkg");
+    let r_dir = pkg_dir.join("R");
+    fs::create_dir_all(&r_dir).unwrap();
+
+    // DESCRIPTION with Collate field specifying reverse-alphabetical order
+    fs::write(
+        pkg_dir.join("DESCRIPTION"),
+        "Package: collatepkg\nVersion: 1.0.0\nTitle: Collate Test\nLicense: MIT\nCollate: ccc.R bbb.R aaa.R\n",
+    )
+    .unwrap();
+    fs::write(pkg_dir.join("NAMESPACE"), "exportPattern(\"^[^.]\")\n").unwrap();
+
+    // Each file appends its name to a marker file to track load order.
+    // With Collate ordering ccc -> bbb -> aaa, ccc.R runs first.
+    let marker = pkg_dir.join("collate_marker.txt");
+    fs::write(
+        r_dir.join("ccc.R"),
+        format!("writeLines(\"ccc\", \"{}\")\n", marker.display()),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("bbb.R"),
+        format!(
+            ".prev <- readLines(\"{}\")\nwriteLines(c(.prev, \"bbb\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("aaa.R"),
+        format!(
+            ".prev2 <- readLines(\"{}\")\nwriteLines(c(.prev2, \"aaa\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+
+    let mut s = Session::new();
+    s.eval_source(&format!("Sys.setenv(R_LIBS = \"{}\")", lib_dir.display()))
+        .unwrap();
+
+    s.eval_source("library(\"collatepkg\")").unwrap();
+
+    // Verify load order matches Collate: ccc, bbb, aaa
+    assert!(marker.exists(), "marker file should exist");
+    let contents = fs::read_to_string(&marker).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["ccc", "bbb", "aaa"],
+        "files should be sourced in Collate order, got: {:?}",
+        lines
+    );
+}
+
+#[test]
+fn no_collate_field_sources_alphabetically() {
+    let tmp = temp_dir::TempDir::new().unwrap();
+    let lib_dir = tmp.path().to_path_buf();
+    let pkg_dir = lib_dir.join("alphapkg");
+    let r_dir = pkg_dir.join("R");
+    fs::create_dir_all(&r_dir).unwrap();
+
+    // DESCRIPTION without Collate field
+    fs::write(
+        pkg_dir.join("DESCRIPTION"),
+        "Package: alphapkg\nVersion: 1.0.0\nTitle: Alpha Test\nLicense: MIT\n",
+    )
+    .unwrap();
+    fs::write(pkg_dir.join("NAMESPACE"), "exportPattern(\"^[^.]\")\n").unwrap();
+
+    let marker = pkg_dir.join("alpha_marker.txt");
+    fs::write(
+        r_dir.join("bbb.R"),
+        format!(
+            ".prev <- readLines(\"{}\")\nwriteLines(c(.prev, \"bbb\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("aaa.R"),
+        format!("writeLines(\"aaa\", \"{}\")\n", marker.display()),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("ccc.R"),
+        format!(
+            ".prev2 <- readLines(\"{}\")\nwriteLines(c(.prev2, \"ccc\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+
+    let mut s = Session::new();
+    s.eval_source(&format!("Sys.setenv(R_LIBS = \"{}\")", lib_dir.display()))
+        .unwrap();
+
+    s.eval_source("library(\"alphapkg\")").unwrap();
+
+    // Without Collate, should be alphabetical: aaa, bbb, ccc
+    assert!(marker.exists(), "marker file should exist");
+    let contents = fs::read_to_string(&marker).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["aaa", "bbb", "ccc"],
+        "files should be sourced alphabetically, got: {:?}",
+        lines
+    );
+}
+
+#[test]
+fn collate_field_unlisted_files_sourced_after() {
+    let tmp = temp_dir::TempDir::new().unwrap();
+    let lib_dir = tmp.path().to_path_buf();
+    let pkg_dir = lib_dir.join("partialpkg");
+    let r_dir = pkg_dir.join("R");
+    fs::create_dir_all(&r_dir).unwrap();
+
+    // Collate only lists bbb.R — aaa.R and ccc.R should come after, alphabetically
+    fs::write(
+        pkg_dir.join("DESCRIPTION"),
+        "Package: partialpkg\nVersion: 1.0.0\nTitle: Partial Collate\nLicense: MIT\nCollate: bbb.R\n",
+    )
+    .unwrap();
+    fs::write(pkg_dir.join("NAMESPACE"), "exportPattern(\"^[^.]\")\n").unwrap();
+
+    let marker = pkg_dir.join("partial_marker.txt");
+    fs::write(
+        r_dir.join("bbb.R"),
+        format!("writeLines(\"bbb\", \"{}\")\n", marker.display()),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("aaa.R"),
+        format!(
+            ".prev <- readLines(\"{}\")\nwriteLines(c(.prev, \"aaa\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        r_dir.join("ccc.R"),
+        format!(
+            ".prev2 <- readLines(\"{}\")\nwriteLines(c(.prev2, \"ccc\"), \"{}\")\n",
+            marker.display(),
+            marker.display()
+        ),
+    )
+    .unwrap();
+
+    let mut s = Session::new();
+    s.eval_source(&format!("Sys.setenv(R_LIBS = \"{}\")", lib_dir.display()))
+        .unwrap();
+
+    s.eval_source("library(\"partialpkg\")").unwrap();
+
+    // bbb first (from Collate), then aaa and ccc alphabetically
+    assert!(marker.exists(), "marker file should exist");
+    let contents = fs::read_to_string(&marker).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["bbb", "aaa", "ccc"],
+        "Collate files first, then remainder alphabetically, got: {:?}",
+        lines
+    );
+}
+
+// endregion
