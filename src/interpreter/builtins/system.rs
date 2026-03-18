@@ -1634,18 +1634,100 @@ fn builtin_session_info(
 
 /// Find files in installed packages.
 ///
-/// miniR does not have a package installation directory, so this always
-/// returns "" (empty string) to indicate "not found". This stub prevents
-/// errors in CRAN packages that probe for installed package resources.
+/// Searches the package's installation directory for the specified file
+/// path components. Returns the full path if found, or "" if not found.
 ///
-/// @param ... path components (ignored)
-/// @param package package name (ignored)
-/// @return character scalar: always ""
-#[builtin(name = "system.file")]
-fn builtin_system_file(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(String::new())].into(),
-    )))
+/// @param ... character: path components to join (e.g. "DESCRIPTION", or "data", "mtcars.rda")
+/// @param package character: the package name to search in
+/// @param lib.loc character vector: library search paths (defaults to .libPaths())
+/// @return character scalar: the full path to the file, or "" if not found
+#[interpreter_builtin(name = "system.file")]
+fn interp_system_file(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // Extract 'package' named argument
+    let package = named
+        .iter()
+        .find(|(n, _)| n == "package")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar());
+
+    // Extract 'lib.loc' named argument (optional)
+    let lib_loc: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "lib.loc")
+            .and_then(|(_, v)| {
+                let vec = v.as_vector()?;
+                Some(
+                    vec.to_characters()
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<String>>(),
+                )
+            });
+
+    // Collect positional args as path components (skip any that are named-arg leaks)
+    let path_parts: Vec<String> = args
+        .iter()
+        .filter_map(|v| v.as_vector()?.as_character_scalar())
+        .collect();
+
+    let package_name = match package {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            // No package specified — return ""
+            return Ok(RValue::vec(Vector::Character(
+                vec![Some(String::new())].into(),
+            )));
+        }
+    };
+
+    // Build the subpath from the path components
+    let subpath = if path_parts.is_empty() {
+        String::new()
+    } else {
+        path_parts.join("/")
+    };
+
+    // Search for the package directory
+    let result = context.with_interpreter(|interp| {
+        // Use lib.loc if provided, otherwise .libPaths()
+        let lib_paths = lib_loc.unwrap_or_else(|| interp.get_lib_paths());
+
+        for lib_path in &lib_paths {
+            let pkg_dir = std::path::Path::new(lib_path).join(&package_name);
+            if !pkg_dir.join("DESCRIPTION").is_file() {
+                continue;
+            }
+            if subpath.is_empty() {
+                // No subpath: return the package directory itself
+                return pkg_dir.to_string_lossy().to_string();
+            }
+            let target = pkg_dir.join(&subpath);
+            if target.exists() {
+                return target.to_string_lossy().to_string();
+            }
+        }
+
+        // Also check loaded_namespaces for the package's lib_path
+        if let Some(ns) = interp.loaded_namespaces.borrow().get(&package_name) {
+            let pkg_dir = &ns.lib_path;
+            if subpath.is_empty() {
+                return pkg_dir.to_string_lossy().to_string();
+            }
+            let target = pkg_dir.join(&subpath);
+            if target.exists() {
+                return target.to_string_lossy().to_string();
+            }
+        }
+
+        // Not found
+        String::new()
+    });
+
+    Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
 /// Return the process ID of the current R process.
