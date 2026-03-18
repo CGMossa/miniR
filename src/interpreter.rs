@@ -331,7 +331,7 @@ impl Interpreter {
         builtins::register_builtins(&base_env);
         let global_env = Environment::new_child(&base_env);
         global_env.set_name("R_GlobalEnv".to_string());
-        Interpreter {
+        let interp = Interpreter {
             global_env,
             stdout: RefCell::new(Box::new(std::io::stdout())),
             stderr: RefCell::new(Box::new(std::io::stderr())),
@@ -372,7 +372,13 @@ impl Interpreter {
             s3_method_registry: RefCell::new(std::collections::HashMap::new()),
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
-        }
+        };
+
+        // Synthesize Rd help pages from builtin rustdoc comments so every
+        // builtin has a rich help page via ?name from the start.
+        builtins::synthesize_builtin_help(&mut interp.rd_help_index.borrow_mut());
+
+        interp
     }
 
     /// Index all `.Rd` files in a package's `man/` directory for `help()` lookup.

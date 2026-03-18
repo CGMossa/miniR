@@ -1,3 +1,5 @@
+#![cfg(feature = "linalg")]
+
 use r::Session;
 
 #[test]

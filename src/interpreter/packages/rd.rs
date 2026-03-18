@@ -1084,6 +1084,14 @@ impl RdHelpIndex {
         }
     }
 
+    /// Register a single entry under a topic name.
+    pub fn register_entry(&mut self, topic: &str, entry: RdIndexEntry) {
+        self.entries
+            .entry(topic.to_string())
+            .or_default()
+            .push(entry);
+    }
+
     /// Look up documentation for a topic.
     ///
     /// Returns all matching entries (there may be multiple from different packages).

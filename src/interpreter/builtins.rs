@@ -146,6 +146,97 @@ fn extract_param_names_from_doc(doc: &str) -> Vec<String> {
         .collect()
 }
 
+/// Synthesize `RdDoc` help pages from all builtin descriptors and register
+/// them in the help index. This gives every builtin a rich help page
+/// (title, usage, arguments, return value) derived from rustdoc comments.
+pub fn synthesize_builtin_help(index: &mut crate::interpreter::packages::rd::RdHelpIndex) {
+    use crate::interpreter::packages::rd::{RdDoc, RdIndexEntry};
+
+    for desc in BUILTIN_REGISTRY {
+        if desc.doc.is_empty() {
+            continue;
+        }
+
+        let mut title = None;
+        let mut description_lines = Vec::new();
+        let mut arguments = Vec::new();
+        let mut return_val = None;
+        let mut in_description = false;
+
+        for line in desc.doc.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("@param ") {
+                in_description = false;
+                if let Some((param, param_desc)) = rest.split_once(' ') {
+                    arguments.push((param.to_string(), param_desc.to_string()));
+                }
+            } else if let Some(ret) = line.strip_prefix("@return ") {
+                in_description = false;
+                return_val = Some(ret.to_string());
+            } else if line.starts_with('@') {
+                // skip other tags (@namespace, etc.)
+                in_description = false;
+            } else if title.is_none() && !line.is_empty() {
+                title = Some(line.to_string());
+                in_description = true;
+            } else if in_description && !line.is_empty() {
+                description_lines.push(line.to_string());
+            } else if line.is_empty() && in_description && !description_lines.is_empty() {
+                // blank line in description — keep going
+                description_lines.push(String::new());
+            }
+        }
+
+        // Build usage string
+        let params = extract_param_names_from_doc(desc.doc);
+        let usage = if params.is_empty() {
+            format!("{}(...)", desc.name)
+        } else {
+            format!("{}({})", desc.name, params.join(", "))
+        };
+
+        let description = if description_lines.is_empty() {
+            None
+        } else {
+            Some(description_lines.join("\n").trim_end().to_string())
+        };
+
+        let doc = RdDoc {
+            name: Some(desc.name.to_string()),
+            aliases: desc
+                .aliases
+                .iter()
+                .map(|a| a.to_string())
+                .chain(std::iter::once(desc.name.to_string()))
+                .collect(),
+            title,
+            description,
+            usage: Some(usage),
+            arguments,
+            value: return_val,
+            ..Default::default()
+        };
+
+        let ns = if desc.namespace.is_empty() {
+            "base"
+        } else {
+            desc.namespace
+        };
+
+        let entry = RdIndexEntry {
+            package: ns.to_string(),
+            file_path: format!("<builtin:{}>", desc.name),
+            doc,
+        };
+
+        // Register under name and all aliases
+        index.register_entry(desc.name, entry.clone());
+        for alias in desc.aliases {
+            index.register_entry(alias, entry.clone());
+        }
+    }
+}
+
 pub fn register_builtins(env: &Environment) {
     for descriptor in BUILTIN_REGISTRY {
         register_builtin_binding(env, descriptor.name, *descriptor);
