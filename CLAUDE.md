@@ -72,6 +72,23 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - **Binary `?` drops RHS**: `foo ? bar` parses but the AST discards the topic. Help system not fully implemented.
 - **`~~` and `:=` are parsed but stubbed**: `~~` (plotmath) evaluates to NULL; `:=` (walrus) has no runtime semantics yet.
 
+## Build Profiles
+
+Four feature profiles for different development scenarios:
+
+| Profile | Command | Build | Tests | Use case |
+|---|---|---|---|---|
+| **minimal** | `cargo build --no-default-features -F minimal` | ~3s | ~200 | Parser work, AST changes, WASM targets |
+| **fast** | `cargo build --no-default-features -F fast` | ~5s | ~400 | Quick iteration on core interpreter |
+| **default** | `cargo build` | ~8.5s | ~613 | Everyday development |
+| **full** | `cargo build --all-features` | ~15s | ~994 | CI, release builds, TLS + linalg |
+
+- **default** excludes `tls` (ring+rustls, 7.7s) and `linalg` (nalgebra+ndarray, 7.3s) — 45% faster than full
+- **full** includes everything — CI should always test with `--all-features`
+- **minimal** has zero optional deps — suitable for `wasm32-unknown-unknown`
+- **fast** adds random, datetime, io, compression, diagnostics, signal on top of minimal
+- Feature-gated tests use `#![cfg(feature = "...")]` so they're skipped in smaller profiles
+
 ## Testing
 
 - `cargo test` — primary test command, runs all Rust integration tests
