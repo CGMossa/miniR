@@ -763,7 +763,7 @@ fn pre_eval_try(
             Ok(val) => Ok(val),
             Err(err) => {
                 let msg = format!("{}", err);
-                eprintln!("Error in try : {}", msg);
+                interp.write_stderr(&format!("Error in try : {}\n", msg));
                 Ok(RValue::vec(Vector::Character(vec![Some(msg)].into())))
             }
         },

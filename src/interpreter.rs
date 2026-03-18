@@ -13,6 +13,7 @@ mod s3;
 pub mod value;
 
 use std::cell::RefCell;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -149,6 +150,11 @@ pub(crate) struct ConditionHandler {
 
 pub struct Interpreter {
     pub global_env: Environment,
+    /// Per-interpreter stdout writer. Defaults to `std::io::stdout()`.
+    /// Use `Vec<u8>` for captured/embedded output.
+    pub(crate) stdout: RefCell<Box<dyn Write>>,
+    /// Per-interpreter stderr writer. Defaults to `std::io::stderr()`.
+    pub(crate) stderr: RefCell<Box<dyn Write>>,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
     call_stack: RefCell<Vec<CallFrame>>,
     /// Stack of handler sets from withCallingHandlers() calls.
@@ -322,6 +328,8 @@ impl Interpreter {
         global_env.set_name("R_GlobalEnv".to_string());
         Interpreter {
             global_env,
+            stdout: RefCell::new(Box::new(std::io::stdout())),
+            stderr: RefCell::new(Box::new(std::io::stderr())),
             s3_dispatch_stack: RefCell::new(Vec::new()),
             call_stack: RefCell::new(Vec::new()),
             condition_handlers: RefCell::new(Vec::new()),
@@ -523,6 +531,16 @@ impl Interpreter {
         } else {
             self.get_working_dir().join(path)
         }
+    }
+
+    /// Write a message to the interpreter's stdout writer.
+    pub(crate) fn write_stdout(&self, msg: &str) {
+        let _ = self.stdout.borrow_mut().write_all(msg.as_bytes());
+    }
+
+    /// Write a message to the interpreter's stderr writer.
+    pub(crate) fn write_stderr(&self, msg: &str) {
+        let _ = self.stderr.borrow_mut().write_all(msg.as_bytes());
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {

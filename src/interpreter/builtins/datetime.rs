@@ -10,7 +10,8 @@ use jiff::civil::Date;
 use jiff::Timestamp;
 
 use crate::interpreter::value::*;
-use minir_macros::builtin;
+use crate::interpreter::BuiltinContext;
+use minir_macros::{builtin, interpreter_builtin};
 
 // region: DateTimeError
 
@@ -228,10 +229,14 @@ fn builtin_date(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param x a Date object to print
 /// @return x, invisibly
-#[builtin(name = "print.Date", min_args = 1)]
-fn builtin_print_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "print.Date", min_args = 1)]
+fn interp_print_date(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let formatted = builtin_format_date(args, named)?;
-    println!("{}", formatted);
+    context.write(&format!("{}\n", formatted));
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
@@ -239,10 +244,14 @@ fn builtin_print_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
 ///
 /// @param x a POSIXct object to print
 /// @return x, invisibly
-#[builtin(name = "print.POSIXct", min_args = 1)]
-fn builtin_print_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "print.POSIXct", min_args = 1)]
+fn interp_print_posixct(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let formatted = builtin_format_posixct(args, named)?;
-    println!("{}", formatted);
+    context.write(&format!("{}\n", formatted));
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 

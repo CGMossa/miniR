@@ -660,7 +660,7 @@ fn interp_write_lines(
 
     match dest {
         Dest::Stdout => {
-            println!("{}", output);
+            context.write(&format!("{}\n", output));
         }
         Dest::File(path) => {
             let path = resolved_path_string(context, &path);

@@ -145,7 +145,7 @@ fn interp_print(
     }
     // Default print
     if let Some(val) = args.first() {
-        println!("{}", val);
+        context.write(&format!("{}\n", val));
     }
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
@@ -362,7 +362,7 @@ fn insert_thousands_sep(s: &str, sep: &str) -> String {
 fn interp_print_data_frame(
     args: &[RValue],
     _named: &[(String, RValue)],
-    _context: &BuiltinContext,
+    context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     use std::io::Write;
     use tabwriter::TabWriter;
@@ -371,13 +371,13 @@ fn interp_print_data_frame(
     let list = match val {
         RValue::List(l) => l,
         _ => {
-            println!("{}", val);
+            context.write(&format!("{}\n", val));
             return Ok(val.clone());
         }
     };
 
     if list.values.is_empty() {
-        println!("data frame with 0 columns and 0 rows");
+        context.write("data frame with 0 columns and 0 rows\n");
         return Ok(val.clone());
     }
 
@@ -397,11 +397,11 @@ fn interp_print_data_frame(
 
     if nrow == 0 {
         // Print header only for 0-row data frames
-        println!(
-            "data frame with 0 rows and {} columns: {}",
+        context.write(&format!(
+            "data frame with 0 rows and {} columns: {}\n",
             col_names.len(),
             col_names.join(", ")
-        );
+        ));
         return Ok(val.clone());
     }
 
@@ -461,8 +461,8 @@ fn interp_print_data_frame(
     let output = String::from_utf8(tw.into_inner().unwrap_or_default())
         .map_err(|e| RError::other(format!("utf8 error: {}", e)))?;
 
-    // Print without trailing newline (println already adds one)
-    print!("{}", output);
+    // Print without trailing newline
+    context.write(&output);
 
     Ok(val.clone())
 }

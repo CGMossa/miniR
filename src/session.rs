@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt;
 use std::fs;
 use std::path::Path;
@@ -60,8 +61,27 @@ impl std::error::Error for SessionError {
     }
 }
 
+/// A `Write` adapter backed by a shared `Arc<Mutex<Vec<u8>>>` so that both
+/// the interpreter and the session can access the accumulated bytes.
+struct SharedBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for SharedBuf {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut guard = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        guard.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Session {
     interpreter: Interpreter,
+    /// Shared stdout capture buffer (only set for captured-output sessions).
+    captured_stdout: Option<std::sync::Arc<std::sync::Mutex<Vec<u8>>>>,
+    /// Shared stderr capture buffer (only set for captured-output sessions).
+    captured_stderr: Option<std::sync::Arc<std::sync::Mutex<Vec<u8>>>>,
 }
 
 impl Default for Session {
@@ -74,6 +94,51 @@ impl Session {
     pub fn new() -> Self {
         Session {
             interpreter: Interpreter::new(),
+            captured_stdout: None,
+            captured_stderr: None,
+        }
+    }
+
+    /// Create a session that captures stdout and stderr into in-memory buffers
+    /// instead of writing to the process streams. Use `captured_stdout()` and
+    /// `captured_stderr()` to retrieve the accumulated output.
+    pub fn new_with_captured_output() -> Self {
+        let mut interp = Interpreter::new();
+        let stdout_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        interp.stdout = RefCell::new(Box::new(SharedBuf(stdout_buf.clone())));
+        interp.stderr = RefCell::new(Box::new(SharedBuf(stderr_buf.clone())));
+        Session {
+            interpreter: interp,
+            captured_stdout: Some(stdout_buf),
+            captured_stderr: Some(stderr_buf),
+        }
+    }
+
+    /// Return all output written to the interpreter's stdout writer so far.
+    ///
+    /// Only meaningful when the session was created with `new_with_captured_output()`.
+    /// For sessions using real stdio this will return an empty string.
+    pub fn captured_stdout(&self) -> String {
+        match &self.captured_stdout {
+            Some(buf) => {
+                let guard = buf.lock().unwrap_or_else(|e| e.into_inner());
+                String::from_utf8_lossy(&guard).into_owned()
+            }
+            None => String::new(),
+        }
+    }
+
+    /// Return all output written to the interpreter's stderr writer so far.
+    ///
+    /// Only meaningful when the session was created with `new_with_captured_output()`.
+    pub fn captured_stderr(&self) -> String {
+        match &self.captured_stderr {
+            Some(buf) => {
+                let guard = buf.lock().unwrap_or_else(|e| e.into_inner());
+                String::from_utf8_lossy(&guard).into_owned()
+            }
+            None => String::new(),
         }
     }
 

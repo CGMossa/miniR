@@ -290,7 +290,7 @@ fn interp_download_file(
 
     if !quiet {
         // R prints a message about the download
-        eprintln!("trying URL '{}'", url_str);
+        context.write_err(&format!("trying URL '{}'\n", url_str));
     }
 
     let mut stream = connect_stream(&parsed)?;
@@ -313,8 +313,8 @@ fn interp_download_file(
     })?;
 
     if !quiet {
-        eprintln!("Content length {} bytes", body.len());
-        eprintln!("downloaded {} bytes", body.len());
+        context.write_err(&format!("Content length {} bytes\n", body.len()));
+        context.write_err(&format!("downloaded {} bytes\n", body.len()));
     }
 
     // Return 0 for success (R convention)

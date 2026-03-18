@@ -4384,8 +4384,12 @@ fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Result<Vec<f64>, REr
 /// @param object an lm object (result of lm())
 /// @return the object, invisibly
 #[cfg(feature = "linalg")]
-#[builtin(name = "summary.lm", min_args = 1, namespace = "stats")]
-fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "summary.lm", min_args = 1, namespace = "stats")]
+fn interp_summary_lm(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let obj = args.first().ok_or_else(|| {
         RError::new(
             RErrorKind::Argument,
@@ -4410,9 +4414,7 @@ fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
         .find(|(n, _)| n.as_deref() == Some("coefficients"))
         .map(|(_, v)| v);
 
-    println!("Call:");
-    println!("lm(formula = ...)");
-    println!();
+    context.write("Call:\nlm(formula = ...)\n\n");
 
     if let Some(RValue::Vector(rv)) = coefs {
         let values = rv.to_doubles();
@@ -4429,13 +4431,18 @@ fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             })
             .unwrap_or_default();
 
-        println!("Coefficients:");
+        context.write("Coefficients:\n");
         let max_name_len = names.iter().map(|n| n.len()).max().unwrap_or(0).max(8);
-        println!("{:>width$}  Estimate", "", width = max_name_len);
+        context.write(&format!("{:>width$}  Estimate\n", "", width = max_name_len));
         for (i, val) in values.iter().enumerate() {
             let name = names.get(i).map(|s| s.as_str()).unwrap_or("???");
             let estimate = val.map_or("NA".to_string(), |v| format!("{:.6}", v));
-            println!("{:>width$}  {}", name, estimate, width = max_name_len);
+            context.write(&format!(
+                "{:>width$}  {}\n",
+                name,
+                estimate,
+                width = max_name_len
+            ));
         }
     }
 
@@ -4458,11 +4465,10 @@ fn builtin_summary_lm(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             } else {
                 sorted[sorted.len() / 2]
             };
-            println!();
-            println!(
-                "Residuals: Min = {:.4}, Median = {:.4}, Max = {:.4}",
+            context.write(&format!(
+                "\nResiduals: Min = {:.4}, Median = {:.4}, Max = {:.4}\n",
                 min, median, max
-            );
+            ));
         }
     }
 

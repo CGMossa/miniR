@@ -76,7 +76,7 @@ fn interp_warning(
             if !muffled {
                 // Extract message from condition for display
                 let msg = condition_message_str(first);
-                eprintln!("Warning message:\n{}", msg);
+                context.write_err(&format!("Warning message:\n{}\n", msg));
             }
             return Ok(RValue::Null);
         }
@@ -92,7 +92,7 @@ fn interp_warning(
     let muffled = context
         .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
-        eprintln!("Warning message:\n{}", msg);
+        context.write_err(&format!("Warning message:\n{}\n", msg));
     }
     Ok(RValue::Null)
 }
@@ -120,9 +120,9 @@ fn interp_message(
             if !muffled {
                 let msg = condition_message_str(first);
                 if append_lf {
-                    eprintln!("{}", msg);
+                    context.write_err(&format!("{}\n", msg));
                 } else {
-                    eprint!("{}", msg);
+                    context.write_err(&msg);
                 }
             }
             return Ok(RValue::Null);
@@ -141,9 +141,9 @@ fn interp_message(
         .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
         if append_lf {
-            eprintln!("{}", msg);
+            context.write_err(&format!("{}\n", msg));
         } else {
-            eprint!("{}", msg);
+            context.write_err(&msg);
         }
     }
     Ok(RValue::Null)

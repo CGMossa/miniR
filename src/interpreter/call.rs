@@ -64,6 +64,16 @@ impl<'a> BuiltinContext<'a> {
     {
         f(self.interpreter)
     }
+
+    /// Write a message to the interpreter's stdout writer.
+    pub fn write(&self, msg: &str) {
+        self.interpreter.write_stdout(msg);
+    }
+
+    /// Write a message to the interpreter's stderr writer.
+    pub fn write_err(&self, msg: &str) {
+        self.interpreter.write_stderr(msg);
+    }
 }
 
 impl Interpreter {

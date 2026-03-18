@@ -759,24 +759,24 @@ fn interp_show_class(
     context.with_interpreter(|interp| {
         let registry = interp.s4_classes.borrow();
         if let Some(def) = registry.get(&class_name) {
-            eprintln!("Class \"{}\"", class_name);
+            interp.write_stderr(&format!("Class \"{}\"\n", class_name));
             if !def.slots.is_empty() {
-                eprintln!("Slots:");
+                interp.write_stderr("Slots:\n");
                 for (name, typ) in &def.slots {
-                    eprintln!("  Name: {}  Class: {}", name, typ);
+                    interp.write_stderr(&format!("  Name: {}  Class: {}\n", name, typ));
                 }
             }
             if !def.contains.is_empty() {
-                eprintln!("Extends: {}", def.contains.join(", "));
+                interp.write_stderr(&format!("Extends: {}\n", def.contains.join(", ")));
             }
             if def.is_virtual {
-                eprintln!("(virtual class)");
+                interp.write_stderr("(virtual class)\n");
             }
         } else {
-            eprintln!(
-                "Class \"{}\" (not registered in S4 class registry)",
+            interp.write_stderr(&format!(
+                "Class \"{}\" (not registered in S4 class registry)\n",
                 class_name
-            );
+            ));
         }
     });
 

@@ -670,8 +670,12 @@ fn collect_c_names(entries: &[(Option<String>, RValue)]) -> Vec<Option<String>> 
 /// Display help for a function.
 ///
 /// @param topic name of the function to look up
-#[builtin(min_args = 1)]
-fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(min_args = 1)]
+fn interp_help(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let name = match args.first() {
         Some(RValue::Vector(rv)) => rv.as_character_scalar().unwrap_or_default(),
         Some(RValue::Function(RFunction::Builtin { name, .. })) => name.clone(),
@@ -719,11 +723,11 @@ fn builtin_help(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     };
     match descriptor {
         Some(d) => {
-            println!("{}", format_help(d));
+            context.write(&format!("{}\n", format_help(d)));
             Ok(RValue::Null)
         }
         None => {
-            println!("No documentation for '{name}'");
+            context.write(&format!("No documentation for '{name}'\n"));
             Ok(RValue::Null)
         }
     }
@@ -825,7 +829,7 @@ fn builtin_cat(
             })?;
         }
         _ => {
-            print!("{}", output);
+            context.write(&output);
         }
     }
 
@@ -1536,14 +1540,18 @@ fn builtin_mode(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
 ///
 /// @param x object to inspect
 /// @return NULL (invisibly)
-#[builtin(min_args = 1)]
-fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(min_args = 1)]
+fn interp_str(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     match args.first() {
         Some(val) => {
             // Check for data.frame first — use tabled-based structured display
             #[cfg(feature = "tables")]
             if let Some(output) = tables_display::str_data_frame(val) {
-                print!("{}", output);
+                context.write(&output);
                 return Ok(RValue::Null);
             }
 
@@ -1597,11 +1605,13 @@ fn builtin_str(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError
                             })
                             .join(" "),
                     };
-                    println!(" {} [1:{}] {}", type_name, len, preview);
+                    context.write(&format!(" {} [1:{}] {}\n", type_name, len, preview));
                 }
-                RValue::List(l) => println!("List of {}", l.values.len()),
-                RValue::Null => println!(" NULL"),
-                _ => println!(" {}", val),
+                RValue::List(l) => {
+                    context.write(&format!("List of {}\n", l.values.len()));
+                }
+                RValue::Null => context.write(" NULL\n"),
+                _ => context.write(&format!(" {}\n", val)),
             }
             Ok(RValue::Null)
         }
@@ -2943,13 +2953,17 @@ fn builtin_replace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 ///
 /// @param prompt string to display before reading input
 /// @return character scalar of the input (without trailing newline)
-#[builtin]
-fn builtin_readline(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin]
+fn interp_readline(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let prompt = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
-    print!("{}", prompt);
+    context.write(&prompt);
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).ok();
     Ok(RValue::vec(Vector::Character(
@@ -3026,18 +3040,22 @@ fn interp_require(
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
 
-    context.with_interpreter(|interp| match interp.load_namespace(&pkg) {
+    let result = context.with_interpreter(|interp| match interp.load_namespace(&pkg) {
         Ok(_) => {
             let _ = interp.attach_package(&pkg);
             Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
         }
-        Err(_) => {
-            if !quietly {
-                eprintln!("Warning message:\nthere is no package called '{}'", pkg);
-            }
-            Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+        Err(_) => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
+    });
+    if let Ok(RValue::Vector(rv)) = &result {
+        if rv.as_logical_scalar() == Some(false) && !quietly {
+            context.write_err(&format!(
+                "Warning message:\nthere is no package called '{}'\n",
+                pkg
+            ));
         }
-    })
+    }
+    result
 }
 
 /// Extract the package name from library/require arguments.
@@ -3123,7 +3141,10 @@ fn interp_require_namespace(
         Ok(_) => Ok(RValue::vec(Vector::Logical(vec![Some(true)].into()))),
         Err(_) => {
             if !quietly {
-                eprintln!("Warning message:\nthere is no package called '{}'", pkg);
+                context.write_err(&format!(
+                    "Warning message:\nthere is no package called '{}'\n",
+                    pkg
+                ));
             }
             Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
         }
@@ -5539,9 +5560,14 @@ fn builtin_traceback(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 ///
 /// @param fun function to debug
 /// @return invisible NULL
-#[builtin]
-fn builtin_debug(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    eprintln!("debug() is not supported in miniR — interactive debugging is not available.");
+#[interpreter_builtin]
+fn interp_debug(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .write_err("debug() is not supported in miniR — interactive debugging is not available.\n");
     Ok(RValue::Null)
 }
 
@@ -5568,9 +5594,15 @@ fn builtin_isdebugged(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 /// miniR does not support interactive debugging. Prints a message.
 ///
 /// @return invisible NULL
-#[builtin]
-fn builtin_browser(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    eprintln!("browser() is not supported in miniR — interactive debugging is not available.");
+#[interpreter_builtin]
+fn interp_browser(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.write_err(
+        "browser() is not supported in miniR — interactive debugging is not available.\n",
+    );
     Ok(RValue::Null)
 }
 

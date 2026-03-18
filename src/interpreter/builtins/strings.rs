@@ -5,8 +5,9 @@ use unicode_width::UnicodeWidthStr;
 
 use super::CallArgs;
 use crate::interpreter::value::*;
+use crate::interpreter::BuiltinContext;
 use derive_more::{Display, Error};
-use minir_macros::builtin;
+use minir_macros::{builtin, interpreter_builtin};
 use regex::Regex;
 
 use crate::interpreter::value::deparse_expr;
@@ -1827,14 +1828,18 @@ fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
 ///
 /// @param x any R value or language object
 /// @return NULL (invisibly); output is printed to stdout
-#[builtin(min_args = 1)]
-fn builtin_dput(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(min_args = 1)]
+fn interp_dput(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let s = match args.first() {
         Some(RValue::Language(expr)) => deparse_expr(expr),
         Some(v) => format!("{}", v),
         None => "NULL".to_string(),
     };
-    println!("{}", s);
+    context.write(&format!("{}\n", s));
     Ok(RValue::Null)
 }
 

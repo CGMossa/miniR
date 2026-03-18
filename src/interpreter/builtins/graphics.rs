@@ -4,9 +4,10 @@
 //! NULL depending on the function.
 
 use crate::interpreter::value::*;
-use minir_macros::builtin;
+use crate::interpreter::BuiltinContext;
+use minir_macros::{builtin, interpreter_builtin};
 
-const DEVICE_MSG: &str = "graphics devices are not yet supported in miniR";
+const DEVICE_MSG: &str = "graphics devices are not yet supported in miniR\n";
 
 // region: Device management
 
@@ -17,10 +18,14 @@ const DEVICE_MSG: &str = "graphics devices are not yet supported in miniR";
 ///
 /// @param file output file path (ignored)
 /// @return NULL
-#[builtin(namespace = "grDevices")]
-fn builtin_pdf(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(namespace = "grDevices")]
+fn interp_pdf(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let _file = args.first();
-    eprintln!("{DEVICE_MSG}");
+    context.write_err(DEVICE_MSG);
     Ok(RValue::Null)
 }
 
@@ -31,10 +36,14 @@ fn builtin_pdf(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// @param filename output file path (ignored)
 /// @return NULL
-#[builtin(namespace = "grDevices")]
-fn builtin_png(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(namespace = "grDevices")]
+fn interp_png(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let _filename = args.first();
-    eprintln!("{DEVICE_MSG}");
+    context.write_err(DEVICE_MSG);
     Ok(RValue::Null)
 }
 
@@ -45,10 +54,14 @@ fn builtin_png(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, R
 ///
 /// @param filename output file path (ignored)
 /// @return NULL
-#[builtin(namespace = "grDevices")]
-fn builtin_svg(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(namespace = "grDevices")]
+fn interp_svg(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let _filename = args.first();
-    eprintln!("{DEVICE_MSG}");
+    context.write_err(DEVICE_MSG);
     Ok(RValue::Null)
 }
 
@@ -80,9 +93,13 @@ fn builtin_dev_cur(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// and returns NULL.
 ///
 /// @return NULL
-#[builtin(name = "dev.new", namespace = "grDevices")]
-fn builtin_dev_new(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    eprintln!("{DEVICE_MSG}");
+#[interpreter_builtin(name = "dev.new", namespace = "grDevices")]
+fn interp_dev_new(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.write_err(DEVICE_MSG);
     Ok(RValue::Null)
 }
 
@@ -98,11 +115,15 @@ fn builtin_dev_new(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVal
 /// @param x x-coordinates or a formula
 /// @param y y-coordinates (optional)
 /// @return NULL
-#[builtin(namespace = "graphics")]
-fn builtin_plot(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(namespace = "graphics")]
+fn interp_plot(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let _x = args.first();
     let _y = args.get(1);
-    eprintln!("{DEVICE_MSG}");
+    context.write_err(DEVICE_MSG);
     Ok(RValue::Null)
 }
 

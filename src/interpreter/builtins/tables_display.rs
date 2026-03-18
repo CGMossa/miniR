@@ -4,7 +4,8 @@
 //! markdown-formatted table output. Also exports helpers used by `str()`.
 
 use crate::interpreter::value::*;
-use minir_macros::builtin;
+use crate::interpreter::BuiltinContext;
+use minir_macros::{builtin, interpreter_builtin};
 use tabled::settings::style::Style;
 use tabled::settings::{Modify, Width};
 use tabled::{builder::Builder, settings::object::Columns};
@@ -152,8 +153,12 @@ fn format_column_values(v: &Vector, nrow: usize) -> Vec<String> {
 /// @param x a data.frame to display
 /// @param title optional title (unused in terminal mode)
 /// @return x, invisibly
-#[builtin(name = "View", min_args = 1)]
-fn builtin_view(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "View", min_args = 1)]
+fn interp_view(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let val = &args[0];
 
     let data = extract_data_frame(val).ok_or_else(|| {
@@ -165,11 +170,11 @@ fn builtin_view(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
     })?;
 
     if data.nrow == 0 {
-        println!(
-            "data frame with 0 rows and {} columns: {}",
+        context.write(&format!(
+            "data frame with 0 rows and {} columns: {}\n",
             data.col_names.len(),
             data.col_names.join(", ")
-        );
+        ));
         return Ok(val.clone());
     }
 
@@ -208,14 +213,14 @@ fn builtin_view(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
         .with(Style::rounded())
         .with(Modify::new(Columns::new(1..)).with(Width::truncate(max_col_width).suffix("...")));
 
-    println!("{}", table);
+    context.write(&format!("{}\n", table));
 
     if data.nrow > max_display_rows {
-        println!(
-            "... {} more rows ({} total)",
+        context.write(&format!(
+            "... {} more rows ({} total)\n",
             data.nrow - max_display_rows,
             data.nrow
-        );
+        ));
     }
 
     Ok(val.clone())
