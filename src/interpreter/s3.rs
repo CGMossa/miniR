@@ -43,9 +43,13 @@ impl Interpreter {
             positional.to_vec()
         };
 
+        // Look up in environment chain first, then the S3 method registry
         for i in (ctx.class_index + 1)..ctx.classes.len() {
             let method_name = format!("{}.{}", ctx.generic, ctx.classes[i]);
-            if let Some(method) = env.get(&method_name) {
+            let method = env
+                .get(&method_name)
+                .or_else(|| self.lookup_s3_method(&ctx.generic, &ctx.classes[i]));
+            if let Some(method) = method {
                 return self.call_s3_method(S3MethodCall {
                     method: &method,
                     method_name: &method_name,
@@ -62,7 +66,10 @@ impl Interpreter {
         }
 
         let default_name = format!("{}.default", ctx.generic);
-        if let Some(method) = env.get(&default_name) {
+        let default_method = env
+            .get(&default_name)
+            .or_else(|| self.lookup_s3_method(&ctx.generic, "default"));
+        if let Some(method) = default_method {
             return self.call_s3_method(S3MethodCall {
                 method: &method,
                 method_name: &default_name,
@@ -164,7 +171,9 @@ impl Interpreter {
         }
     }
 
-    /// S3 method dispatch: look up generic.class in the environment chain.
+    /// S3 method dispatch: look up generic.class in the environment chain,
+    /// then fall back to the per-interpreter S3 method registry (populated
+    /// by S3method() directives in NAMESPACE files).
     #[tracing::instrument(
         level = "debug",
         skip(self, positional, named, dispatch_object, env, call_expr)
@@ -182,6 +191,7 @@ impl Interpreter {
             dispatch_object.unwrap_or_else(|| positional.first().cloned().unwrap_or(RValue::Null));
         let classes = self.s3_classes_for(&dispatch_object);
 
+        // First pass: look up generic.class in the environment chain
         for (i, class) in classes.iter().enumerate() {
             let method_name = format!("{}.{}", generic, class);
             if let Some(method) = env.get(&method_name) {
@@ -205,12 +215,58 @@ impl Interpreter {
             }
         }
 
+        // Second pass: check the per-interpreter S3 method registry
+        for (i, class) in classes.iter().enumerate() {
+            if let Some(method) = self.lookup_s3_method(generic, class) {
+                let method_name = format!("{}.{}", generic, class);
+                debug!(
+                    generic,
+                    method = method_name.as_str(),
+                    "S3 dispatch resolved (registry)"
+                );
+                return self.call_s3_method(S3MethodCall {
+                    method: &method,
+                    method_name: &method_name,
+                    generic,
+                    classes: &classes,
+                    class_index: i,
+                    dispatch_object: dispatch_object.clone(),
+                    positional,
+                    named,
+                    env,
+                    call_expr: call_expr.clone(),
+                });
+            }
+        }
+
+        // Fall back to generic.default in the environment chain
         let default_name = format!("{}.default", generic);
         if let Some(method) = env.get(&default_name) {
             debug!(
                 generic,
                 method = default_name.as_str(),
                 "S3 dispatch resolved (default)"
+            );
+            return self.call_s3_method(S3MethodCall {
+                method: &method,
+                method_name: &default_name,
+                generic,
+                classes: &classes,
+                class_index: classes.len(),
+                dispatch_object: dispatch_object.clone(),
+                positional,
+                named,
+                env,
+                call_expr: call_expr.clone(),
+            });
+        }
+
+        // Fall back to generic.default in the registry
+        if let Some(method) = self.lookup_s3_method(generic, "default") {
+            debug!(
+                generic,
+                method = default_name.as_str(),
+                "S3 dispatch resolved (registry default)"
             );
             return self.call_s3_method(S3MethodCall {
                 method: &method,

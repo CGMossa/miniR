@@ -447,11 +447,9 @@ impl Interpreter {
         }
     }
 
-    /// Register S3 methods declared in NAMESPACE into the base environment
-    /// so they're discoverable by S3 dispatch.
+    /// Register S3 methods declared in NAMESPACE into the per-interpreter
+    /// S3 method registry so they're discoverable by S3 dispatch.
     fn register_s3_methods(&self, namespace: &PackageNamespace, namespace_env: &Environment) {
-        let base_env = self.base_env();
-
         for reg in &namespace.s3_methods {
             let method_name = reg
                 .method
@@ -460,9 +458,7 @@ impl Interpreter {
 
             // Look up the method function in the namespace
             if let Some(method_fn) = namespace_env.get(&method_name) {
-                // Register as generic.class in base so S3 dispatch finds it
-                let dispatch_name = format!("{}.{}", reg.generic, reg.class);
-                base_env.set(dispatch_name, method_fn);
+                self.register_s3_method(reg.generic.clone(), reg.class.clone(), method_fn);
             }
         }
     }

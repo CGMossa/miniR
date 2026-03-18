@@ -223,6 +223,11 @@ pub struct Interpreter {
         RefCell<std::collections::HashMap<String, packages::LoadedNamespace>>,
     /// Search path entries (between .GlobalEnv and package:base).
     pub(crate) search_path: RefCell<Vec<packages::SearchPathEntry>>,
+    /// S3 method registry for methods declared via S3method() in NAMESPACE files.
+    /// Key is (generic, class), value is the method function.
+    /// Checked by dispatch_s3 after the environment chain lookup fails.
+    pub(crate) s3_method_registry:
+        RefCell<std::collections::HashMap<(String, String), value::RValue>>,
     /// Active progress bars, keyed by integer ID.
     #[cfg(feature = "progress")]
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
@@ -364,6 +369,7 @@ impl Interpreter {
             s4_methods: RefCell::new(std::collections::HashMap::new()),
             loaded_namespaces: RefCell::new(std::collections::HashMap::new()),
             search_path: RefCell::new(Vec::new()),
+            s3_method_registry: RefCell::new(std::collections::HashMap::new()),
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
         }
@@ -511,6 +517,25 @@ impl Interpreter {
     /// Set a per-interpreter environment variable (does not mutate process state).
     pub(crate) fn set_env_var(&self, name: String, value: String) {
         self.env_vars.borrow_mut().insert(name, value);
+    }
+
+    /// Register an S3 method in the per-interpreter registry.
+    /// This is used by NAMESPACE S3method() directives to make methods
+    /// discoverable by S3 dispatch without polluting the base environment.
+    pub(crate) fn register_s3_method(&self, generic: String, class: String, method: RValue) {
+        self.s3_method_registry
+            .borrow_mut()
+            .insert((generic, class), method);
+    }
+
+    /// Look up an S3 method from the per-interpreter registry.
+    /// Returns the method function if one was registered for the given
+    /// generic/class combination.
+    pub(crate) fn lookup_s3_method(&self, generic: &str, class: &str) -> Option<RValue> {
+        self.s3_method_registry
+            .borrow()
+            .get(&(generic.to_string(), class.to_string()))
+            .cloned()
     }
 
     /// Get the interpreter-local working directory.

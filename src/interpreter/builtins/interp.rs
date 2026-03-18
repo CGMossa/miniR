@@ -118,14 +118,25 @@ fn try_s3_dispatch(
         return Ok(None);
     }
     let env = context.env();
+    let interp = context.interpreter();
+
+    // First pass: look up generic.class in the environment chain
     for class in &classes {
         let method_name = format!("{generic}.{class}");
         if let Some(method) = env.get(&method_name) {
-            let result = context
-                .with_interpreter(|interp| interp.call_function(&method, args, named, env))?;
+            let result = interp.call_function(&method, args, named, env)?;
             return Ok(Some(result));
         }
     }
+
+    // Second pass: check the per-interpreter S3 method registry
+    for class in &classes {
+        if let Some(method) = interp.lookup_s3_method(generic, class) {
+            let result = interp.call_function(&method, args, named, env)?;
+            return Ok(Some(result));
+        }
+    }
+
     Ok(None)
 }
 
