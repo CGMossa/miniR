@@ -767,14 +767,11 @@ impl<'a> RdParser<'a> {
                     out.push('\n');
                 }
             }
-            // \special{...}, \method{...}{...}, \S3method, \S4method
-            "special" | "method" | "S3method" | "S4method" => {
+            // \special{...}
+            "special" => {
                 if self.peek() == Some('{') {
                     let content = self.read_brace_arg()?;
                     out.push_str(&content);
-                }
-                if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
                 }
             }
             // Unknown command — try to extract brace content

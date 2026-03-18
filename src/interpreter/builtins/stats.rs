@@ -616,20 +616,9 @@ fn std_normal_cdf(x: f64) -> f64 {
     0.5 * erfc(-x * FRAC_1_SQRT_2)
 }
 
-/// Complementary error function approximation (Abramowitz and Stegun 7.1.26).
-/// Maximum error: |epsilon(x)| < 1.5e-7
+/// Complementary error function — delegates to libm for machine-precision accuracy.
 fn erfc(x: f64) -> f64 {
-    // erfc(x) = 1 - erf(x)
-    // For negative x: erfc(-x) = 2 - erfc(x)
-    if x < 0.0 {
-        return 2.0 - erfc(-x);
-    }
-    let t = 1.0 / (1.0 + 0.327_591_1 * x);
-    let poly = t
-        * (0.254_829_592
-            + t * (-0.284_496_736
-                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
-    poly * (-x * x).exp()
+    libm::erfc(x)
 }
 
 /// Inverse standard normal CDF (quantile function).
