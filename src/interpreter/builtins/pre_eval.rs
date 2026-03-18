@@ -1096,11 +1096,20 @@ fn pre_eval_substitute(
 }
 
 /// Walk an AST, replacing symbols with their values from the environment.
-/// If a symbol is bound to an RValue::Language, splice in the inner Expr.
-/// If bound to a literal value, convert to the appropriate Expr literal.
+///
+/// For function parameters (which have promise expressions stored by the call
+/// mechanism), substitute with the original unevaluated source expression.
+/// For other bindings, if bound to an RValue::Language, splice in the inner
+/// Expr. If bound to a literal value, convert to the appropriate Expr literal.
 fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
     match expr {
         Expr::Symbol(name) => {
+            // First check for a promise expression (original unevaluated source
+            // expression from a function argument). This is what makes
+            // `f <- function(x) substitute(x); f(a+b)` return `a + b`.
+            if let Some(promise_expr) = env.get_promise_expr(name) {
+                return promise_expr;
+            }
             if let Some(val) = env.get(name) {
                 rvalue_to_expr(&val)
             } else {

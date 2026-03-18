@@ -8,6 +8,12 @@ use tracing::trace;
 use crate::interpreter::value::RValue;
 use crate::parser::ast::Expr;
 
+/// Source expressions for function arguments (promise expressions).
+///
+/// When a closure is called, the original unevaluated expressions for each
+/// argument are stored here so that `substitute()` can retrieve them.
+type PromiseExprs = HashMap<String, Expr>;
+
 #[derive(Debug, Clone)]
 pub struct Environment {
     inner: Rc<RefCell<EnvInner>>,
@@ -34,6 +40,9 @@ pub(crate) struct EnvInner {
     locked_bindings: std::collections::HashSet<String>,
     /// Active bindings: names mapped to zero-argument functions that are called on every access.
     active_bindings: HashMap<String, RValue>,
+    /// Promise expressions: original unevaluated expressions for function arguments.
+    /// Used by `substitute()` to retrieve the source expression for a parameter.
+    promise_exprs: PromiseExprs,
 }
 
 impl Environment {
@@ -47,6 +56,7 @@ impl Environment {
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
                 active_bindings: HashMap::new(),
+                promise_exprs: HashMap::new(),
             })),
         }
     }
@@ -65,6 +75,7 @@ impl Environment {
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
                 active_bindings: HashMap::new(),
+                promise_exprs: HashMap::new(),
             })),
         }
     }
@@ -161,6 +172,7 @@ impl Environment {
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
                 active_bindings: HashMap::new(),
+                promise_exprs: HashMap::new(),
             })),
         }
     }
@@ -295,6 +307,22 @@ impl Environment {
     /// Check if a name is a local active binding (does not walk the chain).
     pub fn is_local_active_binding(&self, name: &str) -> bool {
         self.inner.borrow().active_bindings.contains_key(name)
+    }
+
+    // endregion
+
+    // region: Promise expressions
+
+    /// Store the original unevaluated expression for a function parameter.
+    /// Used by `substitute()` to recover the source expression.
+    pub fn set_promise_expr(&self, name: String, expr: Expr) {
+        self.inner.borrow_mut().promise_exprs.insert(name, expr);
+    }
+
+    /// Get the original unevaluated expression for a function parameter.
+    /// Checks this environment only (local), not parents.
+    pub fn get_promise_expr(&self, name: &str) -> Option<Expr> {
+        self.inner.borrow().promise_exprs.get(name).cloned()
     }
 
     // endregion

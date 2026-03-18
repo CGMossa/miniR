@@ -553,6 +553,300 @@ fn format_column_elements(v: &Vector, nrow: usize) -> Vec<String> {
         .collect()
 }
 
+/// Print a matrix with row/column labels.
+///
+/// Formats the vector data as a 2D grid using the `dim` attribute for layout
+/// and `dimnames` for row/column labels.
+///
+/// @param x a matrix to print
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.matrix", min_args = 1)]
+fn interp_print_matrix(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let val = &args[0];
+    let rv = match val {
+        RValue::Vector(rv) => rv,
+        _ => {
+            context.write(&format!("{}\n", val));
+            return Ok(val.clone());
+        }
+    };
+
+    // Extract dim attribute
+    let (nrow, ncol) = match rv.get_attr("dim") {
+        Some(RValue::Vector(dim_rv)) => {
+            let dims = dim_rv.to_integers();
+            if dims.len() == 2 {
+                let nr = dims[0].unwrap_or(0);
+                let nc = dims[1].unwrap_or(0);
+                (
+                    usize::try_from(nr).unwrap_or(0),
+                    usize::try_from(nc).unwrap_or(0),
+                )
+            } else {
+                context.write(&format!("{}\n", val));
+                return Ok(val.clone());
+            }
+        }
+        _ => {
+            context.write(&format!("{}\n", val));
+            return Ok(val.clone());
+        }
+    };
+
+    // Extract dimnames
+    let (row_names, col_names) = extract_dimnames(rv);
+
+    // Format each element
+    let elements = format_matrix_elements(&rv.inner, nrow, ncol);
+
+    // Compute column widths (including headers)
+    let col_widths: Vec<usize> = (0..ncol)
+        .map(|j| {
+            let header_w = col_names
+                .as_ref()
+                .and_then(|cn| cn.get(j))
+                .map(|s| s.len())
+                .unwrap_or_else(|| format!("[,{}]", j + 1).len());
+            let max_elem_w = (0..nrow)
+                .map(|i| elements[i * ncol + j].len())
+                .max()
+                .unwrap_or(0);
+            header_w.max(max_elem_w)
+        })
+        .collect();
+
+    // Row label width
+    let row_label_width = (0..nrow)
+        .map(|i| {
+            row_names
+                .as_ref()
+                .and_then(|rn| rn.get(i))
+                .map(|s| s.len())
+                .unwrap_or_else(|| format!("[{},]", i + 1).len())
+        })
+        .max()
+        .unwrap_or(0);
+
+    // Also account for the blank space above row labels in the header line
+    let mut output = String::new();
+
+    // Header line
+    output.push_str(&" ".repeat(row_label_width));
+    for (j, &cw) in col_widths.iter().enumerate() {
+        let header = col_names
+            .as_ref()
+            .and_then(|cn| cn.get(j).cloned())
+            .unwrap_or_else(|| format!("[,{}]", j + 1));
+        output.push(' ');
+        output.push_str(&format!("{:>width$}", header, width = cw));
+    }
+    output.push('\n');
+
+    // Data rows
+    for i in 0..nrow {
+        let row_label = row_names
+            .as_ref()
+            .and_then(|rn| rn.get(i).cloned())
+            .unwrap_or_else(|| format!("[{},]", i + 1));
+        output.push_str(&format!("{:>width$}", row_label, width = row_label_width));
+        for j in 0..ncol {
+            output.push(' ');
+            output.push_str(&format!(
+                "{:>width$}",
+                elements[i * ncol + j],
+                width = col_widths[j]
+            ));
+        }
+        output.push('\n');
+    }
+
+    context.write(&output);
+    context.interpreter().set_invisible();
+    Ok(val.clone())
+}
+
+/// Extract dimnames from a matrix's attributes.
+/// Returns (row_names, col_names) as optional Vec<String>.
+fn extract_dimnames(rv: &RVector) -> (Option<Vec<String>>, Option<Vec<String>>) {
+    match rv.get_attr("dimnames") {
+        Some(RValue::List(list)) => {
+            let row_names = list.values.first().and_then(|(_, v)| match v {
+                RValue::Vector(rv) => {
+                    if let Vector::Character(chars) = &rv.inner {
+                        Some(
+                            chars
+                                .iter()
+                                .map(|c| c.clone().unwrap_or_else(|| "NA".to_string()))
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            });
+            let col_names = list.values.get(1).and_then(|(_, v)| match v {
+                RValue::Vector(rv) => {
+                    if let Vector::Character(chars) = &rv.inner {
+                        Some(
+                            chars
+                                .iter()
+                                .map(|c| c.clone().unwrap_or_else(|| "NA".to_string()))
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            });
+            (row_names, col_names)
+        }
+        _ => (None, None),
+    }
+}
+
+/// Format matrix elements as strings, stored in row-major order.
+fn format_matrix_elements(v: &Vector, nrow: usize, ncol: usize) -> Vec<String> {
+    let len = v.len();
+    // R stores matrices in column-major order: element [i,j] is at index i + j*nrow
+    (0..nrow * ncol)
+        .map(|idx| {
+            let i = idx / ncol; // row
+            let j = idx % ncol; // col
+            let flat_idx = i + j * nrow; // column-major index
+            if flat_idx >= len {
+                return "NA".to_string();
+            }
+            match v {
+                Vector::Raw(vals) => format!("{:02x}", vals[flat_idx]),
+                Vector::Logical(vals) => match vals[flat_idx] {
+                    Some(true) => "TRUE".to_string(),
+                    Some(false) => "FALSE".to_string(),
+                    None => "NA".to_string(),
+                },
+                Vector::Integer(vals) => match vals[flat_idx] {
+                    Some(n) => n.to_string(),
+                    None => "NA".to_string(),
+                },
+                Vector::Double(vals) => match vals[flat_idx] {
+                    Some(f) => format_r_double(f),
+                    None => "NA".to_string(),
+                },
+                Vector::Complex(vals) => match vals[flat_idx] {
+                    Some(c) => format_r_complex(c),
+                    None => "NA".to_string(),
+                },
+                Vector::Character(vals) => match &vals[flat_idx] {
+                    Some(s) => format!("\"{}\"", s),
+                    None => "NA".to_string(),
+                },
+            }
+        })
+        .collect()
+}
+
+/// Print a factor showing level labels instead of integer codes.
+///
+/// @param x a factor to print
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.factor", min_args = 1)]
+fn interp_print_factor(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let val = &args[0];
+    let rv = match val {
+        RValue::Vector(rv) => rv,
+        _ => {
+            context.write(&format!("{}\n", val));
+            return Ok(val.clone());
+        }
+    };
+
+    // Get levels
+    let levels: Vec<String> = match rv.get_attr("levels") {
+        Some(RValue::Vector(lv)) => match &lv.inner {
+            Vector::Character(chars) => chars
+                .iter()
+                .map(|c| c.clone().unwrap_or_else(|| "NA".to_string()))
+                .collect(),
+            _ => vec![],
+        },
+        _ => vec![],
+    };
+
+    // Map integer codes to level labels
+    let labels: Vec<String> = rv
+        .to_integers()
+        .iter()
+        .map(|code| match code {
+            Some(i) => {
+                let idx = usize::try_from(*i).ok().and_then(|i| i.checked_sub(1));
+                match idx {
+                    Some(idx) if idx < levels.len() => levels[idx].clone(),
+                    _ => "NA".to_string(),
+                }
+            }
+            None => "NA".to_string(),
+        })
+        .collect();
+
+    // Format like a character vector with [1] prefix
+    let formatted = format_factor_labels(&labels);
+    context.write(&formatted);
+    context.write(&format!("Levels: {}\n", levels.join(" ")));
+
+    context.interpreter().set_invisible();
+    Ok(val.clone())
+}
+
+/// Format factor labels as R-style output with line indices.
+fn format_factor_labels(labels: &[String]) -> String {
+    if labels.is_empty() {
+        return "factor(0)\n".to_string();
+    }
+
+    let max_width = 80;
+    let mut result = String::new();
+    let mut pos = 0;
+
+    while pos < labels.len() {
+        let label = format!("[{}]", pos + 1);
+        let label_width = label.len();
+        let mut line = format!("{} ", label);
+        let mut current_width = label_width + 1;
+        let line_start = pos;
+
+        while pos < labels.len() {
+            let elem = &labels[pos];
+            let elem_width = elem.len() + 1; // +1 for space
+            if current_width + elem_width > max_width && pos > line_start {
+                break;
+            }
+            line.push_str(elem);
+            if pos + 1 < labels.len() {
+                line.push(' ');
+            }
+            current_width += elem_width;
+            pos += 1;
+        }
+
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&line);
+    }
+
+    result.push('\n');
+    result
+}
+
 // endregion
 
 /// Apply a function over a vector or list, simplifying the result.
@@ -4212,22 +4506,30 @@ fn interp_summary(
             let mean = sum / vals.len() as f64;
             let mut sorted = vals;
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let median = if sorted.len().is_multiple_of(2) {
-                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
-            } else {
-                sorted[sorted.len() / 2]
-            };
+            let median = quantile_type7(&sorted, 0.5);
+            let q1 = quantile_type7(&sorted, 0.25);
+            let q3 = quantile_type7(&sorted, 0.75);
 
             let mut result_rv = RVector::from(Vector::Double(
-                vec![Some(min), Some(median), Some(mean), Some(max)].into(),
+                vec![
+                    Some(min),
+                    Some(q1),
+                    Some(median),
+                    Some(mean),
+                    Some(q3),
+                    Some(max),
+                ]
+                .into(),
             ));
             result_rv.set_attr(
                 "names".to_string(),
                 RValue::vec(Vector::Character(
                     vec![
                         Some("Min.".to_string()),
+                        Some("1st Qu.".to_string()),
                         Some("Median".to_string()),
                         Some("Mean".to_string()),
+                        Some("3rd Qu.".to_string()),
                         Some("Max.".to_string()),
                     ]
                     .into(),
@@ -4238,6 +4540,25 @@ fn interp_summary(
         Some(other) => Ok(other.clone()),
         None => Ok(RValue::Null),
     }
+}
+
+/// Compute a quantile using R's type 7 algorithm (the default).
+///
+/// For sorted data of length n and probability p:
+/// h = (n - 1) * p, result = x[floor(h)] + (h - floor(h)) * (x[ceil(h)] - x[floor(h)])
+fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
+    let n = sorted.len();
+    if n == 0 {
+        return f64::NAN;
+    }
+    if n == 1 {
+        return sorted[0];
+    }
+    let h = (n - 1) as f64 * p;
+    let lo = h.floor() as usize;
+    let hi = h.ceil() as usize;
+    let frac = h - h.floor();
+    sorted[lo] + frac * (sorted[hi] - sorted[lo])
 }
 
 // region: reg.finalizer

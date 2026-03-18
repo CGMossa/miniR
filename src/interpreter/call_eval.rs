@@ -8,6 +8,7 @@ use crate::interpreter::{BuiltinContext, Interpreter};
 use crate::parser::ast::{Arg, Expr, Param};
 
 type NamedArgs = Vec<(String, RValue)>;
+
 type EvaluatedCallArgs = (Vec<RValue>, NamedArgs);
 
 struct ClosureCall<'a> {
@@ -66,6 +67,31 @@ pub(super) fn eval_call(
 
     if let Some(result) = try_call_special_builtin(interp, &function, args, env)? {
         return Ok(result);
+    }
+
+    // For closures, store the original source expressions as promise exprs
+    // so that substitute() can access the unevaluated expressions.
+    // Use lenient evaluation so that `f(a+b)` where `a` is unbound doesn't
+    // fail immediately — substitute() can still access the expression.
+    if let RValue::Function(RFunction::Closure {
+        params,
+        body,
+        env: closure_env,
+    }) = &function
+    {
+        let (positional, named) = evaluate_call_arguments_lenient(interp, args, env);
+        return call_closure_with_promises(
+            interp,
+            params,
+            body,
+            closure_env,
+            &function,
+            &positional,
+            &named,
+            args,
+            env,
+            call_expr,
+        );
     }
 
     let (positional, named) = evaluate_call_arguments(interp, args, env)?;
@@ -231,6 +257,51 @@ fn evaluate_call_arguments(
     Ok((positional, named))
 }
 
+/// Evaluate call arguments leniently for closure calls.
+///
+/// Like `evaluate_call_arguments`, but when evaluation of an individual
+/// argument fails (e.g., `f(a+b)` where `a` is unbound), stores the
+/// unevaluated expression as a Language value instead of propagating the error.
+/// This enables `substitute()` to work with expressions that reference
+/// unbound symbols, matching R's lazy evaluation semantics.
+fn evaluate_call_arguments_lenient(
+    interp: &Interpreter,
+    args: &[Arg],
+    env: &Environment,
+) -> EvaluatedCallArgs {
+    let mut positional = Vec::new();
+    let mut named = Vec::new();
+
+    for arg in args {
+        if let Some(name) = &arg.name {
+            if let Some(val_expr) = &arg.value {
+                let val = interp
+                    .eval_in(val_expr, env)
+                    .unwrap_or_else(|_| RValue::Language(Language::new(val_expr.clone())));
+                named.push((name.clone(), val));
+            } else {
+                named.push((name.clone(), RValue::Null));
+            }
+            continue;
+        }
+
+        let Some(val_expr) = &arg.value else {
+            continue;
+        };
+
+        if matches!(val_expr, Expr::Dots) {
+            expand_dots_arguments(env, &mut positional, &mut named);
+        } else {
+            let val = interp
+                .eval_in(val_expr, env)
+                .unwrap_or_else(|_| RValue::Language(Language::new(val_expr.clone())));
+            positional.push(val);
+        }
+    }
+
+    (positional, named)
+}
+
 fn expand_dots_arguments(
     env: &Environment,
     positional: &mut Vec<RValue>,
@@ -292,6 +363,138 @@ fn call_closure(interp: &Interpreter, closure_call: ClosureCall<'_>) -> Result<R
     interp.call_stack.borrow_mut().pop();
 
     result
+}
+
+/// Call a closure with eagerly evaluated arguments, but also store the original
+/// source expressions as promise exprs on the call environment. This enables
+/// `substitute()` to access the original unevaluated expressions while
+/// keeping full backward compatibility with match.call, sys.call, UseMethod, etc.
+#[allow(clippy::too_many_arguments)]
+fn call_closure_with_promises(
+    interp: &Interpreter,
+    params: &[Param],
+    body: &Expr,
+    closure_env: &Environment,
+    func: &RValue,
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    raw_args: &[Arg],
+    _calling_env: &Environment,
+    call_expr: Expr,
+) -> Result<RValue, RFlow> {
+    // Use the standard binding mechanism for argument matching
+    let bound = interp.bind_closure_call(
+        params,
+        positional,
+        named,
+        closure_env,
+        func,
+        Some(call_expr),
+    )?;
+    let call_env = bound.env;
+
+    // Store the original source expressions as promise exprs so that
+    // substitute() can retrieve them. We match raw_args to formal params
+    // using the same three-pass algorithm.
+    store_promise_exprs_from_args(params, raw_args, &call_env);
+
+    interp.call_stack.borrow_mut().push(bound.frame);
+    let result = match interp.eval_in(body, &call_env) {
+        Ok(value) => Ok(value),
+        Err(RFlow::Signal(RSignal::Return(value))) => Ok(value),
+        Err(err) => Err(err),
+    };
+    run_on_exit_handlers(interp, &call_env);
+    interp.call_stack.borrow_mut().pop();
+
+    result
+}
+
+/// Store the original source expressions from raw call arguments onto the call
+/// environment as promise expressions. This uses the same three-pass matching
+/// (exact name, partial prefix, positional fill) to map each Arg's expression
+/// to the correct formal parameter name.
+fn store_promise_exprs_from_args(params: &[Param], raw_args: &[Arg], call_env: &Environment) {
+    use std::collections::{HashMap, HashSet};
+
+    // Separate positional and named arg expressions
+    let mut positional_exprs: Vec<Option<Expr>> = Vec::new();
+    let mut named_arg_exprs: Vec<(String, Option<Expr>)> = Vec::new();
+
+    for arg in raw_args {
+        if let Some(name) = &arg.name {
+            named_arg_exprs.push((name.clone(), arg.value.clone()));
+            continue;
+        }
+        let Some(val_expr) = &arg.value else {
+            continue;
+        };
+        if matches!(val_expr, Expr::Dots) {
+            // Skip dots — they don't have source expressions
+        } else {
+            positional_exprs.push(Some(val_expr.clone()));
+        }
+    }
+
+    let formal_names: Vec<&str> = params
+        .iter()
+        .filter(|p| !p.is_dots)
+        .map(|p| p.name.as_str())
+        .collect();
+
+    let mut named_to_formal: HashMap<usize, &str> = HashMap::new();
+    let mut matched_formals: HashSet<&str> = HashSet::new();
+
+    // Pass 1: Exact name matching
+    for (i, (arg_name, _)) in named_arg_exprs.iter().enumerate() {
+        if let Some(&formal) = formal_names.iter().find(|&&f| f == arg_name) {
+            if !matched_formals.contains(formal) {
+                matched_formals.insert(formal);
+                named_to_formal.insert(i, formal);
+            }
+        }
+    }
+
+    // Pass 2: Partial (prefix) matching
+    for (i, (arg_name, _)) in named_arg_exprs.iter().enumerate() {
+        if named_to_formal.contains_key(&i) {
+            continue;
+        }
+        let candidates: Vec<&str> = formal_names
+            .iter()
+            .filter(|&&f| !matched_formals.contains(f) && f.starts_with(arg_name.as_str()))
+            .copied()
+            .collect();
+        if candidates.len() == 1 {
+            matched_formals.insert(candidates[0]);
+            named_to_formal.insert(i, candidates[0]);
+        }
+    }
+
+    // Build reverse map: formal_name -> named_arg_index
+    let formal_to_named: HashMap<&str, usize> = named_to_formal
+        .iter()
+        .map(|(&idx, &formal)| (formal, idx))
+        .collect();
+
+    // Pass 3: Store promise expressions
+    let mut pos_idx = 0usize;
+    for param in params {
+        if param.is_dots {
+            pos_idx = positional_exprs.len();
+            continue;
+        }
+        if let Some(&named_idx) = formal_to_named.get(param.name.as_str()) {
+            if let Some(e) = &named_arg_exprs[named_idx].1 {
+                call_env.set_promise_expr(param.name.clone(), e.clone());
+            }
+        } else if pos_idx < positional_exprs.len() {
+            if let Some(Some(e)) = positional_exprs.get(pos_idx) {
+                call_env.set_promise_expr(param.name.clone(), e.clone());
+            }
+            pos_idx += 1;
+        }
+    }
 }
 
 fn run_on_exit_handlers(interp: &Interpreter, call_env: &Environment) {

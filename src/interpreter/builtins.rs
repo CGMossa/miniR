@@ -1609,6 +1609,11 @@ fn interp_str(
                 }
                 RValue::List(l) => {
                     context.write(&format!("List of {}\n", l.values.len()));
+                    for (i, (name, elem)) in l.values.iter().enumerate() {
+                        let label = name.clone().unwrap_or_else(|| format!("[[{}]]", i + 1));
+                        let child = str_format_element(elem, 1);
+                        context.write(&format!(" $ {:<13}:{}\n", label, child));
+                    }
                 }
                 RValue::Null => context.write(" NULL\n"),
                 _ => context.write(&format!(" {}\n", val)),
@@ -1617,6 +1622,71 @@ fn interp_str(
         }
         None => Ok(RValue::Null),
     }
+}
+
+/// Format one element for str() output (used for list elements).
+/// Returns a one-line summary: " type [1:len] preview" for vectors,
+/// "List of N" for nested lists, etc.
+fn str_format_element(val: &RValue, indent: usize) -> String {
+    let prefix = " ".repeat(indent);
+    match val {
+        RValue::Null => format!("{prefix} NULL"),
+        RValue::Vector(v) => {
+            let len = v.len();
+            let type_name = v.type_name();
+            let preview = str_vector_preview(v);
+            if len == 1 {
+                format!("{prefix} {type_name} {preview}")
+            } else {
+                let dots = if len > 10 { " ..." } else { "" };
+                format!("{prefix} {type_name} [1:{len}] {preview}{dots}")
+            }
+        }
+        RValue::List(l) => {
+            let mut out = format!("{prefix}List of {}", l.values.len());
+            for (i, (name, elem)) in l.values.iter().enumerate() {
+                let label = name.clone().unwrap_or_else(|| format!("[[{}]]", i + 1));
+                let child = str_format_element(elem, indent + 1);
+                out.push_str(&format!("\n{prefix} $ {label:<13}:{child}"));
+            }
+            out
+        }
+        RValue::Function(_) => format!("{prefix}function (...)"),
+        RValue::Environment(_) => format!("{prefix}<environment>"),
+        RValue::Language(_) => format!("{prefix} language ..."),
+    }
+}
+
+/// Format a vector element preview for str() output (first 10 elements).
+fn str_vector_preview(v: &RVector) -> String {
+    let len = v.inner.len().min(10);
+    let elems: Vec<String> = (0..len)
+        .map(|i| match &v.inner {
+            Vector::Raw(vals) => format!("{:02x}", vals[i]),
+            Vector::Logical(vals) => match vals[i] {
+                Some(true) => "TRUE".to_string(),
+                Some(false) => "FALSE".to_string(),
+                None => "NA".to_string(),
+            },
+            Vector::Integer(vals) => match vals[i] {
+                Some(n) => n.to_string(),
+                None => "NA".to_string(),
+            },
+            Vector::Double(vals) => match vals[i] {
+                Some(f) => format_r_double(f),
+                None => "NA".to_string(),
+            },
+            Vector::Complex(vals) => match vals[i] {
+                Some(c) => format_r_complex(c),
+                None => "NA".to_string(),
+            },
+            Vector::Character(vals) => match &vals[i] {
+                Some(s) => format!("\"{}\"", s),
+                None => "NA".to_string(),
+            },
+        })
+        .collect();
+    elems.join(" ")
 }
 
 /// Test if two objects are exactly identical.
