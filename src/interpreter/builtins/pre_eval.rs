@@ -1355,10 +1355,22 @@ fn pre_eval_system_time(
     let start = std::time::Instant::now();
     let _result = context.with_interpreter(|interp| interp.eval_in(expr, env));
     let elapsed = start.elapsed().as_secs_f64();
-    // Returns c(user, system, elapsed) — we only measure wall clock
-    Ok(RValue::vec(Vector::Double(
+    // Returns named vector c(user.self=..., sys.self=..., elapsed=...) like proc.time()
+    let mut rv = RVector::from(Vector::Double(
         vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
-    )))
+    ));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            vec![
+                Some("user.self".to_string()),
+                Some("sys.self".to_string()),
+                Some("elapsed".to_string()),
+            ]
+            .into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 /// Evaluate an expression in a temporary local environment.

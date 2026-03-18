@@ -206,6 +206,20 @@ fn builtin_sys_time(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
     Ok(r_posixct(timestamp_to_secs(&ts), None))
 }
 
+/// Return the current date and time as a character string.
+///
+/// The format matches R's date(): "Wed Mar 18 12:00:00 2026"
+/// (ctime-style: abbreviated weekday, month, day, HH:MM:SS, 4-digit year).
+///
+/// @return character string representing the current date and time
+#[builtin(name = "date")]
+fn builtin_date(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let now = jiff::Zoned::now();
+    // R's date() uses ctime format: "%a %b %d %H:%M:%S %Y"
+    let formatted = now.strftime("%a %b %d %H:%M:%S %Y").to_string();
+    Ok(RValue::vec(Vector::Character(vec![Some(formatted)].into())))
+}
+
 // endregion
 
 // region: print.Date / print.POSIXct
