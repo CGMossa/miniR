@@ -1,7 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use tracing::trace;
 
@@ -12,7 +12,7 @@ use crate::parser::ast::Expr;
 ///
 /// When a closure is called, the original unevaluated expressions for each
 /// argument are stored here so that `substitute()` can retrieve them.
-type PromiseExprs = HashMap<String, Expr>;
+type PromiseExprs = FnvHashMap<String, Expr>;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
@@ -28,7 +28,7 @@ impl Environment {
 
 #[derive(Debug)]
 pub(crate) struct EnvInner {
-    bindings: HashMap<String, RValue>,
+    bindings: FnvHashMap<String, RValue>,
     parent: Option<Environment>,
     #[allow(dead_code)]
     name: Option<String>,
@@ -39,7 +39,7 @@ pub(crate) struct EnvInner {
     /// Set of binding names that are individually locked (cannot be modified).
     locked_bindings: std::collections::HashSet<String>,
     /// Active bindings: names mapped to zero-argument functions that are called on every access.
-    active_bindings: HashMap<String, RValue>,
+    active_bindings: FnvHashMap<String, RValue>,
     /// Promise expressions: original unevaluated expressions for function arguments.
     /// Used by `substitute()` to retrieve the source expression for a parameter.
     promise_exprs: PromiseExprs,
@@ -49,14 +49,14 @@ impl Environment {
     pub fn new_global() -> Self {
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {
-                bindings: HashMap::new(),
+                bindings: FnvHashMap::default(),
                 parent: None,
                 name: Some("R_GlobalEnv".to_string()),
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
-                active_bindings: HashMap::new(),
-                promise_exprs: HashMap::new(),
+                active_bindings: FnvHashMap::default(),
+                promise_exprs: FnvHashMap::default(),
             })),
         }
     }
@@ -68,14 +68,14 @@ impl Environment {
         );
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {
-                bindings: HashMap::new(),
+                bindings: FnvHashMap::default(),
                 parent: Some(parent.clone()),
                 name: None,
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
-                active_bindings: HashMap::new(),
-                promise_exprs: HashMap::new(),
+                active_bindings: FnvHashMap::default(),
+                promise_exprs: FnvHashMap::default(),
             })),
         }
     }
@@ -165,14 +165,14 @@ impl Environment {
     pub fn new_empty() -> Self {
         Environment {
             inner: Rc::new(RefCell::new(EnvInner {
-                bindings: HashMap::new(),
+                bindings: FnvHashMap::default(),
                 parent: None,
                 name: Some("R_EmptyEnv".to_string()),
                 on_exit: Vec::new(),
                 locked: false,
                 locked_bindings: std::collections::HashSet::new(),
-                active_bindings: HashMap::new(),
-                promise_exprs: HashMap::new(),
+                active_bindings: FnvHashMap::default(),
+                promise_exprs: FnvHashMap::default(),
             })),
         }
     }

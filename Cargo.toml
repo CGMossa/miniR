@@ -54,6 +54,7 @@ derive_more = { version = "2.1", features = [
     # "try_unwrap",     # derive try_unwrap() methods for enums
     # "unwrap",         # derive unwrap() methods for enums
 ] }
+fnv = "1"
 indexmap = "2"
 linkme = "0.3"
 nalgebra = { version = "0.34", optional = true, default-features = false, features = ["std"] }
