@@ -212,6 +212,8 @@ pub struct Interpreter {
     pub(crate) rd_help_index: RefCell<packages::rd::RdHelpIndex>,
     /// Visibility flag — set to `true` by `invisible()` to suppress auto-printing
     pub(crate) last_value_invisible: std::cell::Cell<bool>,
+    /// Recursion depth counter — prevents stack overflow on deeply nested expressions.
+    eval_depth: std::cell::Cell<usize>,
     /// S4 class registry: class name -> class definition.
     pub(crate) s4_classes: RefCell<std::collections::HashMap<String, S4ClassDef>>,
     /// S4 generic registry: generic name -> generic definition.
@@ -364,6 +366,7 @@ impl Interpreter {
             options: RefCell::new(Self::default_options()),
             rd_help_index: RefCell::new(packages::rd::RdHelpIndex::new()),
             last_value_invisible: std::cell::Cell::new(false),
+            eval_depth: std::cell::Cell::new(0),
             s4_classes: RefCell::new(std::collections::HashMap::new()),
             s4_generics: RefCell::new(std::collections::HashMap::new()),
             s4_methods: RefCell::new(std::collections::HashMap::new()),
@@ -578,8 +581,25 @@ impl Interpreter {
         self.eval_in(expr, &self.global_env)
     }
 
+    /// Maximum evaluation recursion depth before returning an error.
+    const MAX_EVAL_DEPTH: usize = 256;
+
     #[tracing::instrument(level = "trace", skip(self, env))]
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
+        let depth = self.eval_depth.get();
+        if depth >= Self::MAX_EVAL_DEPTH {
+            return Err(RFlow::Error(value::RError::other(
+                "evaluation nested too deeply: infinite recursion / options(expressions=) ?"
+                    .to_string(),
+            )));
+        }
+        self.eval_depth.set(depth + 1);
+        let result = self.eval_in_inner(expr, env);
+        self.eval_depth.set(depth);
+        result
+    }
+
+    fn eval_in_inner(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         match expr {
             Expr::Null => Ok(RValue::Null),
             Expr::Na(na_type) => Ok(match na_type {
