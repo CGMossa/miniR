@@ -218,17 +218,7 @@ fn eval_assign(
 
 // region: index assignment (x[i] <- val)
 
-/// Assign a value to the right environment based on the assignment operator.
-fn env_assign(env: &Environment, op: &AssignOp, name: String, val: RValue) {
-    match op {
-        AssignOp::SuperAssign | AssignOp::RightSuperAssign => {
-            env.set_super(name, val);
-        }
-        _ => {
-            env.set(name, val);
-        }
-    }
-}
+// env_assign removed — all callers now use eval_assign for chained replacement support.
 
 fn eval_index_assign(
     interp: &Interpreter,
@@ -238,15 +228,13 @@ fn eval_index_assign(
     val: RValue,
     env: &Environment,
 ) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(AssignmentError::InvalidTarget.into()),
-    };
-
-    let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
+    // Evaluate the target object expression to get its current value.
+    // This supports chained targets like `body(f)[2] <- val` where
+    // `object` is `Call(body, f)`, not just a symbol.
+    let mut obj = interp.eval_in(object, env)?;
 
     if indices.is_empty() {
-        env_assign(env, op, var_name, val.clone());
+        eval_assign(interp, op, object, val.clone(), env)?;
         return Ok(val);
     }
 
@@ -284,7 +272,7 @@ fn eval_index_assign(
             if let Some(attrs) = &v.attrs {
                 rv.attrs = Some(attrs.clone());
             }
-            env_assign(env, op, var_name, RValue::Vector(rv));
+            eval_assign(interp, op, object, RValue::Vector(rv), env)?;
             Ok(val)
         }
         RValue::List(list) => {
@@ -313,7 +301,7 @@ fn eval_index_assign(
                 }
                 _ => {}
             }
-            env_assign(env, op, var_name, obj);
+            eval_assign(interp, op, object, obj, env)?;
             Ok(val)
         }
         RValue::Null => {
@@ -326,7 +314,7 @@ fn eval_index_assign(
                     if let Some(Some(name)) = names.first() {
                         list.values.push((Some(name.clone()), val.clone()));
                     }
-                    env_assign(env, op, var_name, RValue::List(list));
+                    eval_assign(interp, op, object, RValue::List(list), env)?;
                 }
                 _ => {
                     let idx = match &idx_val {
@@ -341,12 +329,13 @@ fn eval_index_assign(
                             doubles[idx - 1] = vv.to_doubles().into_iter().next().flatten();
                         }
                     }
-                    env_assign(
-                        env,
+                    eval_assign(
+                        interp,
                         op,
-                        var_name,
+                        object,
                         RValue::vec(Vector::Double(doubles.into())),
-                    );
+                        env,
+                    )?;
                 }
             }
             Ok(val)
@@ -367,14 +356,11 @@ fn eval_index_double_assign(
     val: RValue,
     env: &Environment,
 ) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(AssignmentError::InvalidTarget.into()),
+    // Evaluate the target object — supports chained targets like body(f)[[2]] <- val
+    let mut obj = match interp.eval_in(object, env) {
+        Ok(v) => v,
+        Err(_) => RValue::List(RList::new(vec![])),
     };
-
-    let mut obj = env
-        .get(&var_name)
-        .unwrap_or(RValue::List(RList::new(vec![])));
     let idx_val = if let Some(val_expr) = &indices[0].value {
         interp.eval_in(val_expr, env)?
     } else {
@@ -411,7 +397,7 @@ fn eval_index_double_assign(
                 }
                 _ => {}
             }
-            env_assign(env, op, var_name, obj);
+            eval_assign(interp, op, object, obj, env)?;
             Ok(val)
         }
         _ => eval_index_assign(interp, op, object, indices, val, env),
@@ -423,21 +409,18 @@ fn eval_index_double_assign(
 // region: dollar assignment (x$name <- val)
 
 fn eval_dollar_assign(
-    _interp: &Interpreter,
+    interp: &Interpreter,
     op: &AssignOp,
     object: &Expr,
     member: &str,
     val: RValue,
     env: &Environment,
 ) -> Result<RValue, RFlow> {
-    let var_name = match object {
-        Expr::Symbol(name) => name.clone(),
-        _ => return Err(AssignmentError::InvalidTarget.into()),
+    // Evaluate the target object — supports chained targets
+    let mut obj = match interp.eval_in(object, env) {
+        Ok(v) => v,
+        Err(_) => RValue::List(RList::new(vec![])),
     };
-
-    let mut obj = env
-        .get(&var_name)
-        .unwrap_or(RValue::List(RList::new(vec![])));
     match &mut obj {
         RValue::List(list) => {
             if let Some(entry) = list
@@ -449,17 +432,17 @@ fn eval_dollar_assign(
             } else {
                 list.values.push((Some(member.to_string()), val.clone()));
             }
-            env_assign(env, op, var_name, obj);
+            eval_assign(interp, op, object, obj, env)?;
             Ok(val)
         }
         RValue::Null => {
             let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env_assign(env, op, var_name, RValue::List(list));
+            eval_assign(interp, op, object, RValue::List(list), env)?;
             Ok(val)
         }
         _ => {
             let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env_assign(env, op, var_name, RValue::List(list));
+            eval_assign(interp, op, object, RValue::List(list), env)?;
             Ok(val)
         }
     }
