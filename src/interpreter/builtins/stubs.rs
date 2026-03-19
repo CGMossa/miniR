@@ -681,6 +681,448 @@ stub_builtin!("memDecompress", 1, "memDecompress() not yet implemented");
 
 // endregion
 
+// region: Interactive/session utilities
+
+/// interactive — check if R is running interactively.
+///
+/// @return logical scalar
+/// @namespace base
+#[builtin(name = "interactive")]
+fn builtin_interactive(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Return TRUE for REPL, FALSE for scripts — for now always FALSE
+    // since we can't distinguish from a plain builtin
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+/// eval.parent — evaluate expression in the calling environment.
+///
+/// @param expr expression to evaluate
+/// @param n number of frames to go up (default 1)
+/// @return result of evaluation
+/// @namespace base
+#[builtin(name = "eval.parent", min_args = 1)]
+fn builtin_eval_parent(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Simplified — just return the first arg (can't access call stack from plain builtin)
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
+/// length<- — set the length of a vector.
+///
+/// @param x vector
+/// @param value new length
+/// @return vector with adjusted length (truncated or extended with NA)
+/// @namespace base
+#[builtin(name = "length<-", min_args = 2)]
+fn builtin_length_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let new_len = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(0) as usize;
+
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let mut doubles = v.to_doubles();
+            doubles.resize(new_len, None);
+            Ok(RValue::vec(Vector::Double(doubles.into())))
+        }
+        Some(RValue::List(list)) => {
+            let mut values = list.values.clone();
+            values.resize(new_len, (None, RValue::Null));
+            Ok(RValue::List(RList::new(values)))
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+/// levels<- — set factor levels.
+///
+/// @param x factor
+/// @param value new levels
+/// @return factor with updated levels
+/// @namespace base
+#[builtin(name = "levels<-", min_args = 2)]
+fn builtin_levels_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let mut rv = v.clone();
+            let new_levels = args.get(1).cloned().unwrap_or(RValue::Null);
+            rv.set_attr("levels".to_string(), new_levels);
+            Ok(RValue::Vector(rv))
+        }
+        _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+/// file.append — append contents of one file to another.
+///
+/// @param file1 destination file
+/// @param file2 source file
+/// @return logical scalar
+/// @namespace base
+#[builtin(name = "file.append", min_args = 2)]
+fn builtin_file_append(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let file1 = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let file2 = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let result = (|| {
+        let content = std::fs::read(&file2).ok()?;
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().append(true).open(&file1).ok()?;
+        f.write_all(&content).ok()
+    })();
+    Ok(RValue::vec(Vector::Logical(
+        vec![Some(result.is_some())].into(),
+    )))
+}
+
+/// Cstack_info — C stack info (returns dummy values).
+/// @namespace base
+#[builtin(name = "Cstack_info")]
+fn builtin_cstack_info(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let mut rv = RVector::from(Vector::Integer(
+        vec![Some(8388608), Some(16384), Some(0)].into(),
+    ));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            vec![
+                Some("size".to_string()),
+                Some("current".to_string()),
+                Some("direction".to_string()),
+            ]
+            .into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// extSoftVersion — external software version info.
+/// @namespace base
+#[builtin(name = "extSoftVersion")]
+fn builtin_ext_soft_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let mut rv = RVector::from(Vector::Character(
+        vec![
+            Some("".to_string()),
+            Some("1.1.1".to_string()),
+            Some("".to_string()),
+            Some("".to_string()),
+        ]
+        .into(),
+    ));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(
+            vec![
+                Some("zlib".to_string()),
+                Some("bzlib".to_string()),
+                Some("xz".to_string()),
+                Some("PCRE".to_string()),
+            ]
+            .into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+// endregion
+
+// region: Dynamic loading stubs (C/Fortran shared libs — can't actually load)
+
+stub_builtin!(
+    "dyn.load",
+    1,
+    "dyn.load() not available — miniR cannot load compiled shared libraries"
+);
+stub_builtin!("dyn.unload", 1, "dyn.unload() not available");
+stub_builtin!(
+    "library.dynam",
+    1,
+    "library.dynam() not available — miniR cannot load compiled code"
+);
+stub_builtin!(
+    "library.dynam.unload",
+    1,
+    "library.dynam.unload() not available"
+);
+
+/// is.loaded — check if a C symbol is loaded (always FALSE).
+/// @namespace base
+#[builtin(name = "is.loaded", min_args = 1)]
+fn builtin_is_loaded(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+/// getNativeSymbolInfo — get info about a loaded symbol (always errors).
+/// @namespace base
+#[builtin(name = "getNativeSymbolInfo", min_args = 1)]
+fn builtin_get_native_symbol_info(
+    args: &[RValue],
+    _: &[(String, RValue)],
+) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    Err(RError::new(
+        RErrorKind::Other,
+        format!("no such symbol '{name}' — miniR cannot load native code"),
+    ))
+}
+
+// endregion
+
+// region: Debugging stubs
+
+/// debugonce — set a one-time debug flag (no-op).
+/// @namespace base
+#[builtin(name = "debugonce")]
+fn builtin_debugonce(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// trace — set tracing on a function (no-op stub).
+/// @namespace base
+#[builtin(name = "trace")]
+fn builtin_trace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// untrace — remove tracing (no-op stub).
+/// @namespace base
+#[builtin(name = "untrace")]
+fn builtin_untrace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// browseEnv — open environment browser (no-op stub).
+/// @namespace utils
+#[builtin(name = "browseEnv", namespace = "utils")]
+fn builtin_browse_env(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+// endregion
+
+// region: Connection management stubs
+
+stub_builtin!("sink", 0, "sink() not yet implemented");
+stub_builtin!("flush", 1, "flush() not yet implemented for connections");
+stub_builtin!(
+    "showConnections",
+    0,
+    "showConnections() not yet implemented"
+);
+stub_builtin!(
+    "getAllConnections",
+    0,
+    "getAllConnections() not yet implemented"
+);
+stub_builtin!("pushBack", 1, "pushBack() not yet implemented");
+stub_builtin!("pushBackLength", 1);
+stub_builtin!("clearPushBack", 1);
+stub_builtin!("seek", 1, "seek() not yet implemented");
+stub_builtin!("truncate", 1, "truncate() not yet implemented");
+stub_builtin!("isSeekable", 1);
+stub_builtin!("isIncomplete", 1);
+stub_builtin!("summary.connection", 1);
+
+// endregion
+
+// region: Filesystem stubs
+
+/// Sys.readlink — read a symbolic link target.
+/// @namespace base
+#[builtin(name = "Sys.readlink", min_args = 1)]
+fn builtin_sys_readlink(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let target = std::fs::read_link(&path)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    Ok(RValue::vec(Vector::Character(vec![Some(target)].into())))
+}
+
+/// file.link — create a hard link.
+/// @namespace base
+#[builtin(name = "file.link", min_args = 2)]
+fn builtin_file_link(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let from = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let to = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let ok = std::fs::hard_link(&from, &to).is_ok();
+    Ok(RValue::vec(Vector::Logical(vec![Some(ok)].into())))
+}
+
+/// file.symlink — create a symbolic link.
+/// @namespace base
+#[builtin(name = "file.symlink", min_args = 2)]
+fn builtin_file_symlink(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let from = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let to = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    #[cfg(unix)]
+    let ok = std::os::unix::fs::symlink(&from, &to).is_ok();
+    #[cfg(not(unix))]
+    let ok = false;
+    Ok(RValue::vec(Vector::Logical(vec![Some(ok)].into())))
+}
+
+/// Sys.chmod — change file permissions (Unix only).
+/// @namespace base
+#[builtin(name = "Sys.chmod", min_args = 1)]
+fn builtin_sys_chmod(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // No-op on non-Unix or simplified
+    Ok(RValue::Null)
+}
+
+/// Sys.umask — get/set file creation mask (stub).
+/// @namespace base
+#[builtin(name = "Sys.umask")]
+fn builtin_sys_umask(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Integer(vec![Some(0o022)].into())))
+}
+
+/// Sys.setFileTime — set file modification time.
+/// @namespace base
+#[builtin(name = "Sys.setFileTime", min_args = 2)]
+fn builtin_sys_set_file_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Stub — setting file times requires platform-specific APIs
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+// endregion
+
+// region: Task callbacks (no-op stubs)
+
+/// getTaskCallbackNames — list registered task callbacks.
+/// @namespace base
+#[builtin(name = "getTaskCallbackNames")]
+fn builtin_get_task_callback_names(
+    _args: &[RValue],
+    _: &[(String, RValue)],
+) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Character(vec![].into())))
+}
+
+/// addTaskCallback — register a task callback (no-op).
+/// @namespace base
+#[builtin(name = "addTaskCallback", min_args = 1)]
+fn builtin_add_task_callback(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+}
+
+/// removeTaskCallback — remove a task callback (no-op).
+/// @namespace base
+#[builtin(name = "removeTaskCallback", min_args = 1)]
+fn builtin_remove_task_callback(
+    _args: &[RValue],
+    _: &[(String, RValue)],
+) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+}
+
+// endregion
+
+// region: Misc stubs
+
+/// agrep — approximate (fuzzy) grep (stub using exact grep).
+/// @namespace base
+#[builtin(name = "agrep", min_args = 2)]
+fn builtin_agrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // Fall back to exact matching for now
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let x = match args.get(1) {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => vec![],
+    };
+    let indices: Vec<Option<i64>> = x
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.as_ref().is_some_and(|s| s.contains(&pattern)))
+        .map(|(i, _)| Some((i + 1) as i64))
+        .collect();
+    Ok(RValue::vec(Vector::Integer(indices.into())))
+}
+
+/// agrepl — approximate grep returning logical (stub using exact match).
+/// @namespace base
+#[builtin(name = "agrepl", min_args = 2)]
+fn builtin_agrepl(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let x = match args.get(1) {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => vec![],
+    };
+    let results: Vec<Option<bool>> = x
+        .iter()
+        .map(|s| Some(s.as_ref().is_some_and(|s| s.contains(&pattern))))
+        .collect();
+    Ok(RValue::vec(Vector::Logical(results.into())))
+}
+
+/// gc.time — get garbage collection timing (always zero).
+/// @namespace base
+#[builtin(name = "gc.time")]
+fn builtin_gc_time(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Double(
+        vec![Some(0.0), Some(0.0), Some(0.0)].into(),
+    )))
+}
+
+/// mem.limits — get memory limits (dummy values).
+/// @namespace base
+#[builtin(name = "mem.limits")]
+fn builtin_mem_limits(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Double(
+        vec![Some(f64::INFINITY), Some(f64::INFINITY)].into(),
+    )))
+}
+
+/// memory.profile — profile memory usage (dummy).
+/// @namespace base
+#[builtin(name = "memory.profile")]
+fn builtin_memory_profile(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::vec(Vector::Integer(vec![].into())))
+}
+
+/// pos.to.env — convert search path position to environment.
+/// @namespace base
+#[builtin(name = "pos.to.env", min_args = 1)]
+fn builtin_pos_to_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let _pos = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(1);
+    // Can't return proper environment from plain builtin — return NULL
+    Ok(RValue::Null)
+}
+
+// endregion
+
 // region: TLS stub (when tls feature is disabled)
 
 #[cfg(not(feature = "tls"))]
