@@ -726,6 +726,9 @@ fn pre_eval_try_catch(
                     let err_msg = other.message();
                     let condition =
                         make_condition(&err_msg, &["simpleError", "error", "condition"]);
+                    // Reset recursion depth so the handler can execute even if
+                    // the error was caused by hitting the recursion limit.
+                    interp.eval_depth.set(0);
                     interp
                         .call_function(handler, &[condition], &[], env)
                         .map_err(RError::from)
@@ -762,6 +765,7 @@ fn pre_eval_try(
         Some(e) => match interp.eval_in(e, env).map_err(RError::from) {
             Ok(val) => Ok(val),
             Err(err) => {
+                interp.eval_depth.set(0); // Reset recursion depth for recovery
                 let msg = format!("{}", err);
                 interp.write_stderr(&format!("Error in try : {}\n", msg));
                 Ok(RValue::vec(Vector::Character(vec![Some(msg)].into())))
