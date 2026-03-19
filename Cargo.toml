@@ -68,8 +68,8 @@ rand = { version = "0.10.0", optional = true, default-features = false, features
 rand_chacha = { version = "0.10", optional = true }
 rand_distr = { version = "0.6.0", optional = true, default-features = false, features = ["std"] }
 rayon = { version = "1", optional = true }
-nu-ansi-term = "0.50"
-reedline = { version = "0.46" }
+nu-ansi-term = { version = "0.50", optional = true }
+reedline = { version = "0.46", optional = true }
 temp-dir = "0.2.0"
 glob = "0.3"
 num-complex = "0.4"
@@ -100,7 +100,7 @@ webpki-roots = { version = "0.26", optional = true }
 flate2 = { version = "1", optional = true }
 textwrap = { version = "0.16", default-features = false }
 indicatif = { version = "0.17", optional = true }
-crossterm = "0.29"
+crossterm = { version = "0.29", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
@@ -108,7 +108,7 @@ full = ["default", "tls", "linalg"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -122,6 +122,7 @@ fast = ["random", "datetime", "io", "compression", "diagnostics", "signal"]
 
 logging = ["dep:env_logger"]
 tracing-output = ["dep:tracing-subscriber"]
+repl = ["dep:reedline", "dep:nu-ansi-term", "dep:crossterm"]
 
 diagnostics = ["dep:miette"]
 random = ["dep:rand", "dep:rand_chacha", "dep:rand_distr"]

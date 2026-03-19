@@ -191,9 +191,12 @@ impl Session {
     /// Update `getOption("width")` to match the current terminal width.
     /// Falls back to 80 columns if terminal size cannot be determined.
     pub fn sync_terminal_width(&self) {
+        #[cfg(feature = "repl")]
         let cols = crossterm::terminal::size()
             .map(|(c, _)| i64::from(c).clamp(10, 10000))
             .unwrap_or(80);
+        #[cfg(not(feature = "repl"))]
+        let cols = 80i64;
         self.set_option(
             "width",
             RValue::vec(crate::interpreter::value::Vector::Integer(

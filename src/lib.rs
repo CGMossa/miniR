@@ -1,5 +1,6 @@
 pub mod interpreter;
 pub mod parser;
+#[cfg(feature = "repl")]
 pub mod repl;
 pub mod session;
 
