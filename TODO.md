@@ -2,16 +2,16 @@
 
 ## Done
 
-Everything from the core interpreter, package runtime, serialization,
-builtins, parser, S4, REPL, help system, and bug fixes is complete.
-994 tests pass. 7014/7014 R files parse. 10838/10841 Rd files parse.
+Core interpreter, package runtime, serialization, builtins, parser, S4,
+REPL, help system, bug fixes. 994 tests, 7014/7014 R parse, 10838/10841
+Rd parse, 5669/6769 CRAN source files (83%), 95 packages at 100%.
 
 ## Open
 
 ### Near-term
 
-- [ ] `pnorm()` precision — erfc approximation gives ~1.5e-7 accuracy, use libm::erfc or better algorithm
-- [ ] `Sys.time()` — verify subsecond precision works correctly across platforms
+- [ ] WASM target support (test `--no-default-features -F minimal` compiles for wasm32-unknown-unknown)
+- [ ] Improve CRAN source rate: implement missing functions that block the most packages (.Call stub, getClassDef, .POSIXct)
 
 ### Graphics
 
@@ -21,6 +21,5 @@ builtins, parser, S4, REPL, help system, and bug fixes is complete.
 ### Deferred
 
 - [ ] Arrow backend for vector storage
-- [ ] WASM target support (test with `--no-default-features -F minimal`)
 - [ ] Full S4 inheritance chain resolution (basic registry works)
 - [ ] Polars-backed data frames

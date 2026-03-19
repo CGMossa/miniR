@@ -162,12 +162,12 @@ fn eval_assign(
             }
             Ok(val)
         }
-        // Assignment to index: x[i] <- val
-        Expr::Index { object, indices } => eval_index_assign(interp, object, indices, val, env),
+        // Assignment to index: x[i] <- val or x[i] <<- val
+        Expr::Index { object, indices } => eval_index_assign(interp, op, object, indices, val, env),
         Expr::IndexDouble { object, indices } => {
-            eval_index_double_assign(interp, object, indices, val, env)
+            eval_index_double_assign(interp, op, object, indices, val, env)
         }
-        Expr::Dollar { object, member } => eval_dollar_assign(interp, object, member, val, env),
+        Expr::Dollar { object, member } => eval_dollar_assign(interp, op, object, member, val, env),
         // Handle function calls on left side like names(x) <- val, attr(x, "which") <- val
         Expr::Call {
             func,
@@ -218,8 +218,21 @@ fn eval_assign(
 
 // region: index assignment (x[i] <- val)
 
+/// Assign a value to the right environment based on the assignment operator.
+fn env_assign(env: &Environment, op: &AssignOp, name: String, val: RValue) {
+    match op {
+        AssignOp::SuperAssign | AssignOp::RightSuperAssign => {
+            env.set_super(name, val);
+        }
+        _ => {
+            env.set(name, val);
+        }
+    }
+}
+
 fn eval_index_assign(
     interp: &Interpreter,
+    op: &AssignOp,
     object: &Expr,
     indices: &[Arg],
     val: RValue,
@@ -233,7 +246,7 @@ fn eval_index_assign(
     let mut obj = env.get(&var_name).unwrap_or(RValue::Null);
 
     if indices.is_empty() {
-        env.set(var_name, val.clone());
+        env_assign(env, op, var_name, val.clone());
         return Ok(val);
     }
 
@@ -271,7 +284,7 @@ fn eval_index_assign(
             if let Some(attrs) = &v.attrs {
                 rv.attrs = Some(attrs.clone());
             }
-            env.set(var_name, RValue::Vector(rv));
+            env_assign(env, op, var_name, RValue::Vector(rv));
             Ok(val)
         }
         RValue::List(list) => {
@@ -300,7 +313,7 @@ fn eval_index_assign(
                 }
                 _ => {}
             }
-            env.set(var_name, obj);
+            env_assign(env, op, var_name, obj);
             Ok(val)
         }
         RValue::Null => {
@@ -313,7 +326,7 @@ fn eval_index_assign(
                     if let Some(Some(name)) = names.first() {
                         list.values.push((Some(name.clone()), val.clone()));
                     }
-                    env.set(var_name, RValue::List(list));
+                    env_assign(env, op, var_name, RValue::List(list));
                 }
                 _ => {
                     let idx = match &idx_val {
@@ -328,7 +341,12 @@ fn eval_index_assign(
                             doubles[idx - 1] = vv.to_doubles().into_iter().next().flatten();
                         }
                     }
-                    env.set(var_name, RValue::vec(Vector::Double(doubles.into())));
+                    env_assign(
+                        env,
+                        op,
+                        var_name,
+                        RValue::vec(Vector::Double(doubles.into())),
+                    );
                 }
             }
             Ok(val)
@@ -343,6 +361,7 @@ fn eval_index_assign(
 
 fn eval_index_double_assign(
     interp: &Interpreter,
+    op: &AssignOp,
     object: &Expr,
     indices: &[Arg],
     val: RValue,
@@ -392,10 +411,10 @@ fn eval_index_double_assign(
                 }
                 _ => {}
             }
-            env.set(var_name, obj);
+            env_assign(env, op, var_name, obj);
             Ok(val)
         }
-        _ => eval_index_assign(interp, object, indices, val, env),
+        _ => eval_index_assign(interp, op, object, indices, val, env),
     }
 }
 
@@ -405,6 +424,7 @@ fn eval_index_double_assign(
 
 fn eval_dollar_assign(
     _interp: &Interpreter,
+    op: &AssignOp,
     object: &Expr,
     member: &str,
     val: RValue,
@@ -429,17 +449,17 @@ fn eval_dollar_assign(
             } else {
                 list.values.push((Some(member.to_string()), val.clone()));
             }
-            env.set(var_name, obj);
+            env_assign(env, op, var_name, obj);
             Ok(val)
         }
         RValue::Null => {
             let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env.set(var_name, RValue::List(list));
+            env_assign(env, op, var_name, RValue::List(list));
             Ok(val)
         }
         _ => {
             let list = RList::new(vec![(Some(member.to_string()), val.clone())]);
-            env.set(var_name, RValue::List(list));
+            env_assign(env, op, var_name, RValue::List(list));
             Ok(val)
         }
     }
