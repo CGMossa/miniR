@@ -1121,6 +1121,60 @@ fn builtin_pos_to_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::Null)
 }
 
+/// commandArgs — return command-line arguments.
+///
+/// @param trailingOnly if TRUE, return only args after --args
+/// @return character vector
+/// @namespace base
+#[builtin(name = "commandArgs")]
+fn builtin_command_args(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let trailing_only = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let cli_args: Vec<String> = std::env::args().collect();
+    let result = if trailing_only {
+        // Return args after "--args"
+        if let Some(pos) = cli_args.iter().position(|a| a == "--args") {
+            cli_args[pos + 1..].to_vec()
+        } else {
+            vec![]
+        }
+    } else {
+        cli_args
+    };
+    Ok(RValue::vec(Vector::Character(
+        result.into_iter().map(Some).collect::<Vec<_>>().into(),
+    )))
+}
+
+/// Sys.unsetenv — unset environment variables.
+///
+/// @param x character vector of variable names to unset
+/// @return logical vector (TRUE for each successfully unset)
+/// @namespace base
+#[builtin(name = "Sys.unsetenv", min_args = 1)]
+fn builtin_sys_unsetenv(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let names = match args.first() {
+        Some(RValue::Vector(v)) => v.to_characters(),
+        _ => vec![],
+    };
+    let results: Vec<Option<bool>> = names
+        .iter()
+        .map(|n| {
+            if let Some(name) = n {
+                // Note: this uses process-level env vars, not per-interpreter
+                // A proper implementation would use interp.remove_env_var()
+                unsafe { std::env::remove_var(name) };
+                Some(true)
+            } else {
+                Some(false)
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Logical(results.into())))
+}
+
 // endregion
 
 // region: TLS stub (when tls feature is disabled)

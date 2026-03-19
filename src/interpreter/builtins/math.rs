@@ -4643,3 +4643,261 @@ fn builtin_array_ind(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 }
 
 // endregion
+
+// region: Row/column aggregation (rowSums, colSums, rowMeans, colMeans)
+
+/// Helper: extract matrix dimensions and data as doubles.
+fn matrix_dims_and_data(args: &[RValue]) -> Option<(usize, usize, Vec<Option<f64>>)> {
+    let v = match args.first()? {
+        RValue::Vector(v) => v,
+        RValue::List(list) => {
+            // Data frame: ncol = number of list elements, nrow = length of first
+            let ncol = list.values.len();
+            if ncol == 0 {
+                return Some((0, 0, vec![]));
+            }
+            let nrow = list
+                .values
+                .first()
+                .map(|(_, v)| match v {
+                    RValue::Vector(rv) => rv.len(),
+                    _ => 1,
+                })
+                .unwrap_or(0);
+            let mut data = Vec::with_capacity(nrow * ncol);
+            for (_, val) in &list.values {
+                if let Some(v) = val.as_vector() {
+                    data.extend(v.to_doubles());
+                } else {
+                    data.extend(std::iter::repeat_n(None, nrow));
+                }
+            }
+            return Some((nrow, ncol, data));
+        }
+        _ => return None,
+    };
+    let dim = v.get_attr("dim")?;
+    let dim_vec = dim.as_vector()?;
+    let dims = dim_vec.to_integers();
+    if dims.len() != 2 {
+        return None;
+    }
+    let nrow = dims[0].unwrap_or(0) as usize;
+    let ncol = dims[1].unwrap_or(0) as usize;
+    Some((nrow, ncol, v.to_doubles()))
+}
+
+/// Sum of each row of a matrix or data frame.
+///
+/// @param x numeric matrix or data frame
+/// @param na.rm logical: remove NAs before summing?
+/// @return numeric vector of length nrow(x)
+/// @namespace base
+#[builtin(name = "rowSums", min_args = 1)]
+fn builtin_row_sums(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol, data) = matrix_dims_and_data(args).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'x' must be a matrix or data frame".to_string(),
+        )
+    })?;
+    let na_rm = named
+        .iter()
+        .find(|(n, _)| n == "na.rm")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let mut result = Vec::with_capacity(nrow);
+    for i in 0..nrow {
+        let mut sum = 0.0;
+        let mut has_na = false;
+        for j in 0..ncol {
+            match data.get(j * nrow + i).copied().flatten() {
+                Some(v) => sum += v,
+                None if !na_rm => {
+                    has_na = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        result.push(if has_na { None } else { Some(sum) });
+    }
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+/// Sum of each column of a matrix or data frame.
+///
+/// @param x numeric matrix or data frame
+/// @param na.rm logical: remove NAs?
+/// @return numeric vector of length ncol(x)
+/// @namespace base
+#[builtin(name = "colSums", min_args = 1)]
+fn builtin_col_sums(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol, data) = matrix_dims_and_data(args).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'x' must be a matrix or data frame".to_string(),
+        )
+    })?;
+    let na_rm = named
+        .iter()
+        .find(|(n, _)| n == "na.rm")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let mut result = Vec::with_capacity(ncol);
+    for j in 0..ncol {
+        let mut sum = 0.0;
+        let mut has_na = false;
+        for i in 0..nrow {
+            match data.get(j * nrow + i).copied().flatten() {
+                Some(v) => sum += v,
+                None if !na_rm => {
+                    has_na = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        result.push(if has_na { None } else { Some(sum) });
+    }
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+/// Mean of each row of a matrix or data frame.
+///
+/// @param x numeric matrix or data frame
+/// @param na.rm logical: remove NAs?
+/// @return numeric vector of length nrow(x)
+/// @namespace base
+#[builtin(name = "rowMeans", min_args = 1)]
+fn builtin_row_means(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol, data) = matrix_dims_and_data(args).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'x' must be a matrix or data frame".to_string(),
+        )
+    })?;
+    let na_rm = named
+        .iter()
+        .find(|(n, _)| n == "na.rm")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let mut result = Vec::with_capacity(nrow);
+    for i in 0..nrow {
+        let mut sum = 0.0;
+        let mut count = 0usize;
+        let mut has_na = false;
+        for j in 0..ncol {
+            match data.get(j * nrow + i).copied().flatten() {
+                Some(v) => {
+                    sum += v;
+                    count += 1;
+                }
+                None if !na_rm => {
+                    has_na = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        result.push(if has_na || count == 0 {
+            None
+        } else {
+            Some(sum / count as f64)
+        });
+    }
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+/// Mean of each column of a matrix or data frame.
+///
+/// @param x numeric matrix or data frame
+/// @param na.rm logical: remove NAs?
+/// @return numeric vector of length ncol(x)
+/// @namespace base
+#[builtin(name = "colMeans", min_args = 1)]
+fn builtin_col_means(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol, data) = matrix_dims_and_data(args).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'x' must be a matrix or data frame".to_string(),
+        )
+    })?;
+    let na_rm = named
+        .iter()
+        .find(|(n, _)| n == "na.rm")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let mut result = Vec::with_capacity(ncol);
+    for j in 0..ncol {
+        let mut sum = 0.0;
+        let mut count = 0usize;
+        let mut has_na = false;
+        for i in 0..nrow {
+            match data.get(j * nrow + i).copied().flatten() {
+                Some(v) => {
+                    sum += v;
+                    count += 1;
+                }
+                None if !na_rm => {
+                    has_na = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        result.push(if has_na || count == 0 {
+            None
+        } else {
+            Some(sum / count as f64)
+        });
+    }
+    Ok(RValue::vec(Vector::Double(result.into())))
+}
+
+/// Drop unused factor levels.
+///
+/// @param x factor
+/// @return factor with unused levels removed
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_droplevels(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let codes = v.inner.to_integers();
+            let levels = match v.get_attr("levels") {
+                Some(RValue::Vector(lv)) => lv.to_characters(),
+                _ => return Ok(RValue::Vector(v.clone())),
+            };
+            let used: std::collections::BTreeSet<usize> = codes
+                .iter()
+                .filter_map(|c| c.and_then(|i| usize::try_from(i).ok()))
+                .collect();
+            let mut new_levels = Vec::new();
+            let mut old_to_new = std::collections::HashMap::new();
+            for (old_idx, level) in levels.iter().enumerate() {
+                if used.contains(&(old_idx + 1)) {
+                    old_to_new.insert(old_idx + 1, new_levels.len() + 1);
+                    new_levels.push(level.clone());
+                }
+            }
+            let new_codes: Vec<Option<i64>> = codes
+                .iter()
+                .map(|c| c.and_then(|i| old_to_new.get(&(i as usize)).map(|&new| new as i64)))
+                .collect();
+            let mut rv = RVector::from(Vector::Integer(new_codes.into()));
+            rv.set_attr(
+                "levels".to_string(),
+                RValue::vec(Vector::Character(new_levels.into())),
+            );
+            rv.set_attr(
+                "class".to_string(),
+                RValue::vec(Vector::Character(vec![Some("factor".to_string())].into())),
+            );
+            Ok(RValue::Vector(rv))
+        }
+        _ => Ok(args.first().cloned().unwrap_or(RValue::Null)),
+    }
+}
+
+// endregion
