@@ -5613,6 +5613,110 @@ fn builtin_body(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
     }
 }
 
+/// `body<-(fn, value)` — set the body of a closure.
+///
+/// @param fn function whose body to replace
+/// @param value new body expression
+/// @return modified function
+/// @namespace base
+#[builtin(name = "body<-", min_args = 2)]
+fn builtin_body_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { params, env, .. })) => {
+            let new_body = match args.get(1) {
+                Some(RValue::Language(lang)) => (*lang.inner).clone(),
+                Some(RValue::Null) => crate::parser::ast::Expr::Null,
+                _ => crate::parser::ast::Expr::Null,
+            };
+            Ok(RValue::Function(RFunction::Closure {
+                params: params.clone(),
+                body: new_body,
+                env: env.clone(),
+            }))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "body<- requires a function".to_string(),
+        )),
+    }
+}
+
+/// `formals<-(fn, value)` — set the formals of a closure.
+///
+/// @param fn function whose formals to replace
+/// @param value new formals as a pairlist/list
+/// @return modified function
+/// @namespace base
+#[builtin(name = "formals<-", min_args = 2)]
+fn builtin_formals_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { body, env, .. })) => {
+            let new_params = match args.get(1) {
+                Some(RValue::List(list)) => list
+                    .values
+                    .iter()
+                    .map(|(name, val)| {
+                        let param_name = name.clone().unwrap_or_default();
+                        let default = if matches!(val, RValue::Null) {
+                            None
+                        } else {
+                            // Convert RValue back to Expr for default — simplified
+                            None
+                        };
+                        crate::parser::ast::Param {
+                            name: param_name,
+                            default,
+                            is_dots: name.as_deref() == Some("..."),
+                        }
+                    })
+                    .collect(),
+                _ => vec![],
+            };
+            Ok(RValue::Function(RFunction::Closure {
+                params: new_params,
+                body: body.clone(),
+                env: env.clone(),
+            }))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "formals<- requires a function".to_string(),
+        )),
+    }
+}
+
+/// `environment<-(fn, value)` — set the environment of a closure.
+///
+/// @param fun function whose environment to set
+/// @param value new environment
+/// @return modified function
+/// @namespace base
+#[builtin(name = "environment<-", min_args = 2)]
+fn builtin_environment_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Function(RFunction::Closure { params, body, .. })) => {
+            let new_env = match args.get(1) {
+                Some(RValue::Environment(e)) => e.clone(),
+                _ => {
+                    return Err(RError::new(
+                        RErrorKind::Argument,
+                        "replacement environment must be an environment".to_string(),
+                    ))
+                }
+            };
+            Ok(RValue::Function(RFunction::Closure {
+                params: params.clone(),
+                body: body.clone(),
+                env: new_env,
+            }))
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "environment<- requires a function".to_string(),
+        )),
+    }
+}
+
 /// `args(fn)` — return the formals of a function (simplified: same as formals).
 /// In GNU R, args() returns a function with the same formals but NULL body.
 /// We simplify to just returning formals, which covers all practical uses.
