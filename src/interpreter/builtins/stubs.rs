@@ -1121,6 +1121,57 @@ fn builtin_pos_to_env(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::Null)
 }
 
+/// setNames — set names on an object and return it.
+///
+/// @param object any R object
+/// @param nm character vector of names
+/// @return the object with names set
+/// @namespace stats
+// CRAN: used by 100+ packages (stats::setNames, base::setNames)
+#[builtin(name = "setNames", namespace = "stats", min_args = 2)]
+fn builtin_set_names(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let obj = args.first().cloned().unwrap_or(RValue::Null);
+    let names = args.get(1).cloned().unwrap_or(RValue::Null);
+    match obj {
+        RValue::Vector(mut rv) => {
+            rv.set_attr("names".to_string(), names);
+            Ok(RValue::Vector(rv))
+        }
+        RValue::List(mut list) => {
+            if let Some(names_vec) = names.as_vector() {
+                let name_strs = names_vec.to_characters();
+                for (i, (n, _)) in list.values.iter_mut().enumerate() {
+                    if let Some(new_name) = name_strs.get(i) {
+                        *n = new_name.clone();
+                    }
+                }
+            }
+            Ok(RValue::List(list))
+        }
+        _ => Ok(obj),
+    }
+}
+
+/// globalVariables — declare global variables (no-op, suppresses R CMD check notes).
+///
+/// @param names character vector of variable names
+/// @param package package name (ignored)
+/// @param add logical (ignored)
+/// @return invisible NULL
+/// @namespace utils
+// CRAN: used by many packages to suppress "no visible binding" notes
+#[builtin(name = "globalVariables", namespace = "utils")]
+fn builtin_global_variables(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// withAutoprint — evaluate expressions with auto-printing (stub).
+/// @namespace base
+#[builtin(name = "withAutoprint")]
+fn builtin_with_autoprint(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args.first().cloned().unwrap_or(RValue::Null))
+}
+
 /// commandArgs — return command-line arguments.
 ///
 /// @param trailingOnly if TRUE, return only args after --args

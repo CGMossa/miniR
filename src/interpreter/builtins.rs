@@ -422,6 +422,33 @@ pub fn register_builtins(env: &Environment) {
         ])),
     );
 
+    // R.version — version info as a named list (variable, not function)
+    env.set(
+        "R.version".to_string(),
+        RValue::List(RList::new(vec![
+            (
+                Some("major".to_string()),
+                RValue::vec(Vector::Character(vec![Some("4".to_string())].into())),
+            ),
+            (
+                Some("minor".to_string()),
+                RValue::vec(Vector::Character(vec![Some("4.0".to_string())].into())),
+            ),
+            (
+                Some("version.string".to_string()),
+                RValue::vec(Vector::Character(
+                    vec![Some("miniR version 0.1.0 (R-compat 4.4.0)".to_string())].into(),
+                )),
+            ),
+        ])),
+    );
+    env.set(
+        "R.version.string".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("miniR version 0.1.0 (R-compat 4.4.0)".to_string())].into(),
+        )),
+    );
+
     // Primitive operators as callable functions (e.g. lapply(x, `[[`, "name"))
     register_operator_builtins(env);
 }
