@@ -1172,6 +1172,79 @@ fn builtin_with_autoprint(args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 
+/// signature — create an S4 method signature.
+///
+/// @param ... named arguments specifying class for each formal
+/// @return named character vector
+/// @namespace methods
+// GNU-R-methods: used by S4 setMethod calls
+#[builtin(name = "signature", namespace = "methods")]
+fn builtin_signature(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let names: Vec<Option<String>> = named.iter().map(|(n, _)| Some(n.clone())).collect();
+    let values: Vec<Option<String>> = named
+        .iter()
+        .map(|(_, v)| v.as_vector().and_then(|vec| vec.as_character_scalar()))
+        .collect();
+    let mut rv = RVector::from(Vector::Character(values.into()));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(names.into())),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// prototype — create an S4 class prototype (returns a list).
+///
+/// @param ... named default values for slots
+/// @return named list
+/// @namespace methods
+// GNU-R-methods: used in setClass() calls
+#[builtin(name = "prototype", namespace = "methods")]
+fn builtin_prototype(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let mut values: Vec<(Option<String>, RValue)> = named
+        .iter()
+        .map(|(n, v)| (Some(n.clone()), v.clone()))
+        .collect();
+    // Also include positional args
+    for arg in args {
+        values.push((None, arg.clone()));
+    }
+    Ok(RValue::List(RList::new(values)))
+}
+
+/// lengths — get lengths of list elements.
+///
+/// @param x list or vector
+/// @return integer vector of lengths
+/// @namespace base
+// CRAN: used by many packages (base::lengths)
+#[builtin(min_args = 1)]
+fn builtin_lengths(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::List(list)) => {
+            let lens: Vec<Option<i64>> = list
+                .values
+                .iter()
+                .map(|(_, v)| {
+                    Some(match v {
+                        RValue::Vector(rv) => rv.len() as i64,
+                        RValue::List(l) => l.values.len() as i64,
+                        RValue::Null => 0,
+                        _ => 1,
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Integer(lens.into())))
+        }
+        Some(RValue::Vector(v)) => {
+            // For atomic vectors, each element has length 1
+            let lens: Vec<Option<i64>> = (0..v.len()).map(|_| Some(1)).collect();
+            Ok(RValue::vec(Vector::Integer(lens.into())))
+        }
+        _ => Ok(RValue::vec(Vector::Integer(vec![].into()))),
+    }
+}
+
 /// commandArgs — return command-line arguments.
 ///
 /// @param trailingOnly if TRUE, return only args after --args
