@@ -106,6 +106,7 @@ flate2 = { version = "1", optional = true }
 textwrap = { version = "0.16", default-features = false }
 indicatif = { version = "0.17", optional = true }
 crossterm = { version = "0.29", optional = true }
+terminal_size = { version = "0.4", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
@@ -113,7 +114,7 @@ full = ["default", "tls", "linalg"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -123,7 +124,7 @@ minimal = []
 # Fast — core + the most-used features, skipping heavy compile-time deps.
 # Adds random, datetime, io, compression on top of minimal.
 # Usage: cargo build --no-default-features --features fast
-fast = ["random", "datetime", "io", "compression", "diagnostics", "signal"]
+fast = ["random", "datetime", "io", "compression", "diagnostics", "signal", "terminal-size"]
 
 logging = ["dep:env_logger"]
 tracing-output = ["dep:tracing-subscriber"]
@@ -148,5 +149,6 @@ arena = ["dep:slotmap"]
 tls = ["dep:rustls", "dep:rustls-native-certs", "dep:webpki-roots"]
 bytecount = ["dep:bytecount"]
 compression = ["dep:flate2"]
+terminal-size = ["dep:terminal_size"]
 progress = ["dep:indicatif"]
 parallel = ["dep:rayon"]

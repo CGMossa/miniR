@@ -208,14 +208,13 @@ impl Session {
     }
 
     /// Update `getOption("width")` to match the current terminal width.
-    /// Falls back to 80 columns if terminal size cannot be determined.
+    ///
+    /// Uses crossterm when the `repl` feature is enabled (most accurate, since
+    /// crossterm is already linked for the REPL). Falls back to the lighter
+    /// `terminal_size` crate when only the `terminal-size` feature is enabled.
+    /// Returns 80 columns when neither is available.
     pub fn sync_terminal_width(&self) {
-        #[cfg(feature = "repl")]
-        let cols = crossterm::terminal::size()
-            .map(|(c, _)| i64::from(c).clamp(10, 10000))
-            .unwrap_or(80);
-        #[cfg(not(feature = "repl"))]
-        let cols = 80i64;
+        let cols = detect_terminal_width();
         self.set_option(
             "width",
             RValue::vec(crate::interpreter::value::Vector::Integer(
@@ -266,6 +265,30 @@ pub fn is_invisible_result(ast: &Expr) -> bool {
         Expr::Block(exprs) => exprs.last().is_some_and(is_invisible_result),
         _ => false,
     }
+}
+
+/// Detect the terminal width using the best available backend.
+///
+/// Priority: crossterm (repl feature) > terminal_size crate > fallback to 80.
+fn detect_terminal_width() -> i64 {
+    // When the repl feature is on, crossterm is already linked — prefer it.
+    #[cfg(feature = "repl")]
+    {
+        if let Ok((cols, _)) = crossterm::terminal::size() {
+            return i64::from(cols).clamp(10, 10000);
+        }
+    }
+
+    // Fallback: the lightweight terminal_size crate (available via diagnostics/miette).
+    #[cfg(feature = "terminal-size")]
+    {
+        if let Some((terminal_size::Width(w), _)) = terminal_size::terminal_size() {
+            return i64::from(w).clamp(10, 10000);
+        }
+    }
+
+    // No terminal detection available — use a sensible default.
+    80
 }
 
 fn read_source(path: &Path) -> Result<String, SessionError> {
