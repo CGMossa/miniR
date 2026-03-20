@@ -158,6 +158,8 @@ fn interp_print(
     if let Some(val) = args.first() {
         context.write(&format!("{}\n", val));
     }
+    // print() returns invisibly in R
+    context.interpreter().set_invisible();
     Ok(args.first().cloned().unwrap_or(RValue::Null))
 }
 

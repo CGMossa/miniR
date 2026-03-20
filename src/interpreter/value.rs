@@ -439,33 +439,43 @@ pub fn format_vector(v: &Vector) -> String {
             .collect(),
     };
 
+    // Right-align all elements to the width of the widest, matching R's output.
+    let max_elem_width = elements
+        .iter()
+        .map(|e| UnicodeWidthStr::width(e.as_str()))
+        .max()
+        .unwrap_or(1);
+    let padded: Vec<String> = elements
+        .iter()
+        .map(|e| format!("{:>width$}", e, width = max_elem_width))
+        .collect();
+
     if len == 1 {
-        return format!("[1] {}", elements[0]);
+        return format!("[1] {}", padded[0]);
     }
 
-    // Format with line indices like R does
+    // Format with line indices like R does.
+    // Label width is based on the largest index label.
+    let max_label = format!("[{}]", len);
+    let label_pad = UnicodeWidthStr::width(max_label.as_str());
     let max_width = 80;
     let mut result = String::new();
     let mut pos = 0;
+    let elem_col_width = max_elem_width + 1; // +1 for space between elements
 
-    while pos < elements.len() {
+    while pos < padded.len() {
         let label = format!("[{}]", pos + 1);
-        let label_width = UnicodeWidthStr::width(label.as_str());
-        let mut line = format!("{} ", label);
-        let mut current_width = label_width + 1;
+        let mut line = format!("{:>width$}", label, width = label_pad);
+        let mut current_width = label_pad;
         let line_start = pos;
 
-        while pos < elements.len() {
-            let elem = &elements[pos];
-            let elem_width = UnicodeWidthStr::width(elem.as_str()) + 1; // +1 for space
-            if current_width + elem_width > max_width && pos > line_start {
+        while pos < padded.len() {
+            if current_width + elem_col_width > max_width && pos > line_start {
                 break;
             }
-            line.push_str(elem);
-            if pos + 1 < elements.len() {
-                line.push(' ');
-            }
-            current_width += elem_width;
+            line.push(' ');
+            line.push_str(&padded[pos]);
+            current_width += elem_col_width;
             pos += 1;
         }
 
