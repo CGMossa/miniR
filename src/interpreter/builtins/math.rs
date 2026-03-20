@@ -2513,12 +2513,11 @@ fn builtin_which(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
             // Check for arr.ind with matrix dim attribute
             if arr_ind {
                 if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
-                    let dims = dim_rv.to_doubles();
+                    let dims = dim_rv.to_integers();
                     if dims.len() >= 2 {
                         let n = true_indices.len();
                         let ndim = dims.len();
-                        let dim_sizes: Vec<i64> =
-                            dims.iter().map(|d| d.unwrap_or(0.0) as i64).collect();
+                        let dim_sizes: Vec<i64> = dims.iter().map(|d| d.unwrap_or(0)).collect();
                         let mut result: Vec<Option<i64>> = vec![None; n * ndim];
 
                         for (idx_pos, &linear_1based) in true_indices.iter().enumerate() {
@@ -2534,12 +2533,27 @@ fn builtin_which(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                         result_rv.set_attr(
                             "dim".to_string(),
                             RValue::vec(Vector::Integer(
-                                vec![
-                                    Some(i64::try_from(n).unwrap_or(0)),
-                                    Some(i64::try_from(ndim).unwrap_or(0)),
-                                ]
-                                .into(),
+                                vec![Some(i64::try_from(n)?), Some(i64::try_from(ndim)?)].into(),
                             )),
+                        );
+                        // Add dimnames with "row" and "col" column names (R compat)
+                        let col_names: Vec<Option<String>> = (0..ndim)
+                            .map(|d| {
+                                Some(if d == 0 {
+                                    "row".to_string()
+                                } else if d == 1 {
+                                    "col".to_string()
+                                } else {
+                                    format!("dim{}", d + 1)
+                                })
+                            })
+                            .collect();
+                        result_rv.set_attr(
+                            "dimnames".to_string(),
+                            RValue::List(RList::new(vec![
+                                (None, RValue::Null),
+                                (None, RValue::vec(Vector::Character(col_names.into()))),
+                            ])),
                         );
                         return Ok(RValue::Vector(result_rv));
                     }
@@ -5153,6 +5167,213 @@ fn eval_kronecker_with_fn(
 /// Called from `ops.rs` when the parser encounters `A %x% B`.
 pub fn eval_kronecker(left: &RValue, right: &RValue) -> Result<RValue, RError> {
     eval_kronecker_with_fn(left, right, |a, b| a * b)
+}
+
+// endregion
+
+// region: Matrix index helpers (row, col, slice.index)
+
+/// Helper: extract matrix dimensions (nrow, ncol) from any matrix-like object.
+fn matrix_dims(arg: &RValue) -> Option<(usize, usize)> {
+    match arg {
+        RValue::Vector(v) => {
+            let dim = v.get_attr("dim")?;
+            let dim_vec = dim.as_vector()?;
+            let dims = dim_vec.to_integers();
+            if dims.len() == 2 {
+                Some((
+                    usize::try_from(dims[0]?).ok()?,
+                    usize::try_from(dims[1]?).ok()?,
+                ))
+            } else {
+                None
+            }
+        }
+        RValue::List(l) => {
+            if let Some(dim) = l.get_attr("dim") {
+                let dim_vec = dim.as_vector()?;
+                let dims = dim_vec.to_integers();
+                if dims.len() == 2 {
+                    return Some((
+                        usize::try_from(dims[0]?).ok()?,
+                        usize::try_from(dims[1]?).ok()?,
+                    ));
+                }
+            }
+            // data frame fallback
+            let ncol = l.values.len();
+            let nrow = l
+                .values
+                .first()
+                .map(|(_, v)| match v {
+                    RValue::Vector(rv) => rv.len(),
+                    _ => 1,
+                })
+                .unwrap_or(0);
+            Some((nrow, ncol))
+        }
+        _ => None,
+    }
+}
+
+/// Return a matrix of row indices (same dim as input, each element = its row number).
+///
+/// @param x matrix or matrix-like object (must have dim attribute)
+/// @return integer matrix where element [i,j] = i
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_row(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol) = matrix_dims(args.first().unwrap_or(&RValue::Null)).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "a matrix-like object is required as argument to 'row'".to_string(),
+        )
+    })?;
+    // Column-major: for column j, row i, index = j * nrow + i
+    let mut data: Vec<Option<i64>> = Vec::with_capacity(nrow * ncol);
+    for _j in 0..ncol {
+        for i in 0..nrow {
+            data.push(Some(i64::try_from(i)? + 1));
+        }
+    }
+    let mut rv = RVector::from(Vector::Integer(data.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// Return a matrix of column indices (same dim as input, each element = its column number).
+///
+/// @param x matrix or matrix-like object (must have dim attribute)
+/// @return integer matrix where element [i,j] = j
+/// @namespace base
+#[builtin(min_args = 1)]
+fn builtin_col(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol) = matrix_dims(args.first().unwrap_or(&RValue::Null)).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "a matrix-like object is required as argument to 'col'".to_string(),
+        )
+    })?;
+    let mut data: Vec<Option<i64>> = Vec::with_capacity(nrow * ncol);
+    for j in 0..ncol {
+        for _i in 0..nrow {
+            data.push(Some(i64::try_from(j)? + 1));
+        }
+    }
+    let mut rv = RVector::from(Vector::Integer(data.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(
+            vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
+        )),
+    );
+    Ok(RValue::Vector(rv))
+}
+
+/// Return an array of indices along a specified margin.
+///
+/// For a matrix, `MARGIN = 1` gives row indices (same as `row()`),
+/// `MARGIN = 2` gives column indices (same as `col()`).
+///
+/// @param x array (must have dim attribute)
+/// @param MARGIN integer: which dimension to generate indices for (1-based)
+/// @return integer array of same dimensions as x
+/// @namespace base
+#[builtin(name = "slice.index", min_args = 2)]
+fn builtin_slice_index(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = args
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "'x' must be an array".to_string()))?;
+
+    let margin_val = named
+        .iter()
+        .find(|(n, _)| n == "MARGIN")
+        .map(|(_, v)| v)
+        .or(args.get(1))
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'MARGIN' argument is required".to_string(),
+            )
+        })?;
+
+    let margin = margin_val
+        .as_vector()
+        .and_then(|v| v.as_integer_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'MARGIN' must be an integer scalar".to_string(),
+            )
+        })?;
+
+    let dim_attr = match x {
+        RValue::Vector(v) => v.get_attr("dim"),
+        RValue::List(l) => l.get_attr("dim"),
+        _ => None,
+    };
+
+    let dims: Vec<i64> = dim_attr
+        .and_then(|d| d.as_vector())
+        .map(|v| {
+            v.to_integers()
+                .into_iter()
+                .map(|d| d.unwrap_or(0))
+                .collect()
+        })
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'x' must be an array (needs dim attribute)".to_string(),
+            )
+        })?;
+
+    let ndim = dims.len();
+    let margin_idx = usize::try_from(margin - 1).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("'MARGIN' = {} is out of range [1, {}]", margin, ndim),
+        )
+    })?;
+
+    if margin_idx >= ndim {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("'MARGIN' = {} is out of range [1, {}]", margin, ndim),
+        ));
+    }
+
+    let total: usize = dims
+        .iter()
+        .map(|&d| usize::try_from(d).unwrap_or(0))
+        .product();
+    let mut data: Vec<Option<i64>> = Vec::with_capacity(total);
+
+    // Stride for the target dimension = product of dims before it
+    let stride: usize = dims[..margin_idx]
+        .iter()
+        .map(|&d| usize::try_from(d).unwrap_or(0))
+        .product();
+    let dim_size = usize::try_from(dims[margin_idx]).unwrap_or(0);
+
+    for linear in 0..total {
+        // The index along dimension margin_idx
+        let idx_along_margin = (linear / stride) % dim_size;
+        data.push(Some(i64::try_from(idx_along_margin)? + 1));
+    }
+
+    let dim_values: Vec<Option<i64>> = dims.into_iter().map(Some).collect();
+    let mut rv = RVector::from(Vector::Integer(data.into()));
+    rv.set_attr(
+        "dim".to_string(),
+        RValue::vec(Vector::Integer(dim_values.into())),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 // endregion
