@@ -4005,9 +4005,16 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
                 }
             }
-            if let Some(rn) = l.get_attr("row.names") {
+            if has_class(args.first().unwrap(), "data.frame") {
+                if let Some(rn) = l.get_attr("row.names") {
+                    return Ok(RValue::vec(Vector::Integer(
+                        vec![Some(i64::try_from(rn.length())?)].into(),
+                    )));
+                }
+                // data frame with columns but no row.names — use first column length
+                let n = l.values.first().map(|(_, v)| v.length()).unwrap_or(0);
                 return Ok(RValue::vec(Vector::Integer(
-                    vec![Some(i64::try_from(rn.length())?)].into(),
+                    vec![Some(i64::try_from(n)?)].into(),
                 )));
             }
             Ok(RValue::Null)

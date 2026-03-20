@@ -166,7 +166,9 @@ fn builtin_as_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             let mut rv = v.clone();
             rv.set_attr(
                 "dim".to_string(),
-                RValue::vec(Vector::Integer(vec![Some(len as i64), Some(1)].into())),
+                RValue::vec(Vector::Integer(
+                    vec![Some(i64::try_from(len)?), Some(1)].into(),
+                )),
             );
             Ok(RValue::Vector(rv))
         }
@@ -200,7 +202,7 @@ fn builtin_as_matrix(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
             rv.set_attr(
                 "dim".to_string(),
                 RValue::vec(Vector::Integer(
-                    vec![Some(nrow as i64), Some(ncol as i64)].into(),
+                    vec![Some(i64::try_from(nrow)?), Some(i64::try_from(ncol)?)].into(),
                 )),
             );
             // Copy column names as dimnames
