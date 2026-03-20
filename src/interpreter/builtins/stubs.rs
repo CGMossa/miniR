@@ -4,7 +4,15 @@
 
 use crate::interpreter::value::*;
 use minir_macros::{builtin, stub_builtin};
-use tracing::warn;
+
+/// Emit a stub warning to stderr. These are diagnostic messages for
+/// developers, not R output, so they go directly to process stderr
+/// rather than through the session-scoped writer.
+macro_rules! stub_warn {
+    ($($arg:tt)*) => {
+        eprintln!("[miniR stub] {}", format!($($arg)*));
+    };
+}
 
 // region: Package management stubs
 
@@ -101,7 +109,7 @@ fn builtin_get_class_def(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 /// @namespace methods
 #[builtin(name = "hasMethod", namespace = "methods")]
 fn builtin_has_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("hasMethod() is a no-op in miniR — always returns FALSE");
+    stub_warn!("hasMethod() is a no-op in miniR — always returns FALSE");
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
@@ -112,7 +120,7 @@ fn builtin_has_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 /// @namespace methods
 #[builtin(name = "setOldClass", namespace = "methods")]
 fn builtin_set_old_class(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("setOldClass() is a no-op in miniR");
+    stub_warn!("setOldClass() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
@@ -254,7 +262,7 @@ fn builtin_olson_names(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 /// @namespace base
 #[builtin(name = "asNamespace", min_args = 1)]
 fn builtin_as_namespace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("asNamespace() is a stub in miniR — returns NULL (needs interpreter access for real lookup)");
+    stub_warn!("asNamespace() is a stub in miniR — returns NULL (needs interpreter access for real lookup)");
     let _ = args;
     Ok(RValue::Null)
 }
@@ -541,7 +549,7 @@ fn builtin_standard_generic(_args: &[RValue], _: &[(String, RValue)]) -> Result<
 /// @namespace methods
 #[builtin(name = "setIs", namespace = "methods")]
 fn builtin_set_is(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("setIs() is a no-op in miniR");
+    stub_warn!("setIs() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
@@ -549,7 +557,7 @@ fn builtin_set_is(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// @namespace methods
 #[builtin(name = "removeClass", namespace = "methods")]
 fn builtin_remove_class(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("removeClass() is a no-op in miniR");
+    stub_warn!("removeClass() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
@@ -557,7 +565,7 @@ fn builtin_remove_class(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 /// @namespace methods
 #[builtin(name = "resetGeneric", namespace = "methods")]
 fn builtin_reset_generic(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("resetGeneric() is a no-op in miniR");
+    stub_warn!("resetGeneric() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
@@ -573,7 +581,7 @@ fn builtin_encoding_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 /// @namespace base
 #[builtin(name = "bindtextdomain")]
 fn builtin_bindtextdomain(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("bindtextdomain() is a no-op in miniR — no i18n support");
+    stub_warn!("bindtextdomain() is a no-op in miniR — no i18n support");
     Ok(RValue::Null)
 }
 
@@ -581,7 +589,7 @@ fn builtin_bindtextdomain(_args: &[RValue], _: &[(String, RValue)]) -> Result<RV
 /// @namespace base
 #[builtin(name = "eapply", min_args = 2)]
 fn builtin_eapply(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("eapply() is a stub in miniR — returns empty list");
+    stub_warn!("eapply() is a stub in miniR — returns empty list");
     let _ = args;
     Ok(RValue::List(RList::new(vec![])))
 }
@@ -888,7 +896,7 @@ fn builtin_get_native_symbol_info(
 /// @namespace base
 #[builtin(name = "debugonce")]
 fn builtin_debugonce(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("debugonce() is a no-op in miniR — no debugger");
+    stub_warn!("debugonce() is a no-op in miniR — no debugger");
     Ok(RValue::Null)
 }
 
@@ -896,7 +904,7 @@ fn builtin_debugonce(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 /// @namespace base
 #[builtin(name = "trace")]
 fn builtin_trace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("trace() is a no-op in miniR — no debugger");
+    stub_warn!("trace() is a no-op in miniR — no debugger");
     Ok(RValue::Null)
 }
 
@@ -904,7 +912,7 @@ fn builtin_trace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 /// @namespace base
 #[builtin(name = "untrace")]
 fn builtin_untrace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("untrace() is a no-op in miniR — no debugger");
+    stub_warn!("untrace() is a no-op in miniR — no debugger");
     Ok(RValue::Null)
 }
 
@@ -912,7 +920,7 @@ fn builtin_untrace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 /// @namespace utils
 #[builtin(name = "browseEnv", namespace = "utils")]
 fn builtin_browse_env(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("browseEnv() is a no-op in miniR");
+    stub_warn!("browseEnv() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
@@ -999,7 +1007,7 @@ fn builtin_file_symlink(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 /// @namespace base
 #[builtin(name = "Sys.chmod", min_args = 1)]
 fn builtin_sys_chmod(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    warn!("Sys.chmod() is a no-op in miniR");
+    stub_warn!("Sys.chmod() is a no-op in miniR");
     Ok(RValue::Null)
 }
 
