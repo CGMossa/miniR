@@ -179,8 +179,8 @@ impl Interpreter {
                 env: call_env,
                 formal_args,
                 supplied_args,
-                supplied_positional: positional.to_vec(),
-                supplied_named: named.to_vec(),
+                supplied_positional: positional.iter().cloned().collect(),
+                supplied_named: named.iter().cloned().collect(),
                 supplied_arg_count,
             },
         })

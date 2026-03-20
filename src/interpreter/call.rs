@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 
+use smallvec::SmallVec;
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::RValue;
 use crate::interpreter::Interpreter;
@@ -34,8 +36,8 @@ pub(crate) struct CallFrame {
     pub env: Environment,
     pub formal_args: HashSet<String>,
     pub supplied_args: HashSet<String>,
-    pub supplied_positional: Vec<RValue>,
-    pub supplied_named: Vec<(String, RValue)>,
+    pub supplied_positional: SmallVec<[RValue; 4]>,
+    pub supplied_named: SmallVec<[(String, RValue); 2]>,
     pub supplied_arg_count: usize,
 }
 

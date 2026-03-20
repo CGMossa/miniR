@@ -1,5 +1,6 @@
 //! Call evaluation and dispatch helpers used by the evaluator.
 
+use smallvec::SmallVec;
 use tracing::trace;
 
 use crate::interpreter::environment::Environment;
@@ -7,9 +8,11 @@ use crate::interpreter::value::*;
 use crate::interpreter::{BuiltinContext, Interpreter};
 use crate::parser::ast::{Arg, Expr, Param};
 
-type NamedArgs = Vec<(String, RValue)>;
+type PositionalArgs = SmallVec<[RValue; 4]>;
 
-type EvaluatedCallArgs = (Vec<RValue>, NamedArgs);
+type NamedArgs = SmallVec<[(String, RValue); 2]>;
+
+type EvaluatedCallArgs = (PositionalArgs, NamedArgs);
 
 struct ClosureCall<'a> {
     func: &'a RValue,
@@ -230,8 +233,8 @@ fn evaluate_call_arguments(
     args: &[Arg],
     env: &Environment,
 ) -> Result<EvaluatedCallArgs, RFlow> {
-    let mut positional = Vec::new();
-    let mut named = Vec::new();
+    let mut positional = PositionalArgs::new();
+    let mut named = NamedArgs::new();
 
     for arg in args {
         if let Some(name) = &arg.name {
@@ -269,8 +272,8 @@ fn evaluate_call_arguments_lenient(
     args: &[Arg],
     env: &Environment,
 ) -> EvaluatedCallArgs {
-    let mut positional = Vec::new();
-    let mut named = Vec::new();
+    let mut positional = PositionalArgs::new();
+    let mut named = NamedArgs::new();
 
     for arg in args {
         if let Some(name) = &arg.name {
@@ -304,8 +307,8 @@ fn evaluate_call_arguments_lenient(
 
 fn expand_dots_arguments(
     env: &Environment,
-    positional: &mut Vec<RValue>,
-    named: &mut Vec<(String, RValue)>,
+    positional: &mut PositionalArgs,
+    named: &mut NamedArgs,
 ) {
     if let Some(RValue::List(list)) = env.get("...") {
         for (opt_name, value) in &list.values {

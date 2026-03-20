@@ -74,6 +74,7 @@ reedline = { version = "0.46", optional = true }
 temp-dir = "0.2.0"
 glob = "0.3"
 num-complex = "0.4"
+smallvec = { version = "1", features = ["union"] }
 libm = "0.2"
 signal-hook = { version = "0.4.3", optional = true, default-features = false }
 tabwriter = { version = "1", optional = true }
