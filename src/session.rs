@@ -162,6 +162,25 @@ impl Session {
         self.eval_expr(&ast)
     }
 
+    /// Auto-print a value by calling print() through the interpreter.
+    /// This dispatches to S3 methods (print.matrix, print.data.frame, etc.)
+    /// unlike Display which just formats as a flat vector.
+    pub fn auto_print(&mut self, value: &crate::interpreter::value::RValue) {
+        use crate::interpreter::value::RValue;
+        if matches!(value, RValue::Null) {
+            return;
+        }
+        let print_code = "print(.miniR.auto_print_value)";
+        // Temporarily bind the value in the global env so print() can access it
+        self.interpreter
+            .global_env
+            .set(".miniR.auto_print_value".to_string(), value.clone());
+        let _ = self.eval_source(print_code);
+        self.interpreter
+            .global_env
+            .remove(".miniR.auto_print_value");
+    }
+
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<EvalOutput, SessionError> {
         let path = path.as_ref();
         info!(path = %path.display(), "loading source file");

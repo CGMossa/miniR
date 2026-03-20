@@ -35,7 +35,7 @@ fn run_expr(source: &str) {
     match session.eval_source(source) {
         Ok(result) => {
             if result.visible {
-                println!("{}", result.value);
+                session.auto_print(&result.value);
             }
         }
         Err(e) => {
@@ -134,7 +134,7 @@ Type 'q()' to quit.
             Ok(Signal::Success(buffer)) => match session.eval_source(&buffer) {
                 Ok(result) => {
                     if result.visible {
-                        println!("{}", result.value);
+                        session.auto_print(&result.value);
                     }
                 }
                 Err(e) => {
