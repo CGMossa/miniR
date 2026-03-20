@@ -74,3 +74,43 @@ fn eval_file_reports_parse_errors_with_filenames() {
 
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn sync_terminal_width_sets_option() {
+    let mut session = Session::new();
+    session.sync_terminal_width();
+
+    // After sync_terminal_width, getOption("width") should return a positive integer.
+    let result = session
+        .eval_source("getOption('width')")
+        .expect("getOption('width') failed");
+    let width = result
+        .value
+        .as_vector()
+        .and_then(|v| v.as_integer_scalar())
+        .expect("width should be an integer");
+    assert!(
+        (10..=10000).contains(&width),
+        "terminal width {width} should be in [10, 10000]"
+    );
+}
+
+#[test]
+fn manual_width_option_overrides_sync() {
+    let mut session = Session::new();
+    session.sync_terminal_width();
+
+    // Manually set width to 42
+    session
+        .eval_source("options(width = 42L)")
+        .expect("options(width=42) failed");
+    let result = session
+        .eval_source("getOption('width')")
+        .expect("getOption('width') failed");
+    let width = result
+        .value
+        .as_vector()
+        .and_then(|v| v.as_integer_scalar())
+        .expect("width should be an integer");
+    assert_eq!(width, 42, "manual width should override synced value");
+}
