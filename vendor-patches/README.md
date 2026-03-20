@@ -4,7 +4,7 @@ Local patches applied to vendored crates after `cargo vendor`.
 
 ## Directory layout
 
-```
+```shell
 vendor-patches/
   reedline/
     001-make-sqlite-optional.patch
@@ -36,8 +36,8 @@ cd vendor/<crate>
 git diff . > ../../vendor-patches/<crate>/001-description.patch
 ```
 
-4. Name patches with a numeric prefix for ordering: `001-`, `002-`, etc.
-5. Use standard unified diff format (`diff -ruN` or `git diff`)
+1. Name patches with a numeric prefix for ordering: `001-`, `002-`, etc.
+2. Use standard unified diff format (`diff -ruN` or `git diff`)
 
 ## Applying patches
 
