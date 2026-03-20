@@ -251,7 +251,7 @@ fn eval_arith(op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
         let li = lv.to_integers();
         let ri = rv.to_integers();
         let len = li.len().max(ri.len());
-        if len == 0 {
+        if len == 0 || li.is_empty() || ri.is_empty() {
             return Ok(RValue::vec(Vector::Integer(vec![].into())));
         }
         let result: Vec<Option<i64>> = (0..len)
@@ -326,7 +326,7 @@ fn eval_arith(op: BinaryOp, lv: &Vector, rv: &Vector) -> Result<RValue, RFlow> {
     let ld = lv.to_doubles();
     let rd = rv.to_doubles();
     let len = ld.len().max(rd.len());
-    if len == 0 {
+    if len == 0 || ld.is_empty() || rd.is_empty() {
         return Ok(RValue::vec(Vector::Double(vec![].into())));
     }
 
@@ -453,6 +453,9 @@ fn eval_compare(op: BinaryOp, lv: &RVector, rv: &RVector) -> Result<RValue, RFlo
         return Ok(RValue::vec(Vector::Logical(vec![].into())));
     }
 
+    if ld.is_empty() || rd.is_empty() {
+        return Ok(RValue::vec(Vector::Logical(vec![].into())));
+    }
     let result: Vec<Option<bool>> = (0..len)
         .map(|i| {
             let a = ld[i % ld.len()];
