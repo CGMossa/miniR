@@ -127,6 +127,10 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
         BinaryOp::Range => return eval_range(left, right),
         BinaryOp::Special(SpecialOp::In) => return eval_in_op(left, right),
         BinaryOp::Special(SpecialOp::MatMul) => return eval_matmul(left, right),
+        BinaryOp::Special(SpecialOp::Kronecker) => {
+            return crate::interpreter::builtins::math::eval_kronecker(left, right)
+                .map_err(RFlow::from)
+        }
         _ => {}
     };
 
@@ -158,6 +162,9 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
         BinaryOp::Range => eval_range(left, right),
         BinaryOp::Special(SpecialOp::In) => eval_in_op(left, right),
         BinaryOp::Special(SpecialOp::MatMul) => eval_matmul(left, right),
+        BinaryOp::Special(SpecialOp::Kronecker) => {
+            crate::interpreter::builtins::math::eval_kronecker(left, right).map_err(RFlow::from)
+        }
         BinaryOp::Special(_) => Ok(RValue::Null),
 
         // Arithmetic (vectorized with recycling) — raw vectors cannot participate

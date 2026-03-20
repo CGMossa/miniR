@@ -538,6 +538,7 @@ pub fn deparse_expr(expr: &Expr) -> String {
                 BinaryOp::Pipe => "|>",
                 BinaryOp::Special(SpecialOp::In) => "%in%",
                 BinaryOp::Special(SpecialOp::MatMul) => "%*%",
+                BinaryOp::Special(SpecialOp::Kronecker) => "%x%",
                 BinaryOp::Special(SpecialOp::Walrus) => ":=",
                 BinaryOp::Special(SpecialOp::Other) => "%%",
                 BinaryOp::Tilde => "~",

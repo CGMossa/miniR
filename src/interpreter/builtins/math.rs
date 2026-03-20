@@ -4900,4 +4900,259 @@ fn builtin_droplevels(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     }
 }
 
+// region: sweep and kronecker
+
+/// Sweep a summary statistic from each row or column of a matrix.
+///
+/// @param x a numeric matrix
+/// @param MARGIN 1 for rows, 2 for columns
+/// @param STATS a numeric vector of statistics to sweep out
+/// @param FUN the function to use: "-" (default), "+", "*", "/"
+/// @return a matrix of the same dimensions as x
+/// @namespace base
+#[builtin(min_args = 3)]
+fn builtin_sweep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let (nrow, ncol, data) = matrix_dims_and_data(args).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "'x' must be a matrix or data frame".to_string(),
+        )
+    })?;
+
+    // MARGIN: positional arg[1] or named
+    let margin_val = named
+        .iter()
+        .find(|(n, _)| n == "MARGIN")
+        .map(|(_, v)| v)
+        .or_else(|| args.get(1));
+    let margin = match margin_val {
+        Some(RValue::Vector(v)) => v
+            .as_double_scalar()
+            .or_else(|| v.as_integer_scalar().map(|i| i as f64))
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "MARGIN must be 1 (rows) or 2 (columns)".to_string(),
+                )
+            })? as usize,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "MARGIN must be 1 (rows) or 2 (columns)".to_string(),
+            ))
+        }
+    };
+    if margin != 1 && margin != 2 {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!("MARGIN must be 1 (rows) or 2 (columns), got {}", margin),
+        ));
+    }
+
+    // STATS: positional arg[2] or named
+    let stats_val = named
+        .iter()
+        .find(|(n, _)| n == "STATS")
+        .map(|(_, v)| v)
+        .or_else(|| args.get(2));
+    let stats: Vec<f64> = match stats_val {
+        Some(RValue::Vector(v)) => v
+            .to_doubles()
+            .into_iter()
+            .map(|d| d.unwrap_or(f64::NAN))
+            .collect(),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "STATS must be a numeric vector".to_string(),
+            ))
+        }
+    };
+
+    // Validate STATS length matches the swept dimension
+    let expected_len = if margin == 1 { nrow } else { ncol };
+    if stats.len() != expected_len {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            format!(
+                "STATS has length {} but MARGIN {} has {} {}",
+                stats.len(),
+                margin,
+                expected_len,
+                if margin == 1 { "rows" } else { "columns" }
+            ),
+        ));
+    }
+
+    // FUN: positional arg[3] or named — default is "-"
+    let fun_val = named
+        .iter()
+        .find(|(n, _)| n == "FUN")
+        .map(|(_, v)| v)
+        .or_else(|| args.get(3));
+    let fun_str = match fun_val {
+        Some(RValue::Vector(v)) => v.as_character_scalar().unwrap_or_else(|| "-".to_string()),
+        None => "-".to_string(),
+        _ => "-".to_string(),
+    };
+
+    let apply_fn: fn(f64, f64) -> f64 = match fun_str.as_str() {
+        "-" => |a, b| a - b,
+        "+" => |a, b| a + b,
+        "*" => |a, b| a * b,
+        "/" => |a, b| a / b,
+        other => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "FUN must be one of \"-\", \"+\", \"*\", \"/\", got {:?}",
+                    other
+                ),
+            ))
+        }
+    };
+
+    // Sweep: data is column-major (flat[j * nrow + i] = matrix[i, j])
+    let mut result: Vec<Option<f64>> = Vec::with_capacity(nrow * ncol);
+    for j in 0..ncol {
+        for i in 0..nrow {
+            let idx = j * nrow + i;
+            let val = data[idx];
+            let stat = if margin == 1 { stats[i] } else { stats[j] };
+            result.push(val.map(|v| apply_fn(v, stat)));
+        }
+    }
+
+    let (row_names, col_names) = matrix_dimnames(args.first().unwrap_or(&RValue::Null));
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    set_matrix_attrs(&mut rv, nrow, ncol, row_names, col_names)?;
+    Ok(RValue::Vector(rv))
+}
+
+/// Kronecker product of two matrices (or vectors treated as single-column matrices).
+///
+/// The default FUN is "*" (standard Kronecker product). The result has
+/// dimensions (nrow(A)*nrow(B)) x (ncol(A)*ncol(B)).
+///
+/// Can also be called via the `%x%` operator: A %x% B.
+///
+/// @param A numeric matrix or vector
+/// @param B numeric matrix or vector
+/// @param FUN the function to apply element-wise: "*" (default), "+", "-", "/"
+/// @return a numeric matrix
+/// @namespace base
+#[builtin(min_args = 2)]
+fn builtin_kronecker(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // FUN: positional arg[2] or named — default is "*"
+    let fun_val = named
+        .iter()
+        .find(|(n, _)| n == "FUN")
+        .map(|(_, v)| v)
+        .or_else(|| args.get(2));
+    let fun_str = match fun_val {
+        Some(RValue::Vector(v)) => v.as_character_scalar().unwrap_or_else(|| "*".to_string()),
+        None => "*".to_string(),
+        _ => "*".to_string(),
+    };
+
+    let apply_fn: fn(f64, f64) -> f64 = match fun_str.as_str() {
+        "*" => |a, b| a * b,
+        "+" => |a, b| a + b,
+        "-" => |a, b| a - b,
+        "/" => |a, b| a / b,
+        other => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "FUN must be one of \"*\", \"+\", \"-\", \"/\", got {:?}",
+                    other
+                ),
+            ))
+        }
+    };
+
+    eval_kronecker_with_fn(
+        args.first().unwrap_or(&RValue::Null),
+        args.get(1).unwrap_or(&RValue::Null),
+        apply_fn,
+    )
+}
+
+/// Extract matrix dimensions from a value, treating plain vectors as column vectors.
+fn kronecker_dims_and_data(val: &RValue) -> Result<(usize, usize, Vec<Option<f64>>), RError> {
+    match val {
+        RValue::Vector(v) => {
+            let data = v.to_doubles();
+            match v.get_attr("dim") {
+                Some(dim_val) => {
+                    let dim_vec = dim_val.as_vector().ok_or_else(|| {
+                        RError::new(RErrorKind::Type, "invalid dim attribute".to_string())
+                    })?;
+                    let dims = dim_vec.to_integers();
+                    if dims.len() != 2 {
+                        return Err(RError::new(
+                            RErrorKind::Argument,
+                            "kronecker() requires matrix arguments (2-d dim)".to_string(),
+                        ));
+                    }
+                    let nrow = usize::try_from(dims[0].unwrap_or(0))?;
+                    let ncol = usize::try_from(dims[1].unwrap_or(0))?;
+                    Ok((nrow, ncol, data))
+                }
+                // Plain vector → treat as column vector (n x 1)
+                None => {
+                    let n = data.len();
+                    Ok((n, 1, data))
+                }
+            }
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "kronecker() requires numeric matrix/vector arguments".to_string(),
+        )),
+    }
+}
+
+fn eval_kronecker_with_fn(
+    a: &RValue,
+    b: &RValue,
+    fun: fn(f64, f64) -> f64,
+) -> Result<RValue, RError> {
+    let (a_nrow, a_ncol, a_data) = kronecker_dims_and_data(a)?;
+    let (b_nrow, b_ncol, b_data) = kronecker_dims_and_data(b)?;
+
+    let out_nrow = a_nrow * b_nrow;
+    let out_ncol = a_ncol * b_ncol;
+    let mut result: Vec<Option<f64>> = Vec::with_capacity(out_nrow * out_ncol);
+
+    // Build column-major result:
+    // result[(i_a * b_nrow + i_b), (j_a * b_ncol + j_b)] = a[i_a, j_a] * b[i_b, j_b]
+    // In column-major flat layout: result[out_col * out_nrow + out_row]
+    for j_a in 0..a_ncol {
+        for j_b in 0..b_ncol {
+            for i_a in 0..a_nrow {
+                for i_b in 0..b_nrow {
+                    let a_val = a_data[j_a * a_nrow + i_a];
+                    let b_val = b_data[j_b * b_nrow + i_b];
+                    result.push(match (a_val, b_val) {
+                        (Some(av), Some(bv)) => Some(fun(av, bv)),
+                        _ => None,
+                    });
+                }
+            }
+        }
+    }
+
+    let mut rv = RVector::from(Vector::Double(result.into()));
+    set_matrix_attrs(&mut rv, out_nrow, out_ncol, None, None)?;
+    Ok(RValue::Vector(rv))
+}
+
+/// Evaluate the `%x%` (Kronecker product) operator.
+///
+/// Called from `ops.rs` when the parser encounters `A %x% B`.
+pub fn eval_kronecker(left: &RValue, right: &RValue) -> Result<RValue, RError> {
+    eval_kronecker_with_fn(left, right, |a, b| a * b)
+}
+
 // endregion
