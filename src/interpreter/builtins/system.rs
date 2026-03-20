@@ -1199,14 +1199,19 @@ fn builtin_lib_paths(
 
 // === System operations ===
 
-/// Execute a shell command and return its exit code.
+/// Execute a shell command.
+///
+/// When `intern = FALSE` (default), the command runs and its exit code is
+/// returned as an integer. When `intern = TRUE`, the command's stdout is
+/// captured and returned as a character vector (one element per line).
 ///
 /// @param command character scalar: the shell command to run
-/// @return integer scalar: the process exit code
+/// @param intern logical: if TRUE, capture stdout as character vector (default FALSE)
+/// @return integer scalar (exit code) when intern=FALSE, or character vector when intern=TRUE
 #[interpreter_builtin(name = "system", min_args = 1)]
 fn builtin_system(
     args: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let command = args
@@ -1219,28 +1224,62 @@ fn builtin_system(
             )
         })?;
 
-    let output = context.with_interpreter(|interp| {
-        let mut cmd = std::process::Command::new("sh");
-        cmd.arg("-c")
-            .arg(&command)
-            .current_dir(interp.get_working_dir())
-            .env_clear()
-            .envs(interp.env_vars_snapshot());
-        cmd.status().map_err(|source| SystemError::Command {
-            command: command.clone(),
-            source,
-        })
-    })?;
+    let intern = named
+        .iter()
+        .find(|(n, _)| n == "intern")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| args.get(1).and_then(|v| v.as_vector()?.as_logical_scalar()))
+        .unwrap_or(false);
 
-    let code = i64::from(output.code().unwrap_or(-1));
-    Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
+    if intern {
+        // Capture stdout and return as character vector
+        let output = context.with_interpreter(|interp| {
+            let mut cmd = std::process::Command::new("sh");
+            cmd.arg("-c")
+                .arg(&command)
+                .current_dir(interp.get_working_dir())
+                .env_clear()
+                .envs(interp.env_vars_snapshot());
+            cmd.output().map_err(|source| SystemError::Command {
+                command: command.clone(),
+                source,
+            })
+        })?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<Option<String>> =
+            stdout.lines().map(|line| Some(line.to_string())).collect();
+        Ok(RValue::vec(Vector::Character(lines.into())))
+    } else {
+        // Run command and return exit code
+        let output = context.with_interpreter(|interp| {
+            let mut cmd = std::process::Command::new("sh");
+            cmd.arg("-c")
+                .arg(&command)
+                .current_dir(interp.get_working_dir())
+                .env_clear()
+                .envs(interp.env_vars_snapshot());
+            cmd.status().map_err(|source| SystemError::Command {
+                command: command.clone(),
+                source,
+            })
+        })?;
+
+        let code = i64::from(output.code().unwrap_or(-1));
+        Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
+    }
 }
 
-/// Execute a command with arguments and return its exit code.
+/// Execute a command with arguments, optionally capturing stdout/stderr.
 ///
 /// @param command character scalar: the program to run
-/// @param args character vector: command-line arguments
-/// @return integer scalar: the process exit code
+/// @param args character vector: command-line arguments (default: none)
+/// @param stdout logical or character: TRUE = capture to character vector,
+///   FALSE = discard, "" = inherit (default), or a file path to redirect to
+/// @param stderr logical or character: TRUE = capture, FALSE = discard,
+///   "" = inherit (default), or a file path to redirect to
+/// @return integer scalar (exit code) when stdout is not captured, or
+///   character vector of captured output with "status" attribute set to exit code
 #[interpreter_builtin(name = "system2", min_args = 1)]
 fn builtin_system2(
     args: &[RValue],
@@ -1264,20 +1303,82 @@ fn builtin_system2(
         .map(|v| v.to_characters().into_iter().flatten().collect())
         .unwrap_or_default();
 
-    let output = context.with_interpreter(|interp| {
-        let mut cmd = std::process::Command::new(&command);
-        cmd.args(&cmd_args)
-            .current_dir(interp.get_working_dir())
-            .env_clear()
-            .envs(interp.env_vars_snapshot());
-        cmd.status().map_err(|source| SystemError::Command {
-            command: command.clone(),
-            source,
-        })
-    })?;
+    // Parse stdout parameter: TRUE = capture, FALSE = discard, "" = inherit
+    let stdout_val = named.iter().find(|(n, _)| n == "stdout").map(|(_, v)| v);
+    let capture_stdout = stdout_val
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
 
-    let code = i64::from(output.code().unwrap_or(-1));
-    Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
+    // Parse stderr parameter: TRUE = capture, FALSE = discard, "" = inherit
+    let stderr_val = named.iter().find(|(n, _)| n == "stderr").map(|(_, v)| v);
+    let capture_stderr = stderr_val
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    if capture_stdout || capture_stderr {
+        // Capture output
+        let output = context.with_interpreter(|interp| {
+            let mut cmd = std::process::Command::new(&command);
+            cmd.args(&cmd_args)
+                .current_dir(interp.get_working_dir())
+                .env_clear()
+                .envs(interp.env_vars_snapshot());
+
+            if capture_stdout {
+                cmd.stdout(std::process::Stdio::piped());
+            }
+            if capture_stderr {
+                cmd.stderr(std::process::Stdio::piped());
+            }
+
+            cmd.output().map_err(|source| SystemError::Command {
+                command: command.clone(),
+                source,
+            })
+        })?;
+
+        let code = i64::from(output.status.code().unwrap_or(-1));
+
+        // Build the captured output lines
+        let mut lines: Vec<Option<String>> = Vec::new();
+
+        if capture_stdout {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                lines.push(Some(line.to_string()));
+            }
+        }
+
+        if capture_stderr {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            for line in stderr.lines() {
+                lines.push(Some(line.to_string()));
+            }
+        }
+
+        let mut rv = RVector::from(Vector::Character(lines.into()));
+        rv.set_attr(
+            "status".to_string(),
+            RValue::vec(Vector::Integer(vec![Some(code)].into())),
+        );
+        Ok(RValue::Vector(rv))
+    } else {
+        // No capture — just run and return exit code
+        let output = context.with_interpreter(|interp| {
+            let mut cmd = std::process::Command::new(&command);
+            cmd.args(&cmd_args)
+                .current_dir(interp.get_working_dir())
+                .env_clear()
+                .envs(interp.env_vars_snapshot());
+            cmd.status().map_err(|source| SystemError::Command {
+                command: command.clone(),
+                source,
+            })
+        })?;
+
+        let code = i64::from(output.code().unwrap_or(-1));
+        Ok(RValue::vec(Vector::Integer(vec![Some(code)].into())))
+    }
 }
 
 /// Set environment variables in the interpreter's private environment.
@@ -1302,40 +1403,105 @@ fn interp_sys_setenv(
     Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
 }
 
+/// Unset environment variables in the interpreter's private environment.
+///
+/// @param x character vector of variable names to unset
+/// @return logical vector (TRUE for each successfully unset)
+#[interpreter_builtin(name = "Sys.unsetenv", min_args = 1)]
+fn interp_sys_unsetenv(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let names: Vec<Option<String>> = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
+        .unwrap_or_default();
+
+    let results: Vec<Option<bool>> = names
+        .iter()
+        .map(|n| {
+            if let Some(name) = n {
+                context.with_interpreter(|interp| interp.remove_env_var(name));
+                Some(true)
+            } else {
+                Some(false)
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Logical(results.into())))
+}
+
 /// Look up the full paths of programs on the system PATH.
 ///
 /// @param names character vector: program names to search for
-/// @return character vector: full paths (empty string if not found)
+/// @return named character vector: full paths (empty string if not found),
+///   with names set to the input program names (matching R behavior)
 #[interpreter_builtin(name = "Sys.which", min_args = 1)]
 fn interp_sys_which(
     args: &[RValue],
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let names: Vec<String> = args
-        .iter()
-        .filter_map(|v| v.as_vector()?.as_character_scalar())
-        .collect();
+    // Accept a character vector as the first argument (R's Sys.which(c("ls", "cat")))
+    let names: Vec<Option<String>> = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
+        .unwrap_or_default();
 
     let path_var = context
         .with_interpreter(|interp| interp.get_env_var("PATH"))
         .unwrap_or_default();
-    let path_dirs: Vec<&str> = path_var.split(':').collect();
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let path_dirs: Vec<&str> = path_var.split(sep).collect();
 
     let results: Vec<Option<String>> = names
         .iter()
-        .map(|name| {
+        .map(|name_opt| {
+            let name = match name_opt {
+                Some(n) => n,
+                None => return Some(String::new()),
+            };
+            // If the name contains a path separator, check it directly
+            if name.contains('/') || (cfg!(windows) && name.contains('\\')) {
+                let p = Path::new(name);
+                if p.is_file() {
+                    return Some(p.to_string_lossy().to_string());
+                }
+                return Some(String::new());
+            }
             for dir in &path_dirs {
                 let candidate = Path::new(dir).join(name);
                 if candidate.is_file() {
-                    return Some(candidate.to_string_lossy().to_string());
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(meta) = candidate.metadata() {
+                            if meta.permissions().mode() & 0o111 != 0 {
+                                return Some(candidate.to_string_lossy().to_string());
+                            }
+                        }
+                        continue;
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        return Some(candidate.to_string_lossy().to_string());
+                    }
                 }
             }
             Some(String::new())
         })
         .collect();
 
-    Ok(RValue::vec(Vector::Character(results.into())))
+    // Return named character vector
+    let mut rv = RVector::from(Vector::Character(results.into()));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(names.into())),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 /// Set the interpreter's working directory.
@@ -1401,9 +1567,12 @@ fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
 
 // === System info ===
 
-/// Return system information (OS, machine, hostname, user).
+/// Return system information as a named character vector.
 ///
-/// @return named list with sysname, nodename, machine, login, and user
+/// Returns all 7 fields that R's Sys.info() provides: sysname, nodename,
+/// release, version, machine, login, user.
+///
+/// @return named character vector with 7 elements
 #[interpreter_builtin(name = "Sys.info")]
 fn builtin_sys_info(
     _args: &[RValue],
@@ -1435,6 +1604,23 @@ fn builtin_sys_info(
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    // Get OS release and version via uname -r / uname -v on Unix
+    let release = std::process::Command::new("uname")
+        .arg("-r")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let version = std::process::Command::new("uname")
+        .arg("-v")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
     let user = context
         .with_interpreter(|interp| {
             interp
@@ -1443,37 +1629,32 @@ fn builtin_sys_info(
         })
         .unwrap_or_else(|| "unknown".to_string());
 
-    let mut list = RList::new(vec![
-        (
-            Some("sysname".to_string()),
-            RValue::vec(Vector::Character(vec![Some(sysname.to_string())].into())),
-        ),
-        (
-            Some("nodename".to_string()),
-            RValue::vec(Vector::Character(vec![Some(nodename)].into())),
-        ),
-        (
-            Some("machine".to_string()),
-            RValue::vec(Vector::Character(vec![Some(machine.to_string())].into())),
-        ),
-        (
-            Some("login".to_string()),
-            RValue::vec(Vector::Character(vec![Some(user.clone())].into())),
-        ),
-        (
-            Some("user".to_string()),
-            RValue::vec(Vector::Character(vec![Some(user)].into())),
-        ),
-    ]);
+    // R returns a named character vector, not a list
+    let field_names = vec![
+        Some("sysname".to_string()),
+        Some("nodename".to_string()),
+        Some("release".to_string()),
+        Some("version".to_string()),
+        Some("machine".to_string()),
+        Some("login".to_string()),
+        Some("user".to_string()),
+    ];
+    let field_values = vec![
+        Some(sysname.to_string()),
+        Some(nodename),
+        Some(release),
+        Some(version),
+        Some(machine.to_string()),
+        Some(user.clone()),
+        Some(user),
+    ];
 
-    // Set names attribute for named character vector behavior
-    let names: Vec<Option<String>> = list.values.iter().map(|(n, _)| n.clone()).collect();
-    list.set_attr(
+    let mut rv = RVector::from(Vector::Character(field_values.into()));
+    rv.set_attr(
         "names".to_string(),
-        RValue::vec(Vector::Character(names.into())),
+        RValue::vec(Vector::Character(field_names.into())),
     );
-
-    Ok(RValue::List(list))
+    Ok(RValue::Vector(rv))
 }
 
 /// Get the current timezone from the TZ environment variable.
@@ -1737,4 +1918,44 @@ fn interp_system_file(
 fn builtin_sys_getpid(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
     let pid = i64::from(std::process::id());
     Ok(RValue::vec(Vector::Integer(vec![Some(pid)].into())))
+}
+
+/// Open a file or URL with the system's default application.
+///
+/// Uses `open` on macOS, `xdg-open` on Linux, and `cmd /c start` on Windows.
+/// This is an interactive utility — it launches an external process and returns
+/// immediately without waiting for it to finish.
+///
+/// @param file character scalar: the file path or URL to open
+/// @return NULL (invisibly)
+#[builtin(name = "shell.exec", min_args = 1)]
+fn builtin_shell_exec(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let file = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'file' must be a character string".to_string(),
+            )
+        })?;
+
+    let result = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&file).spawn()
+    } else if cfg!(target_os = "linux") {
+        std::process::Command::new("xdg-open").arg(&file).spawn()
+    } else if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &file])
+            .spawn()
+    } else {
+        return Err(RError::other(
+            "shell.exec is not supported on this platform".to_string(),
+        ));
+    };
+
+    match result {
+        Ok(_) => Ok(RValue::Null),
+        Err(e) => Err(RError::other(format!("cannot open '{}': {}", file, e))),
+    }
 }

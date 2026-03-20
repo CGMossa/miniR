@@ -528,6 +528,11 @@ impl Interpreter {
         self.env_vars.borrow_mut().insert(name, value);
     }
 
+    /// Remove a per-interpreter environment variable (does not mutate process state).
+    pub(crate) fn remove_env_var(&self, name: &str) {
+        self.env_vars.borrow_mut().remove(name);
+    }
+
     /// Register an S3 method in the per-interpreter registry.
     /// This is used by NAMESPACE S3method() directives to make methods
     /// discoverable by S3 dispatch without polluting the base environment.

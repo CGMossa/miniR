@@ -1290,33 +1290,6 @@ fn builtin_command_args(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
     )))
 }
 
-/// Sys.unsetenv — unset environment variables.
-///
-/// @param x character vector of variable names to unset
-/// @return logical vector (TRUE for each successfully unset)
-/// @namespace base
-#[builtin(name = "Sys.unsetenv", min_args = 1)]
-fn builtin_sys_unsetenv(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let names = match args.first() {
-        Some(RValue::Vector(v)) => v.to_characters(),
-        _ => vec![],
-    };
-    let results: Vec<Option<bool>> = names
-        .iter()
-        .map(|n| {
-            if let Some(name) = n {
-                // Note: this uses process-level env vars, not per-interpreter
-                // A proper implementation would use interp.remove_env_var()
-                unsafe { std::env::remove_var(name) };
-                Some(true)
-            } else {
-                Some(false)
-            }
-        })
-        .collect();
-    Ok(RValue::vec(Vector::Logical(results.into())))
-}
-
 // endregion
 
 // region: TLS stub (when tls feature is disabled)
