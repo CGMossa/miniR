@@ -104,6 +104,8 @@ flate2 = { version = "1", optional = true }
 textwrap = { version = "0.16", default-features = false }
 indicatif = { version = "0.17", optional = true }
 crossterm = { version = "0.29", optional = true }
+parquet = { version = "53", optional = true, default-features = false, features = ["arrow"] }
+arrow = { version = "53", optional = true, default-features = false, features = ["csv", "json"] }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
@@ -148,3 +150,4 @@ bytecount = ["dep:bytecount"]
 compression = ["dep:flate2"]
 progress = ["dep:indicatif"]
 parallel = ["dep:rayon"]
+parquet = ["dep:parquet", "dep:arrow"]

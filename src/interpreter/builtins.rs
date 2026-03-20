@@ -19,6 +19,8 @@ mod json;
 pub mod math;
 #[cfg(feature = "tls")]
 mod net;
+#[cfg(feature = "parquet")]
+mod parquet;
 mod pre_eval;
 #[cfg(feature = "progress")]
 pub mod progress;
