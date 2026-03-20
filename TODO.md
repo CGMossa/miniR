@@ -2,27 +2,36 @@
 
 ## Done
 
-762 builtins, 971 tests, 7014/7014 R parse, 10838/10841 Rd parse,
-5748/6769 CRAN source (84%), 109 packages at 100%.
+768 builtins, 1048 tests, 7014/7014 R parse, 10838/10841 Rd parse,
+5956/6748 CRAN source (88%), 117 packages at 100%, 0 crashes.
 
 ## Open
+
+### Near-term — improve CRAN source rate
+
+The remaining 12% failures are dominated by cross-package dependencies:
+- `R6Class` / `R6::R6Class` — need library(R6) to work
+- `rlang::abort`, `on_load` — need library(rlang)
+- `magrittr::%>%` — need library(magrittr)
+- `tidyselect::contains` — need library(tidyselect)
+
+These need `library()` to actually load R packages from .libPaths(),
+which is implemented but needs real installed packages on disk.
 
 ### WASM target
 
 - [x] reedline/crossterm/nu-ansi-term gated behind `repl` feature
-- [ ] `linkme` (distributed_slice) doesn't support wasm32 — blocks WASM entirely
-- [ ] Need alternative builtin registration for WASM (manual Vec or build.rs codegen)
+- [ ] `linkme` (distributed_slice) doesn't support wasm32
 
 ### Graphics
 
-- [ ] egui-based interactive plotting (see `plans/egui-graphics.md`)
+- [ ] egui-based interactive plotting
 - [ ] SVG/PNG file device output
 
 ### Performance
 
-- [ ] `fnv` — faster HashMap for environment lookups (vendored, plan exists)
-- [ ] `smallvec` — stack-allocated small vectors for attrs/short args (vendored, plan exists)
-- [ ] `memchr` — SIMD-accelerated fixed=TRUE grep/grepl (vendored, plan exists)
+- [x] `fnv` — faster HashMap for environment lookups
+- [ ] `smallvec` — stack-allocated small vectors for attrs/short args
 
 ### Deferred
 
