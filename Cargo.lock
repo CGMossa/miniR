@@ -1304,6 +1304,7 @@ dependencies = [
  "libm",
  "linkme",
  "log",
+ "memchr",
  "miette",
  "minir-macros",
  "nalgebra",

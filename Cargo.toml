@@ -57,6 +57,7 @@ derive_more = { version = "2.1", features = [
 fnv = "1"
 indexmap = "2"
 linkme = "0.3"
+memchr = "2"
 nalgebra = { version = "0.34", optional = true, default-features = false, features = ["std"] }
 ndarray = { version = "0.17", optional = true }
 csv = { version = "1.4", optional = true }

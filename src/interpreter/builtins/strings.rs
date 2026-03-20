@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bstr::ByteSlice;
+use memchr::memmem;
 use unicode_width::UnicodeWidthStr;
 
 use super::CallArgs;
@@ -80,6 +81,77 @@ fn convert_replacement(repl: &str) -> String {
     }
     result
 }
+
+// region: memchr fixed-pattern helpers
+
+/// Check whether `haystack` contains `needle` using SIMD-accelerated memchr.
+fn fixed_contains(haystack: &str, needle: &str) -> bool {
+    memmem::find(haystack.as_bytes(), needle.as_bytes()).is_some()
+}
+
+/// Case-insensitive fixed-pattern containment check.
+fn fixed_contains_ignorecase(haystack: &str, needle: &str) -> bool {
+    let h = haystack.to_lowercase();
+    let n = needle.to_lowercase();
+    memmem::find(h.as_bytes(), n.as_bytes()).is_some()
+}
+
+/// Replace the first occurrence of `needle` in `haystack` with `replacement`.
+fn fixed_sub(haystack: &str, needle: &str, replacement: &str) -> String {
+    if let Some(pos) = memmem::find(haystack.as_bytes(), needle.as_bytes()) {
+        let mut result = String::with_capacity(haystack.len() - needle.len() + replacement.len());
+        result.push_str(&haystack[..pos]);
+        result.push_str(replacement);
+        result.push_str(&haystack[pos + needle.len()..]);
+        result
+    } else {
+        haystack.to_string()
+    }
+}
+
+/// Replace all occurrences of `needle` in `haystack` with `replacement`.
+fn fixed_gsub(haystack: &str, needle: &str, replacement: &str) -> String {
+    if needle.is_empty() {
+        // Match R behavior for empty pattern: insert replacement before each char and after the last
+        let mut result =
+            String::with_capacity(haystack.len() + replacement.len() * (haystack.len() + 1));
+        for ch in haystack.chars() {
+            result.push_str(replacement);
+            result.push(ch);
+        }
+        result.push_str(replacement);
+        return result;
+    }
+    let finder = memmem::Finder::new(needle.as_bytes());
+    let mut result = String::with_capacity(haystack.len());
+    let mut last_end = 0;
+    for pos in finder.find_iter(haystack.as_bytes()) {
+        result.push_str(&haystack[last_end..pos]);
+        result.push_str(replacement);
+        last_end = pos + needle.len();
+    }
+    result.push_str(&haystack[last_end..]);
+    result
+}
+
+/// Split `haystack` on all occurrences of `needle`.
+fn fixed_split(haystack: &str, needle: &str) -> Vec<Option<String>> {
+    if needle.is_empty() {
+        // Empty split: split into individual characters (handled by caller)
+        return haystack.chars().map(|c| Some(c.to_string())).collect();
+    }
+    let finder = memmem::Finder::new(needle.as_bytes());
+    let mut parts = Vec::new();
+    let mut last_end = 0;
+    for pos in finder.find_iter(haystack.as_bytes()) {
+        parts.push(Some(haystack[last_end..pos].to_string()));
+        last_end = pos + needle.len();
+    }
+    parts.push(Some(haystack[last_end..].to_string()));
+    parts
+}
+
+// endregion
 
 /// Extract substrings from character strings.
 ///
@@ -250,6 +322,27 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
+
+    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
+    if fixed && !ignore_case {
+        return match args.get(2) {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                let result: Vec<Option<String>> = vals
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| fixed_gsub(s, &pattern, &replacement)))
+                    .collect();
+                Ok(RValue::vec(Vector::Character(result.into())))
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
+        };
+    }
+
     let re = build_regex(&pattern, fixed, ignore_case)?;
     let repl = if fixed {
         replacement.clone()
@@ -296,6 +389,27 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
+
+    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
+    if fixed && !ignore_case {
+        return match args.get(2) {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                let result: Vec<Option<String>> = vals
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| fixed_sub(s, &pattern, &replacement)))
+                    .collect();
+                Ok(RValue::vec(Vector::Character(result.into())))
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
+        };
+    }
+
     let re = build_regex(&pattern, fixed, ignore_case)?;
     let repl = if fixed {
         replacement.clone()
@@ -337,6 +451,32 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
+
+    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
+    if fixed {
+        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
+            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
+        } else {
+            Box::new(|s: &str| fixed_contains(s, &pattern))
+        };
+        return match args.get(1) {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                let result: Vec<Option<bool>> = vals
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| contains_fn(s)))
+                    .collect();
+                Ok(RValue::vec(Vector::Logical(result.into())))
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
+        };
+    }
+
     let re = build_regex(&pattern, fixed, ignore_case)?;
     match args.get(1) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
@@ -376,6 +516,43 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
         .unwrap_or(false);
     let (fixed, ignore_case) = get_regex_opts(named);
+
+    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
+    if fixed {
+        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
+            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
+        } else {
+            Box::new(|s: &str| fixed_contains(s, &pattern))
+        };
+        return match args.get(1) {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                if value {
+                    let result: Vec<Option<String>> = vals
+                        .iter()
+                        .filter(|s| s.as_ref().map(|s| contains_fn(s)).unwrap_or(false))
+                        .cloned()
+                        .collect();
+                    Ok(RValue::vec(Vector::Character(result.into())))
+                } else {
+                    let result: Result<Vec<Option<i64>>, RError> = vals
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, s)| s.as_ref().map(|s| contains_fn(s)).unwrap_or(false))
+                        .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
+                        .collect();
+                    Ok(RValue::vec(Vector::Integer(result?.into())))
+                }
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
+        };
+    }
+
     let re = build_regex(&pattern, fixed, ignore_case)?;
 
     match args.get(1) {
@@ -1263,9 +1440,8 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
                             s.chars().map(|c| Some(c.to_string())).collect();
                         RValue::vec(Vector::Character(chars.into()))
                     } else if fixed && !ignore_case {
-                        // Fixed literal split, case-sensitive
-                        let pieces: Vec<Option<String>> =
-                            s.split(&split).map(|p| Some(p.to_string())).collect();
+                        // Fixed literal split, case-sensitive — memchr (SIMD-accelerated)
+                        let pieces = fixed_split(&s, &split);
                         RValue::vec(Vector::Character(pieces.into()))
                     } else {
                         // Regex split
