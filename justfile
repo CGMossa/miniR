@@ -235,4 +235,36 @@ update-cran-test-packages:
         done < "$EXTRAS_FILE"
     fi
 
+    # Resolve Imports: scan every package's DESCRIPTION for Imports/Depends
+    # and fetch any that aren't already in the corpus. Repeat until no new
+    # packages are found (transitive closure).
+    echo -e "\n=== Resolving Imports ==="
+    ROUNDS=0
+    while true; do
+        NEW=0
+        for desc in "$D"/*/DESCRIPTION; do
+            [ -f "$desc" ] || continue
+            # Extract Imports and Depends fields (may span continuation lines)
+            awk '
+                /^(Imports|Depends):/ { sub(/^[^:]*:/, ""); buf=$0; next }
+                /^[[:space:]]/ && buf!="" { buf=buf $0; next }
+                buf!="" { print buf; buf="" }
+                END { if (buf!="") print buf }
+            ' "$desc" | tr ',' '\n' | sed 's/(.*)//g; s/[[:space:]]//g' | while read -r dep; do
+                [ -z "$dep" ] && continue
+                # Skip R itself and base packages
+                case "$dep" in R|base|compiler|datasets|grDevices|graphics|grid|methods|parallel|splines|stats|stats4|tcltk|tools|utils) continue ;; esac
+                if [ ! -d "$D/$dep" ]; then
+                    grab "https://github.com/cran/$dep.git" "$D/$dep" "$dep (import)" || true
+                    NEW=$((NEW+1))
+                    N=$((N+1))
+                fi
+            done
+        done
+        ROUNDS=$((ROUNDS+1))
+        echo "  Round $ROUNDS: fetched $NEW new packages"
+        [ "$NEW" -eq 0 ] && break
+        [ "$ROUNDS" -ge 5 ] && break  # safety limit
+    done
+
     echo -e "\nDone. $((N-FAIL))/$N packages ($FAIL failed)."
