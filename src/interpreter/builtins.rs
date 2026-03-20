@@ -3174,24 +3174,97 @@ fn interp_readline(
     )))
 }
 
-/// Get an environment variable from the interpreter's environment.
+/// Get environment variable(s) from the interpreter's environment.
 ///
-/// @param x name of the environment variable
-/// @return character scalar with the variable's value, or "" if unset
+/// @param x character vector of variable names. If missing, returns all env vars
+///   as a named character vector.
+/// @param unset character scalar: value to return for unset variables (default "")
+/// @param names logical: if TRUE (default), set names on the result
+/// @return character vector with the variable values
 #[interpreter_builtin(name = "Sys.getenv")]
 fn interp_sys_getenv(
     args: &[RValue],
-    _: &[(String, RValue)],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let name = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
+    // Extract the `unset` parameter (default: "")
+    // unset = None means NA was passed (return NA for missing vars)
+    // unset = Some("") means default (return "" for missing vars)
+    let unset: Option<String> = match named.iter().find(|(n, _)| n == "unset") {
+        None => Some(String::new()), // not specified → default ""
+        Some((_, v)) => {
+            // Check for NA — if the value is a character NA, return None
+            if let Some(vec) = v.as_vector() {
+                let chars = vec.to_characters();
+                if chars.len() == 1 && chars[0].is_none() {
+                    None // NA unset → return NA for missing vars
+                } else {
+                    Some(chars.into_iter().next().flatten().unwrap_or_default())
+                }
+            } else {
+                Some(String::new())
+            }
+        }
+    };
+
+    let use_names = named
+        .iter()
+        .find(|(n, _)| n == "names")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    // If no args, return all env vars as a named vector
+    let first_arg = args.first();
+    if first_arg.is_none() {
+        let snapshot = context.with_interpreter(|interp| interp.env_vars_snapshot());
+        let mut pairs: Vec<(String, String)> = snapshot.into_iter().collect();
+        pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        let names_vec: Vec<Option<String>> = pairs.iter().map(|(n, _)| Some(n.clone())).collect();
+        let vals: Vec<Option<String>> = pairs.into_iter().map(|(_, v)| Some(v)).collect();
+        let mut rv = RVector::from(Vector::Character(vals.into()));
+        rv.set_attr(
+            "names".to_string(),
+            RValue::vec(Vector::Character(names_vec.into())),
+        );
+        return Ok(RValue::Vector(rv));
+    }
+
+    // Vectorized: support Sys.getenv(c("HOME", "NOSUCH"))
+    let var_names: Vec<Option<String>> = first_arg
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
         .unwrap_or_default();
-    let val = context
-        .with_interpreter(|interp| interp.get_env_var(&name))
-        .unwrap_or_default();
-    Ok(RValue::vec(Vector::Character(vec![Some(val)].into())))
+
+    let values: Vec<Option<String>> = var_names
+        .iter()
+        .map(|name_opt| {
+            let name = name_opt.as_deref().unwrap_or("");
+            let val = context.with_interpreter(|interp| interp.get_env_var(name));
+            match val {
+                Some(v) => Some(v),
+                None => unset.clone(), // None → NA, Some(s) → default value
+            }
+        })
+        .collect();
+
+    if use_names && var_names.len() > 1 {
+        let names_vec: Vec<Option<String>> = var_names.clone();
+        let mut rv = RVector::from(Vector::Character(values.into()));
+        rv.set_attr(
+            "names".to_string(),
+            RValue::vec(Vector::Character(names_vec.into())),
+        );
+        Ok(RValue::Vector(rv))
+    } else if use_names && var_names.len() == 1 {
+        let mut rv = RVector::from(Vector::Character(values.into()));
+        rv.set_attr(
+            "names".to_string(),
+            RValue::vec(Vector::Character(var_names.into())),
+        );
+        Ok(RValue::Vector(rv))
+    } else {
+        Ok(RValue::vec(Vector::Character(values.into())))
+    }
 }
 
 // (file.path, file.exists, readLines, writeLines, read.csv, write.csv — io.rs)
