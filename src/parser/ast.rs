@@ -170,6 +170,7 @@ pub enum BinaryOp {
 pub enum SpecialOp {
     In,
     MatMul,
+    Kronecker,
     Walrus,
     Other,
 }
