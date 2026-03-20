@@ -100,4 +100,38 @@ fn nchar_graphemes_vectorized() {
     .unwrap();
 }
 
+#[test]
+fn nchar_chars_matches_bytes_for_ascii() {
+    // When bytecount is enabled, nchar(x, type="chars") uses SIMD-accelerated
+    // bytecount::num_chars(). Verify it agrees with the byte length for ASCII.
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        x <- c("hello", "world", "abc", "")
+        chars <- nchar(x, type = "chars")
+        bytes <- nchar(x, type = "bytes")
+        stopifnot(identical(chars, bytes))
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn nchar_chars_counts_codepoints_for_multibyte() {
+    // Multi-byte UTF-8 strings: bytecount::num_chars counts code points, not bytes
+    let mut r = Session::new();
+    r.eval_source(
+        r#"
+        # "caf\u00e9" is 4 code points but 5 bytes (é is 2 bytes in UTF-8)
+        stopifnot(nchar("café", type = "chars") == 4L)
+        stopifnot(nchar("café", type = "bytes") == 5L)
+        # CJK character: 1 code point, 3 bytes
+        s <- intToUtf8(23383L)
+        stopifnot(nchar(s, type = "chars") == 1L)
+        stopifnot(nchar(s, type = "bytes") == 3L)
+    "#,
+    )
+    .unwrap();
+}
+
 // endregion

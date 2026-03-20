@@ -1100,6 +1100,9 @@ fn builtin_nchar(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                             "bytes" => s.len(),
                             "width" => UnicodeWidthStr::width(s.as_str()),
                             "graphemes" => s.graphemes(true).count(),
+                            #[cfg(feature = "bytecount")]
+                            _ => bytecount::num_chars(s.as_bytes()), // SIMD-accelerated UTF-8 char count
+                            #[cfg(not(feature = "bytecount"))]
                             _ => s.chars().count(), // "chars" or default
                         };
                         i64::try_from(n).unwrap_or(0)
