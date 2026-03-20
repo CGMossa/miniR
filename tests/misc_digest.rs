@@ -315,3 +315,35 @@ fn md5_errors_with_suggestion() {
 }
 
 // endregion
+
+// region: CRC32
+
+#[test]
+fn digest_crc32() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+        result <- digest("hello", algo="crc32")
+        # CRC32 of "hello" = 3610a686
+        stopifnot(result == "3610a686")
+        stopifnot(nchar(result) == 8)
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn digest_crc32_empty_string() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+        result <- digest("", algo="crc32")
+        # CRC32 of empty string = 00000000
+        stopifnot(result == "00000000")
+        stopifnot(nchar(result) == 8)
+    "#,
+    )
+    .unwrap();
+}
+
+// endregion

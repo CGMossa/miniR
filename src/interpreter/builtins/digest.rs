@@ -1,8 +1,9 @@
-//! Cryptographic digest builtins (SHA-256, SHA-512, BLAKE3).
+//! Cryptographic digest builtins (SHA-256, SHA-512, BLAKE3, CRC32).
 //!
 //! Provides `digest(x, algo)` for hashing character strings, `md5(x)` as
 //! an error stub directing users to SHA-256, and BLAKE3 builtins for fast
-//! hashing of strings, raw vectors, and files.
+//! hashing of strings, raw vectors, and files. CRC32 is available via
+//! `digest(x, algo="crc32")` using the `crc32fast` crate.
 
 #[cfg(feature = "digest")]
 use sha2::{Digest, Sha256, Sha512};
@@ -47,14 +48,14 @@ fn extract_input_bytes(args: &[RValue]) -> Result<Result<Vec<u8>, RValue>, RErro
 
 // region: digest
 
-/// Compute a cryptographic hash of a character string.
+/// Compute a hash of a character string.
 ///
-/// Supports SHA-256 (default), SHA-512, and BLAKE3 (when the blake3 feature
-/// is enabled). Returns the hash as a lowercase hex string, matching the
-/// output format of R's `digest` package.
+/// Supports SHA-256 (default), SHA-512, CRC32, and BLAKE3 (when the blake3
+/// feature is enabled). Returns the hash as a lowercase hex string, matching
+/// the output format of R's `digest` package.
 ///
 /// @param x character scalar to hash
-/// @param algo algorithm name: "sha256" (default), "sha512", or "blake3"
+/// @param algo algorithm name: "sha256" (default), "sha512", "crc32", or "blake3"
 /// @return character scalar containing the hex digest
 #[cfg(feature = "digest")]
 #[builtin(min_args = 1, namespace = "digest")]
@@ -83,6 +84,10 @@ fn builtin_digest(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
             let result = Sha512::digest(&input);
             format!("{:x}", result)
         }
+        "crc32" => {
+            let checksum = crc32fast::hash(&input);
+            format!("{:08x}", checksum)
+        }
         #[cfg(feature = "blake3")]
         "blake3" => {
             let result = blake3::hash(&input);
@@ -90,9 +95,9 @@ fn builtin_digest(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
         }
         other => {
             #[cfg(feature = "blake3")]
-            let supported = "\"sha256\", \"sha512\", or \"blake3\"";
+            let supported = "\"sha256\", \"sha512\", \"crc32\", or \"blake3\"";
             #[cfg(not(feature = "blake3"))]
-            let supported = "\"sha256\" or \"sha512\"";
+            let supported = "\"sha256\", \"sha512\", or \"crc32\"";
             return Err(RError::new(
                 RErrorKind::Argument,
                 format!(
