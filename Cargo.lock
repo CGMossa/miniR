@@ -1292,6 +1292,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "flate2",
+ "fnv",
  "glob",
  "globset",
  "indexmap",
