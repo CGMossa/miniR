@@ -2,7 +2,7 @@
 //! condition constructors, condition accessors, and restart invocation.
 
 use crate::interpreter::value::*;
-use crate::interpreter::BuiltinContext;
+use crate::interpreter::{BuiltinContext, DiagnosticStyle};
 use itertools::Itertools;
 use minir_macros::{builtin, interpreter_builtin};
 
@@ -76,7 +76,8 @@ fn interp_warning(
             if !muffled {
                 // Extract message from condition for display
                 let msg = condition_message_str(first);
-                context.write_err(&format!("Warning message:\n{}\n", msg));
+                context.write_err_colored("Warning message:\n", DiagnosticStyle::Warning);
+                context.write_err(&format!("{}\n", msg));
             }
             return Ok(RValue::Null);
         }
@@ -92,7 +93,8 @@ fn interp_warning(
     let muffled = context
         .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
-        context.write_err(&format!("Warning message:\n{}\n", msg));
+        context.write_err_colored("Warning message:\n", DiagnosticStyle::Warning);
+        context.write_err(&format!("{}\n", msg));
     }
     Ok(RValue::Null)
 }
@@ -120,9 +122,9 @@ fn interp_message(
             if !muffled {
                 let msg = condition_message_str(first);
                 if append_lf {
-                    context.write_err(&format!("{}\n", msg));
+                    context.write_err_colored(&format!("{}\n", msg), DiagnosticStyle::Message);
                 } else {
-                    context.write_err(&msg);
+                    context.write_err_colored(&msg, DiagnosticStyle::Message);
                 }
             }
             return Ok(RValue::Null);
@@ -141,9 +143,9 @@ fn interp_message(
         .with_interpreter(|interp| interp.signal_condition(&condition, &interp.global_env))?;
     if !muffled {
         if append_lf {
-            context.write_err(&format!("{}\n", msg));
+            context.write_err_colored(&format!("{}\n", msg), DiagnosticStyle::Message);
         } else {
-            context.write_err(&msg);
+            context.write_err_colored(&msg, DiagnosticStyle::Message);
         }
     }
     Ok(RValue::Null)

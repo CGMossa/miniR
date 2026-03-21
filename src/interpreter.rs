@@ -148,6 +148,21 @@ pub(crate) struct ConditionHandler {
     pub env: Environment,
 }
 
+/// Semantic styles for colored diagnostic output.
+///
+/// Used by `Interpreter::write_stderr_colored` to select the appropriate color
+/// when the `color` feature is enabled and stderr is connected to a terminal.
+/// When color is unavailable or disabled, the text is written uncolored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticStyle {
+    /// Error messages — displayed in bold red.
+    Error,
+    /// Warning messages — displayed in bold yellow.
+    Warning,
+    /// Informational messages — displayed in cyan.
+    Message,
+}
+
 pub struct Interpreter {
     pub global_env: Environment,
     /// Per-interpreter stdout writer. Defaults to `std::io::stdout()`.
@@ -155,6 +170,10 @@ pub struct Interpreter {
     pub(crate) stdout: RefCell<Box<dyn Write>>,
     /// Per-interpreter stderr writer. Defaults to `std::io::stderr()`.
     pub(crate) stderr: RefCell<Box<dyn Write>>,
+    /// Whether to emit colored diagnostics to stderr. True when stderr is a
+    /// real terminal and the `color` feature is enabled; false for captured
+    /// output sessions or when the feature is off.
+    color_stderr: bool,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
     call_stack: RefCell<Vec<CallFrame>>,
     /// Stack of handler sets from withCallingHandlers() calls.
@@ -333,10 +352,15 @@ impl Interpreter {
         builtins::register_builtins(&base_env);
         let global_env = Environment::new_child(&base_env);
         global_env.set_name("R_GlobalEnv".to_string());
+        let color_stderr = {
+            use std::io::IsTerminal;
+            std::io::stderr().is_terminal()
+        };
         let interp = Interpreter {
             global_env,
             stdout: RefCell::new(Box::new(std::io::stdout())),
             stderr: RefCell::new(Box::new(std::io::stderr())),
+            color_stderr,
             s3_dispatch_stack: RefCell::new(Vec::new()),
             call_stack: RefCell::new(Vec::new()),
             condition_handlers: RefCell::new(Vec::new()),
@@ -580,6 +604,79 @@ impl Interpreter {
     /// Write a message to the interpreter's stderr writer.
     pub(crate) fn write_stderr(&self, msg: &str) {
         let _ = self.stderr.borrow_mut().write_all(msg.as_bytes());
+    }
+
+    /// Whether colored stderr output is enabled for this interpreter.
+    pub fn color_stderr(&self) -> bool {
+        self.color_stderr
+    }
+
+    /// Enable or disable colored stderr output.
+    pub fn set_color_stderr(&mut self, enabled: bool) {
+        self.color_stderr = enabled;
+    }
+
+    /// Write a colored diagnostic message to the interpreter's stderr writer.
+    ///
+    /// When the `color` feature is enabled and `color_stderr` is true, the
+    /// message is written with the appropriate ANSI color. Otherwise, the
+    /// message is written as plain text.
+    pub(crate) fn write_stderr_colored(&self, msg: &str, style: DiagnosticStyle) {
+        if self.try_write_colored(msg, style) {
+            return;
+        }
+        // Fallback: no color
+        self.write_stderr(msg);
+    }
+
+    /// Attempt to write colored text. Returns `true` if color was applied,
+    /// `false` if the caller should fall back to plain text.
+    #[cfg(feature = "color")]
+    fn try_write_colored(&self, msg: &str, style: DiagnosticStyle) -> bool {
+        if !self.color_stderr {
+            return false;
+        }
+        use std::io::Write as _;
+        use termcolor::{Color, ColorSpec, WriteColor};
+
+        // Write colored text to a termcolor buffer, then copy the bytes
+        // into the interpreter's stderr writer.
+        let bufwtr = termcolor::BufferWriter::stderr(termcolor::ColorChoice::Auto);
+        let mut buf = bufwtr.buffer();
+        let color_spec = match style {
+            DiagnosticStyle::Error => {
+                let mut s = ColorSpec::new();
+                s.set_fg(Some(Color::Red)).set_bold(true);
+                s
+            }
+            DiagnosticStyle::Warning => {
+                let mut s = ColorSpec::new();
+                s.set_fg(Some(Color::Yellow)).set_bold(true);
+                s
+            }
+            DiagnosticStyle::Message => {
+                let mut s = ColorSpec::new();
+                s.set_fg(Some(Color::Cyan));
+                s
+            }
+        };
+        if buf.set_color(&color_spec).is_err() {
+            return false;
+        }
+        let _ = buf.write_all(msg.as_bytes());
+        let _ = buf.reset();
+
+        // Copy the buffer contents (with ANSI escapes) into the
+        // interpreter's session-scoped stderr writer.
+        let bytes = buf.as_slice();
+        let _ = self.stderr.borrow_mut().write_all(bytes);
+        true
+    }
+
+    /// Stub when the `color` feature is not enabled.
+    #[cfg(not(feature = "color"))]
+    fn try_write_colored(&self, _msg: &str, _style: DiagnosticStyle) -> bool {
+        false
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {

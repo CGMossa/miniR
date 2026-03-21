@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::RValue;
-use crate::interpreter::Interpreter;
+use crate::interpreter::{DiagnosticStyle, Interpreter};
 use crate::parser::ast::Expr;
 
 pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
@@ -75,6 +75,15 @@ impl<'a> BuiltinContext<'a> {
     /// Write a message to the interpreter's stderr writer.
     pub fn write_err(&self, msg: &str) {
         self.interpreter.write_stderr(msg);
+    }
+
+    /// Write a colored diagnostic message to the interpreter's stderr writer.
+    ///
+    /// When the `color` feature is enabled and stderr is a terminal, the
+    /// message is written with the color corresponding to the given style.
+    /// Otherwise, falls back to plain uncolored text.
+    pub fn write_err_colored(&self, msg: &str, style: DiagnosticStyle) {
+        self.interpreter.write_stderr_colored(msg, style);
     }
 }
 

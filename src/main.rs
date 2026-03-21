@@ -17,7 +17,7 @@ fn main() {
     if args.len() > 1 {
         if args[1] == "-e" {
             if args.len() < 3 {
-                eprintln!("Error: -e requires an expression argument");
+                eprint_colored("Error: -e requires an expression argument\n");
                 std::process::exit(1);
             }
             run_expr(&args[2]);
@@ -27,6 +27,30 @@ fn main() {
     } else {
         run_repl();
     }
+}
+
+/// Print an error message to stderr with red color when available.
+///
+/// Uses `termcolor` for portable colored output when the `color` feature is
+/// enabled and stderr is connected to a terminal. Falls back to plain
+/// `eprint!` otherwise.
+fn eprint_colored(msg: &str) {
+    #[cfg(feature = "color")]
+    {
+        use std::io::Write;
+        use termcolor::{ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+        let mut stream = StandardStream::stderr(ColorChoice::Auto);
+        let mut spec = ColorSpec::new();
+        spec.set_fg(Some(termcolor::Color::Red)).set_bold(true);
+        // Best-effort coloring — fall back to plain text on failure
+        if stream.set_color(&spec).is_ok() {
+            let _ = stream.write_all(msg.as_bytes());
+            let _ = stream.reset();
+            return;
+        }
+    }
+    eprint!("{}", msg);
 }
 
 fn run_expr(source: &str) {
@@ -39,7 +63,7 @@ fn run_expr(source: &str) {
             }
         }
         Err(e) => {
-            eprint!("{}", e.render());
+            eprint_colored(&e.render());
             std::process::exit(1);
         }
     }
@@ -51,7 +75,7 @@ fn run_file(filename: &str) {
     match session.eval_file(filename) {
         Ok(_) => {}
         Err(e) => {
-            eprint!("{}", e.render());
+            eprint_colored(&e.render());
             std::process::exit(1);
         }
     }
@@ -141,7 +165,7 @@ Type 'q()' to quit.
                     // Just print the error — interrupt errors display as
                     // "Interrupted" via their Display impl, no special case needed.
                     // Parse errors use miette rendering when `diagnostics` is on.
-                    eprint!("{}", e.render());
+                    eprint_colored(&e.render());
                 }
             },
             Ok(Signal::CtrlC) => {
@@ -154,7 +178,7 @@ Type 'q()' to quit.
                 break;
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprint_colored(&format!("Error: {}\n", e));
                 break;
             }
         }
