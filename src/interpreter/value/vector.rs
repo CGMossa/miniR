@@ -295,6 +295,22 @@ pub fn format_r_double(f: f64) -> String {
         // Safe: we checked f is finite, integer-valued, and within range
         format!("{}", coerce::f64_to_i64(f).unwrap_or(0))
     } else {
+        format_finite_double(f)
+    }
+}
+
+/// Format a finite, non-integer f64 to its shortest decimal representation.
+///
+/// When the `fast-format` feature is enabled, uses the zmij crate (Schubfach/yy
+/// algorithm) for significantly faster conversion. Falls back to `format!("{}", f)`
+/// otherwise.
+fn format_finite_double(f: f64) -> String {
+    #[cfg(feature = "fast-format")]
+    {
+        zmij::Buffer::new().format_finite(f).to_owned()
+    }
+    #[cfg(not(feature = "fast-format"))]
+    {
         format!("{}", f)
     }
 }
