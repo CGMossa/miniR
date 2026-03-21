@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use aho_corasick::AhoCorasick;
 use bstr::ByteSlice;
 use memchr::memmem;
 use unicode_width::UnicodeWidthStr;
@@ -84,29 +85,19 @@ fn convert_replacement(repl: &str) -> String {
 
 // region: memchr fixed-pattern helpers
 
-/// Check whether `haystack` contains `needle` using SIMD-accelerated memchr.
-fn fixed_contains(haystack: &str, needle: &str) -> bool {
-    memmem::find(haystack.as_bytes(), needle.as_bytes()).is_some()
-}
-
-/// Case-insensitive fixed-pattern containment check.
-fn fixed_contains_ignorecase(haystack: &str, needle: &str) -> bool {
-    let h = haystack.to_lowercase();
-    let n = needle.to_lowercase();
-    memmem::find(h.as_bytes(), n.as_bytes()).is_some()
-}
-
-/// Replace the first occurrence of `needle` in `haystack` with `replacement`.
-fn fixed_sub(haystack: &str, needle: &str, replacement: &str) -> String {
-    if let Some(pos) = memmem::find(haystack.as_bytes(), needle.as_bytes()) {
-        let mut result = String::with_capacity(haystack.len() - needle.len() + replacement.len());
-        result.push_str(&haystack[..pos]);
-        result.push_str(replacement);
-        result.push_str(&haystack[pos + needle.len()..]);
-        result
-    } else {
-        haystack.to_string()
-    }
+/// Build an `AhoCorasick` automaton for a single fixed pattern, optionally case-insensitive.
+/// This builds the automaton once and amortizes the cost across many haystack searches.
+fn build_fixed_searcher(pattern: &str, ignore_case: bool) -> Result<AhoCorasick, RError> {
+    let mut builder = aho_corasick::AhoCorasickBuilder::new();
+    builder
+        .ascii_case_insensitive(ignore_case)
+        .kind(Some(aho_corasick::AhoCorasickKind::DFA));
+    builder.build([pattern]).map_err(|e| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("failed to build fixed-pattern searcher: {e}"),
+        )
+    })
 }
 
 /// Replace all occurrences of `needle` in `haystack` with `replacement`.
@@ -149,6 +140,115 @@ fn fixed_split(haystack: &str, needle: &str) -> Vec<Option<String>> {
     }
     parts.push(Some(haystack[last_end..].to_string()));
     parts
+}
+
+// endregion
+
+// region: Approximate (fuzzy) matching helpers
+
+/// Compute the Levenshtein edit distance between two strings.
+/// Uses a single-row DP approach (O(min(m,n)) space).
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let m = a_chars.len();
+    let n = b_chars.len();
+
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
+
+    // Use shorter string as the column dimension for O(min(m,n)) space.
+    // row_chars[i-1] is indexed by the outer loop (length = rows),
+    // col_chars[j-1] is indexed by the inner loop (length = cols).
+    let (row_chars, col_chars, rows, cols) = if m <= n {
+        (&b_chars, &a_chars, n, m)
+    } else {
+        (&a_chars, &b_chars, m, n)
+    };
+
+    let mut prev_row: Vec<usize> = (0..=cols).collect();
+    let mut curr_row: Vec<usize> = vec![0; cols + 1];
+
+    for i in 1..=rows {
+        curr_row[0] = i;
+        for j in 1..=cols {
+            let cost = if row_chars[i - 1] == col_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr_row[j] = (prev_row[j] + 1)
+                .min(curr_row[j - 1] + 1)
+                .min(prev_row[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+
+    prev_row[cols]
+}
+
+/// Check whether `haystack` contains a substring approximately matching `needle`
+/// within the given maximum edit distance. Uses a sliding-window approach:
+/// for each window of length `needle.len() +/- max_dist`, compute Levenshtein distance.
+fn approximate_contains(haystack: &str, needle: &str, max_dist: usize) -> bool {
+    let needle_chars: Vec<char> = needle.chars().collect();
+    let haystack_chars: Vec<char> = haystack.chars().collect();
+    let n_len = needle_chars.len();
+    let h_len = haystack_chars.len();
+
+    if n_len == 0 {
+        return true;
+    }
+
+    // Check windows of varying sizes around the needle length
+    let min_window = n_len.saturating_sub(max_dist);
+    let max_window = (n_len + max_dist).min(h_len);
+
+    for window_size in min_window..=max_window {
+        if window_size > h_len {
+            break;
+        }
+        for start in 0..=(h_len - window_size) {
+            let window: String = haystack_chars[start..start + window_size].iter().collect();
+            let needle_str: String = needle_chars.iter().collect();
+            if levenshtein_distance(&window, &needle_str) <= max_dist {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Parse R's `max.distance` argument for agrep/agrepl.
+/// R accepts either a single numeric (fraction of pattern length if < 1, absolute if >= 1)
+/// or a named list. We support the simple numeric case.
+fn parse_max_distance(named: &[(String, RValue)], pattern_len: usize) -> usize {
+    let dist = named
+        .iter()
+        .find(|(n, _)| n == "max.distance")
+        .and_then(|(_, v)| v.as_vector()?.as_double_scalar());
+
+    match dist {
+        Some(d) if d < 1.0 => {
+            // Fraction of pattern length (R default is 0.1)
+            let computed = (d * pattern_len as f64).floor() as usize;
+            computed.max(0)
+        }
+        Some(d) => {
+            // Absolute distance
+            d.floor() as usize
+        }
+        None => {
+            // R default: max.distance = 0.1 (10% of pattern length)
+            let computed = (0.1 * pattern_len as f64).floor() as usize;
+            computed.max(0)
+        }
+    }
 }
 
 // endregion
@@ -383,8 +483,28 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
-    if fixed && !ignore_case {
+    // Fast path: fixed=TRUE uses AhoCorasick (handles ignore.case too)
+    if fixed {
+        // Empty-pattern gsub has special R semantics — keep using the dedicated helper
+        if pattern.is_empty() && !ignore_case {
+            return match args.get(2) {
+                Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                    let Vector::Character(vals) = &rv.inner else {
+                        unreachable!()
+                    };
+                    let result: Vec<Option<String>> = vals
+                        .iter()
+                        .map(|s| s.as_ref().map(|s| fixed_gsub(s, &pattern, &replacement)))
+                        .collect();
+                    Ok(RValue::vec(Vector::Character(result.into())))
+                }
+                _ => Err(RError::new(
+                    RErrorKind::Argument,
+                    "argument is not character".to_string(),
+                )),
+            };
+        }
+        let ac = build_fixed_searcher(&pattern, ignore_case)?;
         return match args.get(2) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -392,7 +512,10 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 };
                 let result: Vec<Option<String>> = vals
                     .iter()
-                    .map(|s| s.as_ref().map(|s| fixed_gsub(s, &pattern, &replacement)))
+                    .map(|s| {
+                        s.as_ref()
+                            .map(|s| ac.replace_all(s, &[replacement.as_str()]))
+                    })
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
             }
@@ -404,11 +527,7 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    let repl = if fixed {
-        replacement.clone()
-    } else {
-        convert_replacement(&replacement)
-    };
+    let repl = convert_replacement(&replacement);
     match args.get(2) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -450,8 +569,9 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
-    if fixed && !ignore_case {
+    // Fast path: fixed=TRUE uses AhoCorasick (handles ignore.case too)
+    if fixed {
+        let ac = build_fixed_searcher(&pattern, ignore_case)?;
         return match args.get(2) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -459,7 +579,23 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                 };
                 let result: Vec<Option<String>> = vals
                     .iter()
-                    .map(|s| s.as_ref().map(|s| fixed_sub(s, &pattern, &replacement)))
+                    .map(|s| {
+                        s.as_ref().map(|s| {
+                            // Replace only the first match
+                            match ac.find(s) {
+                                Some(m) => {
+                                    let mut out = String::with_capacity(
+                                        s.len() - m.len() + replacement.len(),
+                                    );
+                                    out.push_str(&s[..m.start()]);
+                                    out.push_str(&replacement);
+                                    out.push_str(&s[m.end()..]);
+                                    out
+                                }
+                                None => s.to_string(),
+                            }
+                        })
+                    })
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
             }
@@ -471,11 +607,7 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    let repl = if fixed {
-        replacement.clone()
-    } else {
-        convert_replacement(&replacement)
-    };
+    let repl = convert_replacement(&replacement);
     match args.get(2) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -512,13 +644,9 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
+    // Fast path: fixed=TRUE uses AhoCorasick automaton (built once, amortized across vector)
     if fixed {
-        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
-            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
-        } else {
-            Box::new(|s: &str| fixed_contains(s, &pattern))
-        };
+        let ac = build_fixed_searcher(&pattern, ignore_case)?;
         return match args.get(1) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -526,7 +654,7 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
                 };
                 let result: Vec<Option<bool>> = vals
                     .iter()
-                    .map(|s| s.as_ref().map(|s| contains_fn(s)))
+                    .map(|s| s.as_ref().map(|s| ac.is_match(s)))
                     .collect();
                 Ok(RValue::vec(Vector::Logical(result.into())))
             }
@@ -577,13 +705,9 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or(false);
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
+    // Fast path: fixed=TRUE uses AhoCorasick automaton (built once, amortized across vector)
     if fixed {
-        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
-            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
-        } else {
-            Box::new(|s: &str| fixed_contains(s, &pattern))
-        };
+        let ac = build_fixed_searcher(&pattern, ignore_case)?;
         return match args.get(1) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -592,7 +716,7 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 if value {
                     let result: Vec<Option<String>> = vals
                         .iter()
-                        .filter(|s| s.as_ref().map(|s| contains_fn(s)).unwrap_or(false))
+                        .filter(|s| s.as_ref().map(|s| ac.is_match(s)).unwrap_or(false))
                         .cloned()
                         .collect();
                     Ok(RValue::vec(Vector::Character(result.into())))
@@ -600,7 +724,7 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     let result: Result<Vec<Option<i64>>, RError> = vals
                         .iter()
                         .enumerate()
-                        .filter(|(_, s)| s.as_ref().map(|s| contains_fn(s)).unwrap_or(false))
+                        .filter(|(_, s)| s.as_ref().map(|s| ac.is_match(s)).unwrap_or(false))
                         .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
                         .collect();
                     Ok(RValue::vec(Vector::Integer(result?.into())))
@@ -636,6 +760,147 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     .collect();
                 Ok(RValue::vec(Vector::Integer(result?.into())))
             }
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
+}
+
+/// Approximate grep: search for approximate pattern matches in a character vector.
+///
+/// Uses Levenshtein edit distance to find elements that approximately match the pattern.
+/// By default, the maximum distance is 10% of the pattern length (R's default for max.distance = 0.1).
+///
+/// @param pattern character scalar: pattern to approximately match
+/// @param x character vector to search
+/// @param max.distance numeric: maximum edit distance (< 1 means fraction of pattern length)
+/// @param value logical: if TRUE, return matching elements instead of indices
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return integer vector of indices (default) or character vector of matching elements
+#[builtin(name = "agrep", min_args = 2)]
+fn builtin_agrep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let ignore_case = named
+        .iter()
+        .find(|(n, _)| n == "ignore.case")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let value = named
+        .iter()
+        .find(|(n, _)| n == "value")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let max_dist = parse_max_distance(named, pattern.chars().count());
+
+    let match_pattern = if ignore_case {
+        pattern.to_lowercase()
+    } else {
+        pattern.clone()
+    };
+
+    match args.get(1) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            if value {
+                let result: Vec<Option<String>> = vals
+                    .iter()
+                    .filter(|s| {
+                        s.as_ref()
+                            .map(|s| {
+                                let hay = if ignore_case {
+                                    s.to_lowercase()
+                                } else {
+                                    s.to_string()
+                                };
+                                approximate_contains(&hay, &match_pattern, max_dist)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect();
+                Ok(RValue::vec(Vector::Character(result.into())))
+            } else {
+                let result: Result<Vec<Option<i64>>, RError> = vals
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| {
+                        s.as_ref()
+                            .map(|s| {
+                                let hay = if ignore_case {
+                                    s.to_lowercase()
+                                } else {
+                                    s.to_string()
+                                };
+                                approximate_contains(&hay, &match_pattern, max_dist)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
+                    .collect();
+                Ok(RValue::vec(Vector::Integer(result?.into())))
+            }
+        }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
+    }
+}
+
+/// Approximate grepl: test whether a pattern approximately matches each element.
+///
+/// Uses Levenshtein edit distance for fuzzy matching. Returns a logical vector.
+///
+/// @param pattern character scalar: pattern to approximately match
+/// @param x character vector to search
+/// @param max.distance numeric: maximum edit distance (< 1 means fraction of pattern length)
+/// @param ignore.case logical: if TRUE, matching is case-insensitive
+/// @return logical vector indicating which elements approximately match
+#[builtin(name = "agrepl", min_args = 2)]
+fn builtin_agrepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pattern = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let ignore_case = named
+        .iter()
+        .find(|(n, _)| n == "ignore.case")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let max_dist = parse_max_distance(named, pattern.chars().count());
+
+    let match_pattern = if ignore_case {
+        pattern.to_lowercase()
+    } else {
+        pattern.clone()
+    };
+
+    match args.get(1) {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|s| {
+                    s.as_ref().map(|s| {
+                        let hay = if ignore_case {
+                            s.to_lowercase()
+                        } else {
+                            s.to_string()
+                        };
+                        approximate_contains(&hay, &match_pattern, max_dist)
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
         _ => Err(RError::new(
             RErrorKind::Argument,
