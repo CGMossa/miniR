@@ -126,6 +126,7 @@ pub(crate) fn call_function_with_call(
             implementation,
             min_args,
             max_args,
+            formals,
         }) => {
             tracing::Span::current().record("func_type", "builtin");
             trace!(
@@ -134,16 +135,24 @@ pub(crate) fn call_function_with_call(
                 named = named.len(),
                 "call builtin"
             );
+            // Arity checks use the original arg counts (before reordering)
+            // because reordering may duplicate named args into positional slots.
             let actual_args = positional.len() + named.len();
             Interpreter::ensure_builtin_min_arity(name, *min_args, actual_args)
                 .map_err(RFlow::from)?;
+            Interpreter::ensure_builtin_max_arity(name, *max_args, actual_args)
+                .map_err(RFlow::from)?;
+
+            // Reorder args so positional slots match formal parameter order,
+            // regardless of whether the user passed args by name or position.
+            let (reordered_pos, remaining_named) = reorder_builtin_args(positional, named, formals);
             call_builtin(
                 interp,
                 name,
                 implementation,
-                *max_args,
-                positional,
-                named,
+                None, // max already checked above
+                &reordered_pos,
+                &remaining_named,
                 env,
             )
         }
@@ -319,6 +328,77 @@ fn expand_dots_arguments(
             }
         }
     }
+}
+
+/// Reorder positional and named args to match the builtin's formal parameter order.
+///
+/// When `formals` is non-empty, named args that match a formal are placed at
+/// the corresponding slot, and remaining positional args fill the unmatched
+/// slots left-to-right.  This is the same matching R does for closures, applied
+/// at the builtin dispatch boundary so every builtin benefits automatically.
+///
+/// When `formals` is empty (variadic / dots builtins), args pass through unchanged.
+fn reorder_builtin_args(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    formals: &[&str],
+) -> (PositionalArgs, NamedArgs) {
+    if formals.is_empty() || named.is_empty() {
+        // No formals declared (variadic) or no named args — nothing to reorder.
+        return (
+            positional.iter().cloned().collect(),
+            named.iter().cloned().collect(),
+        );
+    }
+
+    let mut matched: Vec<Option<RValue>> = vec![None; formals.len()];
+
+    // Phase 1: match named args to formals (exact match, then unique partial match).
+    for (arg_name, value) in named {
+        // Exact match
+        if let Some(idx) = formals.iter().position(|f| *f == arg_name.as_str()) {
+            matched[idx] = Some(value.clone());
+            continue;
+        }
+        // Partial prefix match — only if unambiguous
+        let candidates: Vec<usize> = formals
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.starts_with(arg_name.as_str()))
+            .map(|(i, _)| i)
+            .collect();
+        if candidates.len() == 1 && matched[candidates[0]].is_none() {
+            matched[candidates[0]] = Some(value.clone());
+        }
+    }
+
+    // Phase 2: fill unmatched formal slots with positional args, left-to-right.
+    let mut pos_iter = positional.iter();
+    for slot in &mut matched {
+        if slot.is_none() {
+            if let Some(val) = pos_iter.next() {
+                *slot = Some(val.clone());
+            }
+        }
+    }
+
+    // Build result: consecutive matched values from the start.
+    // Stop at the first gap — builtins with gaps rely on named-arg lookup
+    // (which still works because `named` is passed through unchanged).
+    let mut result: SmallVec<[RValue; 4]> = SmallVec::new();
+    for slot in &matched {
+        match slot {
+            Some(val) => result.push(val.clone()),
+            None => break,
+        }
+    }
+
+    // Append any overflow positional args (more positional args than formals).
+    result.extend(pos_iter.cloned());
+
+    // Keep the original `named` slice unchanged so builtins that look up
+    // optional params by name (e.g. `named.find("tolerance")`) still work.
+    (result, named.iter().cloned().collect())
 }
 
 fn call_builtin(

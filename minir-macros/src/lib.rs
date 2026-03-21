@@ -25,6 +25,7 @@ fn r_name_to_ident(name: &str) -> String {
         .replace('-', "_")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn descriptor_literal(
     name: &str,
     aliases: &[String],
@@ -33,6 +34,7 @@ fn descriptor_literal(
     max_args: Option<usize>,
     doc: &str,
     namespace: &str,
+    formals: &[String],
 ) -> TokenStream2 {
     let max_args = match max_args {
         Some(max_args) => quote!(Some(#max_args)),
@@ -48,8 +50,33 @@ fn descriptor_literal(
             max_args: #max_args,
             doc: #doc,
             namespace: #namespace,
+            formals: &[#(#formals),*],
         }
     }
+}
+
+/// Extract formal parameter names from a doc string by parsing `@param <name> ...` lines.
+///
+/// Returns an empty list when `@param ...` appears — variadic builtins should
+/// not have their args reordered because `...` acts as a greedy positional sink
+/// and reordering would steal args from it.
+fn extract_param_names_from_doc(doc: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in doc.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("@param ") else {
+            continue;
+        };
+        let Some(name) = rest.split_whitespace().next() else {
+            continue;
+        };
+        if name == "..." {
+            // Variadic function — disable reordering entirely.
+            return Vec::new();
+        }
+        names.push(name.to_string());
+    }
+    names
 }
 
 /// Extract doc comments (`///` or `#[doc = "..."]`) from a function's attributes.
@@ -101,6 +128,7 @@ fn emit_builtin_registration(
     let implementation = kind.registry_ctor(fn_name);
 
     let doc = extract_doc_string(input);
+    let formals = extract_param_names_from_doc(&doc);
     let reg_name = format_ident!("__{}_{}", reg_prefix, fn_name.to_string().to_uppercase());
     let descriptor = descriptor_literal(
         &r_name,
@@ -110,6 +138,7 @@ fn emit_builtin_registration(
         max_args,
         &doc,
         &attr_args.namespace,
+        &formals,
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
     let alias_docs = attr_args
@@ -416,6 +445,7 @@ pub fn noop_builtin(input: TokenStream) -> TokenStream {
         None,
         "",
         "base",
+        &[],
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
@@ -463,6 +493,7 @@ pub fn stub_builtin(input: TokenStream) -> TokenStream {
         None,
         "",
         "base",
+        &[],
     );
     let registration = emit_descriptor_registration(&reg_name, descriptor);
 
@@ -687,23 +718,19 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
             field_docs.push(format!("@param {} {}", field_name_str, field_doc));
         }
 
-        // Use a runtime positional counter (__pos) so that named args don't
-        // consume positional slots.  When a parameter is found by name, __pos
-        // stays put; when matched positionally, __pos advances.
+        // Dispatch-level `reorder_builtin_args` ensures `args[i]` maps to
+        // the i-th formal.  Use a simple sequential field index.
+        let field_idx = field_decoders.len();
         let decoder = if let Some(default_expr) = default_val {
             // Optional param with default
             quote! {
                 let #field_name: #field_ty = {
-                    let named_hit = crate::interpreter::value::find_named_arg(
-                        named, #field_name_str
+                    let raw = crate::interpreter::value::find_arg(
+                        args, named, #field_name_str, #field_idx
                     );
-                    if let Some(v) = named_hit {
-                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
-                    } else if let Some(v) = args.get(__pos) {
-                        __pos += 1;
-                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
-                    } else {
-                        #default_expr
+                    match raw {
+                        Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?,
+                        None => #default_expr,
                     }
                 };
             }
@@ -711,19 +738,13 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
             // Required param
             let decoder = quote! {
                 let #field_name: #field_ty = {
-                    let named_hit = crate::interpreter::value::find_named_arg(
-                        named, #field_name_str
-                    );
-                    if let Some(v) = named_hit {
-                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
-                    } else {
-                        let v = args.get(__pos).ok_or_else(|| crate::interpreter::value::RError::new(
-                            crate::interpreter::value::RErrorKind::Argument,
-                            format!("argument '{}' is missing, with no default", #field_name_str),
-                        ))?;
-                        __pos += 1;
-                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
-                    }
+                    let raw = crate::interpreter::value::find_arg(
+                        args, named, #field_name_str, #field_idx
+                    ).ok_or_else(|| crate::interpreter::value::RError::new(
+                        crate::interpreter::value::RErrorKind::Argument,
+                        format!("argument '{}' is missing, with no default", #field_name_str),
+                    ))?;
+                    crate::interpreter::value::coerce_arg::<#field_ty>(raw, #field_name_str)?
                 };
             };
             min_args += 1;
@@ -751,7 +772,6 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 args: &[crate::interpreter::value::RValue],
                 named: &[(String, crate::interpreter::value::RValue)],
             ) -> Result<Self, crate::interpreter::value::RError> {
-                let mut __pos: usize = 0;
                 #(#field_decoders)*
                 Ok(#name { #(#field_idents),* })
             }
@@ -786,6 +806,7 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 max_args: Some(#max_args),
                 doc: #full_doc,
                 namespace: #namespace,
+                formals: &[#(#field_names_str),*],
             };
     })
 }

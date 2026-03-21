@@ -54,6 +54,11 @@ pub struct BuiltinDescriptor {
     pub doc: &'static str,
     /// Namespace this builtin belongs to (e.g. "base", "stats", "utils", "collections").
     pub namespace: &'static str,
+    /// Formal parameter names (extracted from @param doc comments).
+    /// Used at dispatch time to reorder positional/named args into canonical order
+    /// so builtins can use `args[i]` regardless of how the user passed the args.
+    /// Empty for variadic (dots) builtins — no reordering is performed.
+    pub formals: &'static [&'static str],
 }
 
 /// Attribute map — every R object can carry named attributes.
@@ -229,6 +234,7 @@ pub enum RFunction {
         implementation: BuiltinImplementation,
         min_args: usize,
         max_args: Option<usize>,
+        formals: &'static [&'static str],
     },
 }
 

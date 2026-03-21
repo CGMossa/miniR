@@ -153,6 +153,7 @@ impl Interpreter {
                     implementation: descriptor.implementation,
                     min_args: descriptor.min_args,
                     max_args: descriptor.max_args,
+                    formals: descriptor.formals,
                 }));
             }
         }

@@ -65,6 +65,7 @@ fn register_builtin_binding(env: &Environment, binding_name: &str, descriptor: B
             implementation: descriptor.implementation,
             min_args: descriptor.min_args,
             max_args: descriptor.max_args,
+            formals: descriptor.formals,
         }),
     );
 }
@@ -533,6 +534,7 @@ fn register_operator_builtins(env: &Environment) {
             }),
             min_args: 2,
             max_args: None,
+            formals: &[],
         }),
     );
 
@@ -579,6 +581,7 @@ fn register_operator_builtins(env: &Environment) {
             }),
             min_args: 1,
             max_args: None,
+            formals: &[],
         }),
     );
 }

@@ -698,6 +698,7 @@ fn pre_eval_try_catch(
                 }),
                 min_args: 0,
                 max_args: None,
+                formals: &[],
             }),
             env: env.clone(),
         })
@@ -867,6 +868,7 @@ fn pre_eval_suppress_warnings(
         }),
         min_args: 0,
         max_args: None,
+        formals: &[],
     });
 
     let handler_set = vec![ConditionHandler {
@@ -907,6 +909,7 @@ fn pre_eval_suppress_messages(
         }),
         min_args: 0,
         max_args: None,
+        formals: &[],
     });
 
     let handler_set = vec![ConditionHandler {
