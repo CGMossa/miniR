@@ -13,7 +13,8 @@ stopifnot(length(quote(f())) == 1)
 stopifnot(length(quote(f(x))) == 2)
 stopifnot(length(quote(f(x, y, z))) == 4)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -25,7 +26,8 @@ stopifnot(length(quote(a + b)) == 3)
 stopifnot(length(quote(x * y)) == 3)
 stopifnot(length(quote(a == b)) == 3)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -36,7 +38,8 @@ fn language_length_unary_op() {
 stopifnot(length(quote(-x)) == 2)
 stopifnot(length(quote(!y)) == 2)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -47,7 +50,8 @@ fn language_length_block() {
 stopifnot(length(quote({ a; b })) == 3)
 stopifnot(length(quote({ x })) == 2)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -58,7 +62,8 @@ fn language_length_if_else() {
 stopifnot(length(quote(if (TRUE) 1)) == 3)
 stopifnot(length(quote(if (TRUE) 1 else 2)) == 4)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -70,7 +75,8 @@ stopifnot(length(quote(for (i in 1:10) print(i))) == 4)
 stopifnot(length(quote(while (TRUE) break)) == 3)
 stopifnot(length(quote(repeat break)) == 2)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -81,7 +87,8 @@ fn language_length_symbol() {
 # A bare symbol has length 1
 stopifnot(length(quote(x)) == 1)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 // endregion
@@ -97,7 +104,8 @@ fn language_index_call_function() {
 e <- quote(f(a, b))
 stopifnot(identical(e[[1]], quote(f)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -109,7 +117,8 @@ e <- quote(f(a, b))
 stopifnot(identical(e[[2]], quote(a)))
 stopifnot(identical(e[[3]], quote(b)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -122,7 +131,8 @@ stopifnot(identical(e[[1]], quote(`+`)))
 stopifnot(identical(e[[2]], quote(a)))
 stopifnot(identical(e[[3]], quote(b)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -134,7 +144,8 @@ e <- quote(-x)
 stopifnot(identical(e[[1]], quote(`-`)))
 stopifnot(identical(e[[2]], quote(x)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -147,7 +158,8 @@ stopifnot(identical(e[[1]], quote(`{`)))
 stopifnot(identical(e[[2]], quote(a)))
 stopifnot(identical(e[[3]], quote(b)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -161,7 +173,8 @@ stopifnot(identical(e[[2]], quote(cond)))
 stopifnot(identical(e[[3]], quote(yes_val)))
 stopifnot(identical(e[[4]], quote(no_val)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -175,7 +188,8 @@ stopifnot(identical(e[[2]], quote(i)))
 stopifnot(identical(e[[3]], quote(xs)))
 stopifnot(identical(e[[4]], quote(print(i))))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -188,7 +202,8 @@ stopifnot(identical(e[[1]], quote(`while`)))
 stopifnot(identical(e[[2]], quote(cond)))
 stopifnot(identical(e[[3]], quote(body_expr)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -201,7 +216,8 @@ stopifnot(identical(e[[1]], quote(`<-`)))
 stopifnot(identical(e[[2]], quote(x)))
 stopifnot(e[[3]] == 42)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -216,7 +232,8 @@ stopifnot(identical(inner, quote(g(x))))
 stopifnot(identical(inner[[1]], quote(g)))
 stopifnot(identical(inner[[2]], quote(x)))
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -237,7 +254,8 @@ stopifnot(identical(inner[[1]], quote(`+`)))
 stopifnot(identical(inner[[2]], quote(x)))
 stopifnot(inner[[3]] == 1)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -251,7 +269,8 @@ stopifnot(e[[2]] == 1)
 stopifnot(e[[3]] == "hello")
 stopifnot(e[[4]] == TRUE)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -265,7 +284,8 @@ fn language_index_out_of_bounds() {
 e <- quote(f(a, b))
 e[[4]]
 "#,
-        );
+        )
+        .unwrap();
     }));
     // Should either error or we accept it handled gracefully
     // Just verifying that valid indices work is sufficient
@@ -280,7 +300,8 @@ e[[1]]
 e[[2]]
 e[[3]]
 "#,
-    );
+    )
+    .unwrap();
 }
 
 // endregion
@@ -300,7 +321,8 @@ stopifnot(identical(b[[1]], quote(`+`)))
 stopifnot(identical(b[[2]], quote(x)))
 stopifnot(b[[3]] == 1)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -328,7 +350,8 @@ stopifnot(identical(mult_expr[[1]], quote(`*`)))
 stopifnot(identical(mult_expr[[2]], quote(z)))
 stopifnot(mult_expr[[3]] == 2)
 "#,
-    );
+    )
+    .unwrap();
 }
 
 // endregion
