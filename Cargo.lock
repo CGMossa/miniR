@@ -1783,6 +1783,7 @@ dependencies = [
  "tabled",
  "tabwriter",
  "temp-dir",
+ "termcolor",
  "terminal_size",
  "textwrap",
  "toml_edit",
@@ -2343,6 +2344,15 @@ name = "temp-dir"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "016ef9739649996fcc983b9c588fe3d557cf216d4d98503ce1b057ab5a66d689"
+
+[[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
 
 [[package]]
 name = "terminal_size"

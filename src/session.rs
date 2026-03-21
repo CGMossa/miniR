@@ -108,6 +108,7 @@ impl Session {
         let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
         interp.stdout = RefCell::new(Box::new(SharedBuf(stdout_buf.clone())));
         interp.stderr = RefCell::new(Box::new(SharedBuf(stderr_buf.clone())));
+        interp.set_color_stderr(false);
         Session {
             interpreter: interp,
             captured_stdout: Some(stdout_buf),
