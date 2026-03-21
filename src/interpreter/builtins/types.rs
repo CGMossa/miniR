@@ -31,13 +31,18 @@ fn builtin_is_ordered(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
 
 /// Test if an object is a call (language object).
 ///
-/// In R, `is.call(x)` returns TRUE for unevaluated function call expressions.
+/// In R, `is.call(x)` returns TRUE for unevaluated function call expressions
+/// (including binary/unary ops, control flow, etc.) but NOT for symbols.
+/// `is.call(quote(f(x)))` -> TRUE, `is.call(quote(x))` -> FALSE.
 ///
 /// @param x object to test
 /// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::Language(_)));
+    let r = matches!(
+        args.first(),
+        Some(RValue::Language(lang)) if !matches!(*lang.inner, Expr::Symbol(_))
+    );
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -72,14 +77,15 @@ fn builtin_is_expression(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 
 /// Test if an object is a pairlist.
 ///
-/// In GNU R, pairlists are a linked-list type used internally. In miniR,
-/// lists serve the same role, so `is.pairlist` returns TRUE for lists and NULL.
+/// In GNU R, pairlists are a linked-list type used internally. miniR has no
+/// separate pairlist type. NULL is R's empty pairlist, so `is.pairlist(NULL)`
+/// returns TRUE. Regular lists are NOT pairlists (`is.pairlist(list())` -> FALSE).
 ///
 /// @param x object to test
 /// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_pairlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(args.first(), Some(RValue::List(_)) | Some(RValue::Null));
+    let r = matches!(args.first(), Some(RValue::Null));
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -132,14 +138,22 @@ fn builtin_is_na(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 
 /// Test if an object is numeric (integer or double).
 ///
+/// Returns FALSE for factors even though they use integer storage,
+/// matching GNU R's behavior.
+///
 /// @param x object to test
 /// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_numeric(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let r = matches!(
-        args.first(),
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Double(_) | Vector::Integer(_))
-    );
+    let r = match args.first() {
+        Some(val @ RValue::Vector(rv))
+            if matches!(rv.inner, Vector::Double(_) | Vector::Integer(_)) =>
+        {
+            // Factors are not numeric despite integer storage
+            !has_class(val, "factor")
+        }
+        _ => false,
+    };
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
@@ -245,17 +259,21 @@ fn builtin_is_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
-/// Test if an object is recursive (list or environment).
+/// Test if an object is recursive (list, environment, or call/language object).
+///
+/// In R, recursive objects can contain other objects. This includes lists,
+/// environments, and language objects (calls), but NOT symbols or atomic vectors.
 ///
 /// @param x object to test
 /// @return logical scalar
 #[builtin(min_args = 1)]
 fn builtin_is_recursive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // R's is.recursive: TRUE for lists and environments
-    let r = matches!(
-        args.first(),
-        Some(RValue::List(_)) | Some(RValue::Environment(_))
-    );
+    let r = match args.first() {
+        Some(RValue::List(_)) | Some(RValue::Environment(_)) => true,
+        // Language objects that are calls (not symbols) are recursive
+        Some(RValue::Language(lang)) => !matches!(*lang.inner, Expr::Symbol(_)),
+        _ => false,
+    };
     Ok(RValue::vec(Vector::Logical(vec![Some(r)].into())))
 }
 
