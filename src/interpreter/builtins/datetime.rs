@@ -698,6 +698,40 @@ fn builtin_difftime(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     Ok(rv.into())
 }
 
+/// Print a difftime object to stdout.
+///
+/// Displays the numeric value with units, e.g. `Time difference of 3.5 secs`.
+///
+/// @param x a difftime object
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.difftime", min_args = 1)]
+fn interp_print_difftime(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let val = args
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
+    let rv = match val {
+        RValue::Vector(rv) => rv,
+        other => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                format!("expected difftime vector, got {}", other.type_name()),
+            ))
+        }
+    };
+    let num = rv.inner.as_double_scalar().unwrap_or(0.0);
+    let units = rv
+        .get_attr("units")
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "secs".to_string());
+    context.write(&format!("Time difference of {} {}\n", num, units));
+    context.interpreter().set_invisible();
+    Ok(val.clone())
+}
+
 // endregion
 
 // region: date component extractors

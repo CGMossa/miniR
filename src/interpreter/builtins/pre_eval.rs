@@ -1367,8 +1367,11 @@ fn pre_eval_expression(
 
 /// Measure the wall-clock time to evaluate an expression.
 ///
+/// Returns a `proc_time` object (named numeric vector with class `"proc_time"`).
+/// User and system CPU times are reported as 0 since we only measure wall-clock time.
+///
 /// @param expr the expression to time
-/// @return numeric vector c(user, system, elapsed) where user and system are 0 (wall-clock only)
+/// @return proc_time vector c(user.self=0, sys.self=0, elapsed=<wall time>)
 #[pre_eval_builtin(name = "system.time", min_args = 1)]
 fn pre_eval_system_time(
     args: &[Arg],
@@ -1380,24 +1383,10 @@ fn pre_eval_system_time(
         .and_then(|a| a.value.as_ref())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
     let start = std::time::Instant::now();
-    let _result = context.with_interpreter(|interp| interp.eval_in(expr, env));
+    // Evaluate the expression; we discard the result and only keep timing
+    context.with_interpreter(|interp| interp.eval_in(expr, env))?;
     let elapsed = start.elapsed().as_secs_f64();
-    // Returns named vector c(user.self=..., sys.self=..., elapsed=...) like proc.time()
-    let mut rv = RVector::from(Vector::Double(
-        vec![Some(elapsed), Some(0.0), Some(elapsed)].into(),
-    ));
-    rv.set_attr(
-        "names".to_string(),
-        RValue::vec(Vector::Character(
-            vec![
-                Some("user.self".to_string()),
-                Some("sys.self".to_string()),
-                Some("elapsed".to_string()),
-            ]
-            .into(),
-        )),
-    );
-    Ok(RValue::Vector(rv))
+    Ok(super::system::make_proc_time(0.0, 0.0, elapsed))
 }
 
 /// Evaluate an expression in a temporary local environment.

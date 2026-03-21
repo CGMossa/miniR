@@ -286,3 +286,178 @@ stopifnot(st["elapsed"] > 0)
 }
 
 // endregion
+
+// region: Sys.sleep
+
+#[test]
+fn sys_sleep_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- proc.time()["elapsed"]
+Sys.sleep(0.05)
+t2 <- proc.time()["elapsed"]
+stopifnot(t2 - t1 >= 0.04)  # allow some slack
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn sys_sleep_zero_or_negative_is_noop() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+Sys.sleep(0)
+Sys.sleep(-1)
+# Should not error
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn sys_sleep_returns_invisible_null() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- Sys.sleep(0)
+stopifnot(is.null(x))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: difftime
+
+#[test]
+fn difftime_basic_secs() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-01 00:01:00", tz = "UTC")
+d <- difftime(t2, t1, units = "secs")
+stopifnot(inherits(d, "difftime"))
+stopifnot(as.numeric(d) == 60)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn difftime_minutes() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-01 01:30:00", tz = "UTC")
+d <- difftime(t2, t1, units = "mins")
+stopifnot(as.numeric(d) == 90)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn difftime_hours() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-02 00:00:00", tz = "UTC")
+d <- difftime(t2, t1, units = "hours")
+stopifnot(as.numeric(d) == 24)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn difftime_days() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-08 00:00:00", tz = "UTC")
+d <- difftime(t2, t1, units = "days")
+stopifnot(as.numeric(d) == 7)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn difftime_weeks() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-15 00:00:00", tz = "UTC")
+d <- difftime(t2, t1, units = "weeks")
+stopifnot(as.numeric(d) == 2)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn difftime_has_class_and_units_attrs() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+t1 <- as.POSIXct("2026-01-01 00:00:00", tz = "UTC")
+t2 <- as.POSIXct("2026-01-02 00:00:00", tz = "UTC")
+d <- difftime(t2, t1, units = "hours")
+stopifnot(inherits(d, "difftime"))
+stopifnot(attr(d, "units") == "hours")
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: proc_time class
+
+#[test]
+fn proc_time_has_class() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+pt <- proc.time()
+stopifnot(inherits(pt, "proc_time"))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn system_time_has_proc_time_class() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+st <- system.time(1 + 1)
+stopifnot(inherits(st, "proc_time"))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn system_time_user_and_sys_are_zero() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+st <- system.time(1 + 1)
+stopifnot(st["user.self"] == 0)
+stopifnot(st["sys.self"] == 0)
+stopifnot(st["elapsed"] >= 0)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion

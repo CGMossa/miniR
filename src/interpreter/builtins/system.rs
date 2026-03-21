@@ -1546,8 +1546,12 @@ fn interp_setwd(
 ///
 /// @param time numeric scalar: seconds to sleep (values <= 0 are ignored)
 /// @return NULL (invisibly)
-#[builtin(name = "Sys.sleep", min_args = 1)]
-fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+#[interpreter_builtin(name = "Sys.sleep", min_args = 1)]
+fn interp_sys_sleep(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
     let time = args
         .first()
         .and_then(|v| v.as_vector()?.as_double_scalar())
@@ -1562,6 +1566,7 @@ fn builtin_sys_sleep(args: &[RValue], _named: &[(String, RValue)]) -> Result<RVa
         std::thread::sleep(std::time::Duration::from_secs_f64(time));
     }
 
+    context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
 
@@ -1734,7 +1739,11 @@ fn builtin_l10n_info(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RV
 
 /// Get elapsed (wall-clock) time since the interpreter started.
 ///
-/// @return named double vector: c(user.self, sys.self, elapsed)
+/// Returns a named numeric vector of class `"proc_time"` with elements
+/// `user.self`, `sys.self`, and `elapsed`. User and system CPU times are
+/// currently reported as 0 since we don't track per-process CPU usage.
+///
+/// @return named double vector of class "proc_time": c(user.self, sys.self, elapsed)
 #[interpreter_builtin(name = "proc.time")]
 fn interp_proc_time(
     _args: &[RValue],
@@ -1742,10 +1751,52 @@ fn interp_proc_time(
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let elapsed = context.with_interpreter(|interp| interp.start_instant.elapsed().as_secs_f64());
-    // R returns a named vector c(user.self=..., sys.self=..., elapsed=...)
-    // We don't track CPU time, so user and sys are 0.0
+    Ok(make_proc_time(0.0, 0.0, elapsed))
+}
+
+/// Print a `proc_time` object in R's standard format.
+///
+/// Formats as:
+/// ```text
+///    user  system elapsed
+///   0.000   0.000   0.123
+/// ```
+///
+/// @param x a proc_time object
+/// @return x, invisibly
+#[interpreter_builtin(name = "print.proc_time", min_args = 1)]
+fn interp_print_proc_time(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let val = args
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument is missing".to_string()))?;
+    let (user, system, elapsed) = match val {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Double(d) => {
+                let u = d.first().copied().flatten().unwrap_or(0.0);
+                let s = d.get(1).copied().flatten().unwrap_or(0.0);
+                let e = d.get(2).copied().flatten().unwrap_or(0.0);
+                (u, s, e)
+            }
+            _ => (0.0, 0.0, 0.0),
+        },
+        _ => (0.0, 0.0, 0.0),
+    };
+    context.write(&format!(
+        "   user  system elapsed\n  {:.3}   {:.3}   {:.3}\n",
+        user, system, elapsed
+    ));
+    context.interpreter().set_invisible();
+    Ok(val.clone())
+}
+
+/// Construct a `proc_time` RValue with the standard names and class attributes.
+pub(super) fn make_proc_time(user: f64, system: f64, elapsed: f64) -> RValue {
     let mut rv = RVector::from(Vector::Double(
-        vec![Some(0.0), Some(0.0), Some(elapsed)].into(),
+        vec![Some(user), Some(system), Some(elapsed)].into(),
     ));
     rv.set_attr(
         "names".to_string(),
@@ -1758,7 +1809,13 @@ fn interp_proc_time(
             .into(),
         )),
     );
-    Ok(RValue::Vector(rv))
+    rv.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(
+            vec![Some("proc_time".to_string())].into(),
+        )),
+    );
+    RValue::Vector(rv)
 }
 
 // endregion
