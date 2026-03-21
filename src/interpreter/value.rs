@@ -16,7 +16,7 @@ pub use error::{
 };
 pub use integer::Integer;
 pub use logical::Logical;
-pub use traits::{coerce_arg, find_arg, Builtin, BuiltinInfo, CoerceArg, FromArgs};
+pub use traits::{coerce_arg, find_arg, find_named_arg, Builtin, BuiltinInfo, CoerceArg, FromArgs};
 pub use vector::{format_r_complex, format_r_double, Vector};
 
 use std::fmt;

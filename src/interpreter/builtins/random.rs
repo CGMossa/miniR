@@ -73,22 +73,56 @@ impl From<RandomError> for RError {
 
 // endregion
 
-/// Helper: extract a positive integer `n` from the first argument.
-fn extract_n(args: &[RValue]) -> Result<usize, RandomError> {
-    let n = args
-        .first()
-        .and_then(|v| v.as_vector())
-        .and_then(|v| v.as_integer_scalar())
-        .ok_or(RandomError::InvalidParam { param: "n" })?;
-    if n < 0 {
-        return Err(RandomError::NonNegative { param: "n" });
-    }
-    usize::try_from(n).map_err(|_| RandomError::InvalidParam { param: "n" })
+/// Extract the first parameter (`n` or custom name) from either named or positional
+/// args, returning `(n_value, remaining_positional_args)`. When the parameter is
+/// passed by name, all positional args belong to subsequent parameters; when it's
+/// the first positional arg, the remaining slice starts after it.
+fn split_n_args<'a>(
+    args: &'a [RValue],
+    named: &[(String, RValue)],
+) -> Result<(usize, &'a [RValue]), RandomError> {
+    split_first_arg(args, named, "n")
 }
 
-/// Helper: extract a named f64 parameter from named args, falling back to positional.
+fn split_first_arg<'a>(
+    args: &'a [RValue],
+    named: &[(String, RValue)],
+    param_name: &'static str,
+) -> Result<(usize, &'a [RValue]), RandomError> {
+    // Check named args first
+    for (k, v) in named {
+        if k == param_name {
+            let n = v
+                .as_vector()
+                .and_then(|v| v.as_integer_scalar())
+                .ok_or(RandomError::InvalidParam { param: param_name })?;
+            if n < 0 {
+                return Err(RandomError::NonNegative { param: param_name });
+            }
+            let n =
+                usize::try_from(n).map_err(|_| RandomError::InvalidParam { param: param_name })?;
+            return Ok((n, args)); // all positional args are for subsequent params
+        }
+    }
+    // n is the first positional arg
+    if args.is_empty() {
+        return Err(RandomError::InvalidParam { param: param_name });
+    }
+    let n = args[0]
+        .as_vector()
+        .and_then(|v| v.as_integer_scalar())
+        .ok_or(RandomError::InvalidParam { param: param_name })?;
+    if n < 0 {
+        return Err(RandomError::NonNegative { param: param_name });
+    }
+    let n = usize::try_from(n).map_err(|_| RandomError::InvalidParam { param: param_name })?;
+    Ok((n, &args[1..]))
+}
+
+/// Extract a named f64 parameter from named args, falling back to positional.
+/// `positional_index` is 0-based into the `rest` slice (after n has been split off).
 fn extract_param(
-    args: &[RValue],
+    rest: &[RValue],
     named: &[(String, RValue)],
     name: &str,
     positional_index: usize,
@@ -105,15 +139,16 @@ fn extract_param(
         }
     }
     // Fall back to positional
-    args.get(positional_index)
+    rest.get(positional_index)
         .and_then(|v| v.as_vector())
         .and_then(|v| v.as_double_scalar())
         .unwrap_or(default)
 }
 
-/// Helper: extract a required named f64 parameter (no default), erroring if missing.
+/// Extract a required named f64 parameter (no default), erroring if missing.
+/// `positional_index` is 0-based into the `rest` slice (after n has been split off).
 fn require_param(
-    args: &[RValue],
+    rest: &[RValue],
     named: &[(String, RValue)],
     name: &'static str,
     positional_index: usize,
@@ -129,7 +164,7 @@ fn require_param(
         }
     }
     // Fall back to positional
-    args.get(positional_index)
+    rest.get(positional_index)
         .and_then(|v| v.as_vector())
         .and_then(|v| v.as_double_scalar())
         .ok_or(RandomError::MissingParam { param: name })
@@ -316,9 +351,9 @@ fn interp_runif(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let min = extract_param(args, named, "min", 1, 0.0);
-    let max = extract_param(args, named, "max", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let min = extract_param(rest, named, "min", 0, 0.0);
+    let max = extract_param(rest, named, "max", 1, 1.0);
     if min > max {
         return Err(RandomError::MinGreaterThanMax.into());
     }
@@ -372,8 +407,8 @@ fn interp_rexp(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let rate = extract_param(args, named, "rate", 1, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let rate = extract_param(rest, named, "rate", 0, 1.0);
     let dist = rand_distr::Exp::new(rate).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -396,9 +431,9 @@ fn interp_rgamma(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let shape = extract_param(args, named, "shape", 1, 1.0);
-    let rate = extract_param(args, named, "rate", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let shape = extract_param(rest, named, "shape", 0, 1.0);
+    let rate = extract_param(rest, named, "rate", 1, 1.0);
     // R uses rate, rand_distr::Gamma uses scale = 1/rate
     let dist = rand_distr::Gamma::new(shape, 1.0 / rate).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
@@ -422,9 +457,9 @@ fn interp_rbeta(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let shape1 = extract_param(args, named, "shape1", 1, 1.0);
-    let shape2 = extract_param(args, named, "shape2", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let shape1 = extract_param(rest, named, "shape1", 0, 1.0);
+    let shape2 = extract_param(rest, named, "shape2", 1, 1.0);
     let dist = rand_distr::Beta::new(shape1, shape2).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -447,9 +482,9 @@ fn interp_rcauchy(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let location = extract_param(args, named, "location", 1, 0.0);
-    let scale = extract_param(args, named, "scale", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let location = extract_param(rest, named, "location", 0, 0.0);
+    let scale = extract_param(rest, named, "scale", 1, 1.0);
     let dist = rand_distr::Cauchy::new(location, scale).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -472,9 +507,9 @@ fn interp_rweibull(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let shape = extract_param(args, named, "shape", 1, 1.0);
-    let scale = extract_param(args, named, "scale", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let shape = extract_param(rest, named, "shape", 0, 1.0);
+    let scale = extract_param(rest, named, "scale", 1, 1.0);
     let dist = rand_distr::Weibull::new(scale, shape).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -497,9 +532,9 @@ fn interp_rlnorm(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let meanlog = extract_param(args, named, "meanlog", 1, 0.0);
-    let sdlog = extract_param(args, named, "sdlog", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let meanlog = extract_param(rest, named, "meanlog", 0, 0.0);
+    let sdlog = extract_param(rest, named, "sdlog", 1, 1.0);
     let dist = rand_distr::LogNormal::new(meanlog, sdlog).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -526,9 +561,9 @@ fn interp_rbinom(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let size = f64_to_u64(extract_param(args, named, "size", 1, 1.0))?;
-    let prob = extract_param(args, named, "prob", 2, 0.5);
+    let (n, rest) = split_n_args(args, named)?;
+    let size = f64_to_u64(extract_param(rest, named, "size", 0, 1.0))?;
+    let prob = extract_param(rest, named, "prob", 1, 0.5);
     let dist = rand_distr::Binomial::new(size, prob).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<i64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -552,8 +587,8 @@ fn interp_rpois(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let lambda = extract_param(args, named, "lambda", 1, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let lambda = extract_param(rest, named, "lambda", 0, 1.0);
     let dist = rand_distr::Poisson::new(lambda).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<i64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -577,8 +612,8 @@ fn interp_rgeom(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let prob = extract_param(args, named, "prob", 1, 0.5);
+    let (n, rest) = split_n_args(args, named)?;
+    let prob = extract_param(rest, named, "prob", 0, 0.5);
     let dist = rand_distr::Geometric::new(prob).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<i64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -602,8 +637,8 @@ fn interp_rchisq(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let df = extract_param(args, named, "df", 1, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let df = extract_param(rest, named, "df", 0, 1.0);
     let dist = rand_distr::ChiSquared::new(df).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -625,8 +660,8 @@ fn interp_rt(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let df = extract_param(args, named, "df", 1, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let df = extract_param(rest, named, "df", 0, 1.0);
     let dist = rand_distr::StudentT::new(df).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -649,9 +684,9 @@ fn interp_rf(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let df1 = extract_param(args, named, "df1", 1, 1.0);
-    let df2 = extract_param(args, named, "df2", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let df1 = extract_param(rest, named, "df1", 0, 1.0);
+    let df2 = extract_param(rest, named, "df2", 1, 1.0);
     let dist = rand_distr::FisherF::new(df1, df2).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -675,10 +710,10 @@ fn interp_rhyper(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let nn = extract_n(args)?;
-    let m = f64_to_u64(extract_param(args, named, "m", 1, 1.0))?; // white balls
-    let n = f64_to_u64(extract_param(args, named, "n", 2, 1.0))?; // black balls
-    let k = f64_to_u64(extract_param(args, named, "k", 3, 1.0))?; // draws
+    let (nn, rest) = split_first_arg(args, named, "nn")?;
+    let m = f64_to_u64(extract_param(rest, named, "m", 0, 1.0))?; // white balls
+    let n = f64_to_u64(extract_param(rest, named, "n", 1, 1.0))?; // black balls
+    let k = f64_to_u64(extract_param(rest, named, "k", 2, 1.0))?; // draws
     let dist = rand_distr::Hypergeometric::new(m + n, m, k).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<i64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -952,10 +987,10 @@ fn interp_rfrechet(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let alpha = require_param(args, named, "alpha", 1)?;
-    let s = extract_param(args, named, "s", 2, 1.0);
-    let m = extract_param(args, named, "m", 3, 0.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let alpha = require_param(rest, named, "alpha", 0)?;
+    let s = extract_param(rest, named, "s", 1, 1.0);
+    let m = extract_param(rest, named, "m", 2, 0.0);
     // Frechet::new(location, scale, shape)
     let dist = rand_distr::Frechet::new(m, s, alpha).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
@@ -982,9 +1017,9 @@ fn interp_rgumbel(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let mu = extract_param(args, named, "mu", 1, 0.0);
-    let beta = extract_param(args, named, "beta", 2, 1.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let mu = extract_param(rest, named, "mu", 0, 0.0);
+    let beta = extract_param(rest, named, "beta", 1, 1.0);
     let dist = rand_distr::Gumbel::new(mu, beta).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -1010,9 +1045,9 @@ fn interp_rinvgauss(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let mu = require_param(args, named, "mu", 1)?;
-    let lambda = require_param(args, named, "lambda", 2)?;
+    let (n, rest) = split_n_args(args, named)?;
+    let mu = require_param(rest, named, "mu", 0)?;
+    let lambda = require_param(rest, named, "lambda", 1)?;
     let dist = rand_distr::InverseGaussian::new(mu, lambda).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -1038,9 +1073,9 @@ fn interp_rpareto(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let scale = require_param(args, named, "scale", 1)?;
-    let shape = require_param(args, named, "shape", 2)?;
+    let (n, rest) = split_n_args(args, named)?;
+    let scale = require_param(rest, named, "scale", 0)?;
+    let shape = require_param(rest, named, "shape", 1)?;
     let dist = rand_distr::Pareto::new(scale, shape).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -1067,10 +1102,10 @@ fn interp_rpert(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let min = require_param(args, named, "min", 1)?;
-    let max = require_param(args, named, "max", 2)?;
-    let mode = require_param(args, named, "mode", 3)?;
+    let (n, rest) = split_n_args(args, named)?;
+    let min = require_param(rest, named, "min", 0)?;
+    let max = require_param(rest, named, "max", 1)?;
+    let mode = require_param(rest, named, "mode", 2)?;
     let dist = rand_distr::Pert::new(min, max)
         .with_mode(mode)
         .map_err(RandomError::invalid_dist)?;
@@ -1099,10 +1134,10 @@ fn interp_rskewnorm(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let location = extract_param(args, named, "location", 1, 0.0);
-    let scale = extract_param(args, named, "scale", 2, 1.0);
-    let shape = extract_param(args, named, "shape", 3, 0.0);
+    let (n, rest) = split_n_args(args, named)?;
+    let location = extract_param(rest, named, "location", 0, 0.0);
+    let scale = extract_param(rest, named, "scale", 1, 1.0);
+    let shape = extract_param(rest, named, "shape", 2, 0.0);
     let dist =
         rand_distr::SkewNormal::new(location, scale, shape).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
@@ -1130,10 +1165,10 @@ fn interp_rtriangular(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let min = require_param(args, named, "min", 1)?;
-    let max = require_param(args, named, "max", 2)?;
-    let mode = require_param(args, named, "mode", 3)?;
+    let (n, rest) = split_n_args(args, named)?;
+    let min = require_param(rest, named, "min", 0)?;
+    let max = require_param(rest, named, "max", 1)?;
+    let mode = require_param(rest, named, "mode", 2)?;
     let dist = rand_distr::Triangular::new(min, max, mode).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();
@@ -1159,8 +1194,8 @@ fn interp_rzeta(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let n = extract_n(args)?;
-    let s = require_param(args, named, "s", 1)?;
+    let (n, rest) = split_n_args(args, named)?;
+    let s = require_param(rest, named, "s", 0)?;
     let dist = rand_distr::Zeta::new(s).map_err(RandomError::invalid_dist)?;
     let values: Vec<Option<f64>> = context.with_interpreter(|interp| {
         let mut rng = interp.rng().borrow_mut();

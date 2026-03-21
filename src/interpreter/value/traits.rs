@@ -43,6 +43,16 @@ pub fn find_arg<'a>(
     param_name: &str,
     positional_index: usize,
 ) -> Option<&'a RValue> {
+    if let Some(v) = find_named_arg(named, param_name) {
+        return Some(v);
+    }
+    // Positional fallback
+    args.get(positional_index)
+}
+
+/// Find an argument by name only (exact match first, then unique partial match).
+/// Used by the `FromArgs` derive macro with a runtime positional counter.
+pub fn find_named_arg<'a>(named: &'a [(String, RValue)], param_name: &str) -> Option<&'a RValue> {
     // Exact name match first
     for (name, val) in named {
         if name == param_name {
@@ -57,8 +67,7 @@ pub fn find_arg<'a>(
     if candidates.len() == 1 {
         return Some(&candidates[0].1);
     }
-    // Positional fallback
-    args.get(positional_index)
+    None
 }
 
 /// Coerce an RValue to a Rust type. Implemented for common R parameter types.

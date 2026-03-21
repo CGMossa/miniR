@@ -687,16 +687,23 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
             field_docs.push(format!("@param {} {}", field_name_str, field_doc));
         }
 
+        // Use a runtime positional counter (__pos) so that named args don't
+        // consume positional slots.  When a parameter is found by name, __pos
+        // stays put; when matched positionally, __pos advances.
         let decoder = if let Some(default_expr) = default_val {
             // Optional param with default
             quote! {
                 let #field_name: #field_ty = {
-                    let raw = crate::interpreter::value::find_arg(
-                        args, named, #field_name_str, #min_args
+                    let named_hit = crate::interpreter::value::find_named_arg(
+                        named, #field_name_str
                     );
-                    match raw {
-                        Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?,
-                        None => #default_expr,
+                    if let Some(v) = named_hit {
+                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
+                    } else if let Some(v) = args.get(__pos) {
+                        __pos += 1;
+                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
+                    } else {
+                        #default_expr
                     }
                 };
             }
@@ -704,13 +711,19 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
             // Required param
             let decoder = quote! {
                 let #field_name: #field_ty = {
-                    let raw = crate::interpreter::value::find_arg(
-                        args, named, #field_name_str, #min_args
-                    ).ok_or_else(|| crate::interpreter::value::RError::new(
-                        crate::interpreter::value::RErrorKind::Argument,
-                        format!("argument '{}' is missing, with no default", #field_name_str),
-                    ))?;
-                    crate::interpreter::value::coerce_arg::<#field_ty>(raw, #field_name_str)?
+                    let named_hit = crate::interpreter::value::find_named_arg(
+                        named, #field_name_str
+                    );
+                    if let Some(v) = named_hit {
+                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
+                    } else {
+                        let v = args.get(__pos).ok_or_else(|| crate::interpreter::value::RError::new(
+                            crate::interpreter::value::RErrorKind::Argument,
+                            format!("argument '{}' is missing, with no default", #field_name_str),
+                        ))?;
+                        __pos += 1;
+                        crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?
+                    }
                 };
             };
             min_args += 1;
@@ -738,6 +751,7 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 args: &[crate::interpreter::value::RValue],
                 named: &[(String, crate::interpreter::value::RValue)],
             ) -> Result<Self, crate::interpreter::value::RError> {
+                let mut __pos: usize = 0;
                 #(#field_decoders)*
                 Ok(#name { #(#field_idents),* })
             }

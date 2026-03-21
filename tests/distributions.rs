@@ -885,3 +885,91 @@ check_lt("phyper", phyper(2, 5, 5, 3), phyper(2, 5, 5, 3, lower.tail = FALSE))
 }
 
 // endregion
+
+// region: Named argument matching for r* functions
+
+/// Regression test: runif(n=10, 10, 20) used to fail because named `n`
+/// caused positional args to shift, making min=20 and max default to 1.
+#[test]
+fn runif_named_n_positional_min_max() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- runif(n = 10, 10, 20)
+stopifnot(
+  length(x) == 10,
+  all(x >= 10),
+  all(x <= 20)
+)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn runif_all_named_args() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- runif(n = 5, min = 100, max = 200)
+stopifnot(length(x) == 5, all(x >= 100), all(x <= 200))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn runif_all_positional_still_works() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- runif(10, 10, 20)
+stopifnot(length(x) == 10, all(x >= 10), all(x <= 20))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn rnorm_named_n_positional_params() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- rnorm(n = 100, 50, 5)
+stopifnot(length(x) == 100, mean(x) > 40, mean(x) < 60)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn rbinom_named_n() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- rbinom(n = 20, 10, 0.5)
+stopifnot(length(x) == 20, all(x >= 0), all(x <= 10))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn rpois_named_n() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+set.seed(42)
+x <- rpois(n = 15, 5)
+stopifnot(length(x) == 15, all(x >= 0))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
