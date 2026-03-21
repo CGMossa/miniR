@@ -505,6 +505,11 @@ fn pre_eval_data_frame(
             }
         }
 
+        // Use a child environment so that each named column is visible to
+        // subsequent column expressions.  This is a miniR enhancement over
+        // GNU R (which doesn't support forward-references in data.frame()),
+        // matching the behaviour of dplyr::tibble().
+        let df_env = Environment::new_child(env);
         for arg in args {
             let Some(expr) = arg.value.as_ref() else {
                 continue;
@@ -514,7 +519,13 @@ fn pre_eval_data_frame(
             }
 
             unnamed_index += 1;
-            let value = interp.eval_in(expr, env).map_err(RError::from)?;
+            let value = interp.eval_in(expr, &df_env).map_err(RError::from)?;
+
+            // Bind named columns so later columns can reference them.
+            if let Some(col_name) = arg.name.as_deref() {
+                df_env.set(col_name.to_string(), value.clone());
+            }
+
             let default_name = default_data_frame_name(
                 if arg.name.is_none() { Some(expr) } else { None },
                 unnamed_index,

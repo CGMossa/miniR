@@ -56,3 +56,52 @@ fn data_frame_rejects_incompatible_row_counts() {
         "unexpected error: {err}"
     );
 }
+
+/// miniR enhancement: named columns are visible to subsequent column expressions,
+/// like dplyr::tibble() (GNU R data.frame() does NOT support this).
+#[test]
+fn data_frame_forward_references() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+df <- data.frame(x = 1:5, xx = x * x)
+stopifnot(
+  identical(df$x,  1:5),
+  identical(df$xx, c(1L, 4L, 9L, 16L, 25L))
+)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn data_frame_forward_ref_multiple_columns() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+df <- data.frame(a = 1:3, b = a + 10L, c = a + b)
+stopifnot(
+  identical(df$a, 1:3),
+  identical(df$b, c(11L, 12L, 13L)),
+  identical(df$c, c(12L, 14L, 16L))
+)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn data_frame_forward_ref_does_not_leak() {
+    // Column bindings should not persist in the caller's environment.
+    let mut s = Session::new();
+    let result = s.eval_source(
+        r#"
+df <- data.frame(secret = 1:3, derived = secret * 2L)
+secret
+"#,
+    );
+    assert!(
+        result.is_err(),
+        "column binding should not leak into caller env"
+    );
+}
