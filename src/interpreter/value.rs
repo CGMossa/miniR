@@ -103,6 +103,328 @@ impl Language {
             _ => None,
         }
     }
+
+    /// Return the R-style "length" of this language object.
+    ///
+    /// In R, language objects are list-like:
+    /// - `quote(f(a, b))` has length 3 (function + 2 args)
+    /// - `quote(a + b)` has length 3 (`+`, a, b)
+    /// - `quote(-x)` has length 2 (`-`, x)
+    /// - `quote({a; b})` has length 3 (`{`, a, b)
+    /// - Atomic expressions (symbols, literals) have length 1
+    pub fn language_length(&self) -> usize {
+        match self.inner.as_ref() {
+            Expr::Call { args, .. } => 1 + args.len(),
+            Expr::BinaryOp { .. } => 3,
+            Expr::UnaryOp { .. } => 2,
+            Expr::Block(exprs) => 1 + exprs.len(),
+            Expr::If { else_body, .. } => {
+                if else_body.is_some() {
+                    4
+                } else {
+                    3
+                }
+            }
+            Expr::For { .. } => 4,
+            Expr::While { .. } => 3,
+            Expr::Repeat { .. } => 2,
+            Expr::Assign { .. } => 3,
+            Expr::Function { .. } => 3,
+            Expr::Index { indices, .. } => 2 + indices.len(),
+            Expr::IndexDouble { indices, .. } => 2 + indices.len(),
+            Expr::Dollar { .. } => 3,
+            Expr::Slot { .. } => 3,
+            Expr::Formula { lhs, rhs } => {
+                1 + usize::from(lhs.is_some()) + usize::from(rhs.is_some())
+            }
+            Expr::Return(Some(_)) => 2,
+            Expr::Return(None) => 1,
+            // Atomic expressions: symbols, literals, etc.
+            _ => 1,
+        }
+    }
+
+    /// Return the i-th element (1-based) of this language object as an `RValue`.
+    ///
+    /// In R, language objects can be indexed with `[[`:
+    /// - Index 1 is the "function" (operator, keyword, etc.)
+    /// - Index 2+ are the arguments/operands
+    ///
+    /// Returns `None` if the index is out of bounds.
+    pub fn language_element(&self, index: usize) -> Option<RValue> {
+        if index == 0 || index > self.language_length() {
+            return None;
+        }
+        match self.inner.as_ref() {
+            Expr::Call { func, args } => {
+                if index == 1 {
+                    Some(expr_to_rvalue(func))
+                } else {
+                    args.get(index - 2)
+                        .and_then(|arg| arg.value.as_ref())
+                        .map(expr_to_rvalue)
+                }
+            }
+            Expr::BinaryOp { op, lhs, rhs } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    binary_op_symbol(op),
+                )))),
+                2 => Some(expr_to_rvalue(lhs)),
+                3 => Some(expr_to_rvalue(rhs)),
+                _ => None,
+            },
+            Expr::UnaryOp { op, operand } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    unary_op_symbol(op),
+                )))),
+                2 => Some(expr_to_rvalue(operand)),
+                _ => None,
+            },
+            Expr::Block(exprs) => {
+                if index == 1 {
+                    Some(RValue::Language(Language::new(Expr::Symbol(
+                        "{".to_string(),
+                    ))))
+                } else {
+                    exprs.get(index - 2).map(expr_to_rvalue)
+                }
+            }
+            Expr::If {
+                condition,
+                then_body,
+                else_body,
+            } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "if".to_string(),
+                )))),
+                2 => Some(expr_to_rvalue(condition)),
+                3 => Some(expr_to_rvalue(then_body)),
+                4 => else_body.as_ref().map(|e| expr_to_rvalue(e)),
+                _ => None,
+            },
+            Expr::For { var, iter, body } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "for".to_string(),
+                )))),
+                2 => Some(RValue::Language(Language::new(Expr::Symbol(var.clone())))),
+                3 => Some(expr_to_rvalue(iter)),
+                4 => Some(expr_to_rvalue(body)),
+                _ => None,
+            },
+            Expr::While { condition, body } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "while".to_string(),
+                )))),
+                2 => Some(expr_to_rvalue(condition)),
+                3 => Some(expr_to_rvalue(body)),
+                _ => None,
+            },
+            Expr::Repeat { body } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "repeat".to_string(),
+                )))),
+                2 => Some(expr_to_rvalue(body)),
+                _ => None,
+            },
+            Expr::Assign { op, target, value } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    assign_op_symbol(op),
+                )))),
+                2 => Some(expr_to_rvalue(target)),
+                3 => Some(expr_to_rvalue(value)),
+                _ => None,
+            },
+            Expr::Function { params, body } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "function".to_string(),
+                )))),
+                2 => {
+                    // Formals as a pairlist (represented as a named list)
+                    let entries: Vec<(Option<String>, RValue)> = params
+                        .iter()
+                        .map(|p| {
+                            let val = if p.is_dots {
+                                RValue::Language(Language::new(Expr::Dots))
+                            } else if let Some(ref d) = p.default {
+                                expr_to_rvalue(d)
+                            } else {
+                                // Missing default -> empty symbol (R uses this)
+                                RValue::Language(Language::new(Expr::Symbol(String::new())))
+                            };
+                            (Some(p.name.clone()), val)
+                        })
+                        .collect();
+                    Some(RValue::List(RList::new(entries)))
+                }
+                3 => Some(expr_to_rvalue(body)),
+                _ => None,
+            },
+            Expr::Index { object, indices } => {
+                if index == 1 {
+                    Some(RValue::Language(Language::new(Expr::Symbol(
+                        "[".to_string(),
+                    ))))
+                } else if index == 2 {
+                    Some(expr_to_rvalue(object))
+                } else {
+                    indices
+                        .get(index - 3)
+                        .and_then(|arg| arg.value.as_ref())
+                        .map(expr_to_rvalue)
+                }
+            }
+            Expr::IndexDouble { object, indices } => {
+                if index == 1 {
+                    Some(RValue::Language(Language::new(Expr::Symbol(
+                        "[[".to_string(),
+                    ))))
+                } else if index == 2 {
+                    Some(expr_to_rvalue(object))
+                } else {
+                    indices
+                        .get(index - 3)
+                        .and_then(|arg| arg.value.as_ref())
+                        .map(expr_to_rvalue)
+                }
+            }
+            Expr::Dollar { object, member } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "$".to_string(),
+                )))),
+                2 => Some(expr_to_rvalue(object)),
+                3 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    member.clone(),
+                )))),
+                _ => None,
+            },
+            Expr::Slot { object, member } => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "@".to_string(),
+                )))),
+                2 => Some(expr_to_rvalue(object)),
+                3 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    member.clone(),
+                )))),
+                _ => None,
+            },
+            Expr::Formula { lhs, rhs } => {
+                if index == 1 {
+                    Some(RValue::Language(Language::new(Expr::Symbol(
+                        "~".to_string(),
+                    ))))
+                } else {
+                    // Elements are lhs (if present) then rhs (if present)
+                    let mut elems = Vec::new();
+                    if let Some(l) = lhs {
+                        elems.push(expr_to_rvalue(l));
+                    }
+                    if let Some(r) = rhs {
+                        elems.push(expr_to_rvalue(r));
+                    }
+                    elems.into_iter().nth(index - 2)
+                }
+            }
+            Expr::Return(arg) => match index {
+                1 => Some(RValue::Language(Language::new(Expr::Symbol(
+                    "return".to_string(),
+                )))),
+                2 => arg.as_ref().map(|e| expr_to_rvalue(e)),
+                _ => None,
+            },
+            // Atomic: only index 1 returns the value itself
+            _ => {
+                if index == 1 {
+                    Some(expr_to_rvalue(&self.inner))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// Convert an Expr to an RValue — atomic expressions become symbols/literals,
+/// compound expressions become Language objects.
+fn expr_to_rvalue(expr: &Expr) -> RValue {
+    match expr {
+        // Literals evaluate to their corresponding R values
+        Expr::Null => RValue::Null,
+        Expr::Bool(b) => RValue::vec(Vector::Logical(vec![Some(*b)].into())),
+        Expr::Integer(i) => RValue::vec(Vector::Integer(vec![Some(*i)].into())),
+        Expr::Double(d) => RValue::vec(Vector::Double(vec![Some(*d)].into())),
+        Expr::Complex(d) => RValue::vec(Vector::Complex(
+            vec![Some(num_complex::Complex64::new(0.0, *d))].into(),
+        )),
+        Expr::String(s) => RValue::vec(Vector::Character(vec![Some(s.clone())].into())),
+        Expr::Inf => RValue::vec(Vector::Double(vec![Some(f64::INFINITY)].into())),
+        Expr::NaN => RValue::vec(Vector::Double(vec![Some(f64::NAN)].into())),
+        Expr::Na(na) => match na {
+            NaType::Logical => RValue::vec(Vector::Logical(vec![None].into())),
+            NaType::Integer => RValue::vec(Vector::Integer(vec![None].into())),
+            NaType::Real => RValue::vec(Vector::Double(vec![None].into())),
+            NaType::Character => RValue::vec(Vector::Character(vec![None].into())),
+            NaType::Complex => RValue::vec(Vector::Complex(vec![None].into())),
+        },
+        // Symbols stay as language objects (names in R)
+        Expr::Symbol(_) | Expr::Dots | Expr::DotDot(_) => {
+            RValue::Language(Language::new(expr.clone()))
+        }
+        // Compound expressions become language objects
+        _ => RValue::Language(Language::new(expr.clone())),
+    }
+}
+
+/// Map a BinaryOp to its R symbol name.
+fn binary_op_symbol(op: &BinaryOp) -> String {
+    match op {
+        BinaryOp::Add => "+".to_string(),
+        BinaryOp::Sub => "-".to_string(),
+        BinaryOp::Mul => "*".to_string(),
+        BinaryOp::Div => "/".to_string(),
+        BinaryOp::Pow => "^".to_string(),
+        BinaryOp::Mod => "%%".to_string(),
+        BinaryOp::IntDiv => "%/%".to_string(),
+        BinaryOp::Eq => "==".to_string(),
+        BinaryOp::Ne => "!=".to_string(),
+        BinaryOp::Lt => "<".to_string(),
+        BinaryOp::Gt => ">".to_string(),
+        BinaryOp::Le => "<=".to_string(),
+        BinaryOp::Ge => ">=".to_string(),
+        BinaryOp::And => "&".to_string(),
+        BinaryOp::AndScalar => "&&".to_string(),
+        BinaryOp::Or => "|".to_string(),
+        BinaryOp::OrScalar => "||".to_string(),
+        BinaryOp::Range => ":".to_string(),
+        BinaryOp::Pipe => "|>".to_string(),
+        BinaryOp::Special(SpecialOp::In) => "%in%".to_string(),
+        BinaryOp::Special(SpecialOp::MatMul) => "%*%".to_string(),
+        BinaryOp::Special(SpecialOp::Kronecker) => "%x%".to_string(),
+        BinaryOp::Special(SpecialOp::Walrus) => ":=".to_string(),
+        BinaryOp::Special(SpecialOp::Other) => "%%".to_string(),
+        BinaryOp::Tilde => "~".to_string(),
+        BinaryOp::DoubleTilde => "~~".to_string(),
+    }
+}
+
+/// Map a UnaryOp to its R symbol name.
+fn unary_op_symbol(op: &UnaryOp) -> String {
+    match op {
+        UnaryOp::Neg => "-".to_string(),
+        UnaryOp::Pos => "+".to_string(),
+        UnaryOp::Not => "!".to_string(),
+        UnaryOp::Formula => "~".to_string(),
+    }
+}
+
+/// Map an AssignOp to its R symbol name.
+fn assign_op_symbol(op: &AssignOp) -> String {
+    match op {
+        AssignOp::LeftAssign => "<-".to_string(),
+        AssignOp::SuperAssign => "<<-".to_string(),
+        AssignOp::Equals => "=".to_string(),
+        AssignOp::RightAssign => "->".to_string(),
+        AssignOp::RightSuperAssign => "->>".to_string(),
+    }
 }
 
 impl Deref for Language {
@@ -358,7 +680,7 @@ impl RValue {
             RValue::List(l) => l.values.len(),
             RValue::Function(_) => 1,
             RValue::Environment(_) => 0,
-            RValue::Language(_) => 1,
+            RValue::Language(lang) => lang.language_length(),
         }
     }
 }

@@ -876,6 +876,24 @@ pub(super) fn eval_index_double(
                 Ok(RValue::Null)
             }
         }
+        RValue::Language(lang) => {
+            let i = match &idx_val {
+                RValue::Vector(iv) => {
+                    usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
+                }
+                _ => 0,
+            };
+            lang.language_element(i).ok_or_else(|| {
+                RFlow::Error(RError::new(
+                    RErrorKind::Index,
+                    format!(
+                        "subscript out of bounds: index {} into language object of length {}",
+                        i,
+                        lang.language_length()
+                    ),
+                ))
+            })
+        }
         _ => Err(IndexingError::NotSubsettable.into()),
     }
 }
