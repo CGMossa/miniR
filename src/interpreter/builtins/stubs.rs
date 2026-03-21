@@ -1061,47 +1061,6 @@ fn builtin_remove_task_callback(
 
 // region: Misc stubs
 
-/// agrep — approximate (fuzzy) grep (stub using exact grep).
-/// @namespace base
-#[builtin(name = "agrep", min_args = 2)]
-fn builtin_agrep(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    // Fall back to exact matching for now
-    let pattern = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let x = match args.get(1) {
-        Some(RValue::Vector(v)) => v.to_characters(),
-        _ => vec![],
-    };
-    let indices: Vec<Option<i64>> = x
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.as_ref().is_some_and(|s| s.contains(&pattern)))
-        .map(|(i, _)| Some((i + 1) as i64))
-        .collect();
-    Ok(RValue::vec(Vector::Integer(indices.into())))
-}
-
-/// agrepl — approximate grep returning logical (stub using exact match).
-/// @namespace base
-#[builtin(name = "agrepl", min_args = 2)]
-fn builtin_agrepl(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let pattern = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let x = match args.get(1) {
-        Some(RValue::Vector(v)) => v.to_characters(),
-        _ => vec![],
-    };
-    let results: Vec<Option<bool>> = x
-        .iter()
-        .map(|s| Some(s.as_ref().is_some_and(|s| s.contains(&pattern))))
-        .collect();
-    Ok(RValue::vec(Vector::Logical(results.into())))
-}
-
 /// gc.time — get garbage collection timing (always zero).
 /// @namespace base
 #[builtin(name = "gc.time")]

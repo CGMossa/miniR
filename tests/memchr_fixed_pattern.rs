@@ -1,7 +1,8 @@
-/// Tests for memchr-accelerated fixed-pattern string operations.
+/// Tests for AhoCorasick-accelerated fixed-pattern string operations and
+/// Levenshtein-based approximate matching (agrep/agrepl).
 ///
 /// Each test verifies that `fixed=TRUE` produces the same result as `fixed=FALSE`
-/// (regex mode) for literal patterns, ensuring the memchr fast path is correct.
+/// (regex mode) for literal patterns, ensuring the AhoCorasick fast path is correct.
 use r::Session;
 
 // region: grepl fixed=TRUE
@@ -527,6 +528,219 @@ stopifnot(identical(
     gsub(pattern, replacement, x, fixed = TRUE),
     gsub(pattern, replacement, x)
 ))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: gsub/sub fixed=TRUE with ignore.case (AhoCorasick)
+
+#[test]
+fn gsub_fixed_ignore_case() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("Hello World HELLO", "goodbye", "hElLo")
+stopifnot(identical(
+    gsub("hello", "HI", x, fixed = TRUE, ignore.case = TRUE),
+    c("HI World HI", "goodbye", "HI")
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn sub_fixed_ignore_case() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("Hello World HELLO", "goodbye")
+stopifnot(identical(
+    sub("hello", "HI", x, fixed = TRUE, ignore.case = TRUE),
+    c("HI World HELLO", "goodbye")
+))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: agrep (approximate grep with Levenshtein distance)
+
+#[test]
+fn agrep_exact_match() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lasy", "lazy", "black", "lazier")
+# "lasy" is distance 1 from "lazy", "lazy" is exact match
+# With default max.distance=0.1, for a 4-char pattern that's floor(0.4)=0
+# so only exact substring matches
+stopifnot(identical(
+    agrep("lazy", x),
+    c(2L)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrep_with_max_distance() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lasy", "lazy", "black", "laxy")
+# max.distance=1 means up to 1 edit
+stopifnot(identical(
+    agrep("lazy", x, max.distance = 1),
+    c(1L, 2L, 4L)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrep_value_mode() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lasy", "lazy", "black")
+stopifnot(identical(
+    agrep("lazy", x, max.distance = 1, value = TRUE),
+    c("lasy", "lazy")
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrep_ignore_case() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("LAZY", "lasy", "black")
+stopifnot(identical(
+    agrep("lazy", x, max.distance = 1, ignore.case = TRUE),
+    c(1L, 2L)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrep_no_matches() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("completely", "different", "words")
+result <- agrep("lazy", x, max.distance = 1)
+stopifnot(length(result) == 0L)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrep_fractional_max_distance() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# For pattern "lazy" (4 chars), max.distance=0.5 means floor(0.5*4)=2 edits
+x <- c("la", "lazy", "laz", "lxxxy")
+stopifnot(identical(
+    agrep("lazy", x, max.distance = 0.5),
+    c(1L, 2L, 3L)
+))
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
+// region: agrepl (approximate grepl with Levenshtein distance)
+
+#[test]
+fn agrepl_basic() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lasy", "lazy", "black")
+stopifnot(identical(
+    agrepl("lazy", x, max.distance = 1),
+    c(TRUE, TRUE, FALSE)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrepl_default_distance() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lazy", "black")
+# Default max.distance=0.1, for "lazy" (4 chars) that's floor(0.4)=0
+# So only exact substring matches
+stopifnot(identical(
+    agrepl("lazy", x),
+    c(TRUE, FALSE)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrepl_ignore_case() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("LAZY", "Lasy", "black")
+stopifnot(identical(
+    agrepl("lazy", x, max.distance = 1, ignore.case = TRUE),
+    c(TRUE, TRUE, FALSE)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrepl_substring_match() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# agrep/agrepl match substrings, not just whole strings
+x <- c("the lazy dog", "the quick fox")
+stopifnot(identical(
+    agrepl("lazy", x),
+    c(TRUE, FALSE)
+))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn agrepl_na_propagation() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+x <- c("lazy", NA, "black")
+result <- agrepl("lazy", x, max.distance = 1)
+stopifnot(identical(result[1], TRUE))
+stopifnot(is.na(result[2]))
+stopifnot(identical(result[3], FALSE))
 "#,
     )
     .unwrap();

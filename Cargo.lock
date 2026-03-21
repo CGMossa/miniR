@@ -1735,6 +1735,7 @@ dependencies = [
 name = "r"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "arrow",
  "blake3",
  "bstr",
