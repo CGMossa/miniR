@@ -258,7 +258,9 @@ fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// Remove leading and/or trailing whitespace from strings.
 ///
 /// @param x character vector to trim
-/// @param which character scalar: "both", "left", or "right"
+/// @param which character scalar: "both", "left", or "right" (default "both")
+/// @param whitespace character scalar: regex pattern of whitespace characters
+///   to trim (default `"[ \\t\\r\\n]"`)
 /// @return character vector with whitespace removed
 #[builtin(min_args = 1)]
 fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -271,35 +273,93 @@ fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                 .and_then(|v| v.as_vector()?.as_character_scalar())
         })
         .unwrap_or_else(|| "both".to_string());
-    let trim_fn: fn(&str) -> &str = match which.as_str() {
-        "both" => str::trim,
-        "left" => str::trim_start,
-        "right" => str::trim_end,
-        _ => {
-            return Err(RError::new(
+
+    let whitespace_pat = named
+        .iter()
+        .find(|(n, _)| n == "whitespace")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            args.get(2)
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
+        .unwrap_or_else(|| "[ \\t\\r\\n]".to_string());
+
+    // If using default whitespace, use fast built-in trim; otherwise use regex
+    let use_regex = whitespace_pat != "[ \\t\\r\\n]";
+
+    if use_regex {
+        // Build regex anchored patterns for leading/trailing whitespace
+        let left_re = Regex::new(&format!("^({whitespace_pat})+")).map_err(|e| {
+            RError::new(
                 RErrorKind::Argument,
-                format!(
-                    "invalid 'which' argument: {:?} — must be \"both\", \"left\", or \"right\"",
-                    which
-                ),
-            ))
+                format!("invalid 'whitespace' regex pattern: {e}"),
+            )
+        })?;
+        let right_re = Regex::new(&format!("({whitespace_pat})+$")).map_err(|e| {
+            RError::new(
+                RErrorKind::Argument,
+                format!("invalid 'whitespace' regex pattern: {e}"),
+            )
+        })?;
+
+        match args.first() {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                let result: Vec<Option<String>> = vals
+                    .iter()
+                    .map(|s| {
+                        s.as_ref().map(|s| {
+                            let s = match which.as_str() {
+                                "both" | "left" => left_re.replace(s, "").into_owned(),
+                                _ => s.to_string(),
+                            };
+                            match which.as_str() {
+                                "both" | "right" => right_re.replace(&s, "").into_owned(),
+                                _ => s,
+                            }
+                        })
+                    })
+                    .collect();
+                Ok(RValue::vec(Vector::Character(result.into())))
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
         }
-    };
-    match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<String>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| trim_fn(s).to_string()))
-                .collect();
-            Ok(RValue::vec(Vector::Character(result.into())))
+    } else {
+        let trim_fn: fn(&str) -> &str = match which.as_str() {
+            "both" => str::trim,
+            "left" => str::trim_start,
+            "right" => str::trim_end,
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "invalid 'which' argument: {:?} — must be \"both\", \"left\", or \"right\"",
+                        which
+                    ),
+                ))
+            }
+        };
+        match args.first() {
+            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+                let Vector::Character(vals) = &rv.inner else {
+                    unreachable!()
+                };
+                let result: Vec<Option<String>> = vals
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| trim_fn(s).to_string()))
+                    .collect();
+                Ok(RValue::vec(Vector::Character(result.into())))
+            }
+            _ => Err(RError::new(
+                RErrorKind::Argument,
+                "argument is not character".to_string(),
+            )),
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
     }
 }
 
@@ -1463,60 +1523,100 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 
 /// Test whether strings start with a given prefix.
 ///
+/// Vectorized over both `x` and `prefix` with recycling.
+///
 /// @param x character vector to test
-/// @param prefix character scalar: the prefix to look for
+/// @param prefix character vector: the prefix(es) to look for
 /// @return logical vector indicating which elements start with the prefix
 #[builtin(name = "startsWith", min_args = 2)]
 fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let prefix = args
-        .get(1)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    match args.first() {
+    let x_vec = match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
                 unreachable!()
             };
-            let result: Vec<Option<bool>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| s.starts_with(prefix.as_str())))
-                .collect();
-            Ok(RValue::vec(Vector::Logical(result.into())))
+            vals.clone()
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'x' is not character".to_string(),
+            ))
+        }
+    };
+    let prefix_vec = args
+        .get(1)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
+        .unwrap_or_default();
+
+    if x_vec.is_empty() || prefix_vec.is_empty() {
+        return Ok(RValue::vec(Vector::Logical(
+            Vec::<Option<bool>>::new().into(),
+        )));
     }
+
+    let out_len = x_vec.len().max(prefix_vec.len());
+    let result: Vec<Option<bool>> = (0..out_len)
+        .map(|i| {
+            let x_opt = &x_vec[i % x_vec.len()];
+            let p_opt = &prefix_vec[i % prefix_vec.len()];
+            match (x_opt, p_opt) {
+                (Some(x), Some(p)) => Some(x.starts_with(p.as_str())),
+                _ => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Test whether strings end with a given suffix.
 ///
+/// Vectorized over both `x` and `suffix` with recycling.
+///
 /// @param x character vector to test
-/// @param suffix character scalar: the suffix to look for
+/// @param suffix character vector: the suffix(es) to look for
 /// @return logical vector indicating which elements end with the suffix
 #[builtin(name = "endsWith", min_args = 2)]
 fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let suffix = args
-        .get(1)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    match args.first() {
+    let x_vec = match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
                 unreachable!()
             };
-            let result: Vec<Option<bool>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| s.ends_with(suffix.as_str())))
-                .collect();
-            Ok(RValue::vec(Vector::Logical(result.into())))
+            vals.clone()
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "argument 'x' is not character".to_string(),
+            ))
+        }
+    };
+    let suffix_vec = args
+        .get(1)
+        .and_then(|v| v.as_vector())
+        .map(|v| v.to_characters())
+        .unwrap_or_default();
+
+    if x_vec.is_empty() || suffix_vec.is_empty() {
+        return Ok(RValue::vec(Vector::Logical(
+            Vec::<Option<bool>>::new().into(),
+        )));
     }
+
+    let out_len = x_vec.len().max(suffix_vec.len());
+    let result: Vec<Option<bool>> = (0..out_len)
+        .map(|i| {
+            let x_opt = &x_vec[i % x_vec.len()];
+            let s_opt = &suffix_vec[i % suffix_vec.len()];
+            match (x_opt, s_opt) {
+                (Some(x), Some(s)) => Some(x.ends_with(s.as_str())),
+                _ => None,
+            }
+        })
+        .collect();
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Translate characters in strings (character-by-character substitution).
@@ -2879,27 +2979,69 @@ fn builtin_casefold(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     }
 }
 
-/// Encode a character string with optional quoting and escape handling.
+/// Encode a character string with optional quoting, width, and justification.
 ///
 /// @param x character vector
-/// @param quote quote character to wrap each string in (default none)
-/// @param na.encode if TRUE (default), encode NA as "NA"
+/// @param width integer: minimum field width (default NA, meaning no padding;
+///   0 means pad to the widest element)
+/// @param quote character scalar: quote character to wrap each string in (default "")
+/// @param na.encode logical: if TRUE (default), encode NA as "NA"
+/// @param justify character scalar: "left", "right", "centre"/"center", or "none"
+///   (default "left"; "none" when width is NA)
 /// @return character vector with encoded strings
 #[builtin(name = "encodeString", min_args = 1)]
 fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let width: Option<usize> = named
+        .iter()
+        .find(|(k, _)| k == "width")
+        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
+        .and_then(|i| usize::try_from(i).ok())
+        .or_else(|| {
+            args.get(1)
+                .and_then(|v| v.as_vector()?.as_integer_scalar())
+                .and_then(|i| usize::try_from(i).ok())
+        });
+
     let quote = named
         .iter()
         .find(|(k, _)| k == "quote")
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            args.get(2)
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
         .unwrap_or_default();
+
+    let na_encode = named
+        .iter()
+        .find(|(k, _)| k == "na.encode")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+
+    let justify = named
+        .iter()
+        .find(|(k, _)| k == "justify")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .or_else(|| {
+            args.get(3)
+                .and_then(|v| v.as_vector()?.as_character_scalar())
+        })
+        .unwrap_or_else(|| {
+            if width.is_some() {
+                "left".to_string()
+            } else {
+                "none".to_string()
+            }
+        });
 
     match args.first() {
         Some(RValue::Vector(rv)) => {
-            let result: Vec<Option<String>> = rv
-                .to_characters()
+            // First pass: escape and quote all strings
+            let chars = rv.to_characters();
+            let mut encoded: Vec<Option<String>> = chars
                 .into_iter()
-                .map(|opt| {
-                    opt.map(|s| {
+                .map(|opt| match opt {
+                    Some(s) => {
                         let escaped = s
                             .replace('\\', "\\\\")
                             .replace('\n', "\\n")
@@ -2911,14 +3053,68 @@ fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<
                             escaped
                         };
                         if quote.is_empty() {
-                            escaped
+                            Some(escaped)
                         } else {
-                            format!("{quote}{escaped}{quote}")
+                            Some(format!("{quote}{escaped}{quote}"))
                         }
-                    })
+                    }
+                    None => {
+                        if na_encode {
+                            Some("NA".to_string())
+                        } else {
+                            None
+                        }
+                    }
                 })
                 .collect();
-            Ok(RValue::vec(Vector::Character(result.into())))
+
+            // Second pass: apply width padding if requested
+            if let Some(w) = width {
+                // If width == 0, use the max display width of all encoded strings
+                let effective_width = if w == 0 {
+                    encoded
+                        .iter()
+                        .filter_map(|s| s.as_ref())
+                        .map(|s| UnicodeWidthStr::width(s.as_str()))
+                        .max()
+                        .unwrap_or(0)
+                } else {
+                    w
+                };
+
+                if effective_width > 0 && justify != "none" {
+                    encoded = encoded
+                        .into_iter()
+                        .map(|opt| {
+                            opt.map(|s| {
+                                let display_w = UnicodeWidthStr::width(s.as_str());
+                                if display_w >= effective_width {
+                                    s
+                                } else {
+                                    let pad = effective_width - display_w;
+                                    match justify.as_str() {
+                                        "left" => format!("{}{}", s, " ".repeat(pad)),
+                                        "right" => format!("{}{}", " ".repeat(pad), s),
+                                        "centre" | "center" => {
+                                            let left_pad = pad / 2;
+                                            let right_pad = pad - left_pad;
+                                            format!(
+                                                "{}{}{}",
+                                                " ".repeat(left_pad),
+                                                s,
+                                                " ".repeat(right_pad)
+                                            )
+                                        }
+                                        _ => s, // "none" or unknown
+                                    }
+                                }
+                            })
+                        })
+                        .collect();
+                }
+            }
+
+            Ok(RValue::vec(Vector::Character(encoded.into())))
         }
         _ => Ok(RValue::Null),
     }
