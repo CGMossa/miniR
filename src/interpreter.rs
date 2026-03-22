@@ -255,6 +255,10 @@ pub struct Interpreter {
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
     /// Graphics device manager — tracks open devices and the active device.
     pub(crate) device_manager: RefCell<graphics::device_manager::DeviceManager>,
+    /// Graphics parameters (par state) — per-interpreter, not global.
+    pub(crate) par_state: RefCell<graphics::par::ParState>,
+    /// Color palette for indexed color access (e.g. col=1 means palette[0]).
+    pub(crate) color_palette: RefCell<Vec<graphics::color::RColor>>,
 }
 
 /// S4 class definition stored in the per-interpreter class registry.
@@ -403,6 +407,8 @@ impl Interpreter {
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
             device_manager: RefCell::new(graphics::device_manager::DeviceManager::new()),
+            par_state: RefCell::new(graphics::par::ParState::default()),
+            color_palette: RefCell::new(graphics::color::default_palette()),
         };
 
         // Synthesize Rd help pages from builtin rustdoc comments so every

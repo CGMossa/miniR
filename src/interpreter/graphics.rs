@@ -14,5 +14,8 @@ pub use context::{FontFace, GraphicsContext, LineType, PointChar, RColor};
 pub use device::{CharMetric, DeviceSize, GraphicsDevice};
 pub use null_device::NullDevice;
 
+pub mod color;
 pub mod device_manager;
+pub mod par;
+
 pub use device_manager::DeviceManager;

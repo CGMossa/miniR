@@ -329,17 +329,4 @@ fn builtin_axis(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, 
 
 // endregion
 
-// region: Graphics parameters
-
-/// Query or set graphical parameters.
-///
-/// Since graphics are not supported yet, this returns an empty list so
-/// that code like `old <- par(mfrow = c(1,2))` does not crash.
-///
-/// @return an empty list
-#[builtin(namespace = "graphics")]
-fn builtin_par(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::List(RList::new(vec![])))
-}
-
-// endregion
+// Note: par() is now implemented in src/interpreter/graphics/par.rs
