@@ -121,7 +121,7 @@ impl DeviceManager {
         let slot = &mut self.devices[n];
         match slot.take() {
             Some(mut device) => {
-                device.close()?;
+                device.close();
             }
             None => {
                 return Err(RError::new(
