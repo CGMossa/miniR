@@ -99,7 +99,7 @@ bstr = "1"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
-env_logger = { version = "0.11", optional = true }
+# env_logger removed — tracing-subscriber handles all logging
 rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-native-certs = { version = "0.8", optional = true }
 webpki-roots = { version = "0.26", optional = true }
@@ -111,7 +111,7 @@ terminal_size = { version = "0.4", optional = true }
 parquet = { version = "58", optional = true, default-features = false, features = ["arrow"] }
 arrow = { version = "58", optional = true, default-features = false, features = ["csv", "json"] }
 zmij = { version = "1", optional = true }
-termcolor = { version = "1", optional = true }
+# termcolor removed — using crossterm for colored output (already a dep via repl)
 eframe = { version = "0.33", optional = true, default-features = false, features = ["glow", "default_fonts"] }
 egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
@@ -123,11 +123,11 @@ usvg = { version = "0.45", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "logging", "parquet"]
+full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "parquet"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "color", "svg-device"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "svg-device"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -139,7 +139,6 @@ minimal = []
 # Usage: cargo build --no-default-features --features fast
 fast = ["random", "datetime", "io", "compression", "diagnostics", "signal", "terminal-size", "fast-format"]
 
-logging = ["dep:env_logger"]
 tracing-output = ["dep:tracing-subscriber"]
 repl = ["dep:reedline", "dep:nu-ansi-term", "dep:crossterm"]
 
@@ -166,7 +165,7 @@ terminal-size = ["dep:terminal_size"]
 progress = ["dep:indicatif"]
 parallel = ["dep:rayon"]
 fast-format = ["dep:zmij"]
-color = ["dep:termcolor"]
+# color feature removed — crossterm (via repl) handles colored output
 svg-device = ["dep:svg"]
 pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
 plot = ["dep:eframe", "dep:egui", "dep:egui_plot"]

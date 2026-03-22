@@ -649,50 +649,32 @@ impl Interpreter {
 
     /// Attempt to write colored text. Returns `true` if color was applied,
     /// `false` if the caller should fall back to plain text.
-    #[cfg(feature = "color")]
+    #[cfg(feature = "repl")]
     fn try_write_colored(&self, msg: &str, style: DiagnosticStyle) -> bool {
         if !self.color_stderr {
             return false;
         }
+        use crossterm::style::{Attribute, Color, Stylize};
         use std::io::Write as _;
-        use termcolor::{Color, ColorSpec, WriteColor};
 
-        // Write colored text to a termcolor buffer, then copy the bytes
-        // into the interpreter's stderr writer.
-        let bufwtr = termcolor::BufferWriter::stderr(termcolor::ColorChoice::Auto);
-        let mut buf = bufwtr.buffer();
-        let color_spec = match style {
-            DiagnosticStyle::Error => {
-                let mut s = ColorSpec::new();
-                s.set_fg(Some(Color::Red)).set_bold(true);
-                s
-            }
-            DiagnosticStyle::Warning => {
-                let mut s = ColorSpec::new();
-                s.set_fg(Some(Color::Yellow)).set_bold(true);
-                s
-            }
-            DiagnosticStyle::Message => {
-                let mut s = ColorSpec::new();
-                s.set_fg(Some(Color::Cyan));
-                s
-            }
+        let (color, bold) = match style {
+            DiagnosticStyle::Error => (Color::Red, true),
+            DiagnosticStyle::Warning => (Color::Yellow, true),
+            DiagnosticStyle::Message => (Color::Cyan, false),
         };
-        if buf.set_color(&color_spec).is_err() {
-            return false;
-        }
-        let _ = buf.write_all(msg.as_bytes());
-        let _ = buf.reset();
 
-        // Copy the buffer contents (with ANSI escapes) into the
-        // interpreter's session-scoped stderr writer.
-        let bytes = buf.as_slice();
-        let _ = self.stderr.borrow_mut().write_all(bytes);
+        // Format the styled string to bytes, then write to the session stderr.
+        let styled = if bold {
+            format!("{}", msg.with(color).attribute(Attribute::Bold))
+        } else {
+            format!("{}", msg.with(color))
+        };
+        let _ = self.stderr.borrow_mut().write_all(styled.as_bytes());
         true
     }
 
-    /// Stub when the `color` feature is not enabled.
-    #[cfg(not(feature = "color"))]
+    /// Stub when the `repl` feature is not enabled.
+    #[cfg(not(feature = "repl"))]
     fn try_write_colored(&self, _msg: &str, _style: DiagnosticStyle) -> bool {
         false
     }

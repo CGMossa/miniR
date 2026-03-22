@@ -38,17 +38,13 @@ fn main() {
 
 /// Print an error message to stderr with red color when available.
 fn eprint_colored(msg: &str) {
-    #[cfg(feature = "color")]
+    #[cfg(feature = "repl")]
     {
-        use std::io::Write;
-        use termcolor::{ColorChoice, ColorSpec, StandardStream, WriteColor};
-
-        let mut stream = StandardStream::stderr(ColorChoice::Auto);
-        let mut spec = ColorSpec::new();
-        spec.set_fg(Some(termcolor::Color::Red)).set_bold(true);
-        if stream.set_color(&spec).is_ok() {
-            let _ = stream.write_all(msg.as_bytes());
-            let _ = stream.reset();
+        use crossterm::style::{Attribute, Color, Stylize};
+        use std::io::{IsTerminal, Write};
+        if std::io::stderr().is_terminal() {
+            let styled = msg.with(Color::Red).attribute(Attribute::Bold);
+            let _ = write!(std::io::stderr(), "{styled}");
             return;
         }
     }

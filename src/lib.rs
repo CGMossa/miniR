@@ -43,24 +43,10 @@ pub fn init_logging() {
         }
     }
 
-    #[cfg(all(feature = "logging", not(feature = "tracing-output")))]
-    {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        use std::env;
-        if env::var("MINIR_LOG").is_ok() {
-            INIT.call_once(|| {
-                let _ = env_logger::Builder::new()
-                    .parse_env("MINIR_LOG")
-                    .format_timestamp(None)
-                    .format_target(false)
-                    .try_init();
-            });
-        }
-    }
+    // env_logger fallback removed — tracing-subscriber handles all logging
 }
 
-#[cfg(all(test, any(feature = "logging", feature = "tracing-output")))]
+#[cfg(all(test, feature = "tracing-output"))]
 mod tests {
     use super::init_logging;
 
