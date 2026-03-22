@@ -143,9 +143,21 @@ fn extract_limits(value: Option<&RValue>) -> Option<(f64, f64)> {
 fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
     let state = ctx.interpreter().current_plot.borrow().clone();
     if let Some(plot_state) = state {
-        // Blocks until user closes the window (X button).
-        crate::interpreter::graphics::egui_device::show_plot_window(&plot_state)
-            .map_err(|e| RError::new(RErrorKind::Other, format!("failed to display plot: {e}")))?;
+        // Send to the GUI thread (non-blocking).
+        let tx = ctx.interpreter().plot_tx.borrow();
+        if let Some(tx) = tx.as_ref() {
+            tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state))
+                .map_err(|e| {
+                    RError::new(
+                        RErrorKind::Other,
+                        format!("failed to send plot to GUI thread: {e}"),
+                    )
+                })?;
+        } else {
+            ctx.write_err(
+                "No plot window available. Start miniR normally (not with -e) to use plots.\n",
+            );
+        }
         *ctx.interpreter().current_plot.borrow_mut() = None;
     }
     Ok(())
@@ -234,6 +246,14 @@ fn interp_dev_off(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // Send close signal to the GUI window
+    #[cfg(feature = "plot")]
+    {
+        let tx = context.interpreter().plot_tx.borrow();
+        if let Some(tx) = tx.as_ref() {
+            let _ = tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Close);
+        }
+    }
     // Clear any accumulated plot data
     *context.interpreter().current_plot.borrow_mut() = None;
     context.interpreter().set_invisible();

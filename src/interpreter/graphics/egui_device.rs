@@ -1,13 +1,42 @@
 //! Interactive plot window using egui/eframe/egui_plot.
 //!
-//! This module is only compiled when the `plot` feature is enabled.
-//! It converts `PlotState` into an egui_plot window that supports
-//! pan, zoom, hover, and legend display.
+//! The plot window runs on the main thread (macOS requirement). The REPL
+//! sends plot data through a channel; the egui event loop picks it up and
+//! renders it. The REPL never blocks.
 //!
-//! The window blocks the REPL until closed (via the X button or dev.off()).
-//! On macOS, the GUI event loop must run on the main thread.
+//! Architecture:
+//! - Main thread: egui event loop (idles when no plots are open)
+//! - Background thread: REPL + interpreter
+//! - Communication: `PlotChannel` (mpsc sender/receiver)
+
+use std::sync::mpsc;
 
 use super::plot_data::{PlotItem, PlotState};
+
+// region: PlotChannel
+
+/// Message from the REPL thread to the plot window.
+pub enum PlotMessage {
+    /// Show a new plot (replaces the current one).
+    Show(PlotState),
+    /// Close the current plot window.
+    Close,
+}
+
+/// Sender half — stored on the Interpreter so builtins can send plots.
+pub type PlotSender = mpsc::Sender<PlotMessage>;
+
+/// Receiver half — owned by the egui event loop on the main thread.
+pub type PlotReceiver = mpsc::Receiver<PlotMessage>;
+
+/// Create a connected (sender, receiver) pair.
+pub fn plot_channel() -> (PlotSender, PlotReceiver) {
+    mpsc::channel()
+}
+
+// endregion
+
+// region: egui app
 
 /// Map an R pch value (0-25) to an `egui_plot::MarkerShape`.
 fn pch_to_marker(pch: u8) -> egui_plot::MarkerShape {
@@ -28,49 +57,74 @@ fn pch_to_marker(pch: u8) -> egui_plot::MarkerShape {
     }
 }
 
-/// Whether a pch value represents a filled marker.
 fn pch_is_filled(pch: u8) -> bool {
     pch >= 15
 }
 
-/// Convert an `[u8; 4]` RGBA color to an egui `Color32`.
 fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
-/// The eframe app that displays a single plot.
+/// The eframe app. Receives plot data from the REPL thread via a channel.
 struct PlotApp {
-    state: PlotState,
+    state: Option<PlotState>,
+    rx: PlotReceiver,
 }
 
 impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for messages from the REPL thread (non-blocking).
+        while let Ok(msg) = self.rx.try_recv() {
+            match msg {
+                PlotMessage::Show(new_state) => {
+                    self.state = Some(new_state);
+                }
+                PlotMessage::Close => {
+                    self.state = None;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    return;
+                }
+            }
+        }
+
+        // Request a repaint periodically so we pick up new messages.
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+
+        let Some(state) = &self.state else {
+            // No plot yet — show a waiting message.
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.label("Waiting for plot data...");
+                });
+            });
+            return;
+        };
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            let title = self.state.title.as_deref().unwrap_or("Plot");
+            let title = state.title.as_deref().unwrap_or("Plot");
 
             let mut plot = egui_plot::Plot::new("r_plot")
                 .legend(egui_plot::Legend::default())
                 .show_axes(true)
                 .show_grid(true);
 
-            if let Some(label) = &self.state.x_label {
+            if let Some(label) = &state.x_label {
                 plot = plot.x_axis_label(label.clone());
             }
-            if let Some(label) = &self.state.y_label {
+            if let Some(label) = &state.y_label {
                 plot = plot.y_axis_label(label.clone());
             }
-
-            if let Some((lo, hi)) = self.state.x_lim {
+            if let Some((lo, hi)) = state.x_lim {
                 plot = plot.include_x(lo).include_x(hi);
             }
-            if let Some((lo, hi)) = self.state.y_lim {
+            if let Some((lo, hi)) = state.y_lim {
                 plot = plot.include_y(lo).include_y(hi);
             }
 
             ui.heading(title);
 
             plot.show(ui, |plot_ui| {
-                for (idx, item) in self.state.items.iter().enumerate() {
+                for (idx, item) in state.items.iter().enumerate() {
                     let default_name = format!("series_{idx}");
                     render_plot_item(plot_ui, item, &default_name, idx);
                 }
@@ -95,10 +149,11 @@ fn render_plot_item(
         } => {
             let points: Vec<[f64; 2]> = x.iter().zip(y.iter()).map(|(&xi, &yi)| [xi, yi]).collect();
             let name = label.as_deref().unwrap_or(default_name);
-            let line = egui_plot::Line::new(name, points)
-                .color(rgba_to_color32(*color))
-                .width(*width);
-            plot_ui.line(line);
+            plot_ui.line(
+                egui_plot::Line::new(name, points)
+                    .color(rgba_to_color32(*color))
+                    .width(*width),
+            );
         }
         PlotItem::Points {
             x,
@@ -110,12 +165,13 @@ fn render_plot_item(
         } => {
             let points: Vec<[f64; 2]> = x.iter().zip(y.iter()).map(|(&xi, &yi)| [xi, yi]).collect();
             let name = label.as_deref().unwrap_or(default_name);
-            let pts = egui_plot::Points::new(name, points)
-                .color(rgba_to_color32(*color))
-                .radius(*size)
-                .shape(pch_to_marker(*shape))
-                .filled(pch_is_filled(*shape));
-            plot_ui.points(pts);
+            plot_ui.points(
+                egui_plot::Points::new(name, points)
+                    .color(rgba_to_color32(*color))
+                    .radius(*size)
+                    .shape(pch_to_marker(*shape))
+                    .filled(pch_is_filled(*shape)),
+            );
         }
         PlotItem::Bars {
             x,
@@ -134,8 +190,7 @@ fn render_plot_item(
                 })
                 .collect();
             let name = label.as_deref().unwrap_or(default_name);
-            let chart = egui_plot::BarChart::new(name, bars);
-            plot_ui.bar_chart(chart);
+            plot_ui.bar_chart(egui_plot::BarChart::new(name, bars));
         }
         PlotItem::BoxPlot {
             positions,
@@ -154,54 +209,58 @@ fn render_plot_item(
                     ),
                 )
                 .fill(rgba_to_color32(*color));
-                let box_name = format!("box_{j}");
-                plot_ui.box_plot(egui_plot::BoxPlot::new(box_name, vec![elem]));
+                plot_ui.box_plot(egui_plot::BoxPlot::new(format!("box_{j}"), vec![elem]));
             }
         }
         PlotItem::HLine { y, color, width } => {
-            let name = format!("hline_{idx}");
-            let hline = egui_plot::HLine::new(name, *y)
-                .color(rgba_to_color32(*color))
-                .width(*width);
-            plot_ui.hline(hline);
+            plot_ui.hline(
+                egui_plot::HLine::new(format!("hline_{idx}"), *y)
+                    .color(rgba_to_color32(*color))
+                    .width(*width),
+            );
         }
         PlotItem::VLine { x, color, width } => {
-            let name = format!("vline_{idx}");
-            let vline = egui_plot::VLine::new(name, *x)
-                .color(rgba_to_color32(*color))
-                .width(*width);
-            plot_ui.vline(vline);
+            plot_ui.vline(
+                egui_plot::VLine::new(format!("vline_{idx}"), *x)
+                    .color(rgba_to_color32(*color))
+                    .width(*width),
+            );
         }
         PlotItem::Text { x, y, text, color } => {
-            let name = format!("text_{idx}");
-            let txt = egui_plot::Text::new(
-                name,
+            plot_ui.text(egui_plot::Text::new(
+                format!("text_{idx}"),
                 egui_plot::PlotPoint::new(*x, *y),
                 egui::RichText::new(text).color(rgba_to_color32(*color)),
-            );
-            plot_ui.text(txt);
+            ));
         }
     }
 }
 
-/// Launch a blocking egui window displaying the plot.
-///
-/// Blocks the calling thread until the user closes the window (X button).
-/// On macOS this must be called from the main thread.
-pub fn show_plot_window(state: &PlotState) -> Result<(), String> {
-    let title = state.title.as_deref().unwrap_or("R Plot").to_string();
+// endregion
 
+// region: run_plot_event_loop
+
+/// Run the egui event loop on the main thread.
+///
+/// This blocks the main thread forever (or until the window is closed and no
+/// new plots arrive). The REPL should already be running on a background thread
+/// before this is called.
+///
+/// When no plot is being displayed, the window is hidden. When a `Show` message
+/// arrives, the window appears. When the user closes the window (X button),
+/// the app stays alive but hidden, ready for the next plot.
+pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_title(&title),
+            .with_title("R Plot"),
         ..Default::default()
     };
 
-    let app = PlotApp {
-        state: state.clone(),
-    };
+    let app = PlotApp { state: None, rx };
 
-    eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))))
-        .map_err(|e| format!("failed to open plot window: {e}"))
+    eframe::run_native("R Plot", native_options, Box::new(|_cc| Ok(Box::new(app))))
+        .map_err(|e| format!("egui event loop failed: {e}"))
 }
+
+// endregion

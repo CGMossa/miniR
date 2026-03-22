@@ -30,10 +30,6 @@ fn main() {
 }
 
 /// Print an error message to stderr with red color when available.
-///
-/// Uses `termcolor` for portable colored output when the `color` feature is
-/// enabled and stderr is connected to a terminal. Falls back to plain
-/// `eprint!` otherwise.
 fn eprint_colored(msg: &str) {
     #[cfg(feature = "color")]
     {
@@ -43,7 +39,6 @@ fn eprint_colored(msg: &str) {
         let mut stream = StandardStream::stderr(ColorChoice::Auto);
         let mut spec = ColorSpec::new();
         spec.set_fg(Some(termcolor::Color::Red)).set_bold(true);
-        // Best-effort coloring — fall back to plain text on failure
         if stream.set_color(&spec).is_ok() {
             let _ = stream.write_all(msg.as_bytes());
             let _ = stream.reset();
@@ -90,7 +85,65 @@ Type 'q()' to quit.
 "#
     );
 
-    // Persistent history (~/.miniR_history, last 1000 entries)
+    // When the `plot` feature is enabled, the REPL runs on a background thread
+    // and the main thread runs the egui event loop (macOS requires GUI on main).
+    // When `plot` is disabled, the REPL runs directly on the main thread.
+    #[cfg(feature = "plot")]
+    {
+        let (tx, rx) = r::interpreter::graphics::egui_device::plot_channel();
+        // Spawn REPL on background thread
+        let repl_thread = std::thread::Builder::new()
+            .name("repl".into())
+            .spawn(move || {
+                repl_loop(Some(tx));
+            })
+            .expect("failed to spawn REPL thread");
+
+        // Run egui event loop on main thread (blocks until closed).
+        // When the REPL thread exits (q()), the sender drops, and the
+        // event loop will eventually exit too.
+        let _ = r::interpreter::graphics::egui_device::run_plot_event_loop(rx);
+
+        // Wait for REPL thread to finish
+        let _ = repl_thread.join();
+    }
+
+    #[cfg(not(feature = "plot"))]
+    {
+        repl_loop(None::<()>);
+    }
+}
+
+/// The actual REPL loop. `plot_tx` is the channel sender for sending plots
+/// to the GUI thread (None when `plot` feature is off).
+#[cfg(feature = "plot")]
+fn repl_loop(plot_tx: Option<r::interpreter::graphics::egui_device::PlotSender>) {
+    repl_loop_inner(plot_tx);
+}
+
+#[cfg(not(feature = "plot"))]
+fn repl_loop<T>(_plot_tx: Option<T>) {
+    repl_loop_inner(());
+}
+
+#[cfg(feature = "plot")]
+fn repl_loop_inner(plot_tx: Option<r::interpreter::graphics::egui_device::PlotSender>) {
+    let mut session = Session::new();
+    // Install the plot channel sender on the interpreter
+    *session.interpreter().plot_tx.borrow_mut() = plot_tx;
+    repl_main(&mut session);
+}
+
+#[cfg(not(feature = "plot"))]
+fn repl_loop_inner(_: ()) {
+    let mut session = Session::new();
+    repl_main(&mut session);
+}
+
+fn repl_main(session: &mut Session) {
+    let _ = session.install_signal_handler();
+
+    // Persistent history
     let history_path = env::var("MINIR_HISTFILE")
         .or_else(|_| env::var("HOME").map(|h| format!("{h}/.miniR_history")))
         .unwrap_or_else(|_| ".miniR_history".to_string())
@@ -104,11 +157,9 @@ Type 'q()' to quit.
         }
     };
 
-    // Fish-style history hints (gray italic)
     let hinter =
         Box::new(DefaultHinter::default().with_style(Style::new().italic().fg(Color::DarkGray)));
 
-    // Tab completion with columnar menu
     let completer = Box::new(RCompleter::new());
     let completion_menu = Box::new(
         ColumnarMenu::default()
@@ -117,7 +168,6 @@ Type 'q()' to quit.
             .with_column_padding(2),
     );
 
-    // Emacs keybindings + Tab for completion menu
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
         KeyModifiers::NONE,
@@ -144,14 +194,9 @@ Type 'q()' to quit.
         .with_edit_mode(edit_mode);
 
     let prompt = RPrompt;
-    let mut session = Session::new();
-    let _ = session.install_signal_handler();
-
-    // Set initial terminal width
     session.sync_terminal_width();
 
     loop {
-        // Refresh terminal width before each prompt (handles window resize)
         session.sync_terminal_width();
 
         match line_editor.read_line(&prompt) {
@@ -162,15 +207,10 @@ Type 'q()' to quit.
                     }
                 }
                 Err(e) => {
-                    // Just print the error — interrupt errors display as
-                    // "Interrupted" via their Display impl, no special case needed.
-                    // Parse errors use miette rendering when `diagnostics` is on.
                     eprint_colored(&e.render());
                 }
             },
             Ok(Signal::CtrlC) => {
-                // Ctrl+C while waiting for input — print a blank line and
-                // show a new prompt (like R does).
                 println!();
             }
             Ok(Signal::CtrlD) => {

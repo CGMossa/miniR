@@ -259,6 +259,9 @@ pub struct Interpreter {
     pub(crate) color_palette: RefCell<Vec<graphics::color::RColor>>,
     /// Current plot being accumulated (for egui_plot rendering).
     pub(crate) current_plot: RefCell<Option<graphics::plot_data::PlotState>>,
+    /// Channel sender for pushing plots to the GUI thread (when `plot` feature is on).
+    #[cfg(feature = "plot")]
+    pub(crate) plot_tx: RefCell<Option<graphics::egui_device::PlotSender>>,
 }
 
 /// S4 class definition stored in the per-interpreter class registry.
@@ -409,6 +412,8 @@ impl Interpreter {
             par_state: RefCell::new(graphics::par::ParState::default()),
             color_palette: RefCell::new(graphics::color::default_palette()),
             current_plot: RefCell::new(None),
+            #[cfg(feature = "plot")]
+            plot_tx: RefCell::new(None),
         };
 
         // Synthesize Rd help pages from builtin rustdoc comments so every
