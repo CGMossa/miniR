@@ -159,10 +159,12 @@ Four feature profiles for different development scenarios:
 
 - Agents should always run in **worktrees** (`isolation: "worktree"`) so they don't collide with each other or main
 - Agents should **remove `.cargo/config.toml`** in their worktree (`rm -f .cargo/config.toml`) so `cargo` fetches from crates.io instead of the vendor dir — this avoids "package not found" errors when agents add new dependencies
-- After an agent finishes, **rebase its worktree onto local main** (`git -C "$WT" rebase main`) — worktrees share the local repo so this uses the local `main` branch directly, no remote needed. Then merge into main (`git merge worktree-branch --no-edit`), then re-vendor with `just vendor-force`
-- **Never copy entire files** from a worktree to main — rebase + merge is the correct workflow. Copying whole files overwrites unrelated changes that were made on main since the worktree branched.
+- **Merge workflow**: rebase the worktree branch onto current main, then merge into main. The rebase must happen immediately before the merge — not when the agent finishes
+- **Sequential merging**: When multiple worktrees need merging, do them one at a time: rebase worktree-1 onto main, merge it, then rebase worktree-2 onto the now-updated main, merge it, and so on. Each rebase must see the previous merge's commits on main, otherwise the merge silently overwrites them
+- **Never copy entire files** from a worktree to main — rebase + merge is the correct workflow. Copying whole files overwrites unrelated changes that were made on main since the worktree branched
 - If the agent didn't commit, commit its work in the worktree first (`git -C "$WT" add -A && git -C "$WT" commit -m "msg"`), then rebase + merge
 - Never delete a worktree until its changes have been verified as merged into main
+- After merging, re-vendor with `just vendor-force` if new dependencies were added
 
 ## Vendor Audit
 
@@ -184,7 +186,17 @@ Four feature profiles for different development scenarios:
 - If no trash utility is available, **stop and ask for guidance** instead of deleting.
 - Permanent deletion is irreversible and unsafe in automated or agent-driven workflows. Using the trash provides a recovery path.
 
-## Tool Rules
+## Capturing Command Output
 
+- **Always redirect long-running command output to a log file**, then read the log. This ensures you see the full output (no truncation) and can re-read sections as needed.
+- After the command finishes, use the **Read tool** to read the log file. **Do NOT use `tail` or `head`** — use the Read tool so you see the complete output.
 - Do NOT tail or truncate `cargo vendor` output — let it run fully so the config snippet is visible
-- Never pipe cargo command output through `head` or `tail` — store the full log in a temp file, then read the relevant portion. If more issues surface later, you can go back to the logfile instead of re-running the command
+- Never pipe cargo command output through `head` or `tail` — store the full log in a temp file, then read the relevant portion
+
+## Build and Test Commands
+
+- **Always use `-F full`** for clippy, test, and build when checking the full project. Never use `--all-features` — the `full` feature is the union of all additive features.
+- Build: `cargo build -F full`
+- Clippy: `cargo clippy --all-targets -F full -- -D warnings`
+- Test: `cargo test -F full`
+- Format first: `cargo fmt` before clippy (so clippy reports correct line numbers)
