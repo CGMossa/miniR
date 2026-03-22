@@ -53,6 +53,8 @@ fn eprint_colored(msg: &str) {
         }
     }
     eprint!("{}", msg);
+}
+
 fn generate_docs(dir: &str) {
     let path = Path::new(dir);
     match Session::generate_rd_docs(path) {
