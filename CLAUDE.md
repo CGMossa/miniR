@@ -81,10 +81,11 @@ Four feature profiles for different development scenarios:
 | **minimal** | `cargo build --no-default-features -F minimal` | ~3s | ~200 | Parser work, AST changes, WASM targets |
 | **fast** | `cargo build --no-default-features -F fast` | ~5s | ~400 | Quick iteration on core interpreter |
 | **default** | `cargo build` | ~8.5s | ~613 | Everyday development |
-| **full** | `cargo build --all-features` | ~15s | ~994 | CI, release builds, TLS + linalg |
+| **full** | `cargo build -F full` | ~15s | ~994 | CI, release builds, TLS + linalg + GUI |
 
 - **default** excludes `tls` (ring+rustls, 7.7s) and `linalg` (nalgebra+ndarray, 7.3s) — 45% faster than full
-- **full** includes everything — CI should always test with `--all-features`
+- **full** includes all additive features — use `-F full`, NOT `--all-features`
+- **Never use `--all-features`** — always use `-F full` instead. The `full` feature is the union of all additive features. `--all-features` can enable conflicting or non-additive feature combinations.
 - **minimal** has zero optional deps — suitable for `wasm32-unknown-unknown`
 - **fast** adds random, datetime, io, compression, diagnostics, signal on top of minimal
 - Feature-gated tests use `#![cfg(feature = "...")]` so they're skipped in smaller profiles
@@ -92,7 +93,7 @@ Four feature profiles for different development scenarios:
 ## Testing
 
 - `cargo test` — primary test command, runs all Rust integration tests
-- `cargo clippy --all-targets --all-features -- -D warnings` — must pass with zero warnings
+- `cargo clippy --all-targets -F full -- -D warnings` — must pass with zero warnings
 - **Every new feature should have tests planned** — either `stopifnot` assertions via `Session::eval_source` in a Rust integration test, or direct value checks via the Session API. Tests don't have to land in the same commit, but they should be planned and tracked. If an agent produces code without tests, note what needs coverage.
 - `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
 - `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
@@ -105,7 +106,7 @@ Four feature profiles for different development scenarios:
 
 - GitHub Actions: `.github/workflows/ci.yml`
 - Runs on push to main and on PRs
-- Steps: vendor dependencies, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
+- Steps: vendor dependencies, `cargo fmt --check`, `cargo clippy --all-targets -F full -- -D warnings`, `cargo test`
 
 ## Plans
 
@@ -139,7 +140,7 @@ Four feature profiles for different development scenarios:
 
 ## Code Quality
 
-- Before committing, always run in this order: `cargo fmt`, then `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings), then `cargo test` — fmt must run first so clippy reports correct line numbers
+- Before committing, always run in this order: `cargo fmt`, then `cargo clippy --all-targets -F full -- -D warnings` (zero warnings), then `cargo test` — fmt must run first so clippy reports correct line numbers
 - **No "pre-existing" warnings** — if you encounter a warning or error, fix it. There is no such thing as a pre-existing issue that can be ignored. Every warning is a bug to be fixed, not a known issue to be documented.
 - `#[allow(dead_code)]` attributes are temporary scaffolding for stubbed features (formula, tilde, dotdot, etc.) — resolve them as features are implemented
 - **No `#[non_exhaustive]`** — don't use the `non_exhaustive` attribute; it weakens exhaustive match checking and makes the codebase less robust
