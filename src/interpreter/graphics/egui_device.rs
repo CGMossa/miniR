@@ -4,11 +4,8 @@
 //! It converts `PlotState` into an egui_plot window that supports
 //! pan, zoom, hover, and legend display.
 //!
-//! The window runs on a separate thread so the REPL remains interactive.
-//! `dev.off()` sends a close signal, and the window's X button also works.
-
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+//! The window blocks the REPL until closed (via the X button or dev.off()).
+//! On macOS, the GUI event loop must run on the main thread.
 
 use super::plot_data::{PlotItem, PlotState};
 
@@ -41,44 +38,13 @@ fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
-/// Handle to a running plot window. Dropping it or calling `close()` shuts
-/// the window down.
-pub struct PlotWindowHandle {
-    close_tx: mpsc::Sender<()>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-
-impl PlotWindowHandle {
-    /// Request the window to close and wait for the thread to finish.
-    pub fn close(&mut self) {
-        let _ = self.close_tx.send(());
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-impl Drop for PlotWindowHandle {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
 /// The eframe app that displays a single plot.
 struct PlotApp {
     state: PlotState,
-    close_rx: Arc<Mutex<mpsc::Receiver<()>>>,
 }
 
 impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Check if we've been asked to close
-        if let Ok(rx) = self.close_rx.lock() {
-            if rx.try_recv().is_ok() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-        }
-
         egui::CentralPanel::default().show(ctx, |ui| {
             let title = self.state.title.as_deref().unwrap_or("Plot");
 
@@ -101,7 +67,6 @@ impl eframe::App for PlotApp {
                 plot = plot.include_y(lo).include_y(hi);
             }
 
-            // Show title above the plot
             ui.heading(title);
 
             plot.show(ui, |plot_ui| {
@@ -219,39 +184,24 @@ fn render_plot_item(
     }
 }
 
-/// Launch a non-blocking egui window displaying the plot.
+/// Launch a blocking egui window displaying the plot.
 ///
-/// Returns a `PlotWindowHandle` that can be used to close the window
-/// programmatically (via `dev.off()`). The window also closes when
-/// the user clicks the X button.
-pub fn show_plot_window(state: &PlotState) -> Result<PlotWindowHandle, String> {
-    let (close_tx, close_rx) = mpsc::channel();
-    let close_rx = Arc::new(Mutex::new(close_rx));
-    let owned_state = state.clone();
+/// Blocks the calling thread until the user closes the window (X button).
+/// On macOS this must be called from the main thread.
+pub fn show_plot_window(state: &PlotState) -> Result<(), String> {
     let title = state.title.as_deref().unwrap_or("R Plot").to_string();
 
-    let thread = std::thread::Builder::new()
-        .name("plot-window".into())
-        .spawn(move || {
-            let native_options = eframe::NativeOptions {
-                viewport: egui::ViewportBuilder::default()
-                    .with_inner_size([800.0, 600.0])
-                    .with_title(&title),
-                ..Default::default()
-            };
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_title(&title),
+        ..Default::default()
+    };
 
-            let app = PlotApp {
-                state: owned_state,
-                close_rx,
-            };
+    let app = PlotApp {
+        state: state.clone(),
+    };
 
-            // run_native blocks until the window is closed
-            let _ = eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))));
-        })
-        .map_err(|e| format!("failed to spawn plot thread: {e}"))?;
-
-    Ok(PlotWindowHandle {
-        close_tx,
-        thread: Some(thread),
-    })
+    eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))))
+        .map_err(|e| format!("failed to open plot window: {e}"))
 }
