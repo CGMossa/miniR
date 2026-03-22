@@ -372,15 +372,39 @@ fn interp_dev_off(
                             )
                         })?;
                     }
-                    crate::interpreter::graphics::FileFormat::Png
-                    | crate::interpreter::graphics::FileFormat::Pdf => {
-                        // PNG/PDF: write SVG for now (proper rasterization is future work)
-                        std::fs::write(&dev.filename, &svg_str).map_err(|e| {
+                    crate::interpreter::graphics::FileFormat::Png => {
+                        // Write SVG content — proper PNG rasterization requires resvg
+                        let svg_filename =
+                            dev.filename.strip_suffix(".png").unwrap_or(&dev.filename);
+                        let svg_path = format!("{svg_filename}.svg");
+                        std::fs::write(&svg_path, &svg_str).map_err(|e| {
                             RError::new(
                                 RErrorKind::Other,
-                                format!("failed to write file '{}': {e}", dev.filename),
+                                format!("failed to write file '{}': {e}", svg_path),
                             )
                         })?;
+                        context.write_err(&format!(
+                            "Note: PNG rasterization not yet supported. \
+                             SVG written to '{}' instead.\n",
+                            svg_path
+                        ));
+                    }
+                    crate::interpreter::graphics::FileFormat::Pdf => {
+                        // Write SVG content — proper PDF generation requires printpdf
+                        let svg_filename =
+                            dev.filename.strip_suffix(".pdf").unwrap_or(&dev.filename);
+                        let svg_path = format!("{svg_filename}.svg");
+                        std::fs::write(&svg_path, &svg_str).map_err(|e| {
+                            RError::new(
+                                RErrorKind::Other,
+                                format!("failed to write file '{}': {e}", svg_path),
+                            )
+                        })?;
+                        context.write_err(&format!(
+                            "Note: PDF generation not yet supported. \
+                             SVG written to '{}' instead.\n",
+                            svg_path
+                        ));
                     }
                 }
             }

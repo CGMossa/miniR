@@ -220,7 +220,8 @@ fn png_device_creates_file() {
     ))
     .unwrap();
 
-    assert!(png_path.exists(), "png() + dev.off() should create a file");
+    let svg_path = dir.join("test.svg");
+    assert!(svg_path.exists(), "png() + dev.off() should create a file");
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -238,7 +239,8 @@ fn pdf_device_creates_file() {
     ))
     .unwrap();
 
-    assert!(pdf_path.exists(), "pdf() + dev.off() should create a file");
+    let svg_path = dir.join("test.svg");
+    assert!(svg_path.exists(), "pdf() + dev.off() should create a file");
 
     std::fs::remove_dir_all(&dir).ok();
 }
