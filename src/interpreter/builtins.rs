@@ -240,6 +240,167 @@ pub fn synthesize_builtin_help(index: &mut crate::interpreter::packages::rd::RdH
     }
 }
 
+/// Generate `.Rd` documentation files for all documented builtins.
+///
+/// Creates one `.Rd` file per primary builtin name in the given directory.
+/// Related functions that share aliases are grouped into a single `.Rd` file.
+/// Returns the number of files written.
+pub fn generate_rd_docs(dir: &std::path::Path) -> Result<usize, std::io::Error> {
+    use crate::interpreter::packages::rd::RdDoc;
+    use std::collections::{HashMap, HashSet};
+
+    // First pass: build RdDocs for each builtin, keyed by primary name.
+    // Group aliases so that e.g. paste and paste0 share a page if they
+    // have the same primary descriptor.
+    let mut docs: HashMap<String, RdDoc> = HashMap::new();
+    let mut seen_aliases: HashSet<String> = HashSet::new();
+
+    for desc in BUILTIN_REGISTRY {
+        if desc.doc.is_empty() {
+            continue;
+        }
+
+        // Skip if this descriptor's name was already claimed as an alias
+        // of a previously processed builtin.
+        if seen_aliases.contains(desc.name) {
+            continue;
+        }
+
+        let mut title = None;
+        let mut description_lines = Vec::new();
+        let mut arguments = Vec::new();
+        let mut return_val = None;
+        let mut in_description = false;
+
+        for line in desc.doc.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("@param ") {
+                in_description = false;
+                if let Some((param, param_desc)) = rest.split_once(' ') {
+                    arguments.push((param.to_string(), param_desc.to_string()));
+                }
+            } else if let Some(ret) = line.strip_prefix("@return ") {
+                in_description = false;
+                return_val = Some(ret.to_string());
+            } else if line.starts_with('@') {
+                in_description = false;
+            } else if title.is_none() && !line.is_empty() {
+                title = Some(line.to_string());
+                in_description = true;
+            } else if in_description && !line.is_empty() {
+                description_lines.push(line.to_string());
+            } else if line.is_empty() && in_description && !description_lines.is_empty() {
+                description_lines.push(String::new());
+            }
+        }
+
+        let params = extract_param_names_from_doc(desc.doc);
+        let usage = if params.is_empty() {
+            format!("{}(...)", desc.name)
+        } else {
+            format!("{}({})", desc.name, params.join(", "))
+        };
+
+        let description = if description_lines.is_empty() {
+            None
+        } else {
+            Some(description_lines.join("\n").trim_end().to_string())
+        };
+
+        let mut aliases: Vec<String> = vec![desc.name.to_string()];
+        for a in desc.aliases {
+            if !aliases.contains(&a.to_string()) {
+                aliases.push(a.to_string());
+            }
+            seen_aliases.insert(a.to_string());
+        }
+        seen_aliases.insert(desc.name.to_string());
+
+        let doc = RdDoc {
+            name: Some(desc.name.to_string()),
+            aliases,
+            title,
+            description,
+            usage: Some(usage),
+            arguments,
+            value: return_val,
+            keywords: if desc.namespace.is_empty() {
+                vec![]
+            } else {
+                vec![desc.namespace.to_string()]
+            },
+            ..Default::default()
+        };
+
+        let safe_name = sanitize_rd_filename(desc.name);
+        docs.entry(safe_name).or_insert(doc);
+    }
+
+    // Write each doc to a file.
+    // Track filenames case-insensitively to avoid collisions on macOS HFS+/APFS.
+    std::fs::create_dir_all(dir)?;
+
+    let mut written: HashSet<String> = HashSet::new();
+    let mut count = 0usize;
+    for (safe_name, doc) in &docs {
+        let lower = safe_name.to_lowercase();
+        if written.contains(&lower) {
+            continue;
+        }
+        let rd_content = doc.to_rd();
+        let file_path = dir.join(format!("{safe_name}.Rd"));
+        std::fs::write(&file_path, rd_content)?;
+        written.insert(lower);
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+/// Sanitize a builtin name for use as a filename.
+///
+/// Operator builtins like `+`, `/`, `<` contain characters that are not safe
+/// in filenames (especially `/` which is a path separator). This replaces
+/// unsafe characters with descriptive names.
+fn sanitize_rd_filename(name: &str) -> String {
+    if name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+    {
+        return name.to_string();
+    }
+
+    let mut out = String::new();
+    for ch in name.chars() {
+        match ch {
+            '+' => out.push_str("plus"),
+            '-' => out.push_str("minus"),
+            '*' => out.push_str("star"),
+            '/' => out.push_str("slash"),
+            '^' => out.push_str("caret"),
+            '<' => out.push_str("lt"),
+            '>' => out.push_str("gt"),
+            '=' => out.push_str("eq"),
+            '!' => out.push_str("bang"),
+            '&' => out.push_str("and"),
+            '|' => out.push_str("or"),
+            '%' => out.push_str("pct"),
+            '~' => out.push_str("tilde"),
+            ':' => out.push_str("colon"),
+            '[' => out.push_str("lbracket"),
+            ']' => out.push_str("rbracket"),
+            '(' => out.push_str("lparen"),
+            ')' => out.push_str("rparen"),
+            '{' => out.push_str("lbrace"),
+            '}' => out.push_str("rbrace"),
+            '$' => out.push_str("dollar"),
+            '@' => out.push_str("at"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 pub fn register_builtins(env: &Environment) {
     for descriptor in BUILTIN_REGISTRY {
         register_builtin_binding(env, descriptor.name, *descriptor);

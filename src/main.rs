@@ -1,4 +1,5 @@
 use std::env;
+use std::path::Path;
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
@@ -21,6 +22,12 @@ fn main() {
                 std::process::exit(1);
             }
             run_expr(&args[2]);
+        } else if args[1] == "--generate-docs" {
+            if args.len() < 3 {
+                eprintln!("Error: --generate-docs requires a directory argument");
+                std::process::exit(1);
+            }
+            generate_docs(&args[2]);
         } else {
             run_file(&args[1]);
         }
@@ -46,6 +53,17 @@ fn eprint_colored(msg: &str) {
         }
     }
     eprint!("{}", msg);
+fn generate_docs(dir: &str) {
+    let path = Path::new(dir);
+    match Session::generate_rd_docs(path) {
+        Ok(count) => {
+            println!("Generated {count} .Rd files in {dir}");
+        }
+        Err(e) => {
+            eprintln!("Error generating docs: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_expr(source: &str) {

@@ -230,6 +230,14 @@ impl Session {
         );
     }
 
+    /// Generate `.Rd` documentation files for all documented builtins.
+    ///
+    /// Creates the output directory if it doesn't exist, then writes one `.Rd`
+    /// file per primary builtin name. Returns the number of files written.
+    pub fn generate_rd_docs(dir: &Path) -> Result<usize, std::io::Error> {
+        crate::interpreter::builtins::generate_rd_docs(dir)
+    }
+
     /// Return a clone of the interpreter's interrupt flag.
     /// The caller (or a signal handler) can set it to `true` to interrupt
     /// the current computation.

@@ -268,6 +268,168 @@ impl RdDoc {
     pub fn examples_code(&self) -> Option<&str> {
         self.examples.as_deref()
     }
+
+    /// Serialize this document to R's `.Rd` format.
+    ///
+    /// Produces a well-formed Rd file that can be placed in a package's `man/`
+    /// directory. Text content is escaped so that `%`, `{`, `}`, and `\` in
+    /// user-facing strings don't break Rd parsing, while Rd structural commands
+    /// are emitted verbatim.
+    pub fn to_rd(&self) -> String {
+        let mut out = String::new();
+
+        // \name{}
+        if let Some(name) = &self.name {
+            out.push_str(&format!("\\name{{{}}}\n", escape_rd(name)));
+        }
+
+        // \alias{} — one per alias
+        for alias in &self.aliases {
+            out.push_str(&format!("\\alias{{{}}}\n", escape_rd(alias)));
+        }
+
+        // \title{}
+        if let Some(title) = &self.title {
+            out.push_str(&format!("\\title{{{}}}\n", escape_rd(title)));
+        }
+
+        // \description{}
+        if let Some(desc) = &self.description {
+            out.push_str("\\description{\n");
+            out.push_str(&escape_rd(desc));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \usage{}
+        if let Some(usage) = &self.usage {
+            out.push_str("\\usage{\n");
+            // Usage is R code — escape only %, not braces (braces are valid R syntax
+            // and Rd parsers expect them in usage blocks).
+            out.push_str(&escape_rd_usage(usage));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \arguments{}
+        if !self.arguments.is_empty() {
+            out.push_str("\\arguments{\n");
+            for (param, desc) in &self.arguments {
+                out.push_str(&format!(
+                    "  \\item{{{}}}{{{}}}",
+                    escape_rd(param),
+                    escape_rd(desc)
+                ));
+                out.push('\n');
+            }
+            out.push_str("}\n");
+        }
+
+        // \details{}
+        if let Some(details) = &self.details {
+            out.push_str("\\details{\n");
+            out.push_str(&escape_rd(details));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \value{}
+        if let Some(value) = &self.value {
+            out.push_str("\\value{\n");
+            out.push_str(&escape_rd(value));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \note{}
+        if let Some(note) = &self.note {
+            out.push_str("\\note{\n");
+            out.push_str(&escape_rd(note));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \author{}
+        if let Some(author) = &self.author {
+            out.push_str(&format!("\\author{{{}}}\n", escape_rd(author)));
+        }
+
+        // \references{}
+        if let Some(refs) = &self.references {
+            out.push_str("\\references{\n");
+            out.push_str(&escape_rd(refs));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \seealso{}
+        if let Some(seealso) = &self.seealso {
+            out.push_str("\\seealso{\n");
+            out.push_str(&escape_rd(seealso));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \section{Name}{...} — custom sections
+        for (sec_name, sec_content) in &self.sections {
+            out.push_str(&format!("\\section{{{}}}{{", escape_rd(sec_name)));
+            out.push('\n');
+            out.push_str(&escape_rd(sec_content));
+            out.push('\n');
+            out.push_str("}\n");
+        }
+
+        // \examples{}
+        if let Some(examples) = &self.examples {
+            out.push_str("\\examples{\n");
+            // Examples are R code — wrap in \dontrun{} since these are
+            // synthesized from doc comments, not tested runnable examples.
+            out.push_str("\\dontrun{\n");
+            out.push_str(&escape_rd_usage(examples));
+            out.push('\n');
+            out.push_str("}\n");
+            out.push_str("}\n");
+        }
+
+        // \keyword{}
+        for kw in &self.keywords {
+            out.push_str(&format!("\\keyword{{{}}}\n", escape_rd(kw)));
+        }
+
+        // \docType{}
+        if let Some(doc_type) = &self.doc_type {
+            out.push_str(&format!("\\docType{{{}}}\n", escape_rd(doc_type)));
+        }
+
+        out
+    }
+}
+
+/// Escape text for inclusion in Rd markup.
+///
+/// In Rd format, `%` starts a comment, `{` and `}` delimit arguments, and `\`
+/// introduces commands. All four must be escaped when they appear in plain text.
+fn escape_rd(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '%' => out.push_str("\\%"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Escape text for Rd usage/examples blocks (R code).
+///
+/// In R code sections, only `%` needs escaping (it's still an Rd comment
+/// character). Braces and backslashes are valid R syntax and should be
+/// left alone so the code remains valid.
+fn escape_rd_usage(text: &str) -> String {
+    text.replace('%', "\\%")
 }
 
 /// Stateful parser for Rd files.
