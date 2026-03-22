@@ -70,8 +70,83 @@ fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
 
 /// A single tab in the GUI window.
 enum Tab {
-    Plot { title: String, state: PlotState },
-    Table { title: String, data: TableData },
+    Plot {
+        title: String,
+        state: PlotState,
+    },
+    Table {
+        title: String,
+        data: TableData,
+        view_state: TableViewState,
+    },
+}
+
+/// Interactive state for a View() table tab.
+struct TableViewState {
+    /// Text filter — only rows containing this substring (in any column) are shown.
+    filter: String,
+    /// Column to sort by (None = original order).
+    sort_col: Option<usize>,
+    /// Sort descending?
+    sort_desc: bool,
+    /// Number of decimal digits for numeric display (None = raw).
+    digits: Option<usize>,
+    /// Cached sorted+filtered row indices.
+    visible_rows: Vec<usize>,
+    /// Whether visible_rows needs recomputation.
+    dirty: bool,
+}
+
+impl TableViewState {
+    fn new(nrow: usize) -> Self {
+        Self {
+            filter: String::new(),
+            sort_col: None,
+            sort_desc: false,
+            digits: None,
+            visible_rows: (0..nrow).collect(),
+            dirty: false,
+        }
+    }
+
+    fn recompute(&mut self, data: &TableData) {
+        let mut indices: Vec<usize> = if self.filter.is_empty() {
+            (0..data.rows.len()).collect()
+        } else {
+            let needle = self.filter.to_lowercase();
+            (0..data.rows.len())
+                .filter(|&r| {
+                    data.rows[r]
+                        .iter()
+                        .any(|cell| cell.to_lowercase().contains(&needle))
+                        || data
+                            .row_names
+                            .get(r)
+                            .is_some_and(|rn| rn.to_lowercase().contains(&needle))
+                })
+                .collect()
+        };
+
+        if let Some(col) = self.sort_col {
+            indices.sort_by(|&a, &b| {
+                let va = data.rows[a].get(col).map(|s| s.as_str()).unwrap_or("");
+                let vb = data.rows[b].get(col).map(|s| s.as_str()).unwrap_or("");
+                // Try numeric comparison first
+                let cmp = match (va.parse::<f64>(), vb.parse::<f64>()) {
+                    (Ok(fa), Ok(fb)) => fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => va.cmp(vb),
+                };
+                if self.sort_desc {
+                    cmp.reverse()
+                } else {
+                    cmp
+                }
+            });
+        }
+
+        self.visible_rows = indices;
+        self.dirty = false;
+    }
 }
 
 impl Tab {
@@ -112,7 +187,12 @@ impl eframe::App for PlotApp {
                 }
                 PlotMessage::View(data) => {
                     let title = data.title.clone();
-                    self.tabs.push(Tab::Table { title, data });
+                    let nrow = data.rows.len();
+                    self.tabs.push(Tab::Table {
+                        title,
+                        view_state: TableViewState::new(nrow),
+                        data,
+                    });
                     self.active_tab = self.tabs.len() - 1;
                 }
                 PlotMessage::Close => {
@@ -161,7 +241,9 @@ impl eframe::App for PlotApp {
                 }
                 if let Some(idx) = to_close {
                     self.tabs.remove(idx);
-                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                    if self.tabs.is_empty() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    } else if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len() - 1;
                     }
                 }
@@ -174,12 +256,14 @@ impl eframe::App for PlotApp {
 
         // Render active tab content
         let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
-        match &self.tabs[active] {
+        match &mut self.tabs[active] {
             Tab::Plot { state, .. } => {
                 render_plot(ctx, state);
             }
-            Tab::Table { data, .. } => {
-                render_table(ctx, data);
+            Tab::Table {
+                data, view_state, ..
+            } => {
+                render_table(ctx, data, view_state);
             }
         }
     }
@@ -323,12 +407,44 @@ fn render_plot_item(
 }
 
 /// Render a View() data frame table in the central panel.
-fn render_table(ctx: &egui::Context, data: &TableData) {
+fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) {
+    // Recompute visible rows if dirty
+    if vs.dirty {
+        vs.recompute(data);
+    }
+
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.heading(&data.title);
+
+        // Toolbar: filter, digits control, row count
+        ui.horizontal(|ui| {
+            ui.label("Filter:");
+            let old_filter = vs.filter.clone();
+            ui.text_edit_singleline(&mut vs.filter);
+            if vs.filter != old_filter {
+                vs.dirty = true;
+                vs.recompute(data);
+            }
+
+            ui.separator();
+            ui.label("Digits:");
+            let mut digits_str = vs
+                .digits
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "auto".to_string());
+            if ui.text_edit_singleline(&mut digits_str).changed() {
+                vs.digits = digits_str.parse::<usize>().ok();
+            }
+
+            ui.separator();
+            ui.label(format!(
+                "{}/{} rows",
+                vs.visible_rows.len(),
+                data.rows.len()
+            ));
+        });
         ui.separator();
 
-        let nrow = data.rows.len();
         let ncol = data.headers.len();
 
         egui::ScrollArea::both()
@@ -339,28 +455,57 @@ fn render_table(ctx: &egui::Context, data: &TableData) {
                     .num_columns(ncol + 1)
                     .min_col_width(40.0)
                     .show(ui, |ui| {
-                        // Header row
+                        // Header row — clickable for sorting
                         ui.label(egui::RichText::new("").weak());
-                        for header in &data.headers {
-                            ui.label(egui::RichText::new(header).strong());
+                        for (col_idx, header) in data.headers.iter().enumerate() {
+                            let label = if vs.sort_col == Some(col_idx) {
+                                let arrow = if vs.sort_desc { " ▼" } else { " ▲" };
+                                format!("{header}{arrow}")
+                            } else {
+                                header.clone()
+                            };
+                            if ui
+                                .add(
+                                    egui::Label::new(egui::RichText::new(label).strong())
+                                        .sense(egui::Sense::click()),
+                                )
+                                .clicked()
+                            {
+                                if vs.sort_col == Some(col_idx) {
+                                    vs.sort_desc = !vs.sort_desc;
+                                } else {
+                                    vs.sort_col = Some(col_idx);
+                                    vs.sort_desc = false;
+                                }
+                                vs.dirty = true;
+                                vs.recompute(data);
+                            }
                         }
                         ui.end_row();
 
-                        // Data rows
-                        for row_idx in 0..nrow {
+                        // Data rows (filtered + sorted)
+                        for &row_idx in &vs.visible_rows {
                             // Row name
                             if let Some(rn) = data.row_names.get(row_idx) {
                                 ui.label(egui::RichText::new(rn).weak());
                             }
                             // Cells
-                            for col_idx in 0..ncol {
-                                if let Some(row) = data.rows.get(row_idx) {
-                                    if let Some(cell) = row.get(col_idx) {
-                                        if cell == "NA" {
-                                            ui.label(egui::RichText::new("NA").weak().italics());
+                            if let Some(row) = data.rows.get(row_idx) {
+                                for cell in row {
+                                    if cell == "NA" {
+                                        ui.label(egui::RichText::new("NA").weak().italics());
+                                    } else {
+                                        // Apply digit formatting for numbers
+                                        let display = if let Some(digits) = vs.digits {
+                                            if let Ok(v) = cell.parse::<f64>() {
+                                                format!("{v:.digits$}")
+                                            } else {
+                                                cell.clone()
+                                            }
                                         } else {
-                                            ui.label(cell);
-                                        }
+                                            cell.clone()
+                                        };
+                                        ui.label(&display);
                                     }
                                 }
                             }
@@ -402,7 +547,12 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
                     }
                     Ok(PlotMessage::View(data)) => {
                         let title = data.title.clone();
-                        break Tab::Table { title, data };
+                        let nrow = data.rows.len();
+                        break Tab::Table {
+                            title,
+                            view_state: TableViewState::new(nrow),
+                            data,
+                        };
                     }
                     Ok(PlotMessage::Close) => continue,
                     Err(_) => return Ok(()), // REPL exited
