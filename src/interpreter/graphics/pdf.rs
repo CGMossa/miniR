@@ -33,7 +33,7 @@ pub(crate) fn svg_to_pdf(svg_str: &str, width_pt: f32, height_pt: f32) -> Result
         )
     })?;
 
-    let mut page = document.start_page_with(PageSettings::new(width_pt, height_pt));
+    let mut page = document.start_page_with(PageSettings::new(size));
     let mut surface = page.surface();
 
     // Draw the SVG tree onto the PDF surface.
