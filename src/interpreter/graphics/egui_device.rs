@@ -79,29 +79,21 @@ impl Tab {
 }
 
 /// The eframe app. Manages tabbed plots from the REPL thread.
-/// Starts hidden; becomes visible when the first plot arrives.
-/// Hides again when all tabs are closed (ready for the next plot).
+/// The window only exists while there are plots to display.
 struct PlotApp {
     tabs: Vec<Tab>,
     active_tab: usize,
-    rx: PlotReceiver,
-    visible: bool,
+    rx: std::sync::Arc<std::sync::Mutex<PlotReceiver>>,
 }
 
 impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Intercept window close (X button): hide instead of quitting,
-        // so the window can reappear for the next plot.
-        if ctx.input(|i| i.viewport().close_requested()) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.tabs.clear();
-            self.visible = false;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-            return;
-        }
+        // X button: let the window close normally. The outer loop in
+        // run_plot_event_loop will block until the next plot arrives.
 
         // Check for messages from the REPL thread (non-blocking).
-        while let Ok(msg) = self.rx.try_recv() {
+        let rx = self.rx.lock().unwrap();
+        while let Ok(msg) = rx.try_recv() {
             match msg {
                 PlotMessage::Show(new_state) => {
                     let title = new_state
@@ -113,11 +105,6 @@ impl eframe::App for PlotApp {
                         state: new_state,
                     });
                     self.active_tab = self.tabs.len() - 1;
-                    // Show the window when the first plot arrives
-                    if !self.visible {
-                        self.visible = true;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    }
                 }
                 PlotMessage::Close => {
                     if !self.tabs.is_empty() {
@@ -127,13 +114,14 @@ impl eframe::App for PlotApp {
                         }
                     }
                     if self.tabs.is_empty() {
-                        // Hide instead of closing — ready for the next plot
-                        self.visible = false;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                        // Close window — outer loop will block until next plot
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        return;
                     }
                 }
             }
         }
+        drop(rx);
 
         // Request a repaint periodically so we pick up new messages.
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -326,28 +314,59 @@ fn render_plot_item(
 
 // region: run_plot_event_loop
 
-/// Run the egui event loop on the main thread.
+/// Run the plot event loop on the main thread.
 ///
-/// Manages a tabbed window for plots and View() tables. The REPL sends
-/// messages through the channel; each plot/view gets its own tab.
+/// Blocks on the channel until the first plot arrives, THEN launches the
+/// egui window. This avoids creating a window (or dock icon on macOS)
+/// when no plots are ever made. After the window is closed by the user
+/// and all tabs are gone, eframe returns and we block again waiting for
+/// the next plot.
 pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([800.0, 600.0])
-            .with_title("miniR")
-            .with_visible(false), // Start hidden; show when first plot arrives
-        ..Default::default()
-    };
+    // We need to share the receiver between the outer blocking loop and
+    // the eframe app. Use a shared wrapper that lets us take the first
+    // message out before passing the receiver to eframe.
+    use std::sync::{Arc, Mutex};
 
-    let app = PlotApp {
-        tabs: Vec::new(),
-        active_tab: 0,
-        rx,
-        visible: false,
-    };
+    let shared_rx = Arc::new(Mutex::new(rx));
 
-    eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
-        .map_err(|e| format!("egui event loop failed: {e}"))
+    loop {
+        // Block until a Show message arrives — no window exists.
+        let first_state = {
+            let rx = shared_rx.lock().unwrap();
+            loop {
+                match rx.recv() {
+                    Ok(PlotMessage::Show(state)) => break state,
+                    Ok(PlotMessage::Close) => continue,
+                    Err(_) => return Ok(()), // REPL exited
+                }
+            }
+        };
+
+        let title = first_state
+            .title
+            .clone()
+            .unwrap_or_else(|| "Plot 1".to_string());
+
+        let native_options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([800.0, 600.0])
+                .with_title("miniR"),
+            ..Default::default()
+        };
+
+        let app = PlotApp {
+            tabs: vec![Tab::Plot {
+                title,
+                state: first_state,
+            }],
+            active_tab: 0,
+            rx: Arc::clone(&shared_rx),
+        };
+
+        // run_native blocks until the window is closed.
+        let _ = eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))));
+        // Window closed — loop back and wait for the next plot.
+    }
 }
 
 // endregion
