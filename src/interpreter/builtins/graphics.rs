@@ -417,18 +417,117 @@ fn interp_plot(
 ) -> Result<RValue, RError> {
     let ca = CallArgs::new(args, named);
 
-    // Extract x and y vectors
-    let first = &args[0];
-    let second = ca.value("y", 1);
+    // Parse log parameter
+    let log_spec = ca
+        .named("log")
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    for ch in log_spec.chars() {
+        if ch != 'x' && ch != 'y' {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                format!(
+                    "invalid 'log' specification '{}': must contain only 'x' and/or 'y'",
+                    log_spec
+                ),
+            ));
+        }
+    }
+    let log_x = log_spec.contains('x');
+    let log_y = log_spec.contains('y');
 
-    let (x_data, y_data) = if let Some(y_val) = second {
-        // plot(x, y)
-        (extract_doubles(first)?, extract_doubles(y_val)?)
+    // Extract x and y — either from formula or direct vectors
+    let first = &args[0];
+    let (x_data, y_data) = if let RValue::Language(lang) = first {
+        if let crate::parser::ast::Expr::Formula { lhs, rhs } = &*lang.inner {
+            // plot(y ~ x, data=df)
+            let y_name = rhs_symbol_name(lhs.as_deref()).ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "formula lhs must be a simple variable name".to_string(),
+                )
+            })?;
+            let x_name = rhs_symbol_name(rhs.as_deref()).ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "formula rhs must be a simple variable name".to_string(),
+                )
+            })?;
+            let data_arg = ca.named("data").or_else(|| args.get(1));
+            if let Some(data_val) = data_arg {
+                let df = match data_val {
+                    RValue::List(list) => list,
+                    _ => {
+                        return Err(RError::new(
+                            RErrorKind::Type,
+                            "'data' argument must be a data frame (list)".to_string(),
+                        ))
+                    }
+                };
+                let x_col = df_get_column(df, &x_name).ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Name,
+                        format!("variable '{}' not found in data", x_name),
+                    )
+                })?;
+                let y_col = df_get_column(df, &y_name).ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Name,
+                        format!("variable '{}' not found in data", y_name),
+                    )
+                })?;
+                (extract_doubles(x_col)?, extract_doubles(y_col)?)
+            } else {
+                // No data arg — look up in calling environment
+                let env = context.env();
+                let x_val = env.get(&x_name).ok_or_else(|| {
+                    RError::new(RErrorKind::Name, format!("object '{}' not found", x_name))
+                })?;
+                let y_val = env.get(&y_name).ok_or_else(|| {
+                    RError::new(RErrorKind::Name, format!("object '{}' not found", y_name))
+                })?;
+                (extract_doubles(&x_val)?, extract_doubles(&y_val)?)
+            }
+        } else {
+            // Language but not formula — try as numeric
+            let second = ca.value("y", 1);
+            if let Some(y_val) = second {
+                (extract_doubles(first)?, extract_doubles(y_val)?)
+            } else {
+                let y = extract_doubles(first)?;
+                let x: Vec<f64> = (1..=y.len()).map(|i| i as f64).collect();
+                (x, y)
+            }
+        }
     } else {
-        // plot(x) — x becomes y, x is 1:length(x)
-        let y = extract_doubles(first)?;
-        let x: Vec<f64> = (1..=y.len()).map(|i| i as f64).collect();
-        (x, y)
+        let second = ca.value("y", 1);
+        if let Some(y_val) = second {
+            (extract_doubles(first)?, extract_doubles(y_val)?)
+        } else {
+            let y = extract_doubles(first)?;
+            let x: Vec<f64> = (1..=y.len()).map(|i| i as f64).collect();
+            (x, y)
+        }
+    };
+
+    // Apply log-scale transformations
+    let x_data: Vec<f64> = if log_x {
+        x_data
+            .into_iter()
+            .filter(|v| *v > 0.0)
+            .map(|v| v.ln())
+            .collect()
+    } else {
+        x_data
+    };
+    let y_data: Vec<f64> = if log_y {
+        y_data
+            .into_iter()
+            .filter(|v| *v > 0.0)
+            .map(|v| v.ln())
+            .collect()
+    } else {
+        y_data
     };
 
     // Truncate to the shorter length
@@ -1064,6 +1163,28 @@ fn builtin_axis(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 // endregion
 
 // View() is in tables_display.rs (tabled terminal rendering).
+
+// endregion
+
+// region: Formula/log helpers
+
+/// Extract a simple symbol name from a formula side (lhs or rhs).
+fn rhs_symbol_name(expr: Option<&crate::parser::ast::Expr>) -> Option<String> {
+    match expr {
+        Some(crate::parser::ast::Expr::Symbol(name)) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+/// Look up a column in a data frame (RList) by name.
+fn df_get_column<'a>(df: &'a RList, name: &str) -> Option<&'a RValue> {
+    for (col_name, val) in &df.values {
+        if col_name.as_deref() == Some(name) {
+            return Some(val);
+        }
+    }
+    None
+}
 
 // endregion
 
