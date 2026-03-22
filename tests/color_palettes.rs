@@ -25,7 +25,8 @@ stopifnot(col == "#FFFFFF")
 col <- hsv(0, 0, 0)
 stopifnot(col == "#000000")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -39,7 +40,8 @@ stopifnot(cols[1] == "#FF0000")
 stopifnot(cols[2] == "#00FF00")
 stopifnot(cols[3] == "#0000FF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -51,7 +53,8 @@ col <- hsv(0, 1, 1, alpha = 0.5)
 # Should have 8 hex digits (RRGGBBAA)
 stopifnot(nchar(col) == 9)
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -65,7 +68,8 @@ stopifnot(is.character(col))
 stopifnot(length(col) == 1)
 stopifnot(nchar(col) == 7)
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -77,7 +81,8 @@ cols <- hcl(h = c(0, 120, 240))
 stopifnot(length(cols) == 3)
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -93,7 +98,8 @@ stopifnot(cols[1] == "#FF0000")
 # All should be valid hex colors
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -105,7 +111,8 @@ cols <- rainbow(1)
 stopifnot(length(cols) == 1)
 stopifnot(cols[1] == "#FF0000")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -117,7 +124,8 @@ cols <- rainbow(0)
 stopifnot(length(cols) == 0)
 stopifnot(is.character(cols))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -130,7 +138,8 @@ stopifnot(length(cols) == 3)
 # With alpha != 1, should have 8 hex digits + #
 stopifnot(all(nchar(cols) == 9))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -146,7 +155,8 @@ stopifnot(cols[1] == "#FF0000")
 # All valid hex colors
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -157,7 +167,8 @@ fn heat_colors_zero() {
 cols <- heat.colors(0)
 stopifnot(length(cols) == 0)
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -170,7 +181,8 @@ stopifnot(is.character(cols))
 stopifnot(length(cols) == 10)
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -183,7 +195,8 @@ stopifnot(is.character(cols))
 stopifnot(length(cols) == 10)
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -200,7 +213,8 @@ stopifnot(cols[5] == "#FF00FF")
 # Middle should be white
 stopifnot(cols[3] == "#FFFFFF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -213,7 +227,8 @@ cols <- cm.colors(1)
 stopifnot(length(cols) == 1)
 stopifnot(cols[1] == "#FFFFFF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -226,7 +241,8 @@ stopifnot(is.character(cols))
 stopifnot(length(cols) == 5)
 stopifnot(all(nchar(cols) == 7))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -239,7 +255,8 @@ cols <- grey.colors(3)
 stopifnot(is.character(cols))
 stopifnot(length(cols) == 3)
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -250,7 +267,8 @@ fn gray_colors_custom_range() {
 cols <- gray.colors(2, start = 0, end = 1)
 stopifnot(length(cols) == 2)
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -268,7 +286,8 @@ stopifnot(length(cols) == 3)
 stopifnot(cols[1] == "#FF0000")
 stopifnot(cols[3] == "#0000FF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -281,7 +300,8 @@ cols <- pal(1)
 stopifnot(length(cols) == 1)
 stopifnot(cols[1] == "#000000")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -295,7 +315,8 @@ stopifnot(length(cols) == 2)
 stopifnot(cols[1] == "#000000")
 stopifnot(cols[2] == "#FFFFFF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -310,7 +331,8 @@ stopifnot(length(cols) == 5)
 # Middle should be approximately #808080 (gray)
 stopifnot(cols[3] == "#808080")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -326,7 +348,8 @@ stopifnot(cols[1] == "#FF0000")
 stopifnot(cols[3] == "#00FF00")
 stopifnot(cols[5] == "#0000FF")
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -339,7 +362,8 @@ cols <- pal(0)
 stopifnot(length(cols) == 0)
 stopifnot(is.character(cols))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -357,7 +381,8 @@ stopifnot(is.character(gray.colors(n)))
 stopifnot(is.character(hsv(0, 1, 1)))
 stopifnot(is.character(hcl(0, 35, 85)))
 "##,
-    );
+    )
+    .unwrap();
 }
 
 #[test]
@@ -374,5 +399,6 @@ for (n in c(1, 5, 10, 20)) {
     stopifnot(length(gray.colors(n)) == n)
 }
 "##,
-    );
+    )
+    .unwrap();
 }

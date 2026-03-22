@@ -1,8 +1,9 @@
-pub mod color;
 //! Graphics builtins — high-level R plotting functions that accumulate
 //! `PlotItem`s in the interpreter's `PlotState`, then display via
 //! egui_plot (when the `plot` feature is enabled) or print a helpful
 //! message (when it is not).
+
+pub mod color;
 
 use super::CallArgs;
 use crate::interpreter::graphics::plot_data::{BoxSpread, PlotItem, PlotState};
@@ -994,6 +995,94 @@ fn builtin_axis(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 // endregion
 
 // View() is in tables_display.rs (tabled terminal rendering).
-// GUI View via egui_table is a future enhancement.
+
+// endregion
+
+// region: pairs()
+
+/// Scatterplot matrix — plots all pairwise combinations of numeric columns.
+///
+/// @param x data frame or numeric matrix
+/// @return NULL (invisibly)
+#[interpreter_builtin(namespace = "graphics")]
+fn interp_pairs(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    ctx: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let x = args.first().ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "pairs() requires at least one argument".to_string(),
+        )
+    })?;
+
+    // Validate input: must be a data frame or numeric matrix
+    match x {
+        RValue::List(list) if super::has_class(x, "data.frame") => {
+            // Count numeric columns
+            let numeric_count = list
+                .values
+                .iter()
+                .filter(|(_, v)| {
+                    matches!(
+                        v,
+                        RValue::Vector(rv)
+                            if matches!(
+                                rv.inner,
+                                Vector::Double(_) | Vector::Integer(_) | Vector::Logical(_)
+                            )
+                    )
+                })
+                .count();
+            if numeric_count < 2 {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    format!(
+                        "pairs() needs at least 2 numeric columns, got {numeric_count}. \
+                         Non-numeric columns are skipped."
+                    ),
+                ));
+            }
+        }
+        RValue::Vector(rv) => {
+            let dims = super::get_dim_ints(rv.get_attr("dim"));
+            if dims.is_none() {
+                return Err(RError::new(
+                    RErrorKind::Type,
+                    "pairs() requires a data frame or matrix, not a plain vector. \
+                     Use matrix() or data.frame() first."
+                        .to_string(),
+                ));
+            }
+            if !matches!(
+                rv.inner,
+                Vector::Double(_) | Vector::Integer(_) | Vector::Logical(_)
+            ) {
+                return Err(RError::new(
+                    RErrorKind::Type,
+                    "pairs() requires a numeric matrix".to_string(),
+                ));
+            }
+        }
+        RValue::List(_) => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "pairs() requires a data frame (not a plain list). Use as.data.frame() first."
+                    .to_string(),
+            ));
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "pairs() requires a data frame or numeric matrix".to_string(),
+            ));
+        }
+    }
+
+    ctx.write_err("[miniR] pairs() scatterplot matrix — GUI rendering not yet implemented\n");
+    ctx.interpreter().set_invisible();
+    Ok(RValue::Null)
+}
 
 // endregion
