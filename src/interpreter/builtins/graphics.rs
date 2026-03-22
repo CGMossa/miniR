@@ -1,3 +1,4 @@
+pub mod color;
 //! Graphics builtins — high-level R plotting functions that accumulate
 //! `PlotItem`s in the interpreter's `PlotState`, then display via
 //! egui_plot (when the `plot` feature is enabled) or print a helpful
