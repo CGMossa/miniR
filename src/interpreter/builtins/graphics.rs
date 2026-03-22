@@ -390,21 +390,35 @@ fn interp_dev_off(
                         ));
                     }
                     crate::interpreter::graphics::FileFormat::Pdf => {
-                        // Write SVG content — proper PDF generation requires printpdf
-                        let svg_filename =
-                            dev.filename.strip_suffix(".pdf").unwrap_or(&dev.filename);
-                        let svg_path = format!("{svg_filename}.svg");
-                        std::fs::write(&svg_path, &svg_str).map_err(|e| {
-                            RError::new(
-                                RErrorKind::Other,
-                                format!("failed to write file '{}': {e}", svg_path),
-                            )
-                        })?;
-                        context.write_err(&format!(
-                            "Note: PDF generation not yet supported. \
-                             SVG written to '{}' instead.\n",
-                            svg_path
-                        ));
+                        #[cfg(feature = "pdf-device")]
+                        {
+                            let width_pt = (dev.width * 96.0) as f32;
+                            let height_pt = (dev.height * 96.0) as f32;
+                            let pdf_bytes = crate::interpreter::graphics::pdf::svg_to_pdf(
+                                &svg_str, width_pt, height_pt,
+                            )?;
+                            std::fs::write(&dev.filename, &pdf_bytes).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write PDF '{}': {e}", dev.filename),
+                                )
+                            })?;
+                        }
+                        #[cfg(not(feature = "pdf-device"))]
+                        {
+                            let svg_name =
+                                dev.filename.strip_suffix(".pdf").unwrap_or(&dev.filename);
+                            let svg_path = format!("{svg_name}.svg");
+                            std::fs::write(&svg_path, &svg_str).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write '{}': {e}", svg_path),
+                                )
+                            })?;
+                            context.write_err(&format!(
+                                "Note: PDF requires 'pdf-device' feature. SVG written to '{svg_path}'\n"
+                            ));
+                        }
                     }
                 }
             }

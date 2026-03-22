@@ -117,10 +117,13 @@ egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
 egui_table = { version = "0.7", optional = true }
 svg = { version = "0.18", optional = true }
+krilla = { version = "0.5", optional = true }
+krilla-svg = { version = "0.2", optional = true }
+usvg = { version = "0.45", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "gui", "svg-device", "logging", "parquet"]
+full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "logging", "parquet"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
@@ -165,6 +168,7 @@ parallel = ["dep:rayon"]
 fast-format = ["dep:zmij"]
 color = ["dep:termcolor"]
 svg-device = ["dep:svg"]
+pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
 plot = ["dep:eframe", "dep:egui", "dep:egui_plot"]
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]

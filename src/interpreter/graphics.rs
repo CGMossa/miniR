@@ -15,6 +15,9 @@ pub mod egui_device;
 #[cfg(feature = "svg-device")]
 pub mod svg_device;
 
+#[cfg(feature = "pdf-device")]
+pub mod pdf;
+
 // region: FileDevice
 
 /// A file-based graphics device (SVG, PNG, PDF).

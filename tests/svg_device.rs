@@ -239,8 +239,15 @@ fn pdf_device_creates_file() {
     ))
     .unwrap();
 
-    let svg_path = dir.join("test.svg");
-    assert!(svg_path.exists(), "pdf() + dev.off() should create a file");
+    assert!(
+        pdf_path.exists(),
+        "pdf() + dev.off() should create a PDF file"
+    );
+    let content = std::fs::read(&pdf_path).unwrap();
+    assert!(
+        content.starts_with(b"%PDF"),
+        "PDF file should start with %PDF header"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
