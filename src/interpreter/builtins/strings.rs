@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use aho_corasick::AhoCorasick;
 use bstr::ByteSlice;
 use memchr::memmem;
 use unicode_width::UnicodeWidthStr;
@@ -83,21 +82,49 @@ fn convert_replacement(repl: &str) -> String {
     result
 }
 
+// region: coerce_to_character helper
+
+/// Coerce an RValue argument to a `Vec<Option<String>>`.
+///
+/// Accepts any `RValue::Vector` variant and calls `to_characters()`, matching
+/// R's implicit coercion in `tolower`, `toupper`, and friends.
+fn coerce_to_character(arg: Option<&RValue>) -> Result<Vec<Option<String>>, RError> {
+    match arg {
+        Some(RValue::Vector(rv)) => Ok(rv.inner.to_characters()),
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not an atomic vector".to_string(),
+        )),
+    }
+}
+
+// endregion
+
 // region: memchr fixed-pattern helpers
 
-/// Build an `AhoCorasick` automaton for a single fixed pattern, optionally case-insensitive.
-/// This builds the automaton once and amortizes the cost across many haystack searches.
-fn build_fixed_searcher(pattern: &str, ignore_case: bool) -> Result<AhoCorasick, RError> {
-    let mut builder = aho_corasick::AhoCorasickBuilder::new();
-    builder
-        .ascii_case_insensitive(ignore_case)
-        .kind(Some(aho_corasick::AhoCorasickKind::DFA));
-    builder.build([pattern]).map_err(|e| {
-        RError::new(
-            RErrorKind::Argument,
-            format!("failed to build fixed-pattern searcher: {e}"),
-        )
-    })
+/// Check whether `haystack` contains `needle` using SIMD-accelerated memchr.
+fn fixed_contains(haystack: &str, needle: &str) -> bool {
+    memmem::find(haystack.as_bytes(), needle.as_bytes()).is_some()
+}
+
+/// Case-insensitive fixed-pattern containment check.
+fn fixed_contains_ignorecase(haystack: &str, needle: &str) -> bool {
+    let h = haystack.to_lowercase();
+    let n = needle.to_lowercase();
+    memmem::find(h.as_bytes(), n.as_bytes()).is_some()
+}
+
+/// Replace the first occurrence of `needle` in `haystack` with `replacement`.
+fn fixed_sub(haystack: &str, needle: &str, replacement: &str) -> String {
+    if let Some(pos) = memmem::find(haystack.as_bytes(), needle.as_bytes()) {
+        let mut result = String::with_capacity(haystack.len() - needle.len() + replacement.len());
+        result.push_str(&haystack[..pos]);
+        result.push_str(replacement);
+        result.push_str(&haystack[pos + needle.len()..]);
+        result
+    } else {
+        haystack.to_string()
+    }
 }
 
 /// Replace all occurrences of `needle` in `haystack` with `replacement`.
@@ -140,115 +167,6 @@ fn fixed_split(haystack: &str, needle: &str) -> Vec<Option<String>> {
     }
     parts.push(Some(haystack[last_end..].to_string()));
     parts
-}
-
-// endregion
-
-// region: Approximate (fuzzy) matching helpers
-
-/// Compute the Levenshtein edit distance between two strings.
-/// Uses a single-row DP approach (O(min(m,n)) space).
-fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let m = a_chars.len();
-    let n = b_chars.len();
-
-    if m == 0 {
-        return n;
-    }
-    if n == 0 {
-        return m;
-    }
-
-    // Use shorter string as the column dimension for O(min(m,n)) space.
-    // row_chars[i-1] is indexed by the outer loop (length = rows),
-    // col_chars[j-1] is indexed by the inner loop (length = cols).
-    let (row_chars, col_chars, rows, cols) = if m <= n {
-        (&b_chars, &a_chars, n, m)
-    } else {
-        (&a_chars, &b_chars, m, n)
-    };
-
-    let mut prev_row: Vec<usize> = (0..=cols).collect();
-    let mut curr_row: Vec<usize> = vec![0; cols + 1];
-
-    for i in 1..=rows {
-        curr_row[0] = i;
-        for j in 1..=cols {
-            let cost = if row_chars[i - 1] == col_chars[j - 1] {
-                0
-            } else {
-                1
-            };
-            curr_row[j] = (prev_row[j] + 1)
-                .min(curr_row[j - 1] + 1)
-                .min(prev_row[j - 1] + cost);
-        }
-        std::mem::swap(&mut prev_row, &mut curr_row);
-    }
-
-    prev_row[cols]
-}
-
-/// Check whether `haystack` contains a substring approximately matching `needle`
-/// within the given maximum edit distance. Uses a sliding-window approach:
-/// for each window of length `needle.len() +/- max_dist`, compute Levenshtein distance.
-fn approximate_contains(haystack: &str, needle: &str, max_dist: usize) -> bool {
-    let needle_chars: Vec<char> = needle.chars().collect();
-    let haystack_chars: Vec<char> = haystack.chars().collect();
-    let n_len = needle_chars.len();
-    let h_len = haystack_chars.len();
-
-    if n_len == 0 {
-        return true;
-    }
-
-    // Check windows of varying sizes around the needle length
-    let min_window = n_len.saturating_sub(max_dist);
-    let max_window = (n_len + max_dist).min(h_len);
-
-    for window_size in min_window..=max_window {
-        if window_size > h_len {
-            break;
-        }
-        for start in 0..=(h_len - window_size) {
-            let window: String = haystack_chars[start..start + window_size].iter().collect();
-            let needle_str: String = needle_chars.iter().collect();
-            if levenshtein_distance(&window, &needle_str) <= max_dist {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-/// Parse R's `max.distance` argument for agrep/agrepl.
-/// R accepts either a single numeric (fraction of pattern length if < 1, absolute if >= 1)
-/// or a named list. We support the simple numeric case.
-fn parse_max_distance(named: &[(String, RValue)], pattern_len: usize) -> usize {
-    let dist = named
-        .iter()
-        .find(|(n, _)| n == "max.distance")
-        .and_then(|(_, v)| v.as_vector()?.as_double_scalar());
-
-    match dist {
-        Some(d) if d < 1.0 => {
-            // Fraction of pattern length (R default is 0.1)
-            let computed = (d * pattern_len as f64).floor() as usize;
-            computed.max(0)
-        }
-        Some(d) => {
-            // Absolute distance
-            d.floor() as usize
-        }
-        None => {
-            // R default: max.distance = 0.1 (10% of pattern length)
-            let computed = (0.1 * pattern_len as f64).floor() as usize;
-            computed.max(0)
-        }
-    }
 }
 
 // endregion
@@ -309,58 +227,40 @@ fn builtin_substr(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
 
 /// Convert strings to upper case.
 ///
+/// Coerces non-character input (numeric, logical) to character first, matching R behavior.
+///
 /// @param x character vector to convert
 /// @return character vector with all characters in upper case
 #[builtin(min_args = 1)]
 fn builtin_toupper(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<String>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| s.to_uppercase()))
-                .collect();
-            Ok(RValue::vec(Vector::Character(result.into())))
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
-    }
+    let chars = coerce_to_character(args.first())?;
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .map(|s| s.as_ref().map(|s| s.to_uppercase()))
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Convert strings to lower case.
+///
+/// Coerces non-character input (numeric, logical) to character first, matching R behavior.
 ///
 /// @param x character vector to convert
 /// @return character vector with all characters in lower case
 #[builtin(min_args = 1)]
 fn builtin_tolower(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    match args.first() {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<String>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| s.to_lowercase()))
-                .collect();
-            Ok(RValue::vec(Vector::Character(result.into())))
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
-    }
+    let chars = coerce_to_character(args.first())?;
+    let result: Vec<Option<String>> = chars
+        .iter()
+        .map(|s| s.as_ref().map(|s| s.to_lowercase()))
+        .collect();
+    Ok(RValue::vec(Vector::Character(result.into())))
 }
 
 /// Remove leading and/or trailing whitespace from strings.
 ///
 /// @param x character vector to trim
-/// @param which character scalar: "both", "left", or "right" (default "both")
-/// @param whitespace character scalar: regex pattern of whitespace characters
-///   to trim (default `"[ \\t\\r\\n]"`)
+/// @param which character scalar: "both", "left", or "right"
 /// @return character vector with whitespace removed
 #[builtin(min_args = 1)]
 fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
@@ -373,93 +273,35 @@ fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                 .and_then(|v| v.as_vector()?.as_character_scalar())
         })
         .unwrap_or_else(|| "both".to_string());
-
-    let whitespace_pat = named
-        .iter()
-        .find(|(n, _)| n == "whitespace")
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
-        .or_else(|| {
-            args.get(2)
-                .and_then(|v| v.as_vector()?.as_character_scalar())
-        })
-        .unwrap_or_else(|| "[ \\t\\r\\n]".to_string());
-
-    // If using default whitespace, use fast built-in trim; otherwise use regex
-    let use_regex = whitespace_pat != "[ \\t\\r\\n]";
-
-    if use_regex {
-        // Build regex anchored patterns for leading/trailing whitespace
-        let left_re = Regex::new(&format!("^({whitespace_pat})+")).map_err(|e| {
-            RError::new(
+    let trim_fn: fn(&str) -> &str = match which.as_str() {
+        "both" => str::trim,
+        "left" => str::trim_start,
+        "right" => str::trim_end,
+        _ => {
+            return Err(RError::new(
                 RErrorKind::Argument,
-                format!("invalid 'whitespace' regex pattern: {e}"),
-            )
-        })?;
-        let right_re = Regex::new(&format!("({whitespace_pat})+$")).map_err(|e| {
-            RError::new(
-                RErrorKind::Argument,
-                format!("invalid 'whitespace' regex pattern: {e}"),
-            )
-        })?;
-
-        match args.first() {
-            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-                let Vector::Character(vals) = &rv.inner else {
-                    unreachable!()
-                };
-                let result: Vec<Option<String>> = vals
-                    .iter()
-                    .map(|s| {
-                        s.as_ref().map(|s| {
-                            let s = match which.as_str() {
-                                "both" | "left" => left_re.replace(s, "").into_owned(),
-                                _ => s.to_string(),
-                            };
-                            match which.as_str() {
-                                "both" | "right" => right_re.replace(&s, "").into_owned(),
-                                _ => s,
-                            }
-                        })
-                    })
-                    .collect();
-                Ok(RValue::vec(Vector::Character(result.into())))
-            }
-            _ => Err(RError::new(
-                RErrorKind::Argument,
-                "argument is not character".to_string(),
-            )),
+                format!(
+                    "invalid 'which' argument: {:?} — must be \"both\", \"left\", or \"right\"",
+                    which
+                ),
+            ))
         }
-    } else {
-        let trim_fn: fn(&str) -> &str = match which.as_str() {
-            "both" => str::trim,
-            "left" => str::trim_start,
-            "right" => str::trim_end,
-            _ => {
-                return Err(RError::new(
-                    RErrorKind::Argument,
-                    format!(
-                        "invalid 'which' argument: {:?} — must be \"both\", \"left\", or \"right\"",
-                        which
-                    ),
-                ))
-            }
-        };
-        match args.first() {
-            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-                let Vector::Character(vals) = &rv.inner else {
-                    unreachable!()
-                };
-                let result: Vec<Option<String>> = vals
-                    .iter()
-                    .map(|s| s.as_ref().map(|s| trim_fn(s).to_string()))
-                    .collect();
-                Ok(RValue::vec(Vector::Character(result.into())))
-            }
-            _ => Err(RError::new(
-                RErrorKind::Argument,
-                "argument is not character".to_string(),
-            )),
+    };
+    match args.first() {
+        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
+            let Vector::Character(vals) = &rv.inner else {
+                unreachable!()
+            };
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .map(|s| s.as_ref().map(|s| trim_fn(s).to_string()))
+                .collect();
+            Ok(RValue::vec(Vector::Character(result.into())))
         }
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
 }
 
@@ -483,28 +325,8 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses AhoCorasick (handles ignore.case too)
-    if fixed {
-        // Empty-pattern gsub has special R semantics — keep using the dedicated helper
-        if pattern.is_empty() && !ignore_case {
-            return match args.get(2) {
-                Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-                    let Vector::Character(vals) = &rv.inner else {
-                        unreachable!()
-                    };
-                    let result: Vec<Option<String>> = vals
-                        .iter()
-                        .map(|s| s.as_ref().map(|s| fixed_gsub(s, &pattern, &replacement)))
-                        .collect();
-                    Ok(RValue::vec(Vector::Character(result.into())))
-                }
-                _ => Err(RError::new(
-                    RErrorKind::Argument,
-                    "argument is not character".to_string(),
-                )),
-            };
-        }
-        let ac = build_fixed_searcher(&pattern, ignore_case)?;
+    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
+    if fixed && !ignore_case {
         return match args.get(2) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -512,10 +334,7 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                 };
                 let result: Vec<Option<String>> = vals
                     .iter()
-                    .map(|s| {
-                        s.as_ref()
-                            .map(|s| ac.replace_all(s, &[replacement.as_str()]))
-                    })
+                    .map(|s| s.as_ref().map(|s| fixed_gsub(s, &pattern, &replacement)))
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
             }
@@ -527,7 +346,11 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    let repl = convert_replacement(&replacement);
+    let repl = if fixed {
+        replacement.clone()
+    } else {
+        convert_replacement(&replacement)
+    };
     match args.get(2) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -569,9 +392,8 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses AhoCorasick (handles ignore.case too)
-    if fixed {
-        let ac = build_fixed_searcher(&pattern, ignore_case)?;
+    // Fast path: fixed=TRUE without ignore.case uses memchr (SIMD-accelerated)
+    if fixed && !ignore_case {
         return match args.get(2) {
             Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
                 let Vector::Character(vals) = &rv.inner else {
@@ -579,23 +401,7 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
                 };
                 let result: Vec<Option<String>> = vals
                     .iter()
-                    .map(|s| {
-                        s.as_ref().map(|s| {
-                            // Replace only the first match
-                            match ac.find(s) {
-                                Some(m) => {
-                                    let mut out = String::with_capacity(
-                                        s.len() - m.len() + replacement.len(),
-                                    );
-                                    out.push_str(&s[..m.start()]);
-                                    out.push_str(&replacement);
-                                    out.push_str(&s[m.end()..]);
-                                    out
-                                }
-                                None => s.to_string(),
-                            }
-                        })
-                    })
+                    .map(|s| s.as_ref().map(|s| fixed_sub(s, &pattern, &replacement)))
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))
             }
@@ -607,7 +413,11 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    let repl = convert_replacement(&replacement);
+    let repl = if fixed {
+        replacement.clone()
+    } else {
+        convert_replacement(&replacement)
+    };
     match args.get(2) {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
@@ -644,44 +454,28 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses AhoCorasick automaton (built once, amortized across vector)
+    let vals = coerce_to_character(args.get(1))?;
+
+    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
     if fixed {
-        let ac = build_fixed_searcher(&pattern, ignore_case)?;
-        return match args.get(1) {
-            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-                let Vector::Character(vals) = &rv.inner else {
-                    unreachable!()
-                };
-                let result: Vec<Option<bool>> = vals
-                    .iter()
-                    .map(|s| s.as_ref().map(|s| ac.is_match(s)))
-                    .collect();
-                Ok(RValue::vec(Vector::Logical(result.into())))
-            }
-            _ => Err(RError::new(
-                RErrorKind::Argument,
-                "argument is not character".to_string(),
-            )),
+        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
+            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
+        } else {
+            Box::new(|s: &str| fixed_contains(s, &pattern))
         };
+        let result: Vec<Option<bool>> = vals
+            .iter()
+            .map(|s| s.as_ref().map(|s| contains_fn(s.as_str())))
+            .collect();
+        return Ok(RValue::vec(Vector::Logical(result.into())));
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<bool>> = vals
-                .iter()
-                .map(|s| s.as_ref().map(|s| re.is_match(s)))
-                .collect();
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
-    }
+    let result: Vec<Option<bool>> = vals
+        .iter()
+        .map(|s| s.as_ref().map(|s| re.is_match(s)))
+        .collect();
+    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Search for pattern matches in a character vector.
@@ -705,207 +499,49 @@ fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         .unwrap_or(false);
     let (fixed, ignore_case) = get_regex_opts(named);
 
-    // Fast path: fixed=TRUE uses AhoCorasick automaton (built once, amortized across vector)
+    let vals = coerce_to_character(args.get(1))?;
+
+    // Fast path: fixed=TRUE uses memchr (SIMD-accelerated) instead of regex
     if fixed {
-        let ac = build_fixed_searcher(&pattern, ignore_case)?;
-        return match args.get(1) {
-            Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-                let Vector::Character(vals) = &rv.inner else {
-                    unreachable!()
-                };
-                if value {
-                    let result: Vec<Option<String>> = vals
-                        .iter()
-                        .filter(|s| s.as_ref().map(|s| ac.is_match(s)).unwrap_or(false))
-                        .cloned()
-                        .collect();
-                    Ok(RValue::vec(Vector::Character(result.into())))
-                } else {
-                    let result: Result<Vec<Option<i64>>, RError> = vals
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, s)| s.as_ref().map(|s| ac.is_match(s)).unwrap_or(false))
-                        .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
-                        .collect();
-                    Ok(RValue::vec(Vector::Integer(result?.into())))
-                }
-            }
-            _ => Err(RError::new(
-                RErrorKind::Argument,
-                "argument is not character".to_string(),
-            )),
+        let contains_fn: Box<dyn Fn(&str) -> bool> = if ignore_case {
+            Box::new(|s: &str| fixed_contains_ignorecase(s, &pattern))
+        } else {
+            Box::new(|s: &str| fixed_contains(s, &pattern))
         };
+        if value {
+            let result: Vec<Option<String>> = vals
+                .iter()
+                .filter(|s| s.as_ref().map(|s| contains_fn(s.as_str())).unwrap_or(false))
+                .cloned()
+                .collect();
+            return Ok(RValue::vec(Vector::Character(result.into())));
+        }
+        let result: Result<Vec<Option<i64>>, RError> = vals
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.as_ref().map(|s| contains_fn(s.as_str())).unwrap_or(false))
+            .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
+            .collect();
+        return Ok(RValue::vec(Vector::Integer(result?.into())));
     }
 
     let re = build_regex(&pattern, fixed, ignore_case)?;
 
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            if value {
-                let result: Vec<Option<String>> = vals
-                    .iter()
-                    .filter(|s| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
-                    .cloned()
-                    .collect();
-                Ok(RValue::vec(Vector::Character(result.into())))
-            } else {
-                let result: Result<Vec<Option<i64>>, RError> = vals
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, s)| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
-                    .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
-                    .collect();
-                Ok(RValue::vec(Vector::Integer(result?.into())))
-            }
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
-    }
-}
-
-/// Approximate grep: search for approximate pattern matches in a character vector.
-///
-/// Uses Levenshtein edit distance to find elements that approximately match the pattern.
-/// By default, the maximum distance is 10% of the pattern length (R's default for max.distance = 0.1).
-///
-/// @param pattern character scalar: pattern to approximately match
-/// @param x character vector to search
-/// @param max.distance numeric: maximum edit distance (< 1 means fraction of pattern length)
-/// @param value logical: if TRUE, return matching elements instead of indices
-/// @param ignore.case logical: if TRUE, matching is case-insensitive
-/// @return integer vector of indices (default) or character vector of matching elements
-#[builtin(name = "agrep", min_args = 2)]
-fn builtin_agrep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let pattern = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let ignore_case = named
-        .iter()
-        .find(|(n, _)| n == "ignore.case")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(false);
-    let value = named
-        .iter()
-        .find(|(n, _)| n == "value")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(false);
-    let max_dist = parse_max_distance(named, pattern.chars().count());
-
-    let match_pattern = if ignore_case {
-        pattern.to_lowercase()
+    if value {
+        let result: Vec<Option<String>> = vals
+            .iter()
+            .filter(|s| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
+            .cloned()
+            .collect();
+        Ok(RValue::vec(Vector::Character(result.into())))
     } else {
-        pattern.clone()
-    };
-
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            if value {
-                let result: Vec<Option<String>> = vals
-                    .iter()
-                    .filter(|s| {
-                        s.as_ref()
-                            .map(|s| {
-                                let hay = if ignore_case {
-                                    s.to_lowercase()
-                                } else {
-                                    s.to_string()
-                                };
-                                approximate_contains(&hay, &match_pattern, max_dist)
-                            })
-                            .unwrap_or(false)
-                    })
-                    .cloned()
-                    .collect();
-                Ok(RValue::vec(Vector::Character(result.into())))
-            } else {
-                let result: Result<Vec<Option<i64>>, RError> = vals
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, s)| {
-                        s.as_ref()
-                            .map(|s| {
-                                let hay = if ignore_case {
-                                    s.to_lowercase()
-                                } else {
-                                    s.to_string()
-                                };
-                                approximate_contains(&hay, &match_pattern, max_dist)
-                            })
-                            .unwrap_or(false)
-                    })
-                    .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
-                    .collect();
-                Ok(RValue::vec(Vector::Integer(result?.into())))
-            }
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
-    }
-}
-
-/// Approximate grepl: test whether a pattern approximately matches each element.
-///
-/// Uses Levenshtein edit distance for fuzzy matching. Returns a logical vector.
-///
-/// @param pattern character scalar: pattern to approximately match
-/// @param x character vector to search
-/// @param max.distance numeric: maximum edit distance (< 1 means fraction of pattern length)
-/// @param ignore.case logical: if TRUE, matching is case-insensitive
-/// @return logical vector indicating which elements approximately match
-#[builtin(name = "agrepl", min_args = 2)]
-fn builtin_agrepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let pattern = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let ignore_case = named
-        .iter()
-        .find(|(n, _)| n == "ignore.case")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(false);
-    let max_dist = parse_max_distance(named, pattern.chars().count());
-
-    let match_pattern = if ignore_case {
-        pattern.to_lowercase()
-    } else {
-        pattern.clone()
-    };
-
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let result: Vec<Option<bool>> = vals
-                .iter()
-                .map(|s| {
-                    s.as_ref().map(|s| {
-                        let hay = if ignore_case {
-                            s.to_lowercase()
-                        } else {
-                            s.to_string()
-                        };
-                        approximate_contains(&hay, &match_pattern, max_dist)
-                    })
-                })
-                .collect();
-            Ok(RValue::vec(Vector::Logical(result.into())))
-        }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
+        let result: Result<Vec<Option<i64>>, RError> = vals
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.as_ref().map(|s| re.is_match(s)).unwrap_or(false))
+            .map(|(i, _)| Ok(Some(i64::try_from(i)? + 1)))
+            .collect();
+        Ok(RValue::vec(Vector::Integer(result?.into())))
     }
 }
 
@@ -924,37 +560,34 @@ fn builtin_regexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let mut positions = Vec::new();
-            let mut lengths = Vec::new();
-            for s in vals.iter() {
-                match s.as_ref().and_then(|s| re.find(s)) {
-                    Some(m) => {
-                        positions.push(Some(i64::try_from(m.start())? + 1)); // R is 1-indexed
-                        lengths.push(Some(i64::try_from(m.len())?));
-                    }
-                    None => {
-                        positions.push(Some(-1));
-                        lengths.push(Some(-1));
-                    }
-                }
+    let vals = coerce_to_character(args.get(1))?;
+    let mut positions = Vec::new();
+    let mut lengths = Vec::new();
+    for s in &vals {
+        match s {
+            None => {
+                // NA input -> NA output (not -1)
+                positions.push(None);
+                lengths.push(None);
             }
-            let mut rv = RVector::from(Vector::Integer(positions.into()));
-            rv.set_attr(
-                "match.length".to_string(),
-                RValue::vec(Vector::Integer(lengths.into())),
-            );
-            Ok(RValue::Vector(rv))
+            Some(s) => match re.find(s) {
+                Some(m) => {
+                    positions.push(Some(i64::try_from(m.start())? + 1)); // R is 1-indexed
+                    lengths.push(Some(i64::try_from(m.len())?));
+                }
+                None => {
+                    positions.push(Some(-1));
+                    lengths.push(Some(-1));
+                }
+            },
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
     }
+    let mut rv = RVector::from(Vector::Integer(positions.into()));
+    rv.set_attr(
+        "match.length".to_string(),
+        RValue::vec(Vector::Integer(lengths.into())),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 /// Find all matches of a pattern in each element of a character vector.
@@ -972,35 +605,43 @@ fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let mut list_items = Vec::new();
-            for s in vals.iter() {
-                let (positions, lengths): (Vec<Option<i64>>, Vec<Option<i64>>) = match s.as_ref() {
-                    Some(s) => {
-                        let matches: Vec<_> = re.find_iter(s).collect();
-                        if matches.is_empty() {
-                            (vec![Some(-1)], vec![Some(-1)])
-                        } else {
-                            let (positions, lengths): (Vec<_>, Vec<_>) = matches
-                                .iter()
-                                .map(|m| -> Result<_, RError> {
-                                    Ok((
-                                        Some(i64::try_from(m.start())? + 1),
-                                        Some(i64::try_from(m.len())?),
-                                    ))
-                                })
-                                .collect::<Result<Vec<_>, _>>()?
-                                .into_iter()
-                                .unzip();
-                            (positions, lengths)
-                        }
-                    }
-                    None => (vec![Some(-1)], vec![Some(-1)]),
-                };
+    let vals = coerce_to_character(args.get(1))?;
+    let is_empty_pattern = pattern.is_empty();
+    let mut list_items = Vec::new();
+    for s in &vals {
+        match s {
+            None => {
+                // NA input -> NA position and NA match.length
+                let mut match_rv = RVector::from(Vector::Integer(vec![None].into()));
+                match_rv.set_attr(
+                    "match.length".to_string(),
+                    RValue::vec(Vector::Integer(vec![None].into())),
+                );
+                list_items.push((None, RValue::Vector(match_rv)));
+            }
+            Some(s) => {
+                let matches: Vec<_> = re.find_iter(s).collect();
+                let (positions, lengths): (Vec<Option<i64>>, Vec<Option<i64>>) =
+                    if matches.is_empty() {
+                        (vec![Some(-1)], vec![Some(-1)])
+                    } else {
+                        let (positions, lengths): (Vec<_>, Vec<_>) = matches
+                            .iter()
+                            // For empty patterns, Rust regex matches at positions
+                            // 0..=len, but R only matches at 0..len (each character).
+                            // Filter out the trailing match past the last character.
+                            .filter(|m| !is_empty_pattern || m.start() < s.len())
+                            .map(|m| -> Result<_, RError> {
+                                Ok((
+                                    Some(i64::try_from(m.start())? + 1),
+                                    Some(i64::try_from(m.len())?),
+                                ))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                            .into_iter()
+                            .unzip();
+                        (positions, lengths)
+                    };
                 let mut match_rv = RVector::from(Vector::Integer(positions.into()));
                 match_rv.set_attr(
                     "match.length".to_string(),
@@ -1008,13 +649,9 @@ fn builtin_gregexpr(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
                 );
                 list_items.push((None, RValue::Vector(match_rv)));
             }
-            Ok(RValue::List(RList::new(list_items)))
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
     }
+    Ok(RValue::List(RList::new(list_items)))
 }
 
 /// Extract matched substrings from regexpr/gregexpr results.
@@ -1788,100 +1425,60 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
 
 /// Test whether strings start with a given prefix.
 ///
-/// Vectorized over both `x` and `prefix` with recycling.
-///
 /// @param x character vector to test
-/// @param prefix character vector: the prefix(es) to look for
+/// @param prefix character scalar: the prefix to look for
 /// @return logical vector indicating which elements start with the prefix
 #[builtin(name = "startsWith", min_args = 2)]
 fn builtin_starts_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x_vec = match args.first() {
+    let prefix = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
                 unreachable!()
             };
-            vals.clone()
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|s| s.as_ref().map(|s| s.starts_with(prefix.as_str())))
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "argument 'x' is not character".to_string(),
-            ))
-        }
-    };
-    let prefix_vec = args
-        .get(1)
-        .and_then(|v| v.as_vector())
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-
-    if x_vec.is_empty() || prefix_vec.is_empty() {
-        return Ok(RValue::vec(Vector::Logical(
-            Vec::<Option<bool>>::new().into(),
-        )));
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
-
-    let out_len = x_vec.len().max(prefix_vec.len());
-    let result: Vec<Option<bool>> = (0..out_len)
-        .map(|i| {
-            let x_opt = &x_vec[i % x_vec.len()];
-            let p_opt = &prefix_vec[i % prefix_vec.len()];
-            match (x_opt, p_opt) {
-                (Some(x), Some(p)) => Some(x.starts_with(p.as_str())),
-                _ => None,
-            }
-        })
-        .collect();
-    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Test whether strings end with a given suffix.
 ///
-/// Vectorized over both `x` and `suffix` with recycling.
-///
 /// @param x character vector to test
-/// @param suffix character vector: the suffix(es) to look for
+/// @param suffix character scalar: the suffix to look for
 /// @return logical vector indicating which elements end with the suffix
 #[builtin(name = "endsWith", min_args = 2)]
 fn builtin_ends_with(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let x_vec = match args.first() {
+    let suffix = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    match args.first() {
         Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
             let Vector::Character(vals) = &rv.inner else {
                 unreachable!()
             };
-            vals.clone()
+            let result: Vec<Option<bool>> = vals
+                .iter()
+                .map(|s| s.as_ref().map(|s| s.ends_with(suffix.as_str())))
+                .collect();
+            Ok(RValue::vec(Vector::Logical(result.into())))
         }
-        _ => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "argument 'x' is not character".to_string(),
-            ))
-        }
-    };
-    let suffix_vec = args
-        .get(1)
-        .and_then(|v| v.as_vector())
-        .map(|v| v.to_characters())
-        .unwrap_or_default();
-
-    if x_vec.is_empty() || suffix_vec.is_empty() {
-        return Ok(RValue::vec(Vector::Logical(
-            Vec::<Option<bool>>::new().into(),
-        )));
+        _ => Err(RError::new(
+            RErrorKind::Argument,
+            "argument is not character".to_string(),
+        )),
     }
-
-    let out_len = x_vec.len().max(suffix_vec.len());
-    let result: Vec<Option<bool>> = (0..out_len)
-        .map(|i| {
-            let x_opt = &x_vec[i % x_vec.len()];
-            let s_opt = &suffix_vec[i % suffix_vec.len()];
-            match (x_opt, s_opt) {
-                (Some(x), Some(s)) => Some(x.ends_with(s.as_str())),
-                _ => None,
-            }
-        })
-        .collect();
-    Ok(RValue::vec(Vector::Logical(result.into())))
 }
 
 /// Translate characters in strings (character-by-character substitution).
@@ -2316,53 +1913,54 @@ fn builtin_regexec(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
         .unwrap_or_default();
     let (fixed, ignore_case) = get_regex_opts(named);
     let re = build_regex(&pattern, fixed, ignore_case)?;
-    match args.get(1) {
-        Some(RValue::Vector(rv)) if matches!(rv.inner, Vector::Character(_)) => {
-            let Vector::Character(vals) = &rv.inner else {
-                unreachable!()
-            };
-            let mut list_items = Vec::new();
-            for s in vals.iter() {
-                match s.as_ref().and_then(|s| re.captures(s)) {
-                    Some(caps) => {
-                        let mut positions = Vec::new();
-                        let mut lengths = Vec::new();
-                        for i in 0..caps.len() {
-                            match caps.get(i) {
-                                Some(m) => {
-                                    positions.push(Some(i64::try_from(m.start())? + 1));
-                                    lengths.push(Some(i64::try_from(m.len())?));
-                                }
-                                None => {
-                                    positions.push(Some(-1));
-                                    lengths.push(Some(-1));
-                                }
+    let vals = coerce_to_character(args.get(1))?;
+    let mut list_items = Vec::new();
+    for s in &vals {
+        match s {
+            None => {
+                // NA input -> NA position and NA match.length
+                let mut match_rv = RVector::from(Vector::Integer(vec![None].into()));
+                match_rv.set_attr(
+                    "match.length".to_string(),
+                    RValue::vec(Vector::Integer(vec![None].into())),
+                );
+                list_items.push((None, RValue::Vector(match_rv)));
+            }
+            Some(s) => match re.captures(s) {
+                Some(caps) => {
+                    let mut positions = Vec::new();
+                    let mut lengths = Vec::new();
+                    for i in 0..caps.len() {
+                        match caps.get(i) {
+                            Some(m) => {
+                                positions.push(Some(i64::try_from(m.start())? + 1));
+                                lengths.push(Some(i64::try_from(m.len())?));
+                            }
+                            None => {
+                                positions.push(Some(-1));
+                                lengths.push(Some(-1));
                             }
                         }
-                        let mut match_rv = RVector::from(Vector::Integer(positions.into()));
-                        match_rv.set_attr(
-                            "match.length".to_string(),
-                            RValue::vec(Vector::Integer(lengths.into())),
-                        );
-                        list_items.push((None, RValue::Vector(match_rv)));
                     }
-                    None => {
-                        let mut match_rv = RVector::from(Vector::Integer(vec![Some(-1)].into()));
-                        match_rv.set_attr(
-                            "match.length".to_string(),
-                            RValue::vec(Vector::Integer(vec![Some(-1)].into())),
-                        );
-                        list_items.push((None, RValue::Vector(match_rv)));
-                    }
+                    let mut match_rv = RVector::from(Vector::Integer(positions.into()));
+                    match_rv.set_attr(
+                        "match.length".to_string(),
+                        RValue::vec(Vector::Integer(lengths.into())),
+                    );
+                    list_items.push((None, RValue::Vector(match_rv)));
                 }
-            }
-            Ok(RValue::List(RList::new(list_items)))
+                None => {
+                    let mut match_rv = RVector::from(Vector::Integer(vec![Some(-1)].into()));
+                    match_rv.set_attr(
+                        "match.length".to_string(),
+                        RValue::vec(Vector::Integer(vec![Some(-1)].into())),
+                    );
+                    list_items.push((None, RValue::Vector(match_rv)));
+                }
+            },
         }
-        _ => Err(RError::new(
-            RErrorKind::Argument,
-            "argument is not character".to_string(),
-        )),
     }
+    Ok(RValue::List(RList::new(list_items)))
 }
 
 /// Write a deparsed representation of an R object to stdout.
@@ -3244,69 +2842,27 @@ fn builtin_casefold(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
     }
 }
 
-/// Encode a character string with optional quoting, width, and justification.
+/// Encode a character string with optional quoting and escape handling.
 ///
 /// @param x character vector
-/// @param width integer: minimum field width (default NA, meaning no padding;
-///   0 means pad to the widest element)
-/// @param quote character scalar: quote character to wrap each string in (default "")
-/// @param na.encode logical: if TRUE (default), encode NA as "NA"
-/// @param justify character scalar: "left", "right", "centre"/"center", or "none"
-///   (default "left"; "none" when width is NA)
+/// @param quote quote character to wrap each string in (default none)
+/// @param na.encode if TRUE (default), encode NA as "NA"
 /// @return character vector with encoded strings
 #[builtin(name = "encodeString", min_args = 1)]
 fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    let width: Option<usize> = named
-        .iter()
-        .find(|(k, _)| k == "width")
-        .and_then(|(_, v)| v.as_vector()?.as_integer_scalar())
-        .and_then(|i| usize::try_from(i).ok())
-        .or_else(|| {
-            args.get(1)
-                .and_then(|v| v.as_vector()?.as_integer_scalar())
-                .and_then(|i| usize::try_from(i).ok())
-        });
-
     let quote = named
         .iter()
         .find(|(k, _)| k == "quote")
         .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
-        .or_else(|| {
-            args.get(2)
-                .and_then(|v| v.as_vector()?.as_character_scalar())
-        })
         .unwrap_or_default();
-
-    let na_encode = named
-        .iter()
-        .find(|(k, _)| k == "na.encode")
-        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
-        .unwrap_or(true);
-
-    let justify = named
-        .iter()
-        .find(|(k, _)| k == "justify")
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
-        .or_else(|| {
-            args.get(3)
-                .and_then(|v| v.as_vector()?.as_character_scalar())
-        })
-        .unwrap_or_else(|| {
-            if width.is_some() {
-                "left".to_string()
-            } else {
-                "none".to_string()
-            }
-        });
 
     match args.first() {
         Some(RValue::Vector(rv)) => {
-            // First pass: escape and quote all strings
-            let chars = rv.to_characters();
-            let mut encoded: Vec<Option<String>> = chars
+            let result: Vec<Option<String>> = rv
+                .to_characters()
                 .into_iter()
-                .map(|opt| match opt {
-                    Some(s) => {
+                .map(|opt| {
+                    opt.map(|s| {
                         let escaped = s
                             .replace('\\', "\\\\")
                             .replace('\n', "\\n")
@@ -3318,68 +2874,14 @@ fn builtin_encode_string(args: &[RValue], named: &[(String, RValue)]) -> Result<
                             escaped
                         };
                         if quote.is_empty() {
-                            Some(escaped)
+                            escaped
                         } else {
-                            Some(format!("{quote}{escaped}{quote}"))
+                            format!("{quote}{escaped}{quote}")
                         }
-                    }
-                    None => {
-                        if na_encode {
-                            Some("NA".to_string())
-                        } else {
-                            None
-                        }
-                    }
+                    })
                 })
                 .collect();
-
-            // Second pass: apply width padding if requested
-            if let Some(w) = width {
-                // If width == 0, use the max display width of all encoded strings
-                let effective_width = if w == 0 {
-                    encoded
-                        .iter()
-                        .filter_map(|s| s.as_ref())
-                        .map(|s| UnicodeWidthStr::width(s.as_str()))
-                        .max()
-                        .unwrap_or(0)
-                } else {
-                    w
-                };
-
-                if effective_width > 0 && justify != "none" {
-                    encoded = encoded
-                        .into_iter()
-                        .map(|opt| {
-                            opt.map(|s| {
-                                let display_w = UnicodeWidthStr::width(s.as_str());
-                                if display_w >= effective_width {
-                                    s
-                                } else {
-                                    let pad = effective_width - display_w;
-                                    match justify.as_str() {
-                                        "left" => format!("{}{}", s, " ".repeat(pad)),
-                                        "right" => format!("{}{}", " ".repeat(pad), s),
-                                        "centre" | "center" => {
-                                            let left_pad = pad / 2;
-                                            let right_pad = pad - left_pad;
-                                            format!(
-                                                "{}{}{}",
-                                                " ".repeat(left_pad),
-                                                s,
-                                                " ".repeat(right_pad)
-                                            )
-                                        }
-                                        _ => s, // "none" or unknown
-                                    }
-                                }
-                            })
-                        })
-                        .collect();
-                }
-            }
-
-            Ok(RValue::vec(Vector::Character(encoded.into())))
+            Ok(RValue::vec(Vector::Character(result.into())))
         }
         _ => Ok(RValue::Null),
     }
