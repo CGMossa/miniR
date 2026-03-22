@@ -15,7 +15,7 @@ use super::plot_data::{PlotItem, PlotState};
 
 // region: PlotChannel
 
-/// Message from the REPL thread to the plot window.
+/// Message from the REPL thread to the GUI thread.
 pub enum PlotMessage {
     /// Show a new plot (replaces the current one).
     Show(PlotState),
@@ -65,9 +65,23 @@ fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
-/// The eframe app. Receives plot data from the REPL thread via a channel.
+/// A single tab in the GUI window.
+enum Tab {
+    Plot { title: String, state: PlotState },
+}
+
+impl Tab {
+    fn title(&self) -> &str {
+        match self {
+            Tab::Plot { title, .. } => title,
+        }
+    }
+}
+
+/// The eframe app. Manages tabbed plots and views from the REPL thread.
 struct PlotApp {
-    state: Option<PlotState>,
+    tabs: Vec<Tab>,
+    active_tab: usize,
     rx: PlotReceiver,
 }
 
@@ -77,12 +91,28 @@ impl eframe::App for PlotApp {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
                 PlotMessage::Show(new_state) => {
-                    self.state = Some(new_state);
+                    let title = new_state
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| format!("Plot {}", self.tabs.len() + 1));
+                    self.tabs.push(Tab::Plot {
+                        title,
+                        state: new_state,
+                    });
+                    self.active_tab = self.tabs.len() - 1;
                 }
                 PlotMessage::Close => {
-                    self.state = None;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    return;
+                    // Close the active tab, or all if none active
+                    if !self.tabs.is_empty() {
+                        self.tabs.remove(self.active_tab);
+                        if self.active_tab > 0 {
+                            self.active_tab -= 1;
+                        }
+                    }
+                    if self.tabs.is_empty() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        return;
+                    }
                 }
             }
         }
@@ -90,47 +120,90 @@ impl eframe::App for PlotApp {
         // Request a repaint periodically so we pick up new messages.
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
 
-        let Some(state) = &self.state else {
-            // No plot yet — show a waiting message.
+        if self.tabs.is_empty() {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.centered_and_justified(|ui| {
-                    ui.label("Waiting for plot data...");
+                    ui.label("Waiting for plot or View() data...");
                 });
             });
             return;
-        };
+        }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let title = state.title.as_deref().unwrap_or("Plot");
-
-            let mut plot = egui_plot::Plot::new("r_plot")
-                .legend(egui_plot::Legend::default())
-                .show_axes(true)
-                .show_grid(true);
-
-            if let Some(label) = &state.x_label {
-                plot = plot.x_axis_label(label.clone());
-            }
-            if let Some(label) = &state.y_label {
-                plot = plot.y_axis_label(label.clone());
-            }
-            if let Some((lo, hi)) = state.x_lim {
-                plot = plot.include_x(lo).include_x(hi);
-            }
-            if let Some((lo, hi)) = state.y_lim {
-                plot = plot.include_y(lo).include_y(hi);
-            }
-
-            ui.heading(title);
-
-            plot.show(ui, |plot_ui| {
-                for (idx, item) in state.items.iter().enumerate() {
-                    let default_name = format!("series_{idx}");
-                    render_plot_item(plot_ui, item, &default_name, idx);
+        // Render tab bar
+        egui::TopBottomPanel::top("tab_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let mut to_close = None;
+                for (i, tab) in self.tabs.iter().enumerate() {
+                    let selected = i == self.active_tab;
+                    let label = if selected {
+                        egui::RichText::new(tab.title()).strong()
+                    } else {
+                        egui::RichText::new(tab.title())
+                    };
+                    if ui.selectable_label(selected, label).clicked() {
+                        self.active_tab = i;
+                    }
+                    // Close button for each tab
+                    if ui.small_button("×").clicked() {
+                        to_close = Some(i);
+                    }
+                    ui.separator();
+                }
+                if let Some(idx) = to_close {
+                    self.tabs.remove(idx);
+                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                        self.active_tab = self.tabs.len() - 1;
+                    }
                 }
             });
         });
+
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        // Render active tab content
+        let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        match &self.tabs[active] {
+            Tab::Plot { state, .. } => {
+                render_plot(ctx, state);
+            }
+        }
     }
+}
+
+/// Render a plot in the central panel.
+fn render_plot(ctx: &egui::Context, state: &PlotState) {
+    egui::CentralPanel::default().show(ctx, |ui| {
+        let title = state.title.as_deref().unwrap_or("Plot");
+
+        let mut plot = egui_plot::Plot::new("r_plot")
+            .legend(egui_plot::Legend::default())
+            .show_axes(true)
+            .show_grid(true);
+
+        if let Some(label) = &state.x_label {
+            plot = plot.x_axis_label(label.clone());
+        }
+        if let Some(label) = &state.y_label {
+            plot = plot.y_axis_label(label.clone());
+        }
+        if let Some((lo, hi)) = state.x_lim {
+            plot = plot.include_x(lo).include_x(hi);
+        }
+        if let Some((lo, hi)) = state.y_lim {
+            plot = plot.include_y(lo).include_y(hi);
+        }
+
+        ui.heading(title);
+
+        plot.show(ui, |plot_ui| {
+            for (idx, item) in state.items.iter().enumerate() {
+                let default_name = format!("series_{idx}");
+                render_plot_item(plot_ui, item, &default_name, idx);
+            }
+        });
+    });
 }
 
 fn render_plot_item(
@@ -242,24 +315,23 @@ fn render_plot_item(
 
 /// Run the egui event loop on the main thread.
 ///
-/// This blocks the main thread forever (or until the window is closed and no
-/// new plots arrive). The REPL should already be running on a background thread
-/// before this is called.
-///
-/// When no plot is being displayed, the window is hidden. When a `Show` message
-/// arrives, the window appears. When the user closes the window (X button),
-/// the app stays alive but hidden, ready for the next plot.
+/// Manages a tabbed window for plots and View() tables. The REPL sends
+/// messages through the channel; each plot/view gets its own tab.
 pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_title("R Plot"),
+            .with_title("miniR"),
         ..Default::default()
     };
 
-    let app = PlotApp { state: None, rx };
+    let app = PlotApp {
+        tabs: Vec::new(),
+        active_tab: 0,
+        rx,
+    };
 
-    eframe::run_native("R Plot", native_options, Box::new(|_cc| Ok(Box::new(app))))
+    eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
         .map_err(|e| format!("egui event loop failed: {e}"))
 }
 

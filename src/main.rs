@@ -129,8 +129,9 @@ fn repl_loop<T>(_plot_tx: Option<T>) {
 #[cfg(feature = "plot")]
 fn repl_loop_inner(plot_tx: Option<r::interpreter::graphics::egui_device::PlotSender>) {
     let mut session = Session::new();
-    // Install the plot channel sender on the interpreter
-    *session.interpreter().plot_tx.borrow_mut() = plot_tx;
+    if let Some(tx) = plot_tx {
+        session.set_plot_sender(tx);
+    }
     repl_main(&mut session);
 }
 
@@ -200,16 +201,20 @@ fn repl_main(session: &mut Session) {
         session.sync_terminal_width();
 
         match line_editor.read_line(&prompt) {
-            Ok(Signal::Success(buffer)) => match session.eval_source(&buffer) {
-                Ok(result) => {
-                    if result.visible {
-                        session.auto_print(&result.value);
+            Ok(Signal::Success(buffer)) => {
+                match session.eval_source(&buffer) {
+                    Ok(result) => {
+                        if result.visible {
+                            session.auto_print(&result.value);
+                        }
+                    }
+                    Err(e) => {
+                        eprint_colored(&e.render());
                     }
                 }
-                Err(e) => {
-                    eprint_colored(&e.render());
-                }
-            },
+                // Auto-flush any accumulated plot to the GUI window.
+                r::interpreter::builtins::graphics::flush_plot(session.interpreter());
+            }
             Ok(Signal::CtrlC) => {
                 println!();
             }

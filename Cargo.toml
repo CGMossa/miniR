@@ -115,10 +115,11 @@ termcolor = { version = "1", optional = true }
 eframe = { version = "0.33", optional = true, default-features = false, features = ["glow", "default_fonts"] }
 egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
+egui_table = { version = "0.7", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "plot"]
+full = ["default", "tls", "linalg", "gui"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
@@ -163,4 +164,6 @@ parallel = ["dep:rayon"]
 fast-format = ["dep:zmij"]
 color = ["dep:termcolor"]
 plot = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+view = ["plot", "dep:egui_table"]
+gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]

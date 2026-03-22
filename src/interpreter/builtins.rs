@@ -10,7 +10,7 @@ mod datetime;
 #[cfg(any(feature = "digest", feature = "blake3"))]
 mod digest;
 mod factors;
-mod graphics;
+pub mod graphics;
 mod interp;
 #[cfg(feature = "io")]
 pub mod io;

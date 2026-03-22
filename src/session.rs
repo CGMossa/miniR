@@ -200,6 +200,12 @@ impl Session {
         &self.interpreter
     }
 
+    /// Install a plot sender channel so builtins can send plots to the GUI thread.
+    #[cfg(feature = "plot")]
+    pub fn set_plot_sender(&self, tx: crate::interpreter::graphics::egui_device::PlotSender) {
+        *self.interpreter.plot_tx.borrow_mut() = Some(tx);
+    }
+
     /// Set a per-interpreter R option (same effect as `options(name = value)` in R).
     pub fn set_option(&self, name: &str, value: RValue) {
         self.interpreter

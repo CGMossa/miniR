@@ -135,15 +135,15 @@ fn extract_limits(value: Option<&RValue>) -> Option<(f64, f64)> {
 
 // region: show_or_accumulate
 
-/// Show the plot window if the `plot` feature is enabled, otherwise
-/// print a helpful message. If `immediate` is false, just accumulate
-/// (the plot will be shown when dev.off() is called or at the next
-/// top-level prompt).
+/// Send the current plot to the GUI thread (if any is accumulated).
+///
+/// Called by plot()/hist()/barplot()/boxplot() to flush the PREVIOUS plot
+/// before starting a new one, and by the REPL loop after each expression
+/// to auto-display the plot.
 #[cfg(feature = "plot")]
-fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
+fn send_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
     let state = ctx.interpreter().current_plot.borrow().clone();
     if let Some(plot_state) = state {
-        // Send to the GUI thread (non-blocking).
         let tx = ctx.interpreter().plot_tx.borrow();
         if let Some(tx) = tx.as_ref() {
             tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state))
@@ -153,10 +153,6 @@ fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
                         format!("failed to send plot to GUI thread: {e}"),
                     )
                 })?;
-        } else {
-            ctx.write_err(
-                "No plot window available. Start miniR normally (not with -e) to use plots.\n",
-            );
         }
         *ctx.interpreter().current_plot.borrow_mut() = None;
     }
@@ -164,11 +160,35 @@ fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
 }
 
 #[cfg(not(feature = "plot"))]
-fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
-    ctx.write_err("plot() requires the 'plot' feature. Build with: cargo build --features plot\n");
-    // Still clear the plot data
-    *ctx.interpreter().current_plot.borrow_mut() = None;
+fn send_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
+    if ctx.interpreter().current_plot.borrow().is_some() {
+        ctx.write_err(
+            "plot() requires the 'plot' feature. Build with: cargo build --features plot\n",
+        );
+        *ctx.interpreter().current_plot.borrow_mut() = None;
+    }
     Ok(())
+}
+
+/// Public API: flush any accumulated plot to the GUI thread.
+/// Called by the REPL loop after each eval to auto-display plots.
+pub fn flush_plot(interp: &crate::interpreter::Interpreter) {
+    let state = interp.current_plot.borrow().clone();
+    if let Some(plot_state) = state {
+        #[cfg(feature = "plot")]
+        {
+            let tx = interp.plot_tx.borrow();
+            if let Some(tx) = tx.as_ref() {
+                let _ = tx
+                    .send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state));
+            }
+        }
+        #[cfg(not(feature = "plot"))]
+        {
+            let _ = plot_state;
+        }
+        *interp.current_plot.borrow_mut() = None;
+    }
 }
 
 /// Ensure a current plot exists, creating a new one if needed.
@@ -444,7 +464,7 @@ fn interp_plot(
 
     // Store and show
     *context.interpreter().current_plot.borrow_mut() = Some(state);
-    show_current_plot(context)?;
+    send_current_plot(context)?;
 
     Ok(RValue::Null)
 }
@@ -544,7 +564,7 @@ fn interp_hist(
     });
 
     *context.interpreter().current_plot.borrow_mut() = Some(state);
-    show_current_plot(context)?;
+    send_current_plot(context)?;
 
     // Return a list with breaks, counts, mids (like R's hist())
     let breaks_rv = RValue::vec(Vector::Double(
@@ -617,7 +637,7 @@ fn interp_barplot(
     });
 
     *context.interpreter().current_plot.borrow_mut() = Some(state);
-    show_current_plot(context)?;
+    send_current_plot(context)?;
 
     // Return bar midpoints (like R)
     Ok(RValue::vec(Vector::Double(
@@ -701,7 +721,7 @@ fn interp_boxplot(
     });
 
     *context.interpreter().current_plot.borrow_mut() = Some(state);
-    show_current_plot(context)?;
+    send_current_plot(context)?;
 
     Ok(RValue::Null)
 }
@@ -969,5 +989,10 @@ fn builtin_axis(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 // region: Graphics parameters
 
 // par() is implemented in graphics/par.rs
+
+// endregion
+
+// View() is in tables_display.rs (tabled terminal rendering).
+// GUI View via egui_table is a future enhancement.
 
 // endregion
