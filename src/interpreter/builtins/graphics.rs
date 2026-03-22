@@ -1270,7 +1270,79 @@ fn interp_pairs(
         }
     }
 
-    ctx.write_err("[miniR] pairs() scatterplot matrix — GUI rendering not yet implemented\n");
+    // Extract numeric columns as (name, Vec<f64>) pairs
+    let columns: Vec<(String, Vec<f64>)> = match x {
+        RValue::List(list) => list
+            .values
+            .iter()
+            .filter_map(|(name, val)| {
+                if let RValue::Vector(rv) = val {
+                    if matches!(
+                        rv.inner,
+                        Vector::Double(_) | Vector::Integer(_) | Vector::Logical(_)
+                    ) {
+                        let doubles: Vec<f64> = rv
+                            .to_doubles()
+                            .into_iter()
+                            .map(|d| d.unwrap_or(f64::NAN))
+                            .collect();
+                        return Some((name.clone().unwrap_or_else(|| "?".to_string()), doubles));
+                    }
+                }
+                None
+            })
+            .collect(),
+        RValue::Vector(rv) => {
+            let dims = super::get_dim_ints(rv.get_attr("dim")).unwrap_or_default();
+            let nrow = dims.first().and_then(|d| *d).unwrap_or(0) as usize;
+            let ncol = dims.get(1).and_then(|d| *d).unwrap_or(0) as usize;
+            let all_doubles = rv.to_doubles();
+            (0..ncol)
+                .map(|c| {
+                    let col: Vec<f64> = (0..nrow)
+                        .map(|r| all_doubles[r + c * nrow].unwrap_or(f64::NAN))
+                        .collect();
+                    (format!("V{}", c + 1), col)
+                })
+                .collect()
+        }
+        _ => unreachable!(), // validated above
+    };
+
+    // Build PlotState with one Points item per pair
+    send_current_plot(ctx)?; // flush any previous plot
+    let mut state = PlotState::new();
+    state.title = Some("Scatterplot Matrix".to_string());
+    state.show_legend = true;
+
+    let colors: &[[u8; 4]] = &[
+        [0, 0, 0, 255],
+        [255, 0, 0, 255],
+        [0, 0, 255, 255],
+        [0, 128, 0, 255],
+        [255, 165, 0, 255],
+        [128, 0, 128, 255],
+    ];
+    let mut color_idx = 0;
+    for i in 0..columns.len() {
+        for j in (i + 1)..columns.len() {
+            let (ref xname, ref xdata) = columns[i];
+            let (ref yname, ref ydata) = columns[j];
+            let len = xdata.len().min(ydata.len());
+            state.items.push(PlotItem::Points {
+                x: xdata[..len].to_vec(),
+                y: ydata[..len].to_vec(),
+                color: colors[color_idx % colors.len()],
+                size: 3.0,
+                shape: 1,
+                label: Some(format!("{xname} vs {yname}")),
+            });
+            color_idx += 1;
+        }
+    }
+
+    *ctx.interpreter().current_plot.borrow_mut() = Some(state);
+    send_current_plot(ctx)?;
     ctx.interpreter().set_invisible();
     Ok(RValue::Null)
 }
