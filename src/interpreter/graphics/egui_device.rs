@@ -83,22 +83,24 @@ enum Tab {
 
 /// Interactive state for a View() table tab.
 struct TableViewState {
-    /// Text filter — only rows containing this substring (in any column) are shown.
     filter: String,
-    /// Column to sort by (None = original order).
     sort_col: Option<usize>,
-    /// Sort descending?
     sort_desc: bool,
-    /// Number of decimal digits for numeric display (None = raw).
     digits: Option<usize>,
-    /// Cached sorted+filtered row indices.
     visible_rows: Vec<usize>,
-    /// Whether visible_rows needs recomputation.
     dirty: bool,
+    /// Selected row index in visible_rows (for highlighting + stats).
+    selected_row: Option<usize>,
+    /// Selected column (for summary stats).
+    selected_col: Option<usize>,
+    /// Column visibility (true = shown).
+    col_visible: Vec<bool>,
+    /// Show column visibility panel.
+    show_col_picker: bool,
 }
 
 impl TableViewState {
-    fn new(nrow: usize) -> Self {
+    fn new(ncol: usize, nrow: usize) -> Self {
         Self {
             filter: String::new(),
             sort_col: None,
@@ -106,6 +108,10 @@ impl TableViewState {
             digits: None,
             visible_rows: (0..nrow).collect(),
             dirty: false,
+            selected_row: None,
+            selected_col: None,
+            col_visible: vec![true; ncol],
+            show_col_picker: false,
         }
     }
 
@@ -170,10 +176,25 @@ impl eframe::App for PlotApp {
         // Handle window close (X button). On macOS eframe may not close
         // automatically — explicitly allow it.
         if ctx.input(|i| i.viewport().close_requested()) {
-            // Don't cancel — let eframe close the window and return from run_native.
-            // The outer loop in run_plot_event_loop will block until the next plot.
             self.tabs.clear();
             return;
+        }
+
+        // Keyboard shortcuts
+        let close_tab = ctx.input(|i| i.key_pressed(egui::Key::W) && i.modifiers.command);
+        let next_tab = ctx.input(|i| i.key_pressed(egui::Key::Tab) && i.modifiers.ctrl);
+        if close_tab && !self.tabs.is_empty() {
+            self.tabs.remove(self.active_tab);
+            if self.tabs.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return;
+            }
+            if self.active_tab >= self.tabs.len() {
+                self.active_tab = self.tabs.len() - 1;
+            }
+        }
+        if next_tab && self.tabs.len() > 1 {
+            self.active_tab = (self.active_tab + 1) % self.tabs.len();
         }
 
         // Check for messages from the REPL thread (non-blocking).
@@ -196,7 +217,7 @@ impl eframe::App for PlotApp {
                     let nrow = data.rows.len();
                     self.tabs.push(Tab::Table {
                         title,
-                        view_state: TableViewState::new(nrow),
+                        view_state: TableViewState::new(data.headers.len(), nrow),
                         data,
                     });
                     self.active_tab = self.tabs.len() - 1;
@@ -275,15 +296,46 @@ impl eframe::App for PlotApp {
     }
 }
 
-/// Render a plot in the central panel.
+/// Render a plot in the central panel with toolbar.
 fn render_plot(ctx: &egui::Context, state: &PlotState) {
     egui::CentralPanel::default().show(ctx, |ui| {
         let title = state.title.as_deref().unwrap_or("Plot");
+        ui.heading(title);
+
+        // Toolbar
+        ui.horizontal(|ui| {
+            // Save as SVG
+            #[cfg(feature = "svg-device")]
+            if ui.small_button("💾 SVG").clicked() {
+                if let Some(path) = rfd_save_path("svg") {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    let _ = std::fs::write(&path, svg_str);
+                }
+            }
+            // Save as PDF
+            #[cfg(feature = "pdf-device")]
+            if ui.small_button("💾 PDF").clicked() {
+                if let Some(path) = rfd_save_path("pdf") {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    if let Ok(bytes) = super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
+                        let _ = std::fs::write(&path, bytes);
+                    }
+                }
+            }
+
+            ui.separator();
+            ui.label(format!("{} series", state.items.len()));
+        });
 
         let mut plot = egui_plot::Plot::new("r_plot")
             .legend(egui_plot::Legend::default())
             .show_axes(true)
-            .show_grid(true);
+            .show_grid(true)
+            .allow_boxed_zoom(true)
+            .coordinates_formatter(
+                egui_plot::Corner::LeftBottom,
+                egui_plot::CoordinatesFormatter::default(),
+            );
 
         if let Some(label) = &state.x_label {
             plot = plot.x_axis_label(label.clone());
@@ -298,8 +350,6 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
             plot = plot.include_y(lo).include_y(hi);
         }
 
-        ui.heading(title);
-
         plot.show(ui, |plot_ui| {
             for (idx, item) in state.items.iter().enumerate() {
                 let default_name = format!("series_{idx}");
@@ -307,6 +357,15 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
             }
         });
     });
+}
+
+/// Simple file path helper for save dialogs.
+/// Returns a path string from a hardcoded temp location
+/// (proper file dialog requires rfd crate — future enhancement).
+fn rfd_save_path(ext: &str) -> Option<String> {
+    let name = format!("Rplot.{ext}");
+    let path = std::env::temp_dir().join(name);
+    Some(path.to_string_lossy().to_string())
 }
 
 fn render_plot_item(
@@ -414,22 +473,48 @@ fn render_plot_item(
 
 /// Render a View() data frame table in the central panel.
 fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) {
-    // Recompute visible rows if dirty
     if vs.dirty {
         vs.recompute(data);
     }
 
+    // Summary stats for selected column
+    let summary = vs.selected_col.and_then(|col| {
+        let vals: Vec<f64> = vs
+            .visible_rows
+            .iter()
+            .filter_map(|&r| data.rows.get(r)?.get(col)?.parse::<f64>().ok())
+            .collect();
+        if vals.is_empty() {
+            return None;
+        }
+        let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mean = vals.iter().sum::<f64>() / vals.len() as f64;
+        Some((min, max, mean, vals.len()))
+    });
+
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.heading(&data.title);
 
-        // Toolbar: filter, digits control, row count
+        // Toolbar
         ui.horizontal(|ui| {
-            ui.label("Filter:");
+            ui.label("🔍");
             let old_filter = vs.filter.clone();
-            ui.text_edit_singleline(&mut vs.filter);
+            let filter_response = ui.add(
+                egui::TextEdit::singleline(&mut vs.filter)
+                    .desired_width(200.0)
+                    .hint_text("Filter rows..."),
+            );
             if vs.filter != old_filter {
                 vs.dirty = true;
                 vs.recompute(data);
+            }
+            // Clear filter button
+            if !vs.filter.is_empty() && ui.small_button("✕").clicked() {
+                vs.filter.clear();
+                vs.dirty = true;
+                vs.recompute(data);
+                filter_response.request_focus();
             }
 
             ui.separator();
@@ -437,9 +522,15 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
             let mut digits_str = vs
                 .digits
                 .map(|d| d.to_string())
-                .unwrap_or_else(|| "auto".to_string());
-            if ui.text_edit_singleline(&mut digits_str).changed() {
+                .unwrap_or_else(|| "-".to_string());
+            let resp = ui.add(egui::TextEdit::singleline(&mut digits_str).desired_width(30.0));
+            if resp.changed() {
                 vs.digits = digits_str.parse::<usize>().ok();
+            }
+
+            ui.separator();
+            if ui.selectable_label(vs.show_col_picker, "Columns").clicked() {
+                vs.show_col_picker = !vs.show_col_picker;
             }
 
             ui.separator();
@@ -448,77 +539,187 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
                 vs.visible_rows.len(),
                 data.rows.len()
             ));
+
+            // Export CSV button
+            if ui.small_button("📋 CSV").clicked() {
+                let mut csv = String::new();
+                // Header
+                csv.push_str(&data.headers.join(","));
+                csv.push('\n');
+                // Visible rows
+                for &r in &vs.visible_rows {
+                    if let Some(row) = data.rows.get(r) {
+                        csv.push_str(&row.join(","));
+                        csv.push('\n');
+                    }
+                }
+                ctx.copy_text(csv);
+            }
         });
+
+        // Column visibility picker
+        if vs.show_col_picker {
+            ui.horizontal_wrapped(|ui| {
+                for (i, header) in data.headers.iter().enumerate() {
+                    let mut visible = vs.col_visible.get(i).copied().unwrap_or(true);
+                    if ui.checkbox(&mut visible, header).changed() {
+                        if let Some(v) = vs.col_visible.get_mut(i) {
+                            *v = visible;
+                        }
+                    }
+                }
+            });
+        }
+
         ui.separator();
 
-        let ncol = data.headers.len();
+        // Visible column indices
+        let vis_cols: Vec<usize> = (0..data.headers.len())
+            .filter(|&i| vs.col_visible.get(i).copied().unwrap_or(true))
+            .collect();
 
         egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 egui::Grid::new("view_grid")
                     .striped(true)
-                    .num_columns(ncol + 1)
+                    .num_columns(vis_cols.len() + 1)
                     .min_col_width(40.0)
                     .show(ui, |ui| {
-                        // Header row — clickable for sorting
-                        ui.label(egui::RichText::new("").weak());
-                        for (col_idx, header) in data.headers.iter().enumerate() {
-                            let label = if vs.sort_col == Some(col_idx) {
-                                let arrow = if vs.sort_desc { " ▼" } else { " ▲" };
-                                format!("{header}{arrow}")
+                        // Header row: column name <type>, clickable for sort
+                        ui.label(egui::RichText::new("").weak()); // row name col
+                        for &col_idx in &vis_cols {
+                            let header = &data.headers[col_idx];
+                            let type_tag = data
+                                .col_types
+                                .get(col_idx)
+                                .map(|t| t.short_name())
+                                .unwrap_or("???");
+                            let sort_arrow = if vs.sort_col == Some(col_idx) {
+                                if vs.sort_desc {
+                                    " ▼"
+                                } else {
+                                    " ▲"
+                                }
                             } else {
-                                header.clone()
+                                ""
                             };
-                            if ui
-                                .add(
-                                    egui::Label::new(egui::RichText::new(label).strong())
-                                        .sense(egui::Sense::click()),
-                                )
-                                .clicked()
-                            {
+                            let label_text = format!("{header} <{type_tag}>{sort_arrow}");
+                            let resp = ui.add(
+                                egui::Label::new(egui::RichText::new(label_text).strong())
+                                    .sense(egui::Sense::click()),
+                            );
+                            if resp.clicked() {
                                 if vs.sort_col == Some(col_idx) {
                                     vs.sort_desc = !vs.sort_desc;
                                 } else {
                                     vs.sort_col = Some(col_idx);
                                     vs.sort_desc = false;
                                 }
+                                vs.selected_col = Some(col_idx);
                                 vs.dirty = true;
                                 vs.recompute(data);
                             }
                         }
                         ui.end_row();
 
-                        // Data rows (filtered + sorted)
-                        for &row_idx in &vs.visible_rows {
+                        // Data rows
+                        for (vis_idx, &row_idx) in vs.visible_rows.iter().enumerate() {
+                            let is_selected = vs.selected_row == Some(vis_idx);
+
                             // Row name
                             if let Some(rn) = data.row_names.get(row_idx) {
-                                ui.label(egui::RichText::new(rn).weak());
+                                let text = egui::RichText::new(rn).weak();
+                                let resp =
+                                    ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                                if resp.clicked() {
+                                    vs.selected_row = Some(vis_idx);
+                                }
                             }
+
                             // Cells
                             if let Some(row) = data.rows.get(row_idx) {
-                                for cell in row {
-                                    if cell == "NA" {
-                                        ui.label(egui::RichText::new("NA").weak().italics());
-                                    } else {
-                                        // Apply digit formatting for numbers
-                                        let display = if let Some(digits) = vs.digits {
-                                            if let Ok(v) = cell.parse::<f64>() {
-                                                format!("{v:.digits$}")
-                                            } else {
-                                                cell.clone()
-                                            }
+                                for &col_idx in &vis_cols {
+                                    let cell = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                                    let is_na = cell == "NA";
+                                    let is_numeric =
+                                        data.col_types.get(col_idx).is_some_and(|t| t.is_numeric());
+
+                                    // Format the display value
+                                    let display = if is_na {
+                                        "NA".to_string()
+                                    } else if let Some(digits) = vs.digits {
+                                        if let Ok(v) = cell.parse::<f64>() {
+                                            format!("{v:.digits$}")
                                         } else {
-                                            cell.clone()
-                                        };
-                                        ui.label(&display);
+                                            cell.to_string()
+                                        }
+                                    } else {
+                                        cell.to_string()
+                                    };
+
+                                    // Style: NA=gray italic, selected=highlight, numeric=monospace
+                                    let mut text = if is_na {
+                                        egui::RichText::new(&display).weak().italics()
+                                    } else if is_selected {
+                                        egui::RichText::new(&display)
+                                            .background_color(egui::Color32::from_rgb(60, 80, 120))
+                                    } else if is_numeric {
+                                        egui::RichText::new(&display).monospace()
+                                    } else {
+                                        egui::RichText::new(&display)
+                                    };
+
+                                    // Search highlighting
+                                    if !vs.filter.is_empty()
+                                        && display
+                                            .to_lowercase()
+                                            .contains(&vs.filter.to_lowercase())
+                                    {
+                                        text = text.background_color(egui::Color32::from_rgb(
+                                            120, 100, 30,
+                                        ));
                                     }
+
+                                    let layout = if is_numeric {
+                                        egui::Layout::right_to_left(egui::Align::Center)
+                                    } else {
+                                        egui::Layout::left_to_right(egui::Align::Center)
+                                    };
+                                    ui.with_layout(layout, |ui| {
+                                        let resp = ui.add(
+                                            egui::Label::new(text).sense(egui::Sense::click()),
+                                        );
+                                        if resp.clicked() {
+                                            vs.selected_row = Some(vis_idx);
+                                            vs.selected_col = Some(col_idx);
+                                        }
+                                    });
                                 }
                             }
                             ui.end_row();
                         }
                     });
             });
+
+        // Summary stats bar at bottom
+        if let Some((min, max, mean, n)) = summary {
+            ui.separator();
+            let col_name = vs
+                .selected_col
+                .and_then(|c| data.headers.get(c))
+                .map(|s| s.as_str())
+                .unwrap_or("?");
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{col_name}: n={n}  min={min:.4}  mean={mean:.4}  max={max:.4}"
+                    ))
+                    .monospace()
+                    .weak(),
+                );
+            });
+        }
     });
 }
 
@@ -556,7 +757,7 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
                         let nrow = data.rows.len();
                         break Tab::Table {
                             title,
-                            view_state: TableViewState::new(nrow),
+                            view_state: TableViewState::new(data.headers.len(), nrow),
                             data,
                         };
                     }

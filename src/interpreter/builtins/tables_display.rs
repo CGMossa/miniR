@@ -174,9 +174,21 @@ fn interp_view(
     {
         let tx = context.interpreter().plot_tx.borrow();
         if let Some(tx) = tx.as_ref() {
+            use crate::interpreter::graphics::view::ColType;
             let table_data = crate::interpreter::graphics::view::TableData {
                 title: "View".to_string(),
                 headers: data.col_names.clone(),
+                col_types: data
+                    .col_types
+                    .iter()
+                    .map(|t| match *t {
+                        "dbl" => ColType::Double,
+                        "int" => ColType::Integer,
+                        "chr" => ColType::Character,
+                        "lgl" => ColType::Logical,
+                        _ => ColType::Other,
+                    })
+                    .collect(),
                 row_names: data.row_names.clone(),
                 rows: {
                     let nrow = data.nrow;

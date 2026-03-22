@@ -6,11 +6,38 @@
 
 // region: TableData
 
+/// Column type for display formatting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColType {
+    Double,
+    Integer,
+    Character,
+    Logical,
+    Other,
+}
+
+impl ColType {
+    pub fn short_name(self) -> &'static str {
+        match self {
+            ColType::Double => "dbl",
+            ColType::Integer => "int",
+            ColType::Character => "chr",
+            ColType::Logical => "lgl",
+            ColType::Other => "???",
+        }
+    }
+
+    pub fn is_numeric(self) -> bool {
+        matches!(self, ColType::Double | ColType::Integer)
+    }
+}
+
 /// Pre-formatted table data for display.
 #[derive(Debug, Clone)]
 pub struct TableData {
     pub title: String,
     pub headers: Vec<String>,
+    pub col_types: Vec<ColType>,
     pub row_names: Vec<String>,
     /// rows[row][col] — pre-formatted cell strings.
     pub rows: Vec<Vec<String>>,
