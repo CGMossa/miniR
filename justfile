@@ -130,6 +130,10 @@ crate-docs crate:
       | "\($kind): \(.value.name)"
     ' "$JSON" | sort -u
 
+# Generate man/*.Rd documentation files from builtin rustdoc comments
+generate-docs dir="man":
+    cargo run -- --generate-docs {{dir}}
+
 # Show lines of code (requires tokei)
 loc:
     #!/usr/bin/env bash
