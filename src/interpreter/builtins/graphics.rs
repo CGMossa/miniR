@@ -141,14 +141,29 @@ fn extract_limits(value: Option<&RValue>) -> Option<(f64, f64)> {
 /// top-level prompt).
 #[cfg(feature = "plot")]
 fn show_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
+    // Close any existing plot window first
+    close_plot_window(ctx);
+
     let state = ctx.interpreter().current_plot.borrow().clone();
     if let Some(plot_state) = state {
-        crate::interpreter::graphics::egui_device::show_plot_window(&plot_state)
+        let handle = crate::interpreter::graphics::egui_device::show_plot_window(&plot_state)
             .map_err(|e| RError::new(RErrorKind::Other, format!("failed to display plot: {e}")))?;
-        // Clear the plot after showing
+        // Store the window handle so dev.off() can close it
+        *ctx.interpreter().plot_window.borrow_mut() = Some(handle);
+        // Clear the plot data (window has its own copy)
         *ctx.interpreter().current_plot.borrow_mut() = None;
     }
     Ok(())
+}
+
+/// Close the active plot window if one is open.
+#[cfg(feature = "plot")]
+fn close_plot_window(ctx: &BuiltinContext) {
+    let mut handle = ctx.interpreter().plot_window.borrow_mut();
+    if let Some(h) = handle.as_mut() {
+        h.close();
+    }
+    *handle = None;
 }
 
 #[cfg(not(feature = "plot"))]
@@ -225,8 +240,7 @@ fn interp_svg(
 
 /// Close the current graphics device.
 ///
-/// If a plot has been accumulated, displays it (when the `plot` feature
-/// is enabled), then returns the null device number (1).
+/// Closes any open plot window and clears the accumulated plot state.
 ///
 /// @return integer 1 (invisibly)
 #[interpreter_builtin(name = "dev.off", namespace = "grDevices")]
@@ -235,8 +249,12 @@ fn interp_dev_off(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    // Show any accumulated plot
-    show_current_plot(context)?;
+    // Close the plot window if open
+    #[cfg(feature = "plot")]
+    close_plot_window(context);
+    // Clear any accumulated plot data
+    *context.interpreter().current_plot.borrow_mut() = None;
+    context.interpreter().set_invisible();
     Ok(RValue::vec(Vector::Integer(vec![Some(1i64)].into())))
 }
 

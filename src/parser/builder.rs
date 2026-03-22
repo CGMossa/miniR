@@ -145,12 +145,24 @@ fn build_help(pair: Pair<Rule>) -> Expr {
     }
 }
 
-/// Extract the topic name from a help expression for `?foo`.
-/// Walks down to find the innermost symbol or string.
+/// Extract the topic name from a help expression for `?foo` or `?foo(...)`.
+/// Strips leading `?`, then extracts the function name from call expressions
+/// (e.g. `plot(1:10)` → `plot`).
 fn extract_help_topic(pair: &Pair<Rule>) -> String {
     let text = pair.as_str().trim();
     // Strip leading ? if present
     let text = text.strip_prefix('?').unwrap_or(text).trim();
+    // If it looks like a call `name(...)`, extract just the name
+    if let Some(paren_pos) = text.find('(') {
+        let name = text[..paren_pos].trim();
+        if !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '.' || c == '_')
+        {
+            return name.to_string();
+        }
+    }
     text.to_string()
 }
 
