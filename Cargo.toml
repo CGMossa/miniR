@@ -116,14 +116,15 @@ eframe = { version = "0.33", optional = true, default-features = false, features
 egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
 egui_table = { version = "0.7", optional = true }
+svg = { version = "0.18", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "gui"]
+full = ["default", "tls", "linalg", "gui", "svg-device", "logging", "parquet"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "color"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "color", "svg-device"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -163,6 +164,7 @@ progress = ["dep:indicatif"]
 parallel = ["dep:rayon"]
 fast-format = ["dep:zmij"]
 color = ["dep:termcolor"]
+svg-device = ["dep:svg"]
 plot = ["dep:eframe", "dep:egui", "dep:egui_plot"]
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]

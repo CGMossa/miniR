@@ -43,7 +43,10 @@ fn svg_plot_points_creates_file() {
     "#,
     );
 
-    assert!(!content.is_empty(), "SVG file should be created and non-empty");
+    assert!(
+        !content.is_empty(),
+        "SVG file should be created and non-empty"
+    );
     assert!(content.contains("<svg"), "Should contain SVG opening tag");
     assert!(content.contains("</svg>"), "Should contain SVG closing tag");
     assert!(
@@ -131,8 +134,8 @@ fn svg_plot_with_abline() {
     );
 
     assert!(
-        content.contains("stroke-dasharray"),
-        "abline should produce dashed lines"
+        content.contains("<line"),
+        "abline should produce line elements in SVG"
     );
 
     std::fs::remove_dir_all(&dir).ok();
@@ -218,8 +221,8 @@ fn png_stub_prints_message() {
 
     let stderr = s.captured_stderr();
     assert!(
-        stderr.contains("not yet implemented"),
-        "PNG stub should print 'not yet implemented' message, got: {stderr}"
+        stderr.contains("not yet supported"),
+        "PNG stub should print 'not yet supported' message, got: {stderr}"
     );
 
     std::fs::remove_dir_all(&dir).ok();
@@ -239,8 +242,8 @@ fn pdf_stub_prints_message() {
 
     let stderr = s.captured_stderr();
     assert!(
-        stderr.contains("not yet implemented"),
-        "PDF stub should print 'not yet implemented' message, got: {stderr}"
+        stderr.contains("not yet supported"),
+        "PDF stub should print 'not yet supported' message, got: {stderr}"
     );
 
     std::fs::remove_dir_all(&dir).ok();

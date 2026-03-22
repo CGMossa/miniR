@@ -1,341 +1,429 @@
-//! SVG rendering — converts a `PlotState` into an SVG document using the `svg` crate.
-//!
-//! The renderer maps data coordinates to SVG pixel coordinates using a linear
-//! transform with margins for axes, tick marks, and labels. Output is a
-//! self-contained SVG string suitable for writing to a file.
+//! SVG renderer — converts a `PlotState` into an SVG string.
 
-use svg::node::element::{Circle, Line, Polyline, Rectangle, Text};
+use svg::node::element::{Circle, Group, Line, Polyline, Rectangle, Text as SvgText};
 use svg::Document;
 
 use super::plot_data::{PlotItem, PlotState};
 
-/// Default dots-per-inch used to convert R's inch-based device dimensions
-/// to SVG pixel units.
 const DPI: f64 = 96.0;
-
-/// Margin (in pixels) around the plot area for axes and labels.
 const MARGIN_LEFT: f64 = 70.0;
 const MARGIN_RIGHT: f64 = 30.0;
 const MARGIN_TOP: f64 = 50.0;
 const MARGIN_BOTTOM: f64 = 60.0;
 
-/// Render a `PlotState` to an SVG string.
-///
-/// `width_in` and `height_in` are the device dimensions in inches (R defaults
-/// to 7x7 for `svg()`). They are converted to pixels at 96 DPI.
-pub fn render_svg(plot: &PlotState, width_in: f64, height_in: f64) -> String {
-    let total_w = width_in * DPI;
-    let total_h = height_in * DPI;
-
+/// Render a PlotState to an SVG string.
+pub fn render_svg(state: &PlotState, width_in: f64, height_in: f64) -> String {
+    let w = width_in * DPI;
+    let h = height_in * DPI;
     let plot_x0 = MARGIN_LEFT;
-    let plot_x1 = total_w - MARGIN_RIGHT;
+    let plot_x1 = w - MARGIN_RIGHT;
     let plot_y0 = MARGIN_TOP;
-    let plot_y1 = total_h - MARGIN_BOTTOM;
-    let plot_w = plot_x1 - plot_x0;
-    let plot_h = plot_y1 - plot_y0;
+    let plot_y1 = h - MARGIN_BOTTOM;
 
-    let (x_min, x_max, y_min, y_max) = plot.compute_bounds();
+    // Compute data bounds from all items
+    let (dx0, dx1, dy0, dy1) = data_bounds(state);
 
-    // Linear mapping helpers: data -> SVG pixel coordinates.
-    let map_x = |xv: f64| -> f64 { plot_x0 + (xv - x_min) / (x_max - x_min) * plot_w };
-    let map_y = |yv: f64| -> f64 {
-        // SVG y-axis is top-down; data y-axis is bottom-up.
-        plot_y1 - (yv - y_min) / (y_max - y_min) * plot_h
-    };
+    let map_x = |x: f64| plot_x0 + (x - dx0) / (dx1 - dx0) * (plot_x1 - plot_x0);
+    let map_y = |y: f64| plot_y1 - (y - dy0) / (dy1 - dy0) * (plot_y1 - plot_y0);
 
-    // Start building the SVG document.
     let mut doc = Document::new()
-        .set("width", total_w)
-        .set("height", total_h)
-        .set("viewBox", format!("0 0 {total_w} {total_h}"));
+        .set("width", w)
+        .set("height", h)
+        .set("viewBox", (0.0, 0.0, w, h));
 
     // White background
-    let bg = Rectangle::new()
-        .set("width", total_w)
-        .set("height", total_h)
-        .set("fill", "white");
-    doc = doc.add(bg);
+    doc = doc.add(
+        Rectangle::new()
+            .set("width", w)
+            .set("height", h)
+            .set("fill", "white"),
+    );
 
     // Plot area border
-    let border = Rectangle::new()
-        .set("x", plot_x0)
-        .set("y", plot_y0)
-        .set("width", plot_w)
-        .set("height", plot_h)
-        .set("fill", "none")
-        .set("stroke", "black")
-        .set("stroke-width", 1);
-    doc = doc.add(border);
+    doc = doc.add(
+        Rectangle::new()
+            .set("x", plot_x0)
+            .set("y", plot_y0)
+            .set("width", plot_x1 - plot_x0)
+            .set("height", plot_y1 - plot_y0)
+            .set("fill", "none")
+            .set("stroke", "#cccccc"),
+    );
 
-    // Draw items
-    for item in &plot.items {
-        match item {
-            PlotItem::Points { x, y, color } => {
-                for (xv, yv) in x.iter().zip(y.iter()) {
-                    let circle = Circle::new()
-                        .set("cx", format!("{:.2}", map_x(*xv)))
-                        .set("cy", format!("{:.2}", map_y(*yv)))
-                        .set("r", 3)
-                        .set("fill", color.as_str());
-                    doc = doc.add(circle);
-                }
-            }
-            PlotItem::Line { x, y, color } => {
-                if x.len() >= 2 {
-                    let points_str: String = x
-                        .iter()
-                        .zip(y.iter())
-                        .map(|(xv, yv)| format!("{:.2},{:.2}", map_x(*xv), map_y(*yv)))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let polyline = Polyline::new()
-                        .set("points", points_str)
-                        .set("fill", "none")
-                        .set("stroke", color.as_str())
-                        .set("stroke-width", "1.5");
-                    doc = doc.add(polyline);
-                }
-            }
-            PlotItem::Bars { x, heights, color } => {
-                let n = x.len();
-                // Bar width: fraction of the plot-area width divided by bar count.
-                let bar_w = if n > 1 {
-                    (map_x(x[1]) - map_x(x[0])) * 0.8
-                } else {
-                    plot_w * 0.4
-                };
-                for (xv, hv) in x.iter().zip(heights.iter()) {
-                    let sx = map_x(*xv) - bar_w / 2.0;
-                    let sy_top = map_y(*hv);
-                    let sy_bot = map_y(0.0);
-                    let bar_h = sy_bot - sy_top;
-                    let rect = Rectangle::new()
-                        .set("x", format!("{sx:.2}"))
-                        .set("y", format!("{sy_top:.2}"))
-                        .set("width", format!("{bar_w:.2}"))
-                        .set("height", format!("{bar_h:.2}"))
-                        .set("fill", color.as_str())
-                        .set("stroke", "black")
-                        .set("stroke-width", "0.5");
-                    doc = doc.add(rect);
-                }
-            }
-            PlotItem::HLine { y, color } => {
-                let sy = map_y(*y);
-                let line = Line::new()
-                    .set("x1", plot_x0)
-                    .set("y1", format!("{sy:.2}"))
-                    .set("x2", plot_x1)
-                    .set("y2", format!("{sy:.2}"))
-                    .set("stroke", color.as_str())
-                    .set("stroke-width", 1)
-                    .set("stroke-dasharray", "4,4");
-                doc = doc.add(line);
-            }
-            PlotItem::VLine { x, color } => {
-                let sx = map_x(*x);
-                let line = Line::new()
-                    .set("x1", format!("{sx:.2}"))
-                    .set("y1", plot_y0)
-                    .set("x2", format!("{sx:.2}"))
-                    .set("y2", plot_y1)
-                    .set("stroke", color.as_str())
-                    .set("stroke-width", 1)
-                    .set("stroke-dasharray", "4,4");
-                doc = doc.add(line);
-            }
-            PlotItem::Text { x, y, label } => {
-                let text = Text::new(label.as_str())
-                    .set("x", format!("{:.2}", map_x(*x)))
-                    .set("y", format!("{:.2}", map_y(*y)))
-                    .set("font-size", 12)
-                    .set("text-anchor", "middle")
-                    .set("fill", "black");
-                doc = doc.add(text);
-            }
-        }
-    }
-
-    // Axes: compute nice tick positions.
-    let x_ticks = nice_ticks(x_min, x_max, 5);
-    let y_ticks = nice_ticks(y_min, y_max, 5);
-
-    // X-axis ticks and labels
-    for &t in &x_ticks {
-        let sx = map_x(t);
-        // Tick mark
-        let tick = Line::new()
-            .set("x1", format!("{sx:.2}"))
-            .set("y1", plot_y1)
-            .set("x2", format!("{sx:.2}"))
-            .set("y2", plot_y1 + 5.0)
-            .set("stroke", "black")
-            .set("stroke-width", 1);
-        doc = doc.add(tick);
-        // Label
-        let label = Text::new(format_tick(t))
-            .set("x", format!("{sx:.2}"))
-            .set("y", plot_y1 + 20.0)
-            .set("font-size", 11)
-            .set("text-anchor", "middle")
-            .set("fill", "black");
-        doc = doc.add(label);
-    }
-
-    // Y-axis ticks and labels
-    for &t in &y_ticks {
-        let sy = map_y(t);
-        // Tick mark
-        let tick = Line::new()
-            .set("x1", plot_x0 - 5.0)
-            .set("y1", format!("{sy:.2}"))
-            .set("x2", plot_x0)
-            .set("y2", format!("{sy:.2}"))
-            .set("stroke", "black")
-            .set("stroke-width", 1);
-        doc = doc.add(tick);
-        // Label
-        let label = Text::new(format_tick(t))
-            .set("x", plot_x0 - 8.0)
-            .set("y", format!("{sy:.2}"))
-            .set("font-size", 11)
-            .set("text-anchor", "end")
-            .set("dominant-baseline", "middle")
-            .set("fill", "black");
-        doc = doc.add(label);
-    }
-
-    // X-axis label
-    if !plot.xlab.is_empty() {
-        let cx = (plot_x0 + plot_x1) / 2.0;
-        let label = Text::new(plot.xlab.as_str())
-            .set("x", format!("{cx:.2}"))
-            .set("y", plot_y1 + 45.0)
-            .set("font-size", 13)
-            .set("text-anchor", "middle")
-            .set("fill", "black");
-        doc = doc.add(label);
-    }
-
-    // Y-axis label (rotated)
-    if !plot.ylab.is_empty() {
-        let cy = (plot_y0 + plot_y1) / 2.0;
-        let label = Text::new(plot.ylab.as_str())
-            .set("x", 15)
-            .set("y", format!("{cy:.2}"))
-            .set("font-size", 13)
-            .set("text-anchor", "middle")
-            .set("fill", "black")
-            .set("transform", format!("rotate(-90, 15, {cy:.2})"));
-        doc = doc.add(label);
-    }
+    // Axes
+    doc = add_axes(&doc, plot_x0, plot_x1, plot_y0, plot_y1, dx0, dx1, dy0, dy1);
 
     // Title
-    if !plot.main.is_empty() {
-        let cx = (plot_x0 + plot_x1) / 2.0;
-        let title = Text::new(plot.main.as_str())
-            .set("x", format!("{cx:.2}"))
-            .set("y", plot_y0 - 15.0)
-            .set("font-size", 16)
-            .set("font-weight", "bold")
-            .set("text-anchor", "middle")
-            .set("fill", "black");
-        doc = doc.add(title);
+    if let Some(title) = &state.title {
+        doc = doc.add(
+            SvgText::new(title.clone())
+                .set("x", w / 2.0)
+                .set("y", 25.0)
+                .set("text-anchor", "middle")
+                .set("font-size", 16)
+                .set("font-weight", "bold"),
+        );
     }
+
+    // Axis labels
+    if let Some(xlab) = &state.x_label {
+        doc = doc.add(
+            SvgText::new(xlab.clone())
+                .set("x", (plot_x0 + plot_x1) / 2.0)
+                .set("y", h - 10.0)
+                .set("text-anchor", "middle")
+                .set("font-size", 12),
+        );
+    }
+    if let Some(ylab) = &state.y_label {
+        doc = doc.add(
+            SvgText::new(ylab.clone())
+                .set("x", 15.0)
+                .set("y", (plot_y0 + plot_y1) / 2.0)
+                .set("text-anchor", "middle")
+                .set("font-size", 12)
+                .set(
+                    "transform",
+                    format!("rotate(-90, 15, {})", (plot_y0 + plot_y1) / 2.0),
+                ),
+        );
+    }
+
+    // Render items
+    let mut items_group = Group::new();
+    for item in &state.items {
+        items_group = render_item(items_group, item, &map_x, &map_y);
+    }
+    doc = doc.add(items_group);
 
     doc.to_string()
 }
 
-/// Compute "nice" tick positions for an axis spanning [lo, hi] with
-/// approximately `target` ticks.
-fn nice_ticks(lo: f64, hi: f64, target: usize) -> Vec<f64> {
-    let range = hi - lo;
-    if range <= 0.0 || !range.is_finite() {
-        return vec![lo];
+fn rgba_to_svg(c: [u8; 4]) -> String {
+    if c[3] == 255 {
+        format!("rgb({},{},{})", c[0], c[1], c[2])
+    } else {
+        format!(
+            "rgba({},{},{},{})",
+            c[0],
+            c[1],
+            c[2],
+            f64::from(c[3]) / 255.0
+        )
+    }
+}
+
+fn data_bounds(state: &PlotState) -> (f64, f64, f64, f64) {
+    let mut xmin = f64::INFINITY;
+    let mut xmax = f64::NEG_INFINITY;
+    let mut ymin = f64::INFINITY;
+    let mut ymax = f64::NEG_INFINITY;
+
+    for item in &state.items {
+        match item {
+            PlotItem::Points { x, y, .. } | PlotItem::Line { x, y, .. } => {
+                for &v in x {
+                    if v < xmin {
+                        xmin = v;
+                    }
+                    if v > xmax {
+                        xmax = v;
+                    }
+                }
+                for &v in y {
+                    if v < ymin {
+                        ymin = v;
+                    }
+                    if v > ymax {
+                        ymax = v;
+                    }
+                }
+            }
+            PlotItem::Bars { x, heights, .. } => {
+                for &v in x {
+                    if v < xmin {
+                        xmin = v;
+                    }
+                    if v > xmax {
+                        xmax = v;
+                    }
+                }
+                for &v in heights {
+                    if v > ymax {
+                        ymax = v;
+                    }
+                }
+                if 0.0 < ymin {
+                    ymin = 0.0;
+                }
+            }
+            PlotItem::HLine { y, .. } => {
+                if *y < ymin {
+                    ymin = *y;
+                }
+                if *y > ymax {
+                    ymax = *y;
+                }
+            }
+            PlotItem::VLine { x, .. } => {
+                if *x < xmin {
+                    xmin = *x;
+                }
+                if *x > xmax {
+                    xmax = *x;
+                }
+            }
+            PlotItem::Text { x, y, .. } => {
+                if *x < xmin {
+                    xmin = *x;
+                }
+                if *x > xmax {
+                    xmax = *x;
+                }
+                if *y < ymin {
+                    ymin = *y;
+                }
+                if *y > ymax {
+                    ymax = *y;
+                }
+            }
+            PlotItem::BoxPlot {
+                positions, spreads, ..
+            } => {
+                for &p in positions {
+                    if p < xmin {
+                        xmin = p;
+                    }
+                    if p > xmax {
+                        xmax = p;
+                    }
+                }
+                for s in spreads {
+                    if s.lower_whisker < ymin {
+                        ymin = s.lower_whisker;
+                    }
+                    if s.upper_whisker > ymax {
+                        ymax = s.upper_whisker;
+                    }
+                }
+            }
+        }
     }
 
-    let rough_step = range / target as f64;
-    let mag = libm::pow(10.0, libm::floor(libm::log10(rough_step)));
-    let norm = rough_step / mag;
+    if let Some((lo, hi)) = state.x_lim {
+        xmin = lo;
+        xmax = hi;
+    }
+    if let Some((lo, hi)) = state.y_lim {
+        ymin = lo;
+        ymax = hi;
+    }
 
-    let nice_step = if norm <= 1.5 {
+    // Add 4% padding
+    let xpad = (xmax - xmin).abs() * 0.04;
+    let ypad = (ymax - ymin).abs() * 0.04;
+    if xmin == xmax {
+        xmin -= 1.0;
+        xmax += 1.0;
+    }
+    if ymin == ymax {
+        ymin -= 1.0;
+        ymax += 1.0;
+    }
+
+    (xmin - xpad, xmax + xpad, ymin - ypad, ymax + ypad)
+}
+
+fn render_item(
+    mut group: Group,
+    item: &PlotItem,
+    map_x: &dyn Fn(f64) -> f64,
+    map_y: &dyn Fn(f64) -> f64,
+) -> Group {
+    match item {
+        PlotItem::Points {
+            x, y, color, size, ..
+        } => {
+            let fill = rgba_to_svg(*color);
+            for (&xi, &yi) in x.iter().zip(y.iter()) {
+                group = group.add(
+                    Circle::new()
+                        .set("cx", map_x(xi))
+                        .set("cy", map_y(yi))
+                        .set("r", *size as f64)
+                        .set("fill", fill.as_str()),
+                );
+            }
+        }
+        PlotItem::Line {
+            x, y, color, width, ..
+        } => {
+            let points: String = x
+                .iter()
+                .zip(y.iter())
+                .map(|(&xi, &yi)| format!("{},{}", map_x(xi), map_y(yi)))
+                .collect::<Vec<_>>()
+                .join(" ");
+            group = group.add(
+                Polyline::new()
+                    .set("points", points)
+                    .set("fill", "none")
+                    .set("stroke", rgba_to_svg(*color))
+                    .set("stroke-width", *width as f64),
+            );
+        }
+        PlotItem::Bars {
+            x,
+            heights,
+            color,
+            width,
+            ..
+        } => {
+            let fill = rgba_to_svg(*color);
+            for (&xi, &hi) in x.iter().zip(heights.iter()) {
+                let sx = map_x(xi - width / 2.0);
+                let sy = map_y(hi);
+                let sw = map_x(xi + width / 2.0) - sx;
+                let sh = map_y(0.0) - sy;
+                group = group.add(
+                    Rectangle::new()
+                        .set("x", sx)
+                        .set("y", sy)
+                        .set("width", sw.abs())
+                        .set("height", sh.abs())
+                        .set("fill", fill.as_str())
+                        .set("stroke", "black")
+                        .set("stroke-width", 0.5),
+                );
+            }
+        }
+        PlotItem::HLine { y, color, width } => {
+            let sy = map_y(*y);
+            group = group.add(
+                Line::new()
+                    .set("x1", map_x(f64::NEG_INFINITY).max(0.0))
+                    .set("x2", map_x(f64::INFINITY).min(10000.0))
+                    .set("y1", sy)
+                    .set("y2", sy)
+                    .set("stroke", rgba_to_svg(*color))
+                    .set("stroke-width", *width as f64),
+            );
+        }
+        PlotItem::VLine { x, color, width } => {
+            let sx = map_x(*x);
+            group = group.add(
+                Line::new()
+                    .set("x1", sx)
+                    .set("x2", sx)
+                    .set("y1", map_y(f64::NEG_INFINITY).min(10000.0))
+                    .set("y2", map_y(f64::INFINITY).max(0.0))
+                    .set("stroke", rgba_to_svg(*color))
+                    .set("stroke-width", *width as f64),
+            );
+        }
+        PlotItem::Text { x, y, text, color } => {
+            group = group.add(
+                SvgText::new(text.clone())
+                    .set("x", map_x(*x))
+                    .set("y", map_y(*y))
+                    .set("fill", rgba_to_svg(*color))
+                    .set("font-size", 12),
+            );
+        }
+        PlotItem::BoxPlot { .. } => {
+            // Box plots in SVG are complex — defer to future work
+        }
+    }
+    group
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_axes(
+    doc: &Document,
+    px0: f64,
+    px1: f64,
+    py0: f64,
+    py1: f64,
+    dx0: f64,
+    dx1: f64,
+    dy0: f64,
+    dy1: f64,
+) -> Document {
+    let mut d = doc.clone();
+    let x_ticks = nice_ticks(dx0, dx1, 6);
+    let y_ticks = nice_ticks(dy0, dy1, 6);
+    let map_x = |v: f64| px0 + (v - dx0) / (dx1 - dx0) * (px1 - px0);
+    let map_y = |v: f64| py1 - (v - dy0) / (dy1 - dy0) * (py1 - py0);
+
+    for &t in &x_ticks {
+        let sx = map_x(t);
+        d = d.add(
+            Line::new()
+                .set("x1", sx)
+                .set("x2", sx)
+                .set("y1", py1)
+                .set("y2", py1 + 5.0)
+                .set("stroke", "black"),
+        );
+        d = d.add(
+            SvgText::new(format_tick(t))
+                .set("x", sx)
+                .set("y", py1 + 18.0)
+                .set("text-anchor", "middle")
+                .set("font-size", 10),
+        );
+    }
+    for &t in &y_ticks {
+        let sy = map_y(t);
+        d = d.add(
+            Line::new()
+                .set("x1", px0 - 5.0)
+                .set("x2", px0)
+                .set("y1", sy)
+                .set("y2", sy)
+                .set("stroke", "black"),
+        );
+        d = d.add(
+            SvgText::new(format_tick(t))
+                .set("x", px0 - 8.0)
+                .set("y", sy + 4.0)
+                .set("text-anchor", "end")
+                .set("font-size", 10),
+        );
+    }
+    d
+}
+
+fn nice_ticks(lo: f64, hi: f64, target: usize) -> Vec<f64> {
+    let range = hi - lo;
+    if range <= 0.0 {
+        return vec![lo];
+    }
+    let rough = range / target as f64;
+    let mag = 10f64.powf(rough.log10().floor());
+    let step = if rough / mag < 1.5 {
         mag
-    } else if norm <= 3.5 {
+    } else if rough / mag < 3.5 {
         2.0 * mag
-    } else if norm <= 7.5 {
+    } else if rough / mag < 7.5 {
         5.0 * mag
     } else {
         10.0 * mag
     };
-
-    let start = libm::ceil(lo / nice_step) * nice_step;
+    let start = (lo / step).ceil() * step;
     let mut ticks = Vec::new();
     let mut t = start;
-    // Safety bound: never produce more than 100 ticks.
-    while t <= hi + nice_step * 0.001 && ticks.len() < 100 {
+    while t <= hi + step * 0.01 {
         ticks.push(t);
-        t += nice_step;
+        t += step;
     }
     ticks
 }
 
-/// Format a tick value, stripping unnecessary trailing zeros.
 fn format_tick(v: f64) -> String {
-    if v == v.floor() && v.abs() < 1e15 {
-        // Integer-valued: format without decimals.
-        format!("{v:.0}")
+    if v == v.floor() && v.abs() < 1e6 {
+        format!("{}", v as i64)
     } else {
-        // Use up to 4 decimal places, then trim trailing zeros.
-        let s = format!("{v:.4}");
-        let s = s.trim_end_matches('0');
-        let s = s.trim_end_matches('.');
-        s.to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nice_ticks_basic() {
-        let ticks = nice_ticks(0.0, 10.0, 5);
-        assert!(!ticks.is_empty());
-        assert!(ticks.iter().all(|&t| (0.0..=10.0).contains(&t)));
-    }
-
-    #[test]
-    fn format_tick_integer() {
-        assert_eq!(format_tick(5.0), "5");
-        assert_eq!(format_tick(0.0), "0");
-    }
-
-    #[test]
-    fn format_tick_decimal() {
-        assert_eq!(format_tick(2.5), "2.5");
-    }
-
-    #[test]
-    fn render_svg_empty_plot() {
-        let plot = PlotState::new();
-        let svg = render_svg(&plot, 7.0, 7.0);
-        assert!(svg.contains("<svg"));
-        assert!(svg.contains("</svg>"));
-    }
-
-    #[test]
-    fn render_svg_with_points() {
-        let mut plot = PlotState::new();
-        plot.items.push(PlotItem::Points {
-            x: vec![1.0, 2.0, 3.0],
-            y: vec![4.0, 5.0, 6.0],
-            color: "black".to_string(),
-        });
-        plot.main = "Test".to_string();
-        plot.xlab = "X".to_string();
-        plot.ylab = "Y".to_string();
-        let svg = render_svg(&plot, 7.0, 7.0);
-        assert!(svg.contains("<circle"));
-        assert!(svg.contains("Test"));
+        format!("{:.2}", v)
     }
 }

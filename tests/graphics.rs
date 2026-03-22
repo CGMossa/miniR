@@ -325,13 +325,22 @@ fn png_stub_prints_message() {
 }
 
 #[test]
-fn svg_stub_prints_message() {
-    let mut session = Session::new_with_captured_output();
-    session.eval_source("svg('test.svg')").unwrap();
-    let stderr = session.captured_stderr();
+fn svg_device_creates_file() {
+    let dir = temp_dir::TempDir::new().unwrap();
+    let path = dir.path().join("test.svg");
+    let mut session = Session::new();
+    session
+        .eval_source(&format!("svg('{}'); plot(1:5); dev.off()", path.display()))
+        .unwrap();
+    assert!(path.exists(), "svg() + dev.off() should create an SVG file");
+    let content = std::fs::read_to_string(&path).unwrap();
     assert!(
-        stderr.contains("not yet supported"),
-        "svg() should print a not-yet-supported message, got stderr: {stderr}"
+        content.contains("<svg"),
+        "SVG file should contain <svg element"
+    );
+    assert!(
+        content.contains("<circle"),
+        "SVG file should contain circles for points"
     );
 }
 

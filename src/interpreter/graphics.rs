@@ -11,3 +11,27 @@ pub mod view;
 
 #[cfg(feature = "plot")]
 pub mod egui_device;
+
+#[cfg(feature = "svg-device")]
+pub mod svg_device;
+
+// region: FileDevice
+
+/// A file-based graphics device (SVG, PNG, PDF).
+#[derive(Debug, Clone)]
+pub struct FileDevice {
+    pub filename: String,
+    pub format: FileFormat,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Supported file device formats.
+#[derive(Debug, Clone, Copy)]
+pub enum FileFormat {
+    Svg,
+    Png,
+    Pdf,
+}
+
+// endregion

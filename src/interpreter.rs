@@ -259,6 +259,8 @@ pub struct Interpreter {
     pub(crate) color_palette: RefCell<Vec<graphics::color::RColor>>,
     /// Current plot being accumulated (for egui_plot rendering).
     pub(crate) current_plot: RefCell<Option<graphics::plot_data::PlotState>>,
+    /// Active file device (SVG/PNG/PDF) — when set, dev.off() writes to file.
+    pub(crate) file_device: RefCell<Option<graphics::FileDevice>>,
     /// Channel sender for pushing plots to the GUI thread (when `plot` feature is on).
     #[cfg(feature = "plot")]
     pub(crate) plot_tx: RefCell<Option<graphics::egui_device::PlotSender>>,
@@ -412,6 +414,7 @@ impl Interpreter {
             par_state: RefCell::new(graphics::par::ParState::default()),
             color_palette: RefCell::new(graphics::color::default_palette()),
             current_plot: RefCell::new(None),
+            file_device: RefCell::new(None),
             #[cfg(feature = "plot")]
             plot_tx: RefCell::new(None),
         };

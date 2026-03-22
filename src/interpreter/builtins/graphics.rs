@@ -144,6 +144,10 @@ fn extract_limits(value: Option<&RValue>) -> Option<(f64, f64)> {
 /// to auto-display the plot.
 #[cfg(feature = "plot")]
 fn send_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
+    // When a file device is active, don't send to GUI — accumulate for dev.off()
+    if ctx.interpreter().file_device.borrow().is_some() {
+        return Ok(());
+    }
     let state = ctx.interpreter().current_plot.borrow().clone();
     if let Some(plot_state) = state {
         let tx = ctx.interpreter().plot_tx.borrow();
@@ -163,6 +167,9 @@ fn send_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
 
 #[cfg(not(feature = "plot"))]
 fn send_current_plot(ctx: &BuiltinContext) -> Result<(), RError> {
+    if ctx.interpreter().file_device.borrow().is_some() {
+        return Ok(());
+    }
     if ctx.interpreter().current_plot.borrow().is_some() {
         ctx.write_err(
             "plot() requires the 'plot' feature. Build with: cargo build --features plot\n",
@@ -242,18 +249,50 @@ fn interp_png(
 
 /// Open an SVG graphics device.
 ///
-/// File-based graphics devices are not yet implemented — this stub prints
-/// a message and returns NULL so that scripts can continue.
+/// Subsequent plot commands will accumulate data. When dev.off() is called,
+/// the plot is rendered to an SVG file.
 ///
-/// @param filename output file path (ignored)
-/// @return NULL
+/// @param filename output file path
+/// @param width width in inches (default 7)
+/// @param height height in inches (default 7)
+/// @return NULL (invisibly)
 #[interpreter_builtin(namespace = "grDevices")]
 fn interp_svg(
-    _args: &[RValue],
-    _named: &[(String, RValue)],
+    args: &[RValue],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    context.write_err("svg() file device is not yet supported in miniR\n");
+    let filename = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "svg() requires a filename argument".to_string(),
+            )
+        })?;
+    let ca = CallArgs::new(args, named);
+    let width = ca
+        .named("width")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(7.0);
+    let height = ca
+        .named("height")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(7.0);
+
+    *context.interpreter().file_device.borrow_mut() =
+        Some(crate::interpreter::graphics::FileDevice {
+            filename,
+            format: crate::interpreter::graphics::FileFormat::Svg,
+            width,
+            height,
+        });
+    // Start with a fresh plot
+    *context.interpreter().current_plot.borrow_mut() =
+        Some(crate::interpreter::graphics::plot_data::PlotState::new());
+    context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
 
@@ -268,6 +307,36 @@ fn interp_dev_off(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // If a file device is active, render to file
+    let file_dev = context.interpreter().file_device.borrow().clone();
+    if let Some(dev) = file_dev {
+        let plot_state = context.interpreter().current_plot.borrow().clone();
+        if let Some(state) = plot_state {
+            match dev.format {
+                #[cfg(feature = "svg-device")]
+                crate::interpreter::graphics::FileFormat::Svg => {
+                    let svg_str = crate::interpreter::graphics::svg_device::render_svg(
+                        &state, dev.width, dev.height,
+                    );
+                    std::fs::write(&dev.filename, svg_str).map_err(|e| {
+                        RError::new(
+                            RErrorKind::Other,
+                            format!("failed to write SVG file '{}': {e}", dev.filename),
+                        )
+                    })?;
+                }
+                #[allow(unreachable_patterns)]
+                _ => {
+                    context.write_err(&format!(
+                        "{:?} file device is not yet implemented\n",
+                        dev.format
+                    ));
+                }
+            }
+        }
+        *context.interpreter().file_device.borrow_mut() = None;
+    }
+
     // Send close signal to the GUI window
     #[cfg(feature = "plot")]
     {
