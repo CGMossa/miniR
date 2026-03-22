@@ -169,6 +169,39 @@ fn interp_view(
         )
     })?;
 
+    // If a GUI channel is available, send the data as a View tab
+    #[cfg(feature = "plot")]
+    {
+        let tx = context.interpreter().plot_tx.borrow();
+        if let Some(tx) = tx.as_ref() {
+            let table_data = crate::interpreter::graphics::view::TableData {
+                title: "View".to_string(),
+                headers: data.col_names.clone(),
+                row_names: data.row_names.clone(),
+                rows: {
+                    let nrow = data.nrow;
+                    let ncol = data.columns.len();
+                    (0..nrow)
+                        .map(|r| {
+                            (0..ncol)
+                                .map(|c| {
+                                    data.columns
+                                        .get(c)
+                                        .and_then(|col| col.get(r).cloned())
+                                        .unwrap_or_else(|| "NA".to_string())
+                                })
+                                .collect()
+                        })
+                        .collect()
+                },
+            };
+            let _ =
+                tx.send(crate::interpreter::graphics::egui_device::PlotMessage::View(table_data));
+            context.interpreter().set_invisible();
+            return Ok(val.clone());
+        }
+    }
+
     if data.nrow == 0 {
         context.write(&format!(
             "data frame with 0 rows and {} columns: {}\n",

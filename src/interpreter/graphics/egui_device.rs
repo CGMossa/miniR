@@ -12,6 +12,7 @@
 use std::sync::mpsc;
 
 use super::plot_data::{PlotItem, PlotState};
+use super::view::TableData;
 
 // region: PlotChannel
 
@@ -21,6 +22,8 @@ pub enum PlotMessage {
     Show(PlotState),
     /// Close the current plot window.
     Close,
+    /// Show a View() data frame table.
+    View(TableData),
 }
 
 /// Sender half — stored on the Interpreter so builtins can send plots.
@@ -68,12 +71,13 @@ fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
 /// A single tab in the GUI window.
 enum Tab {
     Plot { title: String, state: PlotState },
+    Table { title: String, data: TableData },
 }
 
 impl Tab {
     fn title(&self) -> &str {
         match self {
-            Tab::Plot { title, .. } => title,
+            Tab::Plot { title, .. } | Tab::Table { title, .. } => title,
         }
     }
 }
@@ -104,6 +108,11 @@ impl eframe::App for PlotApp {
                         title,
                         state: new_state,
                     });
+                    self.active_tab = self.tabs.len() - 1;
+                }
+                PlotMessage::View(data) => {
+                    let title = data.title.clone();
+                    self.tabs.push(Tab::Table { title, data });
                     self.active_tab = self.tabs.len() - 1;
                 }
                 PlotMessage::Close => {
@@ -168,6 +177,9 @@ impl eframe::App for PlotApp {
         match &self.tabs[active] {
             Tab::Plot { state, .. } => {
                 render_plot(ctx, state);
+            }
+            Tab::Table { data, .. } => {
+                render_table(ctx, data);
             }
         }
     }
@@ -310,6 +322,55 @@ fn render_plot_item(
     }
 }
 
+/// Render a View() data frame table in the central panel.
+fn render_table(ctx: &egui::Context, data: &TableData) {
+    egui::CentralPanel::default().show(ctx, |ui| {
+        ui.heading(&data.title);
+        ui.separator();
+
+        let nrow = data.rows.len();
+        let ncol = data.headers.len();
+
+        egui::ScrollArea::both()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Grid::new("view_grid")
+                    .striped(true)
+                    .num_columns(ncol + 1)
+                    .min_col_width(40.0)
+                    .show(ui, |ui| {
+                        // Header row
+                        ui.label(egui::RichText::new("").weak());
+                        for header in &data.headers {
+                            ui.label(egui::RichText::new(header).strong());
+                        }
+                        ui.end_row();
+
+                        // Data rows
+                        for row_idx in 0..nrow {
+                            // Row name
+                            if let Some(rn) = data.row_names.get(row_idx) {
+                                ui.label(egui::RichText::new(rn).weak());
+                            }
+                            // Cells
+                            for col_idx in 0..ncol {
+                                if let Some(row) = data.rows.get(row_idx) {
+                                    if let Some(cell) = row.get(col_idx) {
+                                        if cell == "NA" {
+                                            ui.label(egui::RichText::new("NA").weak().italics());
+                                        } else {
+                                            ui.label(cell);
+                                        }
+                                    }
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
+    });
+}
+
 // endregion
 
 // region: run_plot_event_loop
@@ -330,22 +391,24 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
     let shared_rx = Arc::new(Mutex::new(rx));
 
     loop {
-        // Block until a Show message arrives — no window exists.
-        let first_state = {
+        // Block until a Show or View message arrives — no window exists.
+        let first_tab = {
             let rx = shared_rx.lock().unwrap();
             loop {
                 match rx.recv() {
-                    Ok(PlotMessage::Show(state)) => break state,
+                    Ok(PlotMessage::Show(state)) => {
+                        let title = state.title.clone().unwrap_or_else(|| "Plot 1".to_string());
+                        break Tab::Plot { title, state };
+                    }
+                    Ok(PlotMessage::View(data)) => {
+                        let title = data.title.clone();
+                        break Tab::Table { title, data };
+                    }
                     Ok(PlotMessage::Close) => continue,
                     Err(_) => return Ok(()), // REPL exited
                 }
             }
         };
-
-        let title = first_state
-            .title
-            .clone()
-            .unwrap_or_else(|| "Plot 1".to_string());
 
         let native_options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
@@ -355,17 +418,14 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         };
 
         let app = PlotApp {
-            tabs: vec![Tab::Plot {
-                title,
-                state: first_state,
-            }],
+            tabs: vec![first_tab],
             active_tab: 0,
             rx: Arc::clone(&shared_rx),
         };
 
         // run_native blocks until the window is closed.
         let _ = eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))));
-        // Window closed — loop back and wait for the next plot.
+        // Window closed — loop back and wait for the next plot/view.
     }
 }
 
