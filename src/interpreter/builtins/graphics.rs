@@ -948,16 +948,6 @@ fn builtin_axis(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue,
 
 // region: Graphics parameters
 
-/// Query or set graphical parameters.
-///
-/// Returns an empty list for compatibility. The par() system is minimal —
-/// egui_plot handles most graphical parameters internally.
-///
-/// @return a list of current parameter values
-#[builtin(namespace = "graphics")]
-fn builtin_par(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    // Return an empty list for compatibility
-    Ok(RValue::List(RList::new(vec![])))
-}
+// par() is implemented in graphics/par.rs
 
 // endregion

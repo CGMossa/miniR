@@ -28,8 +28,6 @@ stopifnot(identical(attr(m, "match.length")[[1]], -1L))
     .unwrap();
 }
 
-
-
 #[test]
 fn regexpr_vectorized() {
     let mut s = Session::new();
@@ -45,8 +43,6 @@ stopifnot(identical(attr(m, "match.length")[[3]], 2L))
     )
     .unwrap();
 }
-
-
 
 // endregion
 
@@ -80,10 +76,6 @@ stopifnot(identical(attr(m[[1]], "match.length")[[1]], -1L))
     .unwrap();
 }
 
-
-
-
-
 #[test]
 fn gregexpr_vectorized() {
     let mut s = Session::new();
@@ -96,8 +88,6 @@ stopifnot(identical(m[[2]][[1]], -1L))    # no match
     )
     .unwrap();
 }
-
-
 
 // endregion
 
@@ -141,8 +131,6 @@ stopifnot(identical(attr(m[[1]], "match.length")[[1]], -1L))
     .unwrap();
 }
 
-
-
 #[test]
 fn regexec_vectorized() {
     let mut s = Session::new();
@@ -156,8 +144,6 @@ stopifnot(identical(m[[3]][[1]], 1L))
     )
     .unwrap();
 }
-
-
 
 // endregion
 
@@ -334,19 +320,9 @@ stopifnot(identical(result[3], "DEF"))
     .unwrap();
 }
 
-
-
-
-
 // endregion
 
 // region: grep/grepl coercion
-
-
-
-
-
-
 
 // endregion
 

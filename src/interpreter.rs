@@ -254,6 +254,7 @@ pub struct Interpreter {
     #[cfg(feature = "progress")]
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
     /// Graphics device manager — tracks open devices and the active device.
+    #[allow(dead_code)] // Will be used when egui device management is fully wired
     pub(crate) device_manager: RefCell<graphics::device_manager::DeviceManager>,
     /// Graphics parameters (par state) — per-interpreter, not global.
     pub(crate) par_state: RefCell<graphics::par::ParState>,

@@ -151,7 +151,7 @@ impl DeviceManager {
     pub fn close_all(&mut self) {
         for i in 2..self.devices.len() {
             if let Some(mut device) = self.devices[i].take() {
-                let _ = device.close();
+                device.close();
             }
         }
         self.current = 1;
