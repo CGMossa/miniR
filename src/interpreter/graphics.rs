@@ -1,21 +1,21 @@
-//! Graphics infrastructure: device trait, drawing context, and null device.
+//! Graphics subsystem — plot data model, color system, and rendering backends.
 //!
-//! This module provides the foundational types for R's graphics system:
-//!
-//! - [`GraphicsDevice`] — the trait every rendering backend implements
-//! - [`GraphicsContext`] — colors, line styles, fonts passed to each draw call
-//! - [`NullDevice`] — the default no-op device (R's "null device")
+//! The plot data structures (`PlotState`, `PlotItem`), color system, and par state
+//! are always available. The interactive egui rendering backend is gated behind
+//! `feature = "plot"`.
 
+pub mod color;
 pub mod context;
 pub mod device;
+pub mod device_manager;
 pub mod null_device;
+pub mod par;
+pub mod plot_data;
 
 pub use context::{FontFace, GraphicsContext, LineType, PointChar, RColor};
 pub use device::{CharMetric, DeviceSize, GraphicsDevice};
+pub use device_manager::DeviceManager;
 pub use null_device::NullDevice;
 
-pub mod color;
-pub mod device_manager;
-pub mod par;
-
-pub use device_manager::DeviceManager;
+#[cfg(feature = "plot")]
+pub mod egui_device;
