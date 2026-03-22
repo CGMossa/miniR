@@ -253,6 +253,8 @@ pub struct Interpreter {
     /// Active progress bars, keyed by integer ID.
     #[cfg(feature = "progress")]
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
+    /// Graphics device manager — tracks open devices and the active device.
+    pub(crate) device_manager: RefCell<graphics::device_manager::DeviceManager>,
 }
 
 /// S4 class definition stored in the per-interpreter class registry.
@@ -400,6 +402,7 @@ impl Interpreter {
             s3_method_registry: RefCell::new(std::collections::HashMap::new()),
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
+            device_manager: RefCell::new(graphics::device_manager::DeviceManager::new()),
         };
 
         // Synthesize Rd help pages from builtin rustdoc comments so every

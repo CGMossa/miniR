@@ -1,8 +1,12 @@
-//! Graphics device stubs — placeholder builtins so that R code calling
-//! plotting functions does not crash. Real graphics output is not yet
-//! supported; these stubs print an informative message or silently return
-//! NULL depending on the function.
+//! Graphics device builtins — device management and plotting stubs.
+//!
+//! Device management builtins (`dev.cur`, `dev.set`, `dev.off`, `dev.list`,
+//! `dev.new`, `graphics.off`) are backed by the `DeviceManager` on the
+//! interpreter. High-level plotting and low-level drawing builtins remain
+//! stubs that silently return NULL until real graphics backends are added.
 
+use super::CallArgs;
+use crate::interpreter::graphics::NullDevice;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use minir_macros::{builtin, interpreter_builtin};
@@ -65,41 +69,161 @@ fn interp_svg(
     Ok(RValue::Null)
 }
 
-/// Close the current graphics device.
+/// Close a graphics device.
 ///
-/// Since no real device is open, this returns invisible integer 1
-/// (the null device number), matching R's convention.
+/// Closes the device specified by `which` (default: the current device).
+/// Returns the new current device number (invisibly). When the last real
+/// device is closed, the current device reverts to 1 (the null device).
 ///
-/// @return integer 1 (invisibly)
-#[builtin(name = "dev.off", namespace = "grDevices")]
-fn builtin_dev_off(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::vec(Vector::Integer(vec![Some(1i64)].into())))
+/// @param which device number to close (default: current device)
+/// @return integer — the new current device number (invisibly)
+#[interpreter_builtin(name = "dev.off", namespace = "grDevices")]
+fn interp_dev_off(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
+    let interp = context.interpreter();
+    let mut mgr = interp.device_manager.borrow_mut();
+
+    let which = call_args.integer_or("which", 0, i64::from(u16::try_from(mgr.current())?));
+    let which_usize = usize::try_from(which).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("dev.off(): invalid device number {which}"),
+        )
+    })?;
+
+    mgr.close_device(which_usize)?;
+    let new_current = i64::from(u16::try_from(mgr.current())?);
+    interp.set_invisible();
+    Ok(RValue::vec(Vector::Integer(vec![Some(new_current)].into())))
 }
 
 /// Return the current graphics device number.
 ///
-/// Always returns 1 (the null device) since no real graphics devices
-/// are supported yet.
+/// Returns 1 (the null device) when no real graphics devices are open.
 ///
-/// @return integer 1
-#[builtin(name = "dev.cur", namespace = "grDevices")]
-fn builtin_dev_cur(_args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::vec(Vector::Integer(vec![Some(1i64)].into())))
+/// @return integer — the current device number
+#[interpreter_builtin(name = "dev.cur", namespace = "grDevices")]
+fn interp_dev_cur(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let mgr = context.interpreter().device_manager.borrow();
+    let current = i64::from(u16::try_from(mgr.current())?);
+    Ok(RValue::vec(Vector::Integer(vec![Some(current)].into())))
+}
+
+/// Switch the active graphics device.
+///
+/// Sets the current device to `which` and returns the previous current
+/// device number.
+///
+/// @param which device number to make active
+/// @return integer — the previous current device number
+#[interpreter_builtin(name = "dev.set", namespace = "grDevices")]
+fn interp_dev_set(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let call_args = CallArgs::new(args, named);
+    let which = call_args
+        .value("which", 0)
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "dev.set() requires a 'which' argument specifying the device number".to_string(),
+            )
+        })?;
+
+    let which_usize = usize::try_from(which).map_err(|_| {
+        RError::new(
+            RErrorKind::Argument,
+            format!("dev.set(): invalid device number {which}"),
+        )
+    })?;
+
+    let mut mgr = context.interpreter().device_manager.borrow_mut();
+    let prev = mgr.set_current(which_usize)?;
+    let prev_i64 = i64::from(u16::try_from(prev)?);
+    Ok(RValue::vec(Vector::Integer(vec![Some(prev_i64)].into())))
+}
+
+/// List all open graphics devices.
+///
+/// Returns a named integer vector where each element is a device number
+/// and the names are the device type names. Returns NULL if no real
+/// devices are open.
+///
+/// @return named integer vector of open devices, or NULL
+#[interpreter_builtin(name = "dev.list", namespace = "grDevices")]
+fn interp_dev_list(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let mgr = context.interpreter().device_manager.borrow();
+    let devices = mgr.list();
+
+    if devices.is_empty() {
+        return Ok(RValue::Null);
+    }
+
+    let values: Vec<Option<i64>> = devices
+        .iter()
+        .map(|(idx, _)| i64::try_from(*idx).map(Some))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| RError::other(format!("device index overflow: {e}")))?;
+    let names: Vec<Option<String>> = devices.iter().map(|(_, name)| Some(name.clone())).collect();
+
+    let mut rv = RVector::from(Vector::Integer(values.into()));
+    rv.set_attr(
+        "names".to_string(),
+        RValue::vec(Vector::Character(names.into())),
+    );
+    Ok(RValue::Vector(rv))
 }
 
 /// Open a new graphics device.
 ///
-/// Graphics devices are not yet implemented — this stub prints a message
-/// and returns NULL.
+/// Currently opens a NullDevice (placeholder). Returns the new device
+/// number invisibly.
 ///
-/// @return NULL
+/// @return integer — the new device number (invisibly)
 #[interpreter_builtin(name = "dev.new", namespace = "grDevices")]
 fn interp_dev_new(
     _args: &[RValue],
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    context.write_err(DEVICE_MSG);
+    let interp = context.interpreter();
+    let mut mgr = interp.device_manager.borrow_mut();
+    let idx = mgr.add_device(Box::new(NullDevice));
+    let idx_i64 = i64::from(u16::try_from(idx)?);
+    interp.set_invisible();
+    Ok(RValue::vec(Vector::Integer(vec![Some(idx_i64)].into())))
+}
+
+/// Close all open graphics devices.
+///
+/// Equivalent to calling `dev.off()` on every open device. After this
+/// call, the current device is 1 (the null device).
+///
+/// @return NULL (invisibly)
+#[interpreter_builtin(name = "graphics.off", namespace = "grDevices")]
+fn interp_graphics_off(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let interp = context.interpreter();
+    interp.device_manager.borrow_mut().close_all();
+    interp.set_invisible();
     Ok(RValue::Null)
 }
 

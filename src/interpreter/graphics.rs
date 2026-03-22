@@ -13,3 +13,6 @@ pub mod null_device;
 pub use context::{FontFace, GraphicsContext, LineType, PointChar, RColor};
 pub use device::{CharMetric, DeviceSize, GraphicsDevice};
 pub use null_device::NullDevice;
+
+pub mod device_manager;
+pub use device_manager::DeviceManager;
