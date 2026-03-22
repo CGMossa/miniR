@@ -18,4 +18,6 @@ pub mod color;
 pub mod device_manager;
 pub mod par;
 
+pub mod coord;
+
 pub use device_manager::DeviceManager;
