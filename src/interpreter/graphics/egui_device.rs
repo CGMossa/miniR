@@ -167,8 +167,14 @@ struct PlotApp {
 
 impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // X button: let the window close normally. The outer loop in
-        // run_plot_event_loop will block until the next plot arrives.
+        // Handle window close (X button). On macOS eframe may not close
+        // automatically — explicitly allow it.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            // Don't cancel — let eframe close the window and return from run_native.
+            // The outer loop in run_plot_event_loop will block until the next plot.
+            self.tabs.clear();
+            return;
+        }
 
         // Check for messages from the REPL thread (non-blocking).
         let rx = self.rx.lock().unwrap();
