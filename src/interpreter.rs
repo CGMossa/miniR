@@ -253,9 +253,6 @@ pub struct Interpreter {
     /// Active progress bars, keyed by integer ID.
     #[cfg(feature = "progress")]
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
-    /// Graphics device manager — tracks open devices and the active device.
-    #[allow(dead_code)] // Will be used when egui device management is fully wired
-    pub(crate) device_manager: RefCell<graphics::device_manager::DeviceManager>,
     /// Graphics parameters (par state) — per-interpreter, not global.
     pub(crate) par_state: RefCell<graphics::par::ParState>,
     /// Color palette for indexed color access (e.g. col=1 means palette[0]).
@@ -409,7 +406,6 @@ impl Interpreter {
             s3_method_registry: RefCell::new(std::collections::HashMap::new()),
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
-            device_manager: RefCell::new(graphics::device_manager::DeviceManager::new()),
             par_state: RefCell::new(graphics::par::ParState::default()),
             color_palette: RefCell::new(graphics::color::default_palette()),
             current_plot: RefCell::new(None),

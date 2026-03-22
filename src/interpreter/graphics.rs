@@ -5,17 +5,8 @@
 //! `feature = "plot"`.
 
 pub mod color;
-pub mod context;
-pub mod device;
-pub mod device_manager;
-pub mod null_device;
 pub mod par;
 pub mod plot_data;
-
-pub use context::{FontFace, GraphicsContext, LineType, PointChar, RColor};
-pub use device::{CharMetric, DeviceSize, GraphicsDevice};
-pub use device_manager::DeviceManager;
-pub use null_device::NullDevice;
 
 #[cfg(feature = "plot")]
 pub mod egui_device;
