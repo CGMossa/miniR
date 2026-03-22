@@ -65,9 +65,7 @@ pub enum Expr {
 
     /// Formula: ~ expr or lhs ~ rhs
     Formula {
-        #[allow(dead_code)]
         lhs: Option<Box<Expr>>,
-        #[allow(dead_code)]
         rhs: Option<Box<Expr>>,
     },
 
