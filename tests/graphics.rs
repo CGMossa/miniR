@@ -303,25 +303,20 @@ fn par_with_args_returns_list() {
 // region: File device stubs
 
 #[test]
-fn pdf_stub_prints_message() {
-    let mut session = Session::new_with_captured_output();
-    session.eval_source("pdf('test.pdf')").unwrap();
-    let stderr = session.captured_stderr();
-    assert!(
-        stderr.contains("not yet supported"),
-        "pdf() should print a not-yet-supported message, got stderr: {stderr}"
-    );
+fn pdf_device_opens() {
+    let mut session = Session::new();
+    session.eval_source("pdf('/tmp/minir_test.pdf')").unwrap();
+    // dev.cur should be 2 when a device is open
+    session.eval_source("stopifnot(dev.cur() == 2L)").unwrap();
+    session.eval_source("dev.off()").unwrap();
 }
 
 #[test]
-fn png_stub_prints_message() {
-    let mut session = Session::new_with_captured_output();
-    session.eval_source("png('test.png')").unwrap();
-    let stderr = session.captured_stderr();
-    assert!(
-        stderr.contains("not yet supported"),
-        "png() should print a not-yet-supported message, got stderr: {stderr}"
-    );
+fn png_device_opens() {
+    let mut session = Session::new();
+    session.eval_source("png('/tmp/minir_test.png')").unwrap();
+    session.eval_source("stopifnot(dev.cur() == 2L)").unwrap();
+    session.eval_source("dev.off()").unwrap();
 }
 
 #[test]

@@ -208,43 +208,37 @@ fn svg_multiple_plots_last_wins() {
 }
 
 #[test]
-fn png_stub_prints_message() {
-    let mut s = Session::new_with_captured_output();
-    let dir = std::env::temp_dir().join(format!("minir-png-stub-{}", std::process::id()));
+fn png_device_creates_file() {
+    let dir = std::env::temp_dir().join(format!("minir-png-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let png_path = dir.join("test.png");
 
-    s.eval_source(&format!("png('{}')", png_path.to_string_lossy()))
-        .unwrap();
-    s.eval_source("plot(1:3)").unwrap();
-    s.eval_source("dev.off()").unwrap();
+    let mut s = Session::new();
+    s.eval_source(&format!(
+        "png('{}'); plot(1:3); dev.off()",
+        png_path.to_string_lossy()
+    ))
+    .unwrap();
 
-    let stderr = s.captured_stderr();
-    assert!(
-        stderr.contains("not yet supported"),
-        "PNG stub should print 'not yet supported' message, got: {stderr}"
-    );
+    assert!(png_path.exists(), "png() + dev.off() should create a file");
 
     std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
-fn pdf_stub_prints_message() {
-    let mut s = Session::new_with_captured_output();
-    let dir = std::env::temp_dir().join(format!("minir-pdf-stub-{}", std::process::id()));
+fn pdf_device_creates_file() {
+    let dir = std::env::temp_dir().join(format!("minir-pdf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let pdf_path = dir.join("test.pdf");
 
-    s.eval_source(&format!("pdf('{}')", pdf_path.to_string_lossy()))
-        .unwrap();
-    s.eval_source("plot(1:3)").unwrap();
-    s.eval_source("dev.off()").unwrap();
+    let mut s = Session::new();
+    s.eval_source(&format!(
+        "pdf('{}'); plot(1:3); dev.off()",
+        pdf_path.to_string_lossy()
+    ))
+    .unwrap();
 
-    let stderr = s.captured_stderr();
-    assert!(
-        stderr.contains("not yet supported"),
-        "PDF stub should print 'not yet supported' message, got: {stderr}"
-    );
+    assert!(pdf_path.exists(), "pdf() + dev.off() should create a file");
 
     std::fs::remove_dir_all(&dir).ok();
 }

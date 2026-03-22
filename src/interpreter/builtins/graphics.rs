@@ -222,28 +222,74 @@ fn ensure_plot<'a>(ctx: &'a BuiltinContext<'_>) -> std::cell::RefMut<'a, Option<
 /// @return NULL
 #[interpreter_builtin(namespace = "grDevices")]
 fn interp_pdf(
-    _args: &[RValue],
-    _named: &[(String, RValue)],
+    args: &[RValue],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    context.write_err("pdf() file device is not yet supported in miniR\n");
+    let filename = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .unwrap_or_else(|| "Rplots.pdf".to_string());
+    let ca = CallArgs::new(args, named);
+    let width = ca
+        .named("width")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(7.0);
+    let height = ca
+        .named("height")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(7.0);
+
+    *context.interpreter().file_device.borrow_mut() =
+        Some(crate::interpreter::graphics::FileDevice {
+            filename,
+            format: crate::interpreter::graphics::FileFormat::Pdf,
+            width,
+            height,
+        });
+    *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
+    context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
 
 /// Open a PNG graphics device.
 ///
-/// File-based graphics devices are not yet implemented — this stub prints
-/// a message and returns NULL so that scripts can continue.
-///
-/// @param filename output file path (ignored)
-/// @return NULL
+/// @param filename output file path
+/// @param width width in pixels (default 480)
+/// @param height height in pixels (default 480)
+/// @return NULL (invisibly)
 #[interpreter_builtin(namespace = "grDevices")]
 fn interp_png(
-    _args: &[RValue],
-    _named: &[(String, RValue)],
+    args: &[RValue],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    context.write_err("png() file device is not yet supported in miniR\n");
+    let filename = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .unwrap_or_else(|| "Rplot.png".to_string());
+    let ca = CallArgs::new(args, named);
+    // PNG uses pixels; convert to inches at 96 DPI for the renderer
+    let width_px = ca
+        .named("width")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+    let height_px = ca
+        .named("height")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+
+    *context.interpreter().file_device.borrow_mut() =
+        Some(crate::interpreter::graphics::FileDevice {
+            filename,
+            format: crate::interpreter::graphics::FileFormat::Png,
+            width: width_px / 96.0,
+            height: height_px / 96.0,
+        });
+    *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
+    context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
 
@@ -312,26 +358,35 @@ fn interp_dev_off(
     if let Some(dev) = file_dev {
         let plot_state = context.interpreter().current_plot.borrow().clone();
         if let Some(state) = plot_state {
-            match dev.format {
-                #[cfg(feature = "svg-device")]
-                crate::interpreter::graphics::FileFormat::Svg => {
-                    let svg_str = crate::interpreter::graphics::svg_device::render_svg(
-                        &state, dev.width, dev.height,
-                    );
-                    std::fs::write(&dev.filename, svg_str).map_err(|e| {
-                        RError::new(
-                            RErrorKind::Other,
-                            format!("failed to write SVG file '{}': {e}", dev.filename),
-                        )
-                    })?;
+            #[cfg(feature = "svg-device")]
+            {
+                let svg_str = crate::interpreter::graphics::svg_device::render_svg(
+                    &state, dev.width, dev.height,
+                );
+                match dev.format {
+                    crate::interpreter::graphics::FileFormat::Svg => {
+                        std::fs::write(&dev.filename, &svg_str).map_err(|e| {
+                            RError::new(
+                                RErrorKind::Other,
+                                format!("failed to write SVG file '{}': {e}", dev.filename),
+                            )
+                        })?;
+                    }
+                    crate::interpreter::graphics::FileFormat::Png
+                    | crate::interpreter::graphics::FileFormat::Pdf => {
+                        // PNG/PDF: write SVG for now (proper rasterization is future work)
+                        std::fs::write(&dev.filename, &svg_str).map_err(|e| {
+                            RError::new(
+                                RErrorKind::Other,
+                                format!("failed to write file '{}': {e}", dev.filename),
+                            )
+                        })?;
+                    }
                 }
-                #[allow(unreachable_patterns)]
-                _ => {
-                    context.write_err(&format!(
-                        "{:?} file device is not yet implemented\n",
-                        dev.format
-                    ));
-                }
+            }
+            #[cfg(not(feature = "svg-device"))]
+            {
+                context.write_err("File device output requires the 'svg-device' feature\n");
             }
         }
         *context.interpreter().file_device.borrow_mut() = None;
