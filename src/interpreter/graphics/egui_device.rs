@@ -78,15 +78,28 @@ impl Tab {
     }
 }
 
-/// The eframe app. Manages tabbed plots and views from the REPL thread.
+/// The eframe app. Manages tabbed plots from the REPL thread.
+/// Starts hidden; becomes visible when the first plot arrives.
+/// Hides again when all tabs are closed (ready for the next plot).
 struct PlotApp {
     tabs: Vec<Tab>,
     active_tab: usize,
     rx: PlotReceiver,
+    visible: bool,
 }
 
 impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Intercept window close (X button): hide instead of quitting,
+        // so the window can reappear for the next plot.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.tabs.clear();
+            self.visible = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            return;
+        }
+
         // Check for messages from the REPL thread (non-blocking).
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
@@ -100,9 +113,13 @@ impl eframe::App for PlotApp {
                         state: new_state,
                     });
                     self.active_tab = self.tabs.len() - 1;
+                    // Show the window when the first plot arrives
+                    if !self.visible {
+                        self.visible = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    }
                 }
                 PlotMessage::Close => {
-                    // Close the active tab, or all if none active
                     if !self.tabs.is_empty() {
                         self.tabs.remove(self.active_tab);
                         if self.active_tab > 0 {
@@ -110,8 +127,9 @@ impl eframe::App for PlotApp {
                         }
                     }
                     if self.tabs.is_empty() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        return;
+                        // Hide instead of closing — ready for the next plot
+                        self.visible = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     }
                 }
             }
@@ -121,11 +139,6 @@ impl eframe::App for PlotApp {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
 
         if self.tabs.is_empty() {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.label("Waiting for plot or View() data...");
-                });
-            });
             return;
         }
 
@@ -321,7 +334,8 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_title("miniR"),
+            .with_title("miniR")
+            .with_visible(false), // Start hidden; show when first plot arrives
         ..Default::default()
     };
 
@@ -329,6 +343,7 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         tabs: Vec::new(),
         active_tab: 0,
         rx,
+        visible: false,
     };
 
     eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
