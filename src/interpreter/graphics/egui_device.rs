@@ -198,6 +198,11 @@ struct PlotApp {
     dark_mode: bool,
     /// Status message from save operations, auto-clears after 5 seconds.
     save_msg: Option<(String, std::time::Instant)>,
+    /// Screenshot requested — will capture next frame as PNG.
+    screenshot_requested: bool,
+    screenshot_path: Option<std::path::PathBuf>,
+    /// Windowed mode: each tab is a floating sub-window instead of tabs.
+    windowed_mode: bool,
 }
 
 impl eframe::App for PlotApp {
@@ -206,6 +211,29 @@ impl eframe::App for PlotApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle screenshot capture from previous frame
+        if let Some(path) = self.screenshot_path.take() {
+            for event in &ctx.input(|i| i.events.clone()) {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    if let Err(e) = save_color_image_as_png(image, &path) {
+                        self.save_msg =
+                            Some((format!("PNG error: {e}"), std::time::Instant::now()));
+                    } else {
+                        self.save_msg = Some((
+                            format!("Saved: {}", path.display()),
+                            std::time::Instant::now(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Send screenshot command if requested (captured next frame)
+        if self.screenshot_requested {
+            self.screenshot_requested = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+
         // Handle window close (X button). On macOS eframe may not close
         // automatically — explicitly allow it.
         // X button: hide the window instead of closing. On macOS, eframe::run_native
@@ -334,6 +362,20 @@ impl eframe::App for PlotApp {
                         ctx.set_theme(theme);
                     }
 
+                    // Windowed mode toggle
+                    let wm_icon = if self.windowed_mode { "▣" } else { "◫" };
+                    if ui
+                        .button(wm_icon)
+                        .on_hover_text(if self.windowed_mode {
+                            "Switch to tab mode"
+                        } else {
+                            "Switch to windowed mode"
+                        })
+                        .clicked()
+                    {
+                        self.windowed_mode = !self.windowed_mode;
+                    }
+
                     #[cfg(feature = "io")]
                     if ui
                         .button("Open CSV")
@@ -382,19 +424,76 @@ impl eframe::App for PlotApp {
             return;
         }
 
-        // Render active tab content
-        let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
-        let save_msg = &mut self.save_msg;
-        match &mut self.tabs[active] {
-            Tab::Plot {
-                state, view_state, ..
-            } => {
-                render_plot(ctx, state, view_state, save_msg);
+        if self.windowed_mode {
+            // Windowed mode: each tab is a floating sub-window
+            let mut to_close = Vec::new();
+            for (i, tab) in self.tabs.iter_mut().enumerate() {
+                let title = tab.title().to_string();
+                let mut open = true;
+                match tab {
+                    Tab::Plot {
+                        state, view_state, ..
+                    } => {
+                        egui::Window::new(&title)
+                            .id(egui::Id::new(format!("win_{i}")))
+                            .open(&mut open)
+                            .resizable(true)
+                            .default_size([600.0, 400.0])
+                            .show(ctx, |ui| {
+                                let mut plot = egui_plot::Plot::new(format!("plot_{i}"))
+                                    .show_grid(view_state.show_grid)
+                                    .allow_boxed_zoom(true);
+                                if view_state.show_legend {
+                                    plot = plot.legend(egui_plot::Legend::default());
+                                }
+                                let ps = view_state.point_size;
+                                let lw = view_state.line_width;
+                                plot.show(ui, |plot_ui| {
+                                    for (idx, item) in state.items.iter().enumerate() {
+                                        let name = format!("series_{idx}");
+                                        render_plot_item(plot_ui, item, &name, idx, ps, lw);
+                                    }
+                                });
+                            });
+                    }
+                    Tab::Table {
+                        data, view_state, ..
+                    } => {
+                        egui::Window::new(&title)
+                            .id(egui::Id::new(format!("win_{i}")))
+                            .open(&mut open)
+                            .resizable(true)
+                            .default_size([700.0, 400.0])
+                            .show(ctx, |_ui| {
+                                render_table(ctx, data, view_state);
+                            });
+                    }
+                }
+                if !open {
+                    to_close.push(i);
+                }
             }
-            Tab::Table {
-                data, view_state, ..
-            } => {
-                render_table(ctx, data, view_state);
+            for &i in to_close.iter().rev() {
+                self.tabs.remove(i);
+            }
+            if self.tabs.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+        } else {
+            // Tab mode: render active tab in central panel
+            let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
+            let save_msg = &mut self.save_msg;
+            match &mut self.tabs[active] {
+                Tab::Plot {
+                    state, view_state, ..
+                } => {
+                    render_plot(ctx, state, view_state, save_msg);
+                }
+                Tab::Table {
+                    data, view_state, ..
+                } => {
+                    render_table(ctx, data, view_state);
+                }
             }
         }
     }
@@ -635,6 +734,34 @@ fn render_plot(
                         },
                         Err(e) => {
                             *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
+                        }
+                    }
+                }
+            }
+
+            #[cfg(feature = "svg-device")]
+            if ui.button("Save PNG...").clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PNG", &["png"])
+                    .set_file_name("Rplot.png")
+                    .save_file()
+                {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    match svg_to_png_bytes(&svg_str) {
+                        Ok(bytes) => match std::fs::write(&path, bytes) {
+                            Ok(()) => {
+                                *save_msg = Some((
+                                    format!("Saved: {}", path.display()),
+                                    std::time::Instant::now(),
+                                ))
+                            }
+                            Err(e) => {
+                                *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                            }
+                        },
+                        Err(e) => {
+                            *save_msg = Some((format!("PNG error: {e}"), std::time::Instant::now()))
                         }
                     }
                 }
@@ -1181,10 +1308,55 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
                 rx: shared_rx_clone,
                 dark_mode,
                 save_msg: None,
+                screenshot_requested: false,
+                screenshot_path: None,
+                windowed_mode: false,
             }))
         }),
     )
     .map_err(|e| format!("egui event loop failed: {e}"))
+}
+
+// endregion
+
+// region: PNG export helpers
+
+/// Convert an SVG string to PNG bytes via resvg rasterization.
+#[cfg(feature = "svg-device")]
+fn svg_to_png_bytes(svg_str: &str) -> Result<Vec<u8>, String> {
+    let opts = usvg::Options::default();
+    let tree = usvg::Tree::from_str(svg_str, &opts).map_err(|e| format!("SVG parse error: {e}"))?;
+    let size = tree.size();
+    let w = size.width() as u32;
+    let h = size.height() as u32;
+    let mut pixmap =
+        tiny_skia::Pixmap::new(w, h).ok_or_else(|| "failed to create pixmap".to_string())?;
+    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let img = image::RgbaImage::from_raw(w, h, pixmap.take())
+        .ok_or_else(|| "pixel buffer mismatch".to_string())?;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| format!("PNG encode error: {e}"))?;
+    Ok(buf.into_inner())
+}
+
+/// Save an egui ColorImage as PNG (for screenshots).
+#[allow(dead_code)]
+fn save_color_image_as_png(
+    color_image: &egui::ColorImage,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    let [w, h] = color_image.size;
+    let w_u32 = u32::try_from(w).map_err(|e| format!("width overflow: {e}"))?;
+    let h_u32 = u32::try_from(h).map_err(|e| format!("height overflow: {e}"))?;
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for pixel in &color_image.pixels {
+        let [r, g, b, a] = pixel.to_array();
+        rgba.extend_from_slice(&[r, g, b, a]);
+    }
+    let img = image::RgbaImage::from_raw(w_u32, h_u32, rgba)
+        .ok_or_else(|| "pixel buffer mismatch".to_string())?;
+    img.save(path).map_err(|e| format!("PNG save error: {e}"))
 }
 
 // endregion

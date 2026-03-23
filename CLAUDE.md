@@ -95,6 +95,7 @@ Four feature profiles for different development scenarios:
 - `cargo test` — primary test command, runs all Rust integration tests
 - `cargo clippy --all-targets -F full -- -D warnings` — must pass with zero warnings
 - **Every new feature should have tests planned** — either `stopifnot` assertions via `Session::eval_source` in a Rust integration test, or direct value checks via the Session API. Tests don't have to land in the same commit, but they should be planned and tracked. If an agent produces code without tests, note what needs coverage.
+- **Never delete tests** — if a test fails because the implementation isn't merged yet, move it to `tests/pending/` as a `.rs.pending` file (not compiled). When the feature lands, move it back. This preserves agent work.
 - `tests/smoke.rs` — end-to-end coverage of ops, assignment, indexing, datetime
 - `tests/reentrancy.rs` — session isolation, nested eval, parallel threads
 - `tests/parse_corpus.rs` — runs all .R files through parser, asserts no regressions. By default only scans `tests/` directory (fast). Set `MINIR_PARSE_CRAN=1` to include the full CRAN corpus from `cran/` (~7000 files, ~50s). The `cran/` directory must be present (use `just update-cran-test-packages`).
