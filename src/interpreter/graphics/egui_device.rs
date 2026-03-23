@@ -68,11 +68,33 @@ fn rgba_to_color32(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
+/// Interactive state for the plot sidebar controls.
+struct PlotViewState {
+    show_sidebar: bool,
+    point_size: f32,
+    line_width: f32,
+    show_grid: bool,
+    show_legend: bool,
+}
+
+impl Default for PlotViewState {
+    fn default() -> Self {
+        Self {
+            show_sidebar: false,
+            point_size: 3.0,
+            line_width: 1.5,
+            show_grid: true,
+            show_legend: true,
+        }
+    }
+}
+
 /// A single tab in the GUI window.
 enum Tab {
     Plot {
         title: String,
         state: PlotState,
+        view_state: PlotViewState,
     },
     Table {
         title: String,
@@ -212,6 +234,7 @@ impl eframe::App for PlotApp {
                     self.tabs.push(Tab::Plot {
                         title,
                         state: new_state,
+                        view_state: PlotViewState::default(),
                     });
                     self.active_tab = self.tabs.len() - 1;
                 }
@@ -292,8 +315,10 @@ impl eframe::App for PlotApp {
         // Render active tab content
         let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
         match &mut self.tabs[active] {
-            Tab::Plot { state, .. } => {
-                render_plot(ctx, state);
+            Tab::Plot {
+                state, view_state, ..
+            } => {
+                render_plot(ctx, state, view_state);
             }
             Tab::Table {
                 data, view_state, ..
@@ -309,14 +334,93 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Render a plot in the central panel with toolbar.
-fn render_plot(ctx: &egui::Context, state: &PlotState) {
+/// Extract a display name for a plot series.
+fn series_name(item: &PlotItem, idx: usize) -> String {
+    let label = match item {
+        PlotItem::Line { label, .. }
+        | PlotItem::Points { label, .. }
+        | PlotItem::Bars { label, .. } => label.as_deref(),
+        PlotItem::BoxPlot { .. } => None,
+        PlotItem::HLine { .. } => None,
+        PlotItem::VLine { .. } => None,
+        PlotItem::Text { text, .. } => Some(text.as_str()),
+    };
+    label.unwrap_or(&format!("series_{idx}")).to_string()
+}
+
+/// Extract the RGBA color for a plot series.
+fn series_color(item: &PlotItem) -> [u8; 4] {
+    match item {
+        PlotItem::Line { color, .. }
+        | PlotItem::Points { color, .. }
+        | PlotItem::Bars { color, .. }
+        | PlotItem::BoxPlot { color, .. }
+        | PlotItem::HLine { color, .. }
+        | PlotItem::VLine { color, .. }
+        | PlotItem::Text { color, .. } => *color,
+    }
+}
+
+/// Render a plot in the central panel with toolbar and optional sidebar.
+fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
+    // Sidebar panel (animated show/hide)
+    egui::SidePanel::left("plot_options")
+        .resizable(true)
+        .default_width(180.0)
+        .show_animated(ctx, vs.show_sidebar, |ui| {
+            ui.heading("Plot Options");
+            ui.separator();
+
+            egui::CollapsingHeader::new("Appearance")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut vs.point_size, 1.0..=20.0).text("Point size"));
+                    ui.add(egui::Slider::new(&mut vs.line_width, 0.5..=10.0).text("Line width"));
+                    ui.checkbox(&mut vs.show_grid, "Show grid");
+                    ui.checkbox(&mut vs.show_legend, "Show legend");
+                });
+
+            egui::CollapsingHeader::new("Series")
+                .default_open(true)
+                .show(ui, |ui| {
+                    if state.items.is_empty() {
+                        ui.label(egui::RichText::new("No series").weak().italics());
+                    } else {
+                        for (idx, item) in state.items.iter().enumerate() {
+                            let name = series_name(item, idx);
+                            let rgba = series_color(item);
+                            let color = rgba_to_color32(rgba);
+                            ui.horizontal(|ui| {
+                                let (rect, _resp) = ui.allocate_exact_size(
+                                    egui::vec2(12.0, 12.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(rect, 2.0, color);
+                                ui.label(&name);
+                            });
+                        }
+                    }
+                });
+        });
+
     egui::CentralPanel::default().show(ctx, |ui| {
         let title = state.title.as_deref().unwrap_or("Plot");
         ui.heading(title);
 
         // Toolbar
         ui.horizontal(|ui| {
+            // Sidebar toggle button
+            let toggle_label = if vs.show_sidebar {
+                "\u{2699} Hide Options"
+            } else {
+                "\u{2699} Options"
+            };
+            if ui.button(toggle_label).clicked() {
+                vs.show_sidebar = !vs.show_sidebar;
+            }
+
+            ui.separator();
+
             #[cfg(feature = "svg-device")]
             if ui.button("Save SVG").clicked() {
                 let path = save_path("svg");
@@ -356,14 +460,17 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
         });
 
         let mut plot = egui_plot::Plot::new("r_plot")
-            .legend(egui_plot::Legend::default())
             .show_axes(true)
-            .show_grid(true)
+            .show_grid(vs.show_grid)
             .allow_boxed_zoom(true)
             .coordinates_formatter(
                 egui_plot::Corner::LeftBottom,
                 egui_plot::CoordinatesFormatter::default(),
             );
+
+        if vs.show_legend {
+            plot = plot.legend(egui_plot::Legend::default());
+        }
 
         if let Some(label) = &state.x_label {
             plot = plot.x_axis_label(label.clone());
@@ -378,10 +485,12 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
             plot = plot.include_y(lo).include_y(hi);
         }
 
+        let point_size = vs.point_size;
+        let line_width = vs.line_width;
         plot.show(ui, |plot_ui| {
             for (idx, item) in state.items.iter().enumerate() {
                 let default_name = format!("series_{idx}");
-                render_plot_item(plot_ui, item, &default_name, idx);
+                render_plot_item(plot_ui, item, &default_name, idx, point_size, line_width);
             }
         });
     });
@@ -409,37 +518,35 @@ fn render_plot_item(
     item: &PlotItem,
     default_name: &str,
     idx: usize,
+    override_point_size: f32,
+    override_line_width: f32,
 ) {
     match item {
         PlotItem::Line {
-            x,
-            y,
-            color,
-            width,
-            label,
+            x, y, color, label, ..
         } => {
             let points: Vec<[f64; 2]> = x.iter().zip(y.iter()).map(|(&xi, &yi)| [xi, yi]).collect();
             let name = label.as_deref().unwrap_or(default_name);
             plot_ui.line(
                 egui_plot::Line::new(name, points)
                     .color(rgba_to_color32(*color))
-                    .width(*width),
+                    .width(override_line_width),
             );
         }
         PlotItem::Points {
             x,
             y,
             color,
-            size,
             shape,
             label,
+            ..
         } => {
             let points: Vec<[f64; 2]> = x.iter().zip(y.iter()).map(|(&xi, &yi)| [xi, yi]).collect();
             let name = label.as_deref().unwrap_or(default_name);
             plot_ui.points(
                 egui_plot::Points::new(name, points)
                     .color(rgba_to_color32(*color))
-                    .radius(*size)
+                    .radius(override_point_size)
                     .shape(pch_to_marker(*shape))
                     .filled(pch_is_filled(*shape)),
             );
@@ -483,18 +590,18 @@ fn render_plot_item(
                 plot_ui.box_plot(egui_plot::BoxPlot::new(format!("box_{j}"), vec![elem]));
             }
         }
-        PlotItem::HLine { y, color, width } => {
+        PlotItem::HLine { y, color, .. } => {
             plot_ui.hline(
                 egui_plot::HLine::new(format!("hline_{idx}"), *y)
                     .color(rgba_to_color32(*color))
-                    .width(*width),
+                    .width(override_line_width),
             );
         }
-        PlotItem::VLine { x, color, width } => {
+        PlotItem::VLine { x, color, .. } => {
             plot_ui.vline(
                 egui_plot::VLine::new(format!("vline_{idx}"), *x)
                     .color(rgba_to_color32(*color))
-                    .width(*width),
+                    .width(override_line_width),
             );
         }
         PlotItem::Text { x, y, text, color } => {
@@ -779,7 +886,11 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         match rx.recv() {
             Ok(PlotMessage::Show(state)) => {
                 let title = state.title.clone().unwrap_or_else(|| "Plot 1".to_string());
-                break Tab::Plot { title, state };
+                break Tab::Plot {
+                    title,
+                    state,
+                    view_state: PlotViewState::default(),
+                };
             }
             Ok(PlotMessage::View(data)) => {
                 let title = data.title.clone();
