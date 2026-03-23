@@ -119,6 +119,8 @@ struct TableViewState {
     col_visible: Vec<bool>,
     /// Show column visibility panel.
     show_col_picker: bool,
+    /// Show floating statistics window.
+    show_stats_window: bool,
 }
 
 impl TableViewState {
@@ -134,6 +136,7 @@ impl TableViewState {
             selected_col: None,
             col_visible: vec![true; ncol],
             show_col_picker: false,
+            show_stats_window: false,
         }
     }
 
@@ -198,6 +201,10 @@ struct PlotApp {
 }
 
 impl eframe::App for PlotApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, "dark_mode", &self.dark_mode);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle window close (X button). On macOS eframe may not close
         // automatically — explicitly allow it.
@@ -960,9 +967,81 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
                     .monospace()
                     .weak(),
                 );
+                if ui
+                    .small_button("📊")
+                    .on_hover_text("Column statistics")
+                    .clicked()
+                {
+                    vs.show_stats_window = true;
+                }
             });
         }
     });
+
+    // Floating Column Statistics window
+    if vs.show_stats_window {
+        if let Some(col) = vs.selected_col {
+            let col_name = data.headers.get(col).map(|s| s.as_str()).unwrap_or("?");
+            let vals: Vec<f64> = vs
+                .visible_rows
+                .iter()
+                .filter_map(|&r| data.rows.get(r)?.get(col)?.parse::<f64>().ok())
+                .collect();
+
+            egui::Window::new(format!("Statistics: {col_name}"))
+                .open(&mut vs.show_stats_window)
+                .resizable(true)
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    if vals.is_empty() {
+                        ui.label("No numeric values in this column.");
+                        return;
+                    }
+                    let n = vals.len();
+                    let na_count = vs.visible_rows.len() - n;
+                    let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+                    let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    let sum: f64 = vals.iter().sum();
+                    let mean = sum / n as f64;
+                    let var = if n > 1 {
+                        vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1) as f64
+                    } else {
+                        0.0
+                    };
+                    let sd = var.sqrt();
+
+                    let mut sorted = vals.clone();
+                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let q = |p: f64| -> f64 {
+                        let idx = p * (sorted.len() - 1) as f64;
+                        let lo = idx.floor() as usize;
+                        let hi = idx.ceil() as usize;
+                        let frac = idx - lo as f64;
+                        sorted[lo] * (1.0 - frac) + sorted[hi.min(sorted.len() - 1)] * frac
+                    };
+
+                    egui::Grid::new("stats_grid")
+                        .num_columns(2)
+                        .striped(true)
+                        .show(ui, |ui| {
+                            let row = |ui: &mut egui::Ui, label: &str, val: String| {
+                                ui.label(label);
+                                ui.label(egui::RichText::new(val).monospace());
+                                ui.end_row();
+                            };
+                            row(ui, "n", format!("{n}"));
+                            row(ui, "NA", format!("{na_count}"));
+                            row(ui, "Min", format!("{min:.6}"));
+                            row(ui, "Q1", format!("{:.6}", q(0.25)));
+                            row(ui, "Median", format!("{:.6}", q(0.5)));
+                            row(ui, "Q3", format!("{:.6}", q(0.75)));
+                            row(ui, "Max", format!("{max:.6}"));
+                            row(ui, "Mean", format!("{mean:.6}"));
+                            row(ui, "SD", format!("{sd:.6}"));
+                        });
+                });
+        }
+    }
 }
 
 // endregion
@@ -1021,18 +1100,34 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         ..Default::default()
     };
 
-    let app = PlotApp {
-        tabs: vec![first_tab],
-        active_tab: 0,
-        rx: shared_rx,
-        dark_mode: true,
-        save_msg: None,
-    };
+    let mut dark_mode = true;
+    let first_tab_vec = vec![first_tab];
+    let shared_rx_clone = Arc::clone(&shared_rx);
 
-    // run_native blocks forever. The app hides/shows itself as tabs come and go.
-    // On macOS, run_native can only be called once per process.
-    eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
-        .map_err(|e| format!("egui event loop failed: {e}"))
+    // run_native blocks forever. eframe persistence saves/restores window geometry.
+    eframe::run_native(
+        "miniR",
+        native_options,
+        Box::new(move |cc| {
+            // Load persisted preferences
+            if let Some(storage) = cc.storage {
+                if let Some(dm) = eframe::get_value::<bool>(storage, "dark_mode") {
+                    dark_mode = dm;
+                }
+            }
+            if !dark_mode {
+                cc.egui_ctx.set_visuals(egui::Visuals::light());
+            }
+            Ok(Box::new(PlotApp {
+                tabs: first_tab_vec,
+                active_tab: 0,
+                rx: shared_rx_clone,
+                dark_mode,
+                save_msg: None,
+            }))
+        }),
+    )
+    .map_err(|e| format!("egui event loop failed: {e}"))
 }
 
 // endregion
