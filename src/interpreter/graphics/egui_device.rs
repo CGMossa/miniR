@@ -743,28 +743,47 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
 /// and all tabs are gone, eframe returns and we block again waiting for
 /// the next plot.
 pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
-    // We need to share the receiver between the outer blocking loop and
-    // the eframe app. Use a shared wrapper that lets us take the first
-    // message out before passing the receiver to eframe.
     use std::sync::{Arc, Mutex};
 
+    // Block on the main thread until the first plot/view arrives.
+    // No GUI, no dock icon, no window — just waiting on the channel.
+    let first_tab = loop {
+        match rx.recv() {
+            Ok(PlotMessage::Show(state)) => {
+                let title = state.title.clone().unwrap_or_else(|| "Plot 1".to_string());
+                break Tab::Plot { title, state };
+            }
+            Ok(PlotMessage::View(data)) => {
+                let title = data.title.clone();
+                let nrow = data.rows.len();
+                break Tab::Table {
+                    title,
+                    view_state: TableViewState::new(data.headers.len(), nrow),
+                    data,
+                };
+            }
+            Ok(PlotMessage::Close) => continue,
+            Err(_) => return Ok(()), // REPL exited without ever plotting
+        }
+    };
+
+    // NOW launch the GUI — first plot/view is ready, window starts visible.
     let shared_rx = Arc::new(Mutex::new(rx));
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_title("miniR")
-            .with_visible(false), // Start hidden; show when first plot/view arrives
+            .with_title("miniR"),
         ..Default::default()
     };
 
     let app = PlotApp {
-        tabs: Vec::new(),
+        tabs: vec![first_tab],
         active_tab: 0,
         rx: shared_rx,
     };
 
-    // run_native blocks forever. The app hides/shows itself as needed.
+    // run_native blocks forever. The app hides/shows itself as tabs come and go.
     // On macOS, run_native can only be called once per process.
     eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
         .map_err(|e| format!("egui event loop failed: {e}"))
