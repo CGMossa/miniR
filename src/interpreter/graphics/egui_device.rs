@@ -175,8 +175,12 @@ impl eframe::App for PlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle window close (X button). On macOS eframe may not close
         // automatically — explicitly allow it.
+        // X button: hide the window instead of closing. On macOS, eframe::run_native
+        // can only be called once per process, so we keep the app alive but hidden.
         if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.tabs.clear();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             return;
         }
 
@@ -186,10 +190,8 @@ impl eframe::App for PlotApp {
         if close_tab && !self.tabs.is_empty() {
             self.tabs.remove(self.active_tab);
             if self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                return;
-            }
-            if self.active_tab >= self.tabs.len() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            } else if self.active_tab >= self.tabs.len() {
                 self.active_tab = self.tabs.len() - 1;
             }
         }
@@ -200,6 +202,7 @@ impl eframe::App for PlotApp {
         // Check for messages from the REPL thread (non-blocking).
         let rx = self.rx.lock().unwrap();
         while let Ok(msg) = rx.try_recv() {
+            let was_empty = self.tabs.is_empty();
             match msg {
                 PlotMessage::Show(new_state) => {
                     let title = new_state
@@ -230,11 +233,15 @@ impl eframe::App for PlotApp {
                         }
                     }
                     if self.tabs.is_empty() {
-                        // Close window — outer loop will block until next plot
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        return;
+                        // Hide window — it will reappear when new data arrives
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     }
                 }
+            }
+            // Show window if it was hidden and we just added a tab
+            if was_empty && !self.tabs.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }
         drop(rx);
@@ -269,7 +276,8 @@ impl eframe::App for PlotApp {
                 if let Some(idx) = to_close {
                     self.tabs.remove(idx);
                     if self.tabs.is_empty() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        // Hide — don't close (macOS can't reopen after close)
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     } else if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len() - 1;
                     }
@@ -742,48 +750,24 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
 
     let shared_rx = Arc::new(Mutex::new(rx));
 
-    loop {
-        // Block until a Show or View message arrives — no window exists.
-        let first_tab = {
-            let rx = shared_rx.lock().unwrap();
-            loop {
-                match rx.recv() {
-                    Ok(PlotMessage::Show(state)) => {
-                        let title = state.title.clone().unwrap_or_else(|| "Plot 1".to_string());
-                        break Tab::Plot { title, state };
-                    }
-                    Ok(PlotMessage::View(data)) => {
-                        let title = data.title.clone();
-                        let nrow = data.rows.len();
-                        break Tab::Table {
-                            title,
-                            view_state: TableViewState::new(data.headers.len(), nrow),
-                            data,
-                        };
-                    }
-                    Ok(PlotMessage::Close) => continue,
-                    Err(_) => return Ok(()), // REPL exited
-                }
-            }
-        };
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_title("miniR")
+            .with_visible(false), // Start hidden; show when first plot/view arrives
+        ..Default::default()
+    };
 
-        let native_options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([800.0, 600.0])
-                .with_title("miniR"),
-            ..Default::default()
-        };
+    let app = PlotApp {
+        tabs: Vec::new(),
+        active_tab: 0,
+        rx: shared_rx,
+    };
 
-        let app = PlotApp {
-            tabs: vec![first_tab],
-            active_tab: 0,
-            rx: Arc::clone(&shared_rx),
-        };
-
-        // run_native blocks until the window is closed.
-        let _ = eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))));
-        // Window closed — loop back and wait for the next plot/view.
-    }
+    // run_native blocks forever. The app hides/shows itself as needed.
+    // On macOS, run_native can only be called once per process.
+    eframe::run_native("miniR", native_options, Box::new(|_cc| Ok(Box::new(app))))
+        .map_err(|e| format!("egui event loop failed: {e}"))
 }
 
 // endregion
