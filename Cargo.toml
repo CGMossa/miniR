@@ -122,6 +122,7 @@ svg = { version = "0.18", optional = true }
 krilla = { version = "0.6", optional = true }
 krilla-svg = { version = "0.3", optional = true }
 usvg = { version = "0.45", optional = true }
+rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal"] }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
@@ -170,7 +171,7 @@ fast-format = ["dep:zmij"]
 # color feature removed — crossterm (via repl) handles colored output
 svg-device = ["dep:svg"]
 pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
-plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde"]
+plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "dep:rfd"]
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]

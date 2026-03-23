@@ -308,7 +308,7 @@ impl eframe::App for PlotApp {
                     ui.separator();
                 }
 
-                // Theme toggle button (right-aligned)
+                // Right-aligned buttons: theme toggle + Open CSV
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let icon = if self.dark_mode {
                         "\u{2600}"
@@ -332,6 +332,37 @@ impl eframe::App for PlotApp {
                             egui::ThemePreference::Light
                         };
                         ctx.set_theme(theme);
+                    }
+
+                    #[cfg(feature = "io")]
+                    if ui
+                        .button("Open CSV")
+                        .on_hover_text("Open a CSV/TSV file in a new View tab")
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("CSV", &["csv", "tsv", "tab", "txt"])
+                            .pick_file()
+                        {
+                            match super::csv_drop::csv_to_table_data(&path) {
+                                Ok(data) => {
+                                    let title = data.title.clone();
+                                    let nrow = data.rows.len();
+                                    self.tabs.push(Tab::Table {
+                                        title,
+                                        view_state: TableViewState::new(data.headers.len(), nrow),
+                                        data,
+                                    });
+                                    self.active_tab = self.tabs.len() - 1;
+                                }
+                                Err(e) => {
+                                    self.save_msg = Some((
+                                        format!("CSV error: {e}"),
+                                        std::time::Instant::now(),
+                                    ));
+                                }
+                            }
+                        }
                     }
                 });
 
@@ -462,31 +493,49 @@ fn render_plot(
 
             #[cfg(feature = "svg-device")]
             if ui.button("Save SVG").clicked() {
-                let path = save_path("svg");
-                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                match std::fs::write(&path, svg_str) {
-                    Ok(()) => {
-                        *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("SVG", &["svg"])
+                    .set_file_name("Rplot.svg")
+                    .save_file()
+                {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    match std::fs::write(&path, svg_str) {
+                        Ok(()) => {
+                            *save_msg = Some((
+                                format!("Saved: {}", path.display()),
+                                std::time::Instant::now(),
+                            ))
+                        }
+                        Err(e) => {
+                            *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                        }
                     }
-                    Err(e) => *save_msg = Some((format!("Error: {e}"), std::time::Instant::now())),
                 }
             }
 
             #[cfg(feature = "pdf-device")]
             if ui.button("Save PDF").clicked() {
-                let path = save_path("pdf");
-                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
-                    Ok(bytes) => match std::fs::write(&path, bytes) {
-                        Ok(()) => {
-                            *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
-                        }
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PDF", &["pdf"])
+                    .set_file_name("Rplot.pdf")
+                    .save_file()
+                {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
+                        Ok(bytes) => match std::fs::write(&path, bytes) {
+                            Ok(()) => {
+                                *save_msg = Some((
+                                    format!("Saved: {}", path.display()),
+                                    std::time::Instant::now(),
+                                ))
+                            }
+                            Err(e) => {
+                                *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                            }
+                        },
                         Err(e) => {
-                            *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                            *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
                         }
-                    },
-                    Err(e) => {
-                        *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
                     }
                 }
             }
@@ -541,36 +590,54 @@ fn render_plot(
         // Context menu on right-click anywhere in the plot area
         plot_response.response.context_menu(|ui| {
             #[cfg(feature = "svg-device")]
-            if ui.button("Save SVG").clicked() {
-                let path = save_path("svg");
-                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                match std::fs::write(&path, &svg_str) {
-                    Ok(()) => {
-                        *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
-                    }
-                    Err(e) => *save_msg = Some((format!("Error: {e}"), std::time::Instant::now())),
-                }
+            if ui.button("Save SVG...").clicked() {
                 ui.close();
-            }
-
-            #[cfg(feature = "pdf-device")]
-            if ui.button("Save PDF").clicked() {
-                let path = save_path("pdf");
-                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
-                    Ok(bytes) => match std::fs::write(&path, bytes) {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("SVG", &["svg"])
+                    .set_file_name("Rplot.svg")
+                    .save_file()
+                {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    match std::fs::write(&path, svg_str) {
                         Ok(()) => {
-                            *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                            *save_msg = Some((
+                                format!("Saved: {}", path.display()),
+                                std::time::Instant::now(),
+                            ))
                         }
                         Err(e) => {
                             *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
                         }
-                    },
-                    Err(e) => {
-                        *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
                     }
                 }
+            }
+
+            #[cfg(feature = "pdf-device")]
+            if ui.button("Save PDF...").clicked() {
                 ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PDF", &["pdf"])
+                    .set_file_name("Rplot.pdf")
+                    .save_file()
+                {
+                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                    match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
+                        Ok(bytes) => match std::fs::write(&path, bytes) {
+                            Ok(()) => {
+                                *save_msg = Some((
+                                    format!("Saved: {}", path.display()),
+                                    std::time::Instant::now(),
+                                ))
+                            }
+                            Err(e) => {
+                                *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                            }
+                        },
+                        Err(e) => {
+                            *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
+                        }
+                    }
+                }
             }
 
             if ui.button("Copy coordinates").clicked() {
@@ -583,16 +650,6 @@ fn render_plot(
             }
         });
     });
-}
-
-/// Generate a save path in the current directory with a timestamp.
-fn save_path(ext: &str) -> String {
-    use std::time::SystemTime;
-    let ts = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("Rplot_{ts}.{ext}")
 }
 
 fn render_plot_item(
