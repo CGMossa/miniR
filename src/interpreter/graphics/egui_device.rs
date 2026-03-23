@@ -304,6 +304,11 @@ impl eframe::App for PlotApp {
     }
 }
 
+thread_local! {
+    static SAVE_MSG: std::cell::RefCell<Option<(String, std::time::Instant)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Render a plot in the central panel with toolbar.
 fn render_plot(ctx: &egui::Context, state: &PlotState) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -312,27 +317,42 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
 
         // Toolbar
         ui.horizontal(|ui| {
-            // Save as SVG
             #[cfg(feature = "svg-device")]
-            if ui.small_button("💾 SVG").clicked() {
-                if let Some(path) = rfd_save_path("svg") {
-                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                    let _ = std::fs::write(&path, svg_str);
+            if ui.button("Save SVG").clicked() {
+                let path = save_path("svg");
+                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                match std::fs::write(&path, svg_str) {
+                    Ok(()) => set_save_msg(&format!("Saved: {path}")),
+                    Err(e) => set_save_msg(&format!("Error: {e}")),
                 }
             }
-            // Save as PDF
+
             #[cfg(feature = "pdf-device")]
-            if ui.small_button("💾 PDF").clicked() {
-                if let Some(path) = rfd_save_path("pdf") {
-                    let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
-                    if let Ok(bytes) = super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
-                        let _ = std::fs::write(&path, bytes);
-                    }
+            if ui.button("Save PDF").clicked() {
+                let path = save_path("pdf");
+                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
+                    Ok(bytes) => match std::fs::write(&path, bytes) {
+                        Ok(()) => set_save_msg(&format!("Saved: {path}")),
+                        Err(e) => set_save_msg(&format!("Error: {e}")),
+                    },
+                    Err(e) => set_save_msg(&format!("PDF error: {e}")),
                 }
             }
 
             ui.separator();
             ui.label(format!("{} series", state.items.len()));
+
+            // Show save status for 5 seconds
+            SAVE_MSG.with(|msg| {
+                let msg = msg.borrow();
+                if let Some((text, when)) = msg.as_ref() {
+                    if when.elapsed().as_secs() < 5 {
+                        ui.separator();
+                        ui.label(egui::RichText::new(text).weak().italics());
+                    }
+                }
+            });
         });
 
         let mut plot = egui_plot::Plot::new("r_plot")
@@ -367,13 +387,21 @@ fn render_plot(ctx: &egui::Context, state: &PlotState) {
     });
 }
 
-/// Simple file path helper for save dialogs.
-/// Returns a path string from a hardcoded temp location
-/// (proper file dialog requires rfd crate — future enhancement).
-fn rfd_save_path(ext: &str) -> Option<String> {
-    let name = format!("Rplot.{ext}");
-    let path = std::env::temp_dir().join(name);
-    Some(path.to_string_lossy().to_string())
+/// Generate a save path in the current directory with a timestamp.
+fn save_path(ext: &str) -> String {
+    use std::time::SystemTime;
+    let ts = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("Rplot_{ts}.{ext}")
+}
+
+/// Set the save status message (shown for 5 seconds in the toolbar).
+fn set_save_msg(msg: &str) {
+    SAVE_MSG.with(|m| {
+        *m.borrow_mut() = Some((msg.to_string(), std::time::Instant::now()));
+    });
 }
 
 fn render_plot_item(
@@ -774,6 +802,12 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
             .with_title("miniR"),
+        // Hide from dock on macOS — the plot window is an accessory, not the main app.
+        #[cfg(target_os = "macos")]
+        event_loop_builder: Some(Box::new(|builder| {
+            use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+            builder.with_activation_policy(ActivationPolicy::Accessory);
+        })),
         ..Default::default()
     };
 

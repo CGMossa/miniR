@@ -113,6 +113,7 @@ arrow = { version = "58", optional = true, default-features = false, features = 
 zmij = { version = "1", optional = true }
 # termcolor removed — using crossterm for colored output (already a dep via repl)
 eframe = { version = "0.33", optional = true, default-features = false, features = ["glow", "default_fonts"] }
+winit = { version = "0.30", optional = true, default-features = false }
 egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
 egui_table = { version = "0.7", optional = true }
@@ -168,7 +169,7 @@ fast-format = ["dep:zmij"]
 # color feature removed — crossterm (via repl) handles colored output
 svg-device = ["dep:svg"]
 pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
-plot = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit"]
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]
