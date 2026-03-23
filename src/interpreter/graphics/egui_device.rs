@@ -191,6 +191,10 @@ struct PlotApp {
     tabs: Vec<Tab>,
     active_tab: usize,
     rx: std::sync::Arc<std::sync::Mutex<PlotReceiver>>,
+    /// Whether dark mode is active (true) or light mode (false).
+    dark_mode: bool,
+    /// Status message from save operations, auto-clears after 5 seconds.
+    save_msg: Option<(String, std::time::Instant)>,
 }
 
 impl eframe::App for PlotApp {
@@ -291,11 +295,39 @@ impl eframe::App for PlotApp {
                         self.active_tab = i;
                     }
                     // Close button for each tab
-                    if ui.small_button("×").clicked() {
+                    if ui.small_button("\u{00d7}").clicked() {
                         to_close = Some(i);
                     }
                     ui.separator();
                 }
+
+                // Theme toggle button (right-aligned)
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let icon = if self.dark_mode {
+                        "\u{2600}"
+                    } else {
+                        "\u{1f319}"
+                    };
+                    let tooltip = if self.dark_mode {
+                        "Switch to light mode"
+                    } else {
+                        "Switch to dark mode"
+                    };
+                    if ui
+                        .add(egui::Button::new(icon).frame(false))
+                        .on_hover_text(tooltip)
+                        .clicked()
+                    {
+                        self.dark_mode = !self.dark_mode;
+                        let theme = if self.dark_mode {
+                            egui::ThemePreference::Dark
+                        } else {
+                            egui::ThemePreference::Light
+                        };
+                        ctx.set_theme(theme);
+                    }
+                });
+
                 if let Some(idx) = to_close {
                     self.tabs.remove(idx);
                     if self.tabs.is_empty() {
@@ -314,11 +346,12 @@ impl eframe::App for PlotApp {
 
         // Render active tab content
         let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        let save_msg = &mut self.save_msg;
         match &mut self.tabs[active] {
             Tab::Plot {
                 state, view_state, ..
             } => {
-                render_plot(ctx, state, view_state);
+                render_plot(ctx, state, view_state, save_msg);
             }
             Tab::Table {
                 data, view_state, ..
@@ -327,11 +360,6 @@ impl eframe::App for PlotApp {
             }
         }
     }
-}
-
-thread_local! {
-    static SAVE_MSG: std::cell::RefCell<Option<(String, std::time::Instant)>> =
-        const { std::cell::RefCell::new(None) };
 }
 
 /// Extract a display name for a plot series.
@@ -361,8 +389,13 @@ fn series_color(item: &PlotItem) -> [u8; 4] {
     }
 }
 
-/// Render a plot in the central panel with toolbar and optional sidebar.
-fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
+/// Render a plot in the central panel with toolbar, sidebar, and context menu.
+fn render_plot(
+    ctx: &egui::Context,
+    state: &PlotState,
+    vs: &mut PlotViewState,
+    save_msg: &mut Option<(String, std::time::Instant)>,
+) {
     // Sidebar panel (animated show/hide)
     egui::SidePanel::left("plot_options")
         .resizable(true)
@@ -402,7 +435,6 @@ fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
                     }
                 });
         });
-
     egui::CentralPanel::default().show(ctx, |ui| {
         let title = state.title.as_deref().unwrap_or("Plot");
         ui.heading(title);
@@ -426,8 +458,10 @@ fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
                 let path = save_path("svg");
                 let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
                 match std::fs::write(&path, svg_str) {
-                    Ok(()) => set_save_msg(&format!("Saved: {path}")),
-                    Err(e) => set_save_msg(&format!("Error: {e}")),
+                    Ok(()) => {
+                        *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                    }
+                    Err(e) => *save_msg = Some((format!("Error: {e}"), std::time::Instant::now())),
                 }
             }
 
@@ -437,10 +471,16 @@ fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
                 let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
                 match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
                     Ok(bytes) => match std::fs::write(&path, bytes) {
-                        Ok(()) => set_save_msg(&format!("Saved: {path}")),
-                        Err(e) => set_save_msg(&format!("Error: {e}")),
+                        Ok(()) => {
+                            *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                        }
+                        Err(e) => {
+                            *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                        }
                     },
-                    Err(e) => set_save_msg(&format!("PDF error: {e}")),
+                    Err(e) => {
+                        *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
+                    }
                 }
             }
 
@@ -448,15 +488,12 @@ fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
             ui.label(format!("{} series", state.items.len()));
 
             // Show save status for 5 seconds
-            SAVE_MSG.with(|msg| {
-                let msg = msg.borrow();
-                if let Some((text, when)) = msg.as_ref() {
-                    if when.elapsed().as_secs() < 5 {
-                        ui.separator();
-                        ui.label(egui::RichText::new(text).weak().italics());
-                    }
+            if let Some((text, when)) = save_msg.as_ref() {
+                if when.elapsed().as_secs() < 5 {
+                    ui.separator();
+                    ui.label(egui::RichText::new(text).weak().italics());
                 }
-            });
+            }
         });
 
         let mut plot = egui_plot::Plot::new("r_plot")
@@ -487,10 +524,55 @@ fn render_plot(ctx: &egui::Context, state: &PlotState, vs: &mut PlotViewState) {
 
         let point_size = vs.point_size;
         let line_width = vs.line_width;
-        plot.show(ui, |plot_ui| {
+        let plot_response = plot.show(ui, |plot_ui| {
             for (idx, item) in state.items.iter().enumerate() {
                 let default_name = format!("series_{idx}");
                 render_plot_item(plot_ui, item, &default_name, idx, point_size, line_width);
+            }
+        });
+
+        // Context menu on right-click anywhere in the plot area
+        plot_response.response.context_menu(|ui| {
+            #[cfg(feature = "svg-device")]
+            if ui.button("Save SVG").clicked() {
+                let path = save_path("svg");
+                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                match std::fs::write(&path, &svg_str) {
+                    Ok(()) => {
+                        *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                    }
+                    Err(e) => *save_msg = Some((format!("Error: {e}"), std::time::Instant::now())),
+                }
+                ui.close();
+            }
+
+            #[cfg(feature = "pdf-device")]
+            if ui.button("Save PDF").clicked() {
+                let path = save_path("pdf");
+                let svg_str = super::svg_device::render_svg(state, 7.0, 7.0);
+                match super::pdf::svg_to_pdf(&svg_str, 672.0, 672.0) {
+                    Ok(bytes) => match std::fs::write(&path, bytes) {
+                        Ok(()) => {
+                            *save_msg = Some((format!("Saved: {path}"), std::time::Instant::now()))
+                        }
+                        Err(e) => {
+                            *save_msg = Some((format!("Error: {e}"), std::time::Instant::now()))
+                        }
+                    },
+                    Err(e) => {
+                        *save_msg = Some((format!("PDF error: {e}"), std::time::Instant::now()))
+                    }
+                }
+                ui.close();
+            }
+
+            if ui.button("Copy coordinates").clicked() {
+                if let Some(pos) = plot_response.response.hover_pos() {
+                    let plot_pos = plot_response.transform.value_from_position(pos);
+                    let text = format!("x={}, y={}", plot_pos.x, plot_pos.y);
+                    ui.ctx().copy_text(text);
+                }
+                ui.close();
             }
         });
     });
@@ -504,13 +586,6 @@ fn save_path(ext: &str) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     format!("Rplot_{ts}.{ext}")
-}
-
-/// Set the save status message (shown for 5 seconds in the toolbar).
-fn set_save_msg(msg: &str) {
-    SAVE_MSG.with(|m| {
-        *m.borrow_mut() = Some((msg.to_string(), std::time::Instant::now()));
-    });
 }
 
 fn render_plot_item(
@@ -837,6 +912,30 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
                                             vs.selected_row = Some(vis_idx);
                                             vs.selected_col = Some(col_idx);
                                         }
+                                        resp.context_menu(|ui| {
+                                            if ui.button("Copy value").clicked() {
+                                                ui.ctx().copy_text(display.clone());
+                                                ui.close();
+                                            }
+                                            if ui.button("Copy row").clicked() {
+                                                if let Some(r) = data.rows.get(row_idx) {
+                                                    ui.ctx().copy_text(r.join("\t"));
+                                                }
+                                                ui.close();
+                                            }
+                                            if ui.button("Copy column").clicked() {
+                                                let col_vals: String = vs
+                                                    .visible_rows
+                                                    .iter()
+                                                    .filter_map(|&ri| {
+                                                        data.rows.get(ri)?.get(col_idx).cloned()
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join("\n");
+                                                ui.ctx().copy_text(col_vals);
+                                                ui.close();
+                                            }
+                                        });
                                     });
                                 }
                             }
@@ -926,6 +1025,8 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         tabs: vec![first_tab],
         active_tab: 0,
         rx: shared_rx,
+        dark_mode: true,
+        save_msg: None,
     };
 
     // run_native blocks forever. The app hides/shows itself as tabs come and go.

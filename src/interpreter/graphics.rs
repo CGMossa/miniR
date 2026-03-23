@@ -18,6 +18,9 @@ pub mod svg_device;
 #[cfg(feature = "pdf-device")]
 pub mod pdf;
 
+#[cfg(all(feature = "plot", feature = "io"))]
+pub mod csv_drop;
+
 // region: FileDevice
 
 /// A file-based graphics device (SVG, PNG, PDF).
