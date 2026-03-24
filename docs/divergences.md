@@ -53,6 +53,27 @@ data.frame(a = 1:3, b = a + 10L, c = a + b)
 
 Column bindings do not leak into the caller's environment.
 
+### Pipe placeholder `_` in `|>`
+
+GNU R 4.1 introduced `|>` without a placeholder. R 4.2 added `_`:
+
+```r
+# GNU R 4.2+:
+mtcars |> lm(mpg ~ wt, data = _)
+```
+
+miniR supports `_` in `|>` and also plans native pipe variants that replace
+magrittr's `%>%`, `%<>%`, `%T>%`, `%$%` with cleaner syntax:
+
+| miniR | magrittr | Purpose |
+|---|---|---|
+| `\|>` | `%>%` | Forward pipe (with `_` placeholder) |
+| `<>` | `%<>%` | Assignment pipe (pipe and assign back) |
+| `T>` | `%T>%` | Tee pipe (pipe for side effect, return LHS) |
+| `$>` | `%$%` | Exposition pipe (expose names from LHS) |
+
+These are native operators — no `library(magrittr)` needed, no `%` delimiters.
+
 ### `if...else` across newlines
 
 GNU R requires braces when `else` is on a new line:
