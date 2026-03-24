@@ -241,7 +241,7 @@ impl eframe::App for PlotApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.tabs.clear();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
             return;
         }
 
@@ -251,7 +251,7 @@ impl eframe::App for PlotApp {
         if close_tab && !self.tabs.is_empty() {
             self.tabs.remove(self.active_tab);
             if self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
             } else if self.active_tab >= self.tabs.len() {
                 self.active_tab = self.tabs.len() - 1;
             }
@@ -296,20 +296,21 @@ impl eframe::App for PlotApp {
                     }
                     if self.tabs.is_empty() {
                         // Hide window — it will reappear when new data arrives
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
                 }
             }
             // Show window if it was hidden and we just added a tab
             if was_empty && !self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }
         drop(rx);
 
         // Request a repaint periodically so we pick up new messages.
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        // Use a short interval even when hidden — macOS may throttle hidden windows.
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
 
         if self.tabs.is_empty() {
             return;
@@ -412,7 +413,7 @@ impl eframe::App for PlotApp {
                     self.tabs.remove(idx);
                     if self.tabs.is_empty() {
                         // Hide — don't close (macOS can't reopen after close)
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     } else if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len() - 1;
                     }
@@ -477,7 +478,7 @@ impl eframe::App for PlotApp {
                 self.tabs.remove(i);
             }
             if self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
             }
         } else {
             // Tab mode: render active tab in central panel
@@ -739,7 +740,7 @@ fn render_plot(
                 }
             }
 
-            #[cfg(feature = "svg-device")]
+            #[cfg(all(feature = "svg-device", feature = "pdf-device"))]
             if ui.button("Save PNG...").clicked() {
                 ui.close();
                 if let Some(path) = rfd::FileDialog::new()
@@ -1322,7 +1323,7 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
 // region: PNG export helpers
 
 /// Convert an SVG string to PNG bytes via resvg rasterization.
-#[cfg(feature = "svg-device")]
+#[cfg(all(feature = "svg-device", feature = "pdf-device"))]
 fn svg_to_png_bytes(svg_str: &str) -> Result<Vec<u8>, String> {
     let opts = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg_str, &opts).map_err(|e| format!("SVG parse error: {e}"))?;
