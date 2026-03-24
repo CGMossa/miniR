@@ -53,26 +53,27 @@ data.frame(a = 1:3, b = a + 10L, c = a + b)
 
 Column bindings do not leak into the caller's environment.
 
-### Pipe placeholder `_` in `|>`
+### Unified pipe operators
 
-GNU R 4.1 introduced `|>` without a placeholder. R 4.2 added `_`:
+In GNU R, `|>` (base) and `%>%` (magrittr) are different implementations with
+different features. miniR unifies them — **`|>` and `%>%` are identical** and
+both support `_` and `.` as placeholders:
 
 ```r
-# GNU R 4.2+:
-mtcars |> lm(mpg ~ wt, data = _)
+x |> f(a, _)      # works (R 4.2+ style)
+x |> f(a, .)      # also works (magrittr style)
+x %>% f(a, .)     # same thing — no library(magrittr) needed
 ```
 
-miniR supports `_` in `|>` and also plans native pipe variants that replace
-magrittr's `%>%`, `%<>%`, `%T>%`, `%$%` with cleaner syntax:
+The magrittr pipe variants are also native operators:
 
-| miniR | magrittr | Purpose |
-|---|---|---|
-| `\|>` | `%>%` | Forward pipe (with `_` placeholder) |
-| `<>` | `%<>%` | Assignment pipe (pipe and assign back) |
-| `T>` | `%T>%` | Tee pipe (pipe for side effect, return LHS) |
-| `$>` | `%$%` | Exposition pipe (expose names from LHS) |
+| Operator | Purpose |
+|---|---|
+| `%<>%` | Assignment pipe — pipe and assign back to LHS |
+| `%T>%` | Tee pipe — pipe for side effect, return original LHS |
+| `%$%` | Exposition pipe — expose LHS names to RHS expression |
 
-These are native operators — no `library(magrittr)` needed, no `%` delimiters.
+All available without `library(magrittr)`.
 
 ### `if...else` across newlines
 

@@ -1,148 +1,127 @@
-# Magrittr-style Pipe Operators as Native Builtins
+# Pipe Operators — Unifying |> and %>%
 
 ## Summary
 
-Add magrittr's pipe variants as native operators with cleaner syntax — no `%` delimiters.
-This is a miniR divergence: R requires `%>%`, `%<>%`, `%T>%`, `%$%` from the magrittr package.
-miniR makes them built-in operators with shorter symbols: `|>`, `<>`, `T>`, `$>`.
+In GNU R, `|>` (base, R 4.1+) and `%>%` (magrittr) are two separate pipe
+implementations with different features. `|>` has `_` placeholder (R 4.2+) but
+no `.`, no tee, no assignment pipe. `%>%` has `.` placeholder, tee, assignment,
+exposition — but requires `library(magrittr)`.
 
-## Operators
-
-| miniR | magrittr | Name | Semantics |
-|---|---|---|---|
-| `\|>` | `%>%` | Pipe | Forward pipe with `.` placeholder (already implemented, uses `_`) |
-| `<>` | `%<>%` | Assignment pipe | Pipe and assign result back to LHS |
-| `T>` | `%T>%` | Tee pipe | Pipe forward but return the LHS (for side effects) |
-| `$>` | `%$>%` | Exposition pipe | Expose LHS names to RHS expression (like `with()`) |
+miniR unifies them: **`|>` and `%>%` are the same operator** with all features
+from both. No need for magrittr. The other magrittr pipe variants (`%<>%`,
+`%T>%`, `%$%`) are also native operators.
 
 ## Divergence from GNU R
 
-- These are **native operators** parsed by the grammar, not infix functions loaded from a package
-- No `%` delimiters — `<>`, `T>`, `$>` are first-class tokens
-- Both `_` and `.` work as placeholders in all pipe variants (R only supports `_` in `|>`, `.` in `%>%`)
-- Available without `library(magrittr)` — always loaded
+- `|>` and `%>%` are **identical** — both support `_` and `.` as placeholders
+- `%<>%`, `%T>%`, `%$%` are **native operators**, not magrittr functions
+- All pipes are always available — no `library(magrittr)` needed
+- Both `_` and `.` work as placeholders in all pipe variants
 
-## Semantics
+## Operators
 
-### `<>` — Assignment pipe
+| Operator | Name | Semantics |
+|---|---|---|
+| `\|>` / `%>%` | Forward pipe | `x \|> f(y)` → `f(x, y)`. With placeholder: `x \|> f(y, _)` → `f(y, x)` |
+| `%<>%` | Assignment pipe | `x %<>% sort()` → `x <- sort(x)`. Pipe and assign back. |
+| `%T>%` | Tee pipe | `x %T>% print() \|> f()` → print x for side effect, forward x to f |
+| `%$%` | Exposition pipe | `df %$% cor(x, y)` → evaluate RHS with df's columns exposed as variables |
+
+## Placeholder Rules
+
+Both `_` and `.` are recognized as placeholders in all pipe variants:
 
 ```r
+x |> f(a, _)       # works
+x |> f(a, .)       # also works (magrittr compat)
+x %>% f(a, .)      # same thing
+x %>% f(a, _)      # also works
+```
+
+If no placeholder is found in the top-level call args, LHS is prepended as the
+first positional argument (current behavior).
+
+If `.` is used **only inside nested calls** (not at top level), LHS is still
+prepended as first arg AND `.` is available in nested positions. This matches
+magrittr's behavior: `iris %>% subset(1:nrow(.) %% 2 == 0)` prepends iris as
+first arg to subset, and `.` inside `nrow()` also refers to iris.
+
+## Current State
+
+- `|>` with `_` placeholder: ✅ implemented
+- `|>` with `.` placeholder: not yet
+- `%>%` as alias for `|>`: not yet (parser doesn't recognize `%>%` specially)
+- `%<>%`: not yet
+- `%T>%`: not yet
+- `%$%`: not yet
+
+## Implementation
+
+### Phase 1: Unify |> and %>% placeholders
+
+1. Add `.` as a placeholder alongside `_` in `eval_pipe()` in `control_flow.rs`
+2. Register `%>%` in the parser as an alias for `|>` (it's already parsed as
+   a `%any%` infix — just need the evaluator to treat it as a pipe)
+
+### Phase 2: Assignment pipe %<>%
+
+Parser: `%<>%` is already parseable as `%any%` infix. Evaluator needs to:
+1. Evaluate the pipe chain: `result = eval_pipe(lhs_value, rhs)`
+2. Assign result back to the LHS symbol: `eval_assign(<-, lhs, result)`
+
+LHS must be a valid assignment target (symbol, index expr, dollar expr).
+
+### Phase 3: Tee pipe %T>%
+
+Evaluator:
+1. Evaluate LHS
+2. Call RHS with LHS as input (same as regular pipe)
+3. Discard the RHS result
+4. Return the original LHS value
+
+Use case: side effects (plotting, printing, logging) in a pipe chain.
+
+### Phase 4: Exposition pipe %$%
+
+Evaluator:
+1. Evaluate LHS (must be a list, data frame, or environment)
+2. Create a child environment with LHS's named elements as bindings
+3. Evaluate RHS in that child environment
+
+This is essentially `with(lhs, rhs)` as an operator.
+
+## Parser Notes
+
+`%>%`, `%<>%`, `%T>%`, `%$%` are all valid `%any%` infix operators in the
+existing grammar. No parser changes needed — just evaluator dispatch.
+
+The evaluator currently handles `%any%` by looking up the operator name as a
+function. For the pipe variants, the evaluator should intercept these specific
+operator names and implement pipe semantics directly, rather than looking them
+up as user-defined functions.
+
+## Tests
+
+```r
+# |> and %>% are identical
+stopifnot(identical(1:5 |> sum(), 1:5 %>% sum()))
+
+# . placeholder
+stopifnot("hello" %>% paste(., "world") == "hello world")
+stopifnot("hello" |> paste(., "world") == "hello world")
+
+# %<>% assignment pipe
 x <- c(3, 1, 2)
-x <> sort()       # equivalent to: x <- x |> sort()
-x <> sqrt()       # equivalent to: x <- x |> sqrt()
-# x is now sorted and square-rooted
+x %<>% sort()
+stopifnot(identical(x, c(1, 2, 3)))
+
+# %T>% tee pipe
+x <- c(3, 1, 2)
+result <- x %T>% print() %>% sum()  # prints x, then sums x
+stopifnot(result == 6)
+
+# %$% exposition pipe
+df <- data.frame(a = 1:5, b = 6:10)
+result <- df %$% cor(a, b)
+stopifnot(result == 1)  # perfect correlation
 ```
-
-Implementation: evaluate the pipe chain, then assign the result back to the LHS symbol.
-LHS must be a simple symbol or indexing expression (same targets as `<-`).
-
-### `T>` — Tee pipe
-
-```r
-data <>
-  transform(z = x + y) T>
-  plot(z ~ x, data = _) |>  # plot is called for side effect, result discarded
-  summary()                   # summary gets the transform() result, not plot() result
-```
-
-Implementation: evaluate `lhs T> rhs` as `{ rhs(lhs); lhs }` — the RHS is called for
-its side effect (printing, plotting, logging), but the LHS value is forwarded.
-
-### `$>` — Exposition pipe
-
-```r
-data.frame(x = 1:10, y = rnorm(10)) $> cor(x, y)
-# equivalent to: with(df, cor(x, y))
-# exposes column names as variables in the RHS expression
-```
-
-Implementation: create a child environment containing the LHS's named elements
-(for data frames: columns; for lists: elements; for environments: bindings).
-Evaluate RHS in that child environment.
-
-## Parser Changes
-
-Add tokens to the PEG grammar (`src/parser/r.pest`):
-
-```pest
-assign_pipe = { "<>" }
-tee_pipe    = { "T>" }
-expo_pipe   = { "$>" }
-```
-
-These need to be at the same precedence level as `|>` (between `%any%` and `+/-`).
-
-Potential conflicts:
-- `<>` could conflict with `!=` or comparison operators — but `<>` is not valid R syntax today
-- `T>` starts with `T` which is a symbol — need to ensure `T > 5` (comparison) is not parsed as tee pipe. Solution: `T>` is only a pipe when followed by a call or symbol, not when `T` is followed by space+`>`
-- `$>` starts with `$` — `obj$>` could conflict with dollar access. Solution: `$>` is only parsed as pipe at expression level, not after `$` accessor
-
-## AST Changes
-
-Add to `BinaryOp` enum in `src/parser/ast.rs`:
-
-```rust
-AssignPipe,  // <>
-TeePipe,     // T>
-ExpoPipe,    // $>
-```
-
-## Interpreter Changes
-
-Add to `eval_binary_op` in `src/interpreter.rs` or `control_flow.rs`:
-
-### AssignPipe (`<>`)
-```rust
-BinaryOp::AssignPipe => {
-    let result = self.eval_pipe(lhs, rhs, env)?;
-    self.eval_assign(&AssignOp::LeftArrow, lhs, &Expr::from_value(result), env)?;
-    Ok(result)
-}
-```
-
-### TeePipe (`T>`)
-```rust
-BinaryOp::TeePipe => {
-    let left_val = self.eval_in(lhs, env)?;
-    // Evaluate the pipe for side effects, discard result
-    let _ = self.eval_pipe_with_value(left_val.clone(), rhs, env)?;
-    Ok(left_val) // return original value
-}
-```
-
-### ExpoPipe (`$>`)
-```rust
-BinaryOp::ExpoPipe => {
-    let left_val = self.eval_in(lhs, env)?;
-    // Create child env with LHS's named elements
-    let child_env = Environment::new_child(env);
-    expose_names(&left_val, &child_env);
-    self.eval_in(rhs, &child_env)
-}
-```
-
-Where `expose_names` binds list/data.frame columns or environment bindings into the child env.
-
-## Placeholder Unification
-
-Both `_` and `.` should work as placeholders in ALL pipe variants:
-
-```r
-x |> f(a, _)    # already works
-x |> f(a, .)    # should also work (magrittr compat)
-x <> f(a, .)    # assignment pipe with placeholder
-```
-
-In the pipe evaluator, check for both `Symbol("_")` and `Symbol(".")` as placeholders.
-
-## Implementation Order
-
-1. Add `.` as additional placeholder in `|>` (alongside `_`)
-2. Parse `<>` as assignment pipe
-3. Implement assignment pipe semantics
-4. Parse `T>` as tee pipe (careful with `T > x` ambiguity)
-5. Implement tee pipe semantics
-6. Parse `$>` as exposition pipe (careful with `obj$>` ambiguity)
-7. Implement exposition pipe (reuse `with()` logic)
-8. Tests for all variants
-9. Document divergences
