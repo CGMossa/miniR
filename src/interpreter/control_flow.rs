@@ -16,17 +16,54 @@ impl Interpreter {
         match rhs {
             Expr::Call { func, args } => {
                 let f = self.eval_in(func, env)?;
-                let mut eval_args = vec![left_val];
+
+                // Check if any argument uses `_` as a placeholder for the LHS.
+                // R 4.2+ allows: x |> f(a, b = _) → f(a, b = x)
+                let has_placeholder = args.iter().any(|arg| {
+                    matches!(
+                        &arg.value,
+                        Some(Expr::Symbol(s)) if s == "_"
+                    )
+                });
+
+                let mut eval_args = Vec::new();
                 let mut named_args = Vec::new();
-                for arg in args {
-                    if let Some(name) = &arg.name {
-                        if let Some(val_expr) = &arg.value {
-                            named_args.push((name.clone(), self.eval_in(val_expr, env)?));
+
+                if has_placeholder {
+                    // Replace `_` with the LHS value
+                    for arg in args {
+                        if let Some(name) = &arg.name {
+                            if let Some(val_expr) = &arg.value {
+                                let val = if matches!(val_expr, Expr::Symbol(s) if s == "_") {
+                                    left_val.clone()
+                                } else {
+                                    self.eval_in(val_expr, env)?
+                                };
+                                named_args.push((name.clone(), val));
+                            }
+                        } else if let Some(val_expr) = &arg.value {
+                            let val = if matches!(val_expr, Expr::Symbol(s) if s == "_") {
+                                left_val.clone()
+                            } else {
+                                self.eval_in(val_expr, env)?
+                            };
+                            eval_args.push(val);
                         }
-                    } else if let Some(val_expr) = &arg.value {
-                        eval_args.push(self.eval_in(val_expr, env)?);
+                    }
+                } else {
+                    // No placeholder — prepend LHS as first positional arg (R 4.1 behavior)
+                    eval_args.push(left_val);
+                    for arg in args {
+                        if let Some(name) = &arg.name {
+                            if let Some(val_expr) = &arg.value {
+                                named_args.push((name.clone(), self.eval_in(val_expr, env)?));
+                            }
+                        } else if let Some(val_expr) = &arg.value {
+                            eval_args.push(self.eval_in(val_expr, env)?);
+                        }
                     }
                 }
+
                 self.call_function(&f, &eval_args, &named_args, env)
             }
             Expr::Symbol(name) => {

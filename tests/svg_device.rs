@@ -227,6 +227,7 @@ fn png_device_creates_file() {
 }
 
 #[test]
+#[cfg(feature = "pdf-device")]
 fn pdf_device_creates_file() {
     let dir = std::env::temp_dir().join(format!("minir-pdf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
