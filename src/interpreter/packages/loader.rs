@@ -64,6 +64,11 @@ impl Interpreter {
     }
 
     /// Get the library search paths (same logic as `.libPaths()` builtin).
+    ///
+    /// Builds the search path from (in order):
+    /// 1. `R_LIBS` environment variable (colon-separated on Unix, semicolon on Windows)
+    /// 2. `R_LIBS_USER` environment variable
+    /// 3. The default miniR library directory (`<data_dir>/miniR/library`)
     pub(crate) fn get_lib_paths(&self) -> Vec<String> {
         let mut paths: Vec<String> = Vec::new();
         let sep = if cfg!(windows) { ';' } else { ':' };
@@ -92,7 +97,45 @@ impl Interpreter {
             }
         }
 
+        // Default miniR library directory — always included even if it doesn't
+        // exist yet, as it's the canonical install location. This matches the
+        // behavior of the `.libPaths()` builtin.
+        let default_lib = self.default_library_path();
+        if !paths.contains(&default_lib) {
+            paths.push(default_lib);
+        }
+
         paths
+    }
+
+    /// Return the default miniR library directory path.
+    ///
+    /// Uses `dirs::data_dir()` when available (feature-gated), otherwise
+    /// falls back to `$HOME/.miniR/library`.
+    pub(crate) fn default_library_path(&self) -> String {
+        let data_dir = {
+            #[cfg(feature = "dirs-support")]
+            {
+                if let Some(data) = dirs::data_dir() {
+                    data.join("miniR").to_string_lossy().to_string()
+                } else {
+                    self.fallback_data_dir()
+                }
+            }
+            #[cfg(not(feature = "dirs-support"))]
+            {
+                self.fallback_data_dir()
+            }
+        };
+        format!("{}/library", data_dir)
+    }
+
+    /// Fallback data directory when `dirs` crate is not available.
+    fn fallback_data_dir(&self) -> String {
+        self.get_env_var("HOME")
+            .or_else(|| self.get_env_var("USERPROFILE"))
+            .map(|h| format!("{}/.miniR", h))
+            .unwrap_or_else(|| "/tmp/miniR".to_string())
     }
 
     /// Load a package namespace without attaching it to the search path.

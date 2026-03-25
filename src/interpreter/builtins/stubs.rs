@@ -3,16 +3,8 @@
 //! needed functions that don't warrant their own module.
 
 use crate::interpreter::value::*;
-use minir_macros::{builtin, stub_builtin};
-
-/// Emit a stub warning to stderr. These are diagnostic messages for
-/// developers, not R output, so they go directly to process stderr
-/// rather than through the session-scoped writer.
-macro_rules! stub_warn {
-    ($($arg:tt)*) => {
-        eprintln!("[miniR stub] {}", format!($($arg)*));
-    };
-}
+use crate::interpreter::BuiltinContext;
+use minir_macros::{builtin, interpreter_builtin, stub_builtin};
 
 // region: Package management stubs
 
@@ -107,9 +99,15 @@ fn builtin_get_class_def(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 /// @param signature character: method signature
 /// @return logical
 /// @namespace methods
-#[builtin(name = "hasMethod", namespace = "methods")]
-fn builtin_has_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("hasMethod() is a no-op in miniR — always returns FALSE");
+#[interpreter_builtin(name = "hasMethod", namespace = "methods")]
+fn interp_has_method(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] hasMethod() is a no-op in miniR — always returns FALSE\n");
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
@@ -118,9 +116,15 @@ fn builtin_has_method(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue
 /// @param Classes character vector of class names
 /// @return invisible NULL
 /// @namespace methods
-#[builtin(name = "setOldClass", namespace = "methods")]
-fn builtin_set_old_class(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("setOldClass() is a no-op in miniR");
+#[interpreter_builtin(name = "setOldClass", namespace = "methods")]
+fn interp_set_old_class(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] setOldClass() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
@@ -257,14 +261,47 @@ fn builtin_olson_names(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 
 /// Get a namespace environment by name (string → environment).
 ///
+/// Delegates to the same logic as `getNamespace()`: checks loaded namespaces,
+/// attempts to load unloaded namespaces, and falls back to the base environment
+/// for built-in namespaces.
+///
 /// @param ns character scalar: namespace name
 /// @return environment
 /// @namespace base
-#[builtin(name = "asNamespace", min_args = 1)]
-fn builtin_as_namespace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("asNamespace() is a stub in miniR — returns NULL (needs interpreter access for real lookup)");
-    let _ = args;
-    Ok(RValue::Null)
+#[interpreter_builtin(name = "asNamespace", min_args = 1)]
+fn interp_as_namespace(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ns = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace name".to_string()))?;
+
+    // Check loaded packages first
+    let loaded_ns = context.with_interpreter(|interp| {
+        interp
+            .loaded_namespaces
+            .borrow()
+            .get(&ns)
+            .map(|loaded| loaded.namespace_env.clone())
+    });
+
+    if let Some(env) = loaded_ns {
+        return Ok(RValue::Environment(env));
+    }
+
+    // Try to load the namespace if it's not already loaded
+    let loaded_env = context.with_interpreter(|interp| interp.load_namespace(&ns).ok());
+
+    if let Some(env) = loaded_env {
+        return Ok(RValue::Environment(env));
+    }
+
+    // Fall back to base env for builtin namespaces (base, utils, stats, etc.)
+    let env = context.with_interpreter(|interp| interp.base_env());
+    Ok(RValue::Environment(env))
 }
 
 /// Get the name of a namespace environment.
@@ -287,12 +324,43 @@ fn builtin_get_namespace_name(args: &[RValue], _: &[(String, RValue)]) -> Result
 
 /// Check if an object is a namespace environment.
 ///
+/// Returns TRUE if the object is an environment whose name starts with
+/// "namespace:" (indicating it was created by the package loader), or if it
+/// matches one of the loaded namespace environments in the interpreter's
+/// registry.
+///
 /// @param ns object to check
 /// @return logical
 /// @namespace base
-#[builtin(name = "isNamespace", min_args = 1)]
-fn builtin_is_namespace(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let is_ns = matches!(args.first(), Some(RValue::Environment(_)));
+#[interpreter_builtin(name = "isNamespace", min_args = 1)]
+fn interp_is_namespace(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let is_ns = match args.first() {
+        Some(RValue::Environment(env)) => {
+            // Check if the environment has a "namespace:" prefix in its name
+            let has_ns_name = env
+                .name()
+                .map(|n| n.starts_with("namespace:"))
+                .unwrap_or(false);
+
+            if has_ns_name {
+                true
+            } else {
+                // Check if the environment is in the loaded_namespaces registry
+                context.with_interpreter(|interp| {
+                    interp
+                        .loaded_namespaces
+                        .borrow()
+                        .values()
+                        .any(|loaded| loaded.namespace_env.ptr_eq(env))
+                })
+            }
+        }
+        _ => false,
+    };
     Ok(RValue::vec(Vector::Logical(vec![Some(is_ns)].into())))
 }
 
@@ -547,25 +615,43 @@ fn builtin_standard_generic(_args: &[RValue], _: &[(String, RValue)]) -> Result<
 
 /// setIs — define class inheritance relationship.
 /// @namespace methods
-#[builtin(name = "setIs", namespace = "methods")]
-fn builtin_set_is(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("setIs() is a no-op in miniR");
+#[interpreter_builtin(name = "setIs", namespace = "methods")]
+fn interp_set_is(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] setIs() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
 /// removeClass — remove a class definition.
 /// @namespace methods
-#[builtin(name = "removeClass", namespace = "methods")]
-fn builtin_remove_class(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("removeClass() is a no-op in miniR");
+#[interpreter_builtin(name = "removeClass", namespace = "methods")]
+fn interp_remove_class(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] removeClass() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
 /// resetGeneric — reset a generic function.
 /// @namespace methods
-#[builtin(name = "resetGeneric", namespace = "methods")]
-fn builtin_reset_generic(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("resetGeneric() is a no-op in miniR");
+#[interpreter_builtin(name = "resetGeneric", namespace = "methods")]
+fn interp_reset_generic(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] resetGeneric() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
@@ -579,18 +665,29 @@ fn builtin_encoding_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 
 /// bindtextdomain — bind a text domain for translations (no-op).
 /// @namespace base
-#[builtin(name = "bindtextdomain")]
-fn builtin_bindtextdomain(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("bindtextdomain() is a no-op in miniR — no i18n support");
+#[interpreter_builtin(name = "bindtextdomain")]
+fn interp_bindtextdomain(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] bindtextdomain() is a no-op in miniR — no i18n support\n");
     Ok(RValue::Null)
 }
 
 /// eapply — apply function over environment bindings.
 /// @namespace base
-#[builtin(name = "eapply", min_args = 2)]
-fn builtin_eapply(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("eapply() is a stub in miniR — returns empty list");
-    let _ = args;
+#[interpreter_builtin(name = "eapply", min_args = 2)]
+fn interp_eapply(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] eapply() is a stub in miniR — returns empty list\n");
     Ok(RValue::List(RList::new(vec![])))
 }
 
@@ -894,33 +991,57 @@ fn builtin_get_native_symbol_info(
 
 /// debugonce — set a one-time debug flag (no-op).
 /// @namespace base
-#[builtin(name = "debugonce")]
-fn builtin_debugonce(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("debugonce() is a no-op in miniR — no debugger");
+#[interpreter_builtin(name = "debugonce")]
+fn interp_debugonce(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] debugonce() is a no-op in miniR — no debugger\n");
     Ok(RValue::Null)
 }
 
 /// trace — set tracing on a function (no-op stub).
 /// @namespace base
-#[builtin(name = "trace")]
-fn builtin_trace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("trace() is a no-op in miniR — no debugger");
+#[interpreter_builtin(name = "trace")]
+fn interp_trace(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] trace() is a no-op in miniR — no debugger\n");
     Ok(RValue::Null)
 }
 
 /// untrace — remove tracing (no-op stub).
 /// @namespace base
-#[builtin(name = "untrace")]
-fn builtin_untrace(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("untrace() is a no-op in miniR — no debugger");
+#[interpreter_builtin(name = "untrace")]
+fn interp_untrace(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] untrace() is a no-op in miniR — no debugger\n");
     Ok(RValue::Null)
 }
 
 /// browseEnv — open environment browser (no-op stub).
 /// @namespace utils
-#[builtin(name = "browseEnv", namespace = "utils")]
-fn builtin_browse_env(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("browseEnv() is a no-op in miniR");
+#[interpreter_builtin(name = "browseEnv", namespace = "utils")]
+fn interp_browse_env(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] browseEnv() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
@@ -1005,9 +1126,15 @@ fn builtin_file_symlink(args: &[RValue], _: &[(String, RValue)]) -> Result<RValu
 
 /// Sys.chmod — change file permissions (Unix only).
 /// @namespace base
-#[builtin(name = "Sys.chmod", min_args = 1)]
-fn builtin_sys_chmod(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    stub_warn!("Sys.chmod() is a no-op in miniR");
+#[interpreter_builtin(name = "Sys.chmod", min_args = 1)]
+fn interp_sys_chmod(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context
+        .interpreter()
+        .write_stderr("[miniR stub] Sys.chmod() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 
