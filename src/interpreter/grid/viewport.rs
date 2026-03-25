@@ -5,7 +5,7 @@
 //! determines how child grobs are positioned and sized.
 
 use super::gpar::Gpar;
-use super::units::{Unit, UnitContext, UnitType};
+use super::units::{Unit, UnitContext};
 
 // region: Justification
 
@@ -183,9 +183,9 @@ pub struct ViewportStack {
 
 impl ViewportStack {
     /// Create a new viewport stack with a root viewport for the given device size.
-    pub fn new(device_width_cm: f64, device_height_cm: f64) -> Self {
+    pub fn new(viewport_width_cm: f64, viewport_height_cm: f64) -> Self {
         ViewportStack {
-            stack: vec![Viewport::root(device_width_cm, device_height_cm)],
+            stack: vec![Viewport::root(viewport_width_cm, viewport_height_cm)],
         }
     }
 
@@ -260,12 +260,10 @@ impl ViewportTransform {
     /// Compute the transform for a child viewport given its parent's transform.
     pub fn from_viewport(vp: &Viewport, parent: &ViewportTransform) -> Self {
         let ctx = UnitContext {
-            device_width_cm: parent.width_cm,
-            device_height_cm: parent.height_cm,
-            xscale: parent.xscale,
-            yscale: parent.yscale,
             viewport_width_cm: parent.width_cm,
             viewport_height_cm: parent.height_cm,
+            xscale: parent.xscale,
+            yscale: parent.yscale,
             fontsize_pt: 12.0,
             lineheight: 1.2,
         };
@@ -274,16 +272,8 @@ impl ViewportTransform {
         let vp_x = ctx.resolve_x(&vp.x, 0);
         let vp_y = ctx.resolve_y(&vp.y, 0);
 
-        let vp_width = if vp.width.unit_type == UnitType::Cm {
-            vp.width.value()
-        } else {
-            ctx.resolve_x(&vp.width, 0)
-        };
-        let vp_height = if vp.height.unit_type == UnitType::Cm {
-            vp.height.value()
-        } else {
-            ctx.resolve_y(&vp.height, 0)
-        };
+        let vp_width = ctx.resolve_x(&vp.width, 0);
+        let vp_height = ctx.resolve_y(&vp.height, 0);
 
         // Apply justification: the (x, y) is the justification point,
         // so we offset to get the bottom-left corner.
@@ -336,12 +326,10 @@ impl ViewportTransform {
     /// Build a UnitContext for resolving units within this viewport transform.
     pub fn unit_context(&self) -> UnitContext {
         UnitContext {
-            device_width_cm: self.width_cm,
-            device_height_cm: self.height_cm,
-            xscale: self.xscale,
-            yscale: self.yscale,
             viewport_width_cm: self.width_cm,
             viewport_height_cm: self.height_cm,
+            xscale: self.xscale,
+            yscale: self.yscale,
             fontsize_pt: 12.0,
             lineheight: 1.2,
         }

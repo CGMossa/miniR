@@ -91,6 +91,28 @@ impl Default for UnitContext {
     }
 }
 
+impl UnitContext {
+    /// Resolve a unit's i-th element along the x axis to cm.
+    pub fn resolve_x(&self, unit: &Unit, i: usize) -> f64 {
+        let idx = i % unit.values.len();
+        resolve_one(unit.values[idx], &unit.units[idx], self, Axis::X)
+    }
+
+    /// Resolve a unit's i-th element along the y axis to cm.
+    pub fn resolve_y(&self, unit: &Unit, i: usize) -> f64 {
+        let idx = i % unit.values.len();
+        resolve_one(unit.values[idx], &unit.units[idx], self, Axis::Y)
+    }
+
+    /// Resolve a unit's i-th element as a size (geometric mean of x/y) to cm.
+    pub fn resolve_size(&self, unit: &Unit, i: usize) -> f64 {
+        let idx = i % unit.values.len();
+        let x = resolve_one(unit.values[idx], &unit.units[idx], self, Axis::X);
+        let y = resolve_one(unit.values[idx], &unit.units[idx], self, Axis::Y);
+        (x.abs() * y.abs()).sqrt()
+    }
+}
+
 // endregion
 
 // region: Axis
@@ -162,6 +184,11 @@ impl Unit {
     /// Shorthand: null (flexible/proportional) unit.
     pub fn null(value: f64) -> Self {
         Unit::new(value, UnitType::Null)
+    }
+
+    /// Get the first scalar value (for simple single-value units like `unit(7, "cm")`).
+    pub fn value(&self) -> f64 {
+        *self.values.first().unwrap_or(&0.0)
     }
 
     /// Number of (value, type) pairs in this unit.
