@@ -1447,24 +1447,24 @@ impl AsciiWriter {
 
     /// Write a decimal integer on its own line.
     fn write_int(&mut self, val: i32) {
-        writeln!(self.buf, "{}", val).unwrap();
+        writeln!(self.buf, "{}", val).expect("Vec<u8> write");
     }
 
     /// Write a double in hex-float format (%a) on its own line.
     /// Special values: "NA", "Inf", "-Inf", "NaN".
     fn write_double(&mut self, val: f64) {
         if val.to_bits() == R_NA_REAL_BITS {
-            writeln!(self.buf, "NA").unwrap();
+            writeln!(self.buf, "NA").expect("Vec<u8> write");
         } else if val.is_infinite() {
             if val > 0.0 {
-                writeln!(self.buf, "Inf").unwrap();
+                writeln!(self.buf, "Inf").expect("Vec<u8> write");
             } else {
-                writeln!(self.buf, "-Inf").unwrap();
+                writeln!(self.buf, "-Inf").expect("Vec<u8> write");
             }
         } else if val.is_nan() {
-            writeln!(self.buf, "NaN").unwrap();
+            writeln!(self.buf, "NaN").expect("Vec<u8> write");
         } else {
-            writeln!(self.buf, "{}", format_hex_float(val)).unwrap();
+            writeln!(self.buf, "{}", format_hex_float(val)).expect("Vec<u8> write");
         }
     }
 
@@ -1581,7 +1581,7 @@ impl AsciiWriter {
                         for v in vals.iter() {
                             match v {
                                 Some(d) => self.write_double(*d),
-                                None => writeln!(self.buf, "NA").unwrap(),
+                                None => writeln!(self.buf, "NA").expect("Vec<u8> write"),
                             }
                         }
                     }
@@ -1595,8 +1595,8 @@ impl AsciiWriter {
                                     self.write_double(c.im);
                                 }
                                 None => {
-                                    writeln!(self.buf, "NA").unwrap();
-                                    writeln!(self.buf, "NA").unwrap();
+                                    writeln!(self.buf, "NA").expect("Vec<u8> write");
+                                    writeln!(self.buf, "NA").expect("Vec<u8> write");
                                 }
                             }
                         }
@@ -1613,13 +1613,15 @@ impl AsciiWriter {
                         self.write_length(bytes.len());
                         // Write as hex string
                         for byte in bytes {
-                            write!(self.buf, "{:02x}", byte).unwrap();
+                            write!(self.buf, "{:02x}", byte).expect("Vec<u8> write");
                         }
                         self.buf.push('\n');
                     }
                 }
                 if has_attr {
-                    self.write_attributes(rv.attrs.as_ref().unwrap());
+                    if let Some(attrs) = rv.attrs.as_ref() {
+                        self.write_attributes(attrs)
+                    };
                 }
             }
             RValue::List(list) => {
@@ -1686,25 +1688,25 @@ fn format_hex_float(val: f64) -> String {
         // Subnormal: 0x0.<mantissa>p-1022
         result.push_str("0x0.");
         // mantissa_bits is the fractional part * 2^52
-        write!(result, "{:013x}", mantissa_bits).unwrap();
+        write!(result, "{:013x}", mantissa_bits).expect("String write");
         // Trim trailing zeros
         let trimmed = result.trim_end_matches('0');
         let mut trimmed = trimmed.to_string();
         if trimmed.ends_with('.') {
             trimmed.push('0');
         }
-        write!(trimmed, "p-1022").unwrap();
+        write!(trimmed, "p-1022").expect("String write");
         trimmed
     } else {
         // Normal: 0x1.<mantissa>p<exp>
         let exponent = biased_exp - 1023;
         result.push_str("0x1.");
-        write!(result, "{:013x}", mantissa_bits).unwrap();
+        write!(result, "{:013x}", mantissa_bits).expect("String write");
         // Trim trailing zeros from the mantissa hex
         while result.ends_with('0') && !result.ends_with(".0") {
             result.pop();
         }
-        write!(result, "p{:+}", exponent).unwrap();
+        write!(result, "p{:+}", exponent).expect("String write");
         result
     }
 }
@@ -2000,7 +2002,9 @@ impl XdrWriter {
                     }
                 }
                 if has_attr {
-                    self.write_attributes(rv.attrs.as_ref().unwrap());
+                    if let Some(attrs) = rv.attrs.as_ref() {
+                        self.write_attributes(attrs)
+                    };
                 }
             }
             RValue::List(list) => {

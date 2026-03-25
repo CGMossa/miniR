@@ -479,7 +479,12 @@ fn builtin_read_parquet(
 
         // Concatenate the column values
         let combined = if col_values.len() == 1 {
-            col_values.into_iter().next().unwrap()
+            col_values.into_iter().next().ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Other,
+                    "empty column in parquet read".to_string(),
+                )
+            })?
         } else {
             concatenate_rvectors(col_values)?
         };

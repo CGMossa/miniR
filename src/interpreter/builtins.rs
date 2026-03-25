@@ -4247,7 +4247,7 @@ fn builtin_nrow(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     return Ok(RValue::vec(Vector::Integer(vec![dims[0]].into())));
                 }
             }
-            if has_class(args.first().unwrap(), "data.frame") {
+            if has_class(&args[0], "data.frame") {
                 if let Some(rn) = l.get_attr("row.names") {
                     return Ok(RValue::vec(Vector::Integer(
                         vec![Some(i64::try_from(rn.length())?)].into(),

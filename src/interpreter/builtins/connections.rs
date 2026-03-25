@@ -525,9 +525,16 @@ fn interp_read_lines(
     // File path reading — either from string argument or file connection.
     // Uses bstr to read raw bytes and handle mixed/non-UTF-8 encodings gracefully.
     let path = if is_connection(con_val) {
-        let id = connection_id(con_val).unwrap();
+        let id = connection_id(con_val).ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "invalid connection object".to_string(),
+            )
+        })?;
         let interp = context.interpreter();
-        let conn = interp.get_connection(id).unwrap();
+        let conn = interp.get_connection(id).ok_or_else(|| {
+            RError::new(RErrorKind::Argument, format!("connection {id} is not open"))
+        })?;
         conn.path.clone()
     } else {
         call_args.string("con", 0)?
