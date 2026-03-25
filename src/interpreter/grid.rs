@@ -1,12 +1,7 @@
-//! Grid graphics system — R's `grid` package unit system and graphical parameters.
+//! Grid graphics system — R's grid package data model.
 //!
-//! This module implements the core data structures from R's grid graphics:
-//! - `Unit` — flexible measurement system (npc, cm, inches, etc.)
-//! - `Gpar` — graphical parameter sets with inheritance
-//! - `Viewport` — coordinate system containers (stub)
-//! - `Grob` — graphical objects (stub)
-//! - `Display` — display list management (stub)
-//! - `Render` — rendering dispatch (stub)
+//! Provides viewports, grobs, a display list, and a renderer trait.
+//! This is the foundation for ggplot2-style layered graphics.
 
 pub mod display;
 pub mod gpar;
