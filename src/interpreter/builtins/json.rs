@@ -125,7 +125,10 @@ fn try_array_as_dataframe(arr: &[serde_json::Value]) -> Result<Option<RValue>, R
         if let serde_json::Value::Object(obj) = item {
             for key in &col_names {
                 let val = obj.get(key.as_str()).unwrap_or(&serde_json::Value::Null);
-                columns.get_mut(key.as_str()).unwrap().push(val);
+                columns
+                    .get_mut(key.as_str())
+                    .expect("key was inserted into columns map above")
+                    .push(val);
             }
         }
     }
@@ -508,7 +511,7 @@ fn vector_to_json(vec: &Vector) -> Result<serde_json::Value, RError> {
                 })
                 .collect();
             if arr.len() == 1 {
-                Ok(arr.into_iter().next().unwrap())
+                Ok(arr.into_iter().next().expect("vec has exactly one element"))
             } else {
                 Ok(serde_json::Value::Array(arr))
             }
@@ -516,7 +519,7 @@ fn vector_to_json(vec: &Vector) -> Result<serde_json::Value, RError> {
         Vector::Raw(v) => {
             let arr: Vec<serde_json::Value> = v.iter().map(|b| serde_json::json!(*b)).collect();
             if arr.len() == 1 {
-                Ok(arr.into_iter().next().unwrap())
+                Ok(arr.into_iter().next().expect("vec has exactly one element"))
             } else {
                 Ok(serde_json::Value::Array(arr))
             }
@@ -542,7 +545,10 @@ fn list_to_json(list: &RList) -> Result<serde_json::Value, RError> {
     if all_named {
         let mut map = serde_json::Map::new();
         for (name, value) in &list.values {
-            let key = name.as_ref().unwrap().clone();
+            let key = name
+                .as_ref()
+                .expect("all_named check guarantees name is Some")
+                .clone();
             map.insert(key, rvalue_to_json(value)?);
         }
         Ok(serde_json::Value::Object(map))

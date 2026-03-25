@@ -264,7 +264,9 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
                         // Directive complete
                         directives.push((
                             start_line,
-                            current_name.take().unwrap(),
+                            current_name
+                                .take()
+                                .expect("current_name is Some (checked above)"),
                             current_args.clone(),
                         ));
                         current_args.clear();
@@ -298,7 +300,9 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
                         if paren_depth == 0 {
                             directives.push((
                                 start_line,
-                                current_name.take().unwrap(),
+                                current_name
+                                    .take()
+                                    .expect("current_name is Some (just set above)"),
                                 current_args.clone(),
                             ));
                             current_args.clear();

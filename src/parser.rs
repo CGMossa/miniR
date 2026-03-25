@@ -18,6 +18,9 @@ pub fn parse_program(input: &str) -> Result<ast::Expr, Box<ParseError>> {
     let pairs =
         RParser::parse(Rule::program, input).map_err(|e| Box::new(convert_pest_error(e, input)))?;
 
-    let pair = pairs.into_iter().next().unwrap();
+    let pair = pairs
+        .into_iter()
+        .next()
+        .expect("successful parse always produces at least one pair");
     Ok(build_program(pair))
 }

@@ -194,7 +194,10 @@ fn token_length_at(source: &str, offset: usize) -> usize {
         return 0;
     }
 
-    let ch = remaining.chars().next().unwrap();
+    let ch = remaining
+        .chars()
+        .next()
+        .expect("non-empty string has a first char");
 
     // String literal — highlight the opening quote
     if ch == '"' || ch == '\'' {
@@ -268,7 +271,10 @@ fn classify_token(source: &str, offset: usize) -> String {
         return "end of input".to_string();
     }
 
-    let ch = remaining.chars().next().unwrap();
+    let ch = remaining
+        .chars()
+        .next()
+        .expect("non-empty string has a first char");
 
     // String literal
     if ch == '"' || ch == '\'' {

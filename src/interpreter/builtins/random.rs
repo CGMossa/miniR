@@ -877,7 +877,7 @@ fn weighted_sample_with_replacement(
         *last = 1.0;
     }
 
-    let dist = rand_distr::Uniform::new(0.0, 1.0).unwrap();
+    let dist = rand_distr::Uniform::new(0.0, 1.0).expect("valid uniform range");
     (0..size)
         .map(|_| {
             let u: f64 = dist.sample(rng);
@@ -901,7 +901,7 @@ fn weighted_sample_without_replacement(
         .zip(weights.iter().copied())
         .collect();
     let mut result = Vec::with_capacity(size);
-    let dist = rand_distr::Uniform::new(0.0, 1.0).unwrap();
+    let dist = rand_distr::Uniform::new(0.0, 1.0).expect("valid uniform range");
 
     for _ in 0..size {
         // Compute total weight of remaining items

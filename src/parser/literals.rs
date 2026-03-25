@@ -126,7 +126,10 @@ pub(super) fn parse_raw_string(pair: Pair<Rule>) -> Expr {
     let s = pair.as_str();
     // r"(...)" or R'(...)' etc — find the body between outer quotes
     // Also handles dash delimiters: r"---(text)---"
-    let quote_pos = s.find('"').or_else(|| s.find('\'')).unwrap();
+    let quote_pos = s
+        .find('"')
+        .or_else(|| s.find('\''))
+        .expect("raw string literal must contain a quote character");
     let inner = &s[quote_pos + 1..s.len() - 1]; // between outer quotes
 
     // Strip leading dashes, then the open delimiter, then trailing close + dashes

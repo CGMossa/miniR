@@ -4286,7 +4286,10 @@ fn builtin_ncol(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
                     return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
                 }
             }
-            if has_class(args.first().unwrap(), "data.frame") {
+            if has_class(
+                args.first().expect("min_args = 1 guarantees first arg"),
+                "data.frame",
+            ) {
                 return Ok(RValue::vec(Vector::Integer(
                     vec![Some(i64::try_from(l.values.len())?)].into(),
                 )));
@@ -4323,7 +4326,10 @@ fn builtin_nrow_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                 }
             }
             // Data frame: nrow = length of first column
-            if has_class(args.first().unwrap(), "data.frame") {
+            if has_class(
+                args.first().expect("min_args = 1 guarantees first arg"),
+                "data.frame",
+            ) {
                 if let Some(rn) = l.get_attr("row.names") {
                     return Ok(RValue::vec(Vector::Integer(
                         vec![Some(i64::try_from(rn.length())?)].into(),
@@ -4366,7 +4372,10 @@ fn builtin_ncol_safe(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
                     return Ok(RValue::vec(Vector::Integer(vec![dims[1]].into())));
                 }
             }
-            if has_class(args.first().unwrap(), "data.frame") {
+            if has_class(
+                args.first().expect("min_args = 1 guarantees first arg"),
+                "data.frame",
+            ) {
                 return Ok(RValue::vec(Vector::Integer(
                     vec![Some(i64::try_from(l.values.len())?)].into(),
                 )));

@@ -553,7 +553,9 @@ impl<'a> RdParser<'a> {
         let mut in_r_string: Option<char> = None;
 
         while !self.at_end() && depth > 0 {
-            let ch = self.peek().unwrap();
+            let ch = self
+                .peek()
+                .expect("not at end (checked by while condition)");
 
             // Inside an R string: consume chars, don't count braces.
             // Only the matching unescaped close quote exits string mode.
@@ -588,7 +590,9 @@ impl<'a> RdParser<'a> {
                 // inside comments like "# it's a test".
                 if ch == '#' {
                     while !self.at_end() {
-                        let c = self.peek().unwrap();
+                        let c = self
+                            .peek()
+                            .expect("not at end (checked by while condition)");
                         self.advance();
                         text.push(c);
                         if c == '\\' {
@@ -1019,7 +1023,9 @@ impl<'a> RdParser<'a> {
     /// Parse the top-level structure of an Rd file.
     fn parse_toplevel(&mut self, doc: &mut RdDoc) -> Result<(), RdError> {
         while !self.at_end() {
-            let ch = self.peek().unwrap();
+            let ch = self
+                .peek()
+                .expect("not at end (checked by while condition)");
 
             match ch {
                 '%' => {
@@ -1163,7 +1169,9 @@ impl<'a> RdParser<'a> {
         let start_line = self.line;
 
         while !self.at_end() && depth > 0 {
-            let ch = self.peek().unwrap();
+            let ch = self
+                .peek()
+                .expect("not at end (checked by while condition)");
 
             match ch {
                 '{' => {

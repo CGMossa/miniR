@@ -385,7 +385,10 @@ fn try_toml_array_as_dataframe(items: &[&toml_edit::Value]) -> Result<Option<RVa
     for col_name in &col_names {
         let vals: Vec<&toml_edit::Value> = tables
             .iter()
-            .map(|t| t.get(col_name.as_str()).unwrap())
+            .map(|t| {
+                t.get(col_name.as_str())
+                    .expect("key verified to exist in all tables")
+            })
             .collect();
         let col_value = coerce_toml_column(&vals)?;
         list_cols.push((Some(col_name.clone()), col_value));
@@ -438,7 +441,10 @@ fn array_of_tables_to_rvalue(aot: &toml_edit::ArrayOfTables) -> Result<RValue, R
         for col_name in &col_names {
             let vals: Vec<&toml_edit::Item> = tables
                 .iter()
-                .map(|t| t.get(col_name.as_str()).unwrap())
+                .map(|t| {
+                    t.get(col_name.as_str())
+                        .expect("key verified to exist in all tables")
+                })
                 .collect();
             let col_value = coerce_toml_item_column(&vals)?;
             list_cols.push((Some(col_name.clone()), col_value));

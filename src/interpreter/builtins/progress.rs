@@ -114,15 +114,15 @@ fn value_to_position(value: f64, min: f64, max: f64, total: u64) -> u64 {
 fn style_for(style: i64) -> ProgressStyle {
     match style {
         1 => ProgressStyle::with_template("  |{bar:50}|")
-            .unwrap()
+            .expect("valid progress template")
             .progress_chars("= "),
         // Style 2: no bar, just percentage
         2 => ProgressStyle::with_template("  {percent}%")
-            .unwrap()
+            .expect("valid progress template")
             .progress_chars("= "),
         // Style 3 (default): bar with percentage
         _ => ProgressStyle::with_template("  |{bar:50}| {percent}%")
-            .unwrap()
+            .expect("valid progress template")
             .progress_chars("= "),
     }
 }

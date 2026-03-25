@@ -388,7 +388,11 @@ fn eval_list_2d_index(
     if row_idx.is_none() {
         // No row subsetting — drop single column to vector if drop=TRUE
         if drop && col_idx.is_some() && selected_cols.len() == 1 {
-            return Ok(selected_cols.into_iter().next().unwrap().1);
+            return Ok(selected_cols
+                .into_iter()
+                .next()
+                .expect("selected_cols.len() == 1 guarantees an element")
+                .1);
         }
 
         let col_names: Vec<Option<String>> = selected_cols.iter().map(|(n, _)| n.clone()).collect();
