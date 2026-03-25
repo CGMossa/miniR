@@ -583,6 +583,7 @@ fn store_promise_exprs_from_args(params: &[Param], raw_args: &[Arg], call_env: &
 fn run_on_exit_handlers(interp: &Interpreter, call_env: &Environment) {
     let on_exit_exprs = call_env.take_on_exit();
     for expr in &on_exit_exprs {
-        let _ = interp.eval_in(expr, call_env);
+        // on.exit handlers run for side effects; errors are silently ignored (R semantics).
+        if interp.eval_in(expr, call_env).is_err() {}
     }
 }

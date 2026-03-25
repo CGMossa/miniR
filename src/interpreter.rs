@@ -304,7 +304,8 @@ impl Drop for Interpreter {
         for f in &finalizers {
             // Best-effort: errors during finalizer execution are silently ignored,
             // matching R's behavior for on-exit finalizers.
-            let _ = self.call_function(f, &[RValue::Environment(env.clone())], &[], &env);
+            self.call_function(f, &[RValue::Environment(env.clone())], &[], &env)
+                .ok();
         }
     }
 }
@@ -616,12 +617,14 @@ impl Interpreter {
 
     /// Write a message to the interpreter's stdout writer.
     pub(crate) fn write_stdout(&self, msg: &str) {
-        let _ = self.stdout.borrow_mut().write_all(msg.as_bytes());
+        // I/O errors on stdout/stderr are non-fatal — the interpreter continues.
+        // Propagating would require every print/cat/message call to handle io::Error.
+        if self.stdout.borrow_mut().write_all(msg.as_bytes()).is_err() {}
     }
 
     /// Write a message to the interpreter's stderr writer.
     pub(crate) fn write_stderr(&self, msg: &str) {
-        let _ = self.stderr.borrow_mut().write_all(msg.as_bytes());
+        if self.stderr.borrow_mut().write_all(msg.as_bytes()).is_err() {}
     }
 
     /// Whether colored stderr output is enabled for this interpreter.
@@ -669,7 +672,7 @@ impl Interpreter {
         } else {
             format!("{}", msg.with(color))
         };
-        let _ = self.stderr.borrow_mut().write_all(styled.as_bytes());
+        self.stderr.borrow_mut().write_all(styled.as_bytes()).ok();
         true
     }
 

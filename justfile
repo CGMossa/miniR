@@ -272,3 +272,7 @@ update-cran-test-packages:
     done
 
     echo -e "\nDone. $((N-FAIL))/$N packages ($FAIL failed)."
+
+# Refresh the curated example datasets bundle from the original publishers
+update-datasets:
+    ./scripts/update-datasets.sh

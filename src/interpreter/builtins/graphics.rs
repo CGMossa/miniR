@@ -188,14 +188,11 @@ pub fn flush_plot(interp: &crate::interpreter::Interpreter) {
         {
             let tx = interp.plot_tx.borrow();
             if let Some(tx) = tx.as_ref() {
-                let _ = tx
-                    .send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state));
+                tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state));
             }
         }
         #[cfg(not(feature = "plot"))]
-        {
-            let _ = plot_state;
-        }
+        drop(plot_state);
         *interp.current_plot.borrow_mut() = None;
     }
 }
@@ -435,7 +432,7 @@ fn interp_dev_off(
     {
         let tx = context.interpreter().plot_tx.borrow();
         if let Some(tx) = tx.as_ref() {
-            let _ = tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Close);
+            drop(tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Close));
         }
     }
     // Clear any accumulated plot data

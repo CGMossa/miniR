@@ -365,7 +365,7 @@ fn interp_close(
     match kind {
         ConnectionKind::TcpClient => {
             if let Some(stream) = interp.take_tcp_stream(id) {
-                let _ = stream.shutdown(Shutdown::Both);
+                drop(stream.shutdown(Shutdown::Both));
             }
         }
         #[cfg(feature = "tls")]
@@ -963,7 +963,7 @@ fn interp_close_socket(
 
     // Shut down and remove the TCP stream.
     if let Some(stream) = interp.take_tcp_stream(id) {
-        let _ = stream.shutdown(Shutdown::Both);
+        drop(stream.shutdown(Shutdown::Both));
     }
 
     interp.with_connection_mut(id, |conn| {

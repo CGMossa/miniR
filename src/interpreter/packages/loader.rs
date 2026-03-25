@@ -218,7 +218,7 @@ impl Interpreter {
             }
             // Silently skip unresolvable imports for now — they may be
             // packages we can't load (native deps, etc.)
-            let _ = self.load_namespace(&dep.package);
+            self.load_namespace(&dep.package)?;
         }
 
         // Load Depends (non-R) namespaces too
@@ -226,7 +226,7 @@ impl Interpreter {
             if dep.package == "R" || is_base_package(&dep.package) {
                 continue;
             }
-            let _ = self.load_namespace(&dep.package);
+            self.load_namespace(&dep.package)?;
         }
 
         // Create namespace environment with base env as parent
@@ -274,8 +274,7 @@ impl Interpreter {
                 .to_string();
             let lib_val = RValue::vec(Vector::Character(vec![Some(lib_path_str)].into()));
             let pkg_val = RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into()));
-            // Best-effort: ignore errors from .onLoad
-            let _ = self.call_function(&on_load, &[lib_val, pkg_val], &[], &namespace_env);
+            self.call_function(&on_load, &[lib_val, pkg_val], &[], &namespace_env)?;
         }
 
         Ok(namespace_env)
@@ -540,10 +539,15 @@ impl Interpreter {
         self.global_env.set_parent(Some(loaded.exports_env.clone()));
 
         // Add to search path list
-        self.search_path.borrow_mut().push(SearchPathEntry {
-            name: entry_name,
-            env: loaded.exports_env.clone(),
-        });
+        // Insert at front — newest package is searched first, matching the
+        // environment chain where we inserted between global and its old parent.
+        self.search_path.borrow_mut().insert(
+            0,
+            SearchPathEntry {
+                name: entry_name,
+                env: loaded.exports_env.clone(),
+            },
+        );
 
         // Call .onAttach() if it exists
         let namespace_env = loaded.namespace_env.clone();
@@ -557,7 +561,7 @@ impl Interpreter {
             let lib_val = RValue::vec(Vector::Character(vec![Some(lib_path_str)].into()));
             let pkg_val = RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into()));
             // Best-effort: ignore errors from .onAttach
-            let _ = self.call_function(&on_attach, &[lib_val, pkg_val], &[], &namespace_env);
+            self.call_function(&on_attach, &[lib_val, pkg_val], &[], &namespace_env)?;
         }
 
         Ok(())

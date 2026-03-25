@@ -44,7 +44,7 @@ fn eprint_colored(msg: &str) {
         use std::io::{IsTerminal, Write};
         if std::io::stderr().is_terminal() {
             let styled = msg.with(Color::Red).attribute(Attribute::Bold);
-            let _ = write!(std::io::stderr(), "{styled}");
+            write!(std::io::stderr(), "{styled}").ok();
             return;
         }
     }
@@ -66,7 +66,7 @@ fn generate_docs(dir: &str) {
 
 fn run_expr(source: &str) {
     let mut session = Session::new();
-    let _ = session.install_signal_handler();
+    session.install_signal_handler().ok(); // best-effort: REPL works without signals
     match session.eval_source(source) {
         Ok(result) => {
             if result.visible {
@@ -82,7 +82,7 @@ fn run_expr(source: &str) {
 
 fn run_file(filename: &str) {
     let mut session = Session::new();
-    let _ = session.install_signal_handler();
+    session.install_signal_handler().ok();
     match session.eval_file(filename) {
         Ok(_) => {}
         Err(e) => {
@@ -118,10 +118,10 @@ Type 'q()' to quit.
         // Run egui event loop on main thread (blocks until closed).
         // When the REPL thread exits (q()), the sender drops, and the
         // event loop will eventually exit too.
-        let _ = r::interpreter::graphics::egui_device::run_plot_event_loop(rx);
+        r::interpreter::graphics::egui_device::run_plot_event_loop(rx).ok();
 
         // Wait for REPL thread to finish
-        let _ = repl_thread.join();
+        repl_thread.join().ok();
     }
 
     #[cfg(not(feature = "plot"))]
@@ -158,7 +158,7 @@ fn repl_loop_inner(_: ()) {
 }
 
 fn repl_main(session: &mut Session) {
-    let _ = session.install_signal_handler();
+    session.install_signal_handler().ok();
 
     // Persistent history
     let history_path = env::var("MINIR_HISTFILE")

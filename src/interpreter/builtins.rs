@@ -3487,7 +3487,7 @@ fn interp_require(
 
     let result = context.with_interpreter(|interp| match interp.load_namespace(&pkg) {
         Ok(_) => {
-            let _ = interp.attach_package(&pkg);
+            interp.attach_package(&pkg).map_err(RError::from)?;
             Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
         }
         Err(_) => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),

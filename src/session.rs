@@ -176,7 +176,7 @@ impl Session {
         self.interpreter
             .global_env
             .set(".miniR.auto_print_value".to_string(), value.clone());
-        let _ = self.eval_source(print_code);
+        self.eval_source(print_code).ok();
         self.interpreter
             .global_env
             .remove(".miniR.auto_print_value");

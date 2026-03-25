@@ -106,7 +106,7 @@ fn tls_client_config() -> Result<Arc<rustls::ClientConfig>, RError> {
     for cert in cert_result.certs {
         // Ignore individual cert errors — some system certs may be
         // unparseable but that shouldn't block the whole store.
-        let _ = root_store.add(cert);
+        drop(root_store.add(cert));
     }
 
     // If no system certs loaded, use Mozilla roots as fallback.

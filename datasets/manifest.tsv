@@ -1,0 +1,7 @@
+name	local_file	license	source_page	source_data	citation_or_project
+iris	data/iris.csv	CC BY 4.0	https://archive.ics.uci.edu/dataset/53/iris	https://archive.ics.uci.edu/static/public/53/iris.zip	https://doi.org/10.24432/C56C76
+wine	data/wine.csv	CC BY 4.0	https://archive.ics.uci.edu/dataset/109/wine	https://archive.ics.uci.edu/static/public/109/wine.zip	https://doi.org/10.24432/C5PC7J
+auto_mpg	data/auto_mpg.csv	CC BY 4.0	https://archive.ics.uci.edu/dataset/9/auto	https://archive.ics.uci.edu/static/public/9/auto%2Bmpg.zip	https://doi.org/10.24432/C5859H
+abalone	data/abalone.csv	CC BY 4.0	https://archive.ics.uci.edu/dataset/1/abalone	https://archive.ics.uci.edu/static/public/1/abalone.zip	https://doi.org/10.24432/C55C7W
+breast_cancer_wisconsin_diagnostic	data/breast_cancer_wisconsin_diagnostic.csv	CC BY 4.0	https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic	https://archive.ics.uci.edu/static/public/17/breast%2Bcancer%2Bwisconsin%2Bdiagnostic.zip	https://doi.org/10.24432/C5DW2B
+penguins	data/penguins.csv	CC0 1.0	https://allisonhorst.github.io/palmerpenguins/	https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/inst/extdata/penguins.csv	https://doi.org/10.5281/zenodo.3960218

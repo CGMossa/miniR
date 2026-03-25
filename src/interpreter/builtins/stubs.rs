@@ -40,8 +40,7 @@ fn builtin_dot_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 /// @return error
 /// @namespace base
 #[builtin(name = ".Internal")]
-fn builtin_dot_internal(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let _ = args;
+fn builtin_dot_internal(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Err(RError::new(
         RErrorKind::Other,
         ".Internal() is not available in miniR".to_string(),
@@ -172,11 +171,10 @@ fn builtin_defunct(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
 /// @namespace base
 #[builtin(name = "packageStartupMessage")]
 fn builtin_package_startup_message(
-    args: &[RValue],
+    _args: &[RValue],
     _: &[(String, RValue)],
 ) -> Result<RValue, RError> {
     // Silently ignored — startup messages are informational only
-    let _ = args;
     Ok(RValue::Null)
 }
 
