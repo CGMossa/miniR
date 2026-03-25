@@ -261,7 +261,7 @@ impl eframe::App for PlotApp {
         }
 
         // Check for messages from the REPL thread (non-blocking).
-        let rx = self.rx.lock().unwrap();
+        let rx = self.rx.lock().expect("plot channel mutex poisoned");
         while let Ok(msg) = rx.try_recv() {
             let was_empty = self.tabs.is_empty();
             match msg {

@@ -537,7 +537,11 @@ fn interp_par(
         Ok(RValue::List(RList::new(vec![])))
     } else if result_entries.len() == 1 && args.len() == 1 && named.is_empty() {
         // When querying a single parameter by name, return just the value (not a list)
-        Ok(result_entries.into_iter().next().unwrap().1)
+        Ok(result_entries
+            .into_iter()
+            .next()
+            .expect("len() == 1 guarantees next()")
+            .1)
     } else {
         Ok(RValue::List(RList::new(result_entries)))
     }

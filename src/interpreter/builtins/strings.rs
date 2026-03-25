@@ -1770,7 +1770,7 @@ fn builtin_strsplit(args: &[RValue], named: &[(String, RValue)]) -> Result<RValu
                         // Regex split
                         let pieces: Vec<Option<String>> = re
                             .as_ref()
-                            .unwrap()
+                            .expect("regex compiled successfully above")
                             .split(&s)
                             .map(|p| Some(p.to_string()))
                             .collect();
