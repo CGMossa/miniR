@@ -256,6 +256,10 @@ pub struct Interpreter {
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
     /// Graphics parameters (par state) — per-interpreter, not global.
     pub(crate) par_state: RefCell<graphics::par::ParState>,
+    /// Grid graphics display list — records grob objects drawn on the page.
+    pub(crate) grid_display_list: RefCell<Vec<RValue>>,
+    /// Grid viewport stack — tracks pushed viewports for grid graphics.
+    pub(crate) grid_viewport_stack: RefCell<Vec<RValue>>,
     /// Color palette for indexed color access (e.g. col=1 means palette[0]).
     pub(crate) color_palette: RefCell<Vec<graphics::color::RColor>>,
     /// Current plot being accumulated (for egui_plot rendering).
@@ -414,6 +418,8 @@ impl Interpreter {
             #[cfg(feature = "progress")]
             progress_bars: RefCell::new(Vec::new()),
             par_state: RefCell::new(graphics::par::ParState::default()),
+            grid_display_list: RefCell::new(Vec::new()),
+            grid_viewport_stack: RefCell::new(Vec::new()),
             color_palette: RefCell::new(graphics::color::default_palette()),
             current_plot: RefCell::new(None),
             file_device: RefCell::new(None),
