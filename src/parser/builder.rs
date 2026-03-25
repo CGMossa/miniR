@@ -53,7 +53,10 @@ pub(super) fn build_program(pair: Pair<Rule>) -> Expr {
         }
     }
     if exprs.len() == 1 {
-        exprs.into_iter().next().unwrap()
+        exprs
+            .into_iter()
+            .next()
+            .expect("parser: single-expr program should have one element")
     } else {
         Expr::Program(exprs)
     }
@@ -61,7 +64,11 @@ pub(super) fn build_program(pair: Pair<Rule>) -> Expr {
 
 pub(super) fn build_expr(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
-        Rule::expr => build_expr(pair.into_inner().next().unwrap()),
+        Rule::expr => build_expr(
+            pair.into_inner()
+                .next()
+                .expect("parser: expr should have inner expression"),
+        ),
         Rule::help_expr => build_help(pair),
         Rule::assign_eq_expr => build_assign_eq(pair),
         Rule::walrus_expr => build_walrus(pair),
@@ -116,7 +123,9 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Expr {
 
 fn build_help(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let first = inner.next().unwrap();
+    let first = inner
+        .next()
+        .expect("parser: help_expr should have at least one child");
     if first.as_rule() == Rule::help_expr {
         // Unary: "?foo" -> help("foo")
         let topic = extract_help_topic(&first);
@@ -172,12 +181,20 @@ fn extract_help_topic(pair: &Pair<Rule>) -> String {
 
 fn build_assign_eq(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let lhs = build_expr(inner.next().unwrap());
+    let lhs = build_expr(
+        inner
+            .next()
+            .expect("parser: assign_eq_expr should have LHS"),
+    );
     match inner.next() {
         None => lhs,
         Some(op_pair) => {
             assert!(op_pair.as_rule() == Rule::eq_assign_op);
-            let rhs = build_expr(inner.next().unwrap());
+            let rhs = build_expr(
+                inner
+                    .next()
+                    .expect("parser: assign_eq_expr should have RHS after '='"),
+            );
             Expr::Assign {
                 op: AssignOp::Equals,
                 target: Box::new(lhs),
@@ -189,12 +206,16 @@ fn build_assign_eq(pair: Pair<Rule>) -> Expr {
 
 fn build_walrus(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let lhs = build_expr(inner.next().unwrap());
+    let lhs = build_expr(inner.next().expect("parser: walrus_expr should have LHS"));
     match inner.next() {
         None => lhs,
         Some(op_pair) => {
             assert!(op_pair.as_rule() == Rule::walrus_assign_op);
-            let rhs = build_expr(inner.next().unwrap());
+            let rhs = build_expr(
+                inner
+                    .next()
+                    .expect("parser: walrus_expr should have RHS after ':='"),
+            );
             Expr::BinaryOp {
                 op: BinaryOp::Special(SpecialOp::Walrus),
                 lhs: Box::new(lhs),
@@ -206,7 +227,11 @@ fn build_walrus(pair: Pair<Rule>) -> Expr {
 
 fn build_assign_left(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let lhs = build_expr(inner.next().unwrap());
+    let lhs = build_expr(
+        inner
+            .next()
+            .expect("parser: assign_left_expr should have LHS"),
+    );
     match inner.next() {
         None => lhs,
         Some(op_pair) => {
@@ -215,7 +240,11 @@ fn build_assign_left(pair: Pair<Rule>) -> Expr {
                 "<<-" => AssignOp::SuperAssign,
                 _ => unreachable!(),
             };
-            let rhs = build_expr(inner.next().unwrap());
+            let rhs = build_expr(
+                inner
+                    .next()
+                    .expect("parser: assign_left_expr should have RHS after '<-'/'<<-'"),
+            );
             Expr::Assign {
                 op,
                 target: Box::new(lhs),
@@ -227,14 +256,22 @@ fn build_assign_left(pair: Pair<Rule>) -> Expr {
 
 fn build_assign_right(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let mut result = build_expr(inner.next().unwrap());
+    let mut result = build_expr(
+        inner
+            .next()
+            .expect("parser: assign_right_expr should have LHS"),
+    );
     while let Some(op_pair) = inner.next() {
         let op = match op_pair.as_str() {
             "->" => AssignOp::RightAssign,
             "->>" => AssignOp::RightSuperAssign,
             _ => unreachable!(),
         };
-        let target = build_expr(inner.next().unwrap());
+        let target = build_expr(
+            inner
+                .next()
+                .expect("parser: assign_right_expr should have target after '->'/'->>'"),
+        );
         result = Expr::Assign {
             op,
             target: Box::new(target),
@@ -250,7 +287,9 @@ fn build_assign_right(pair: Pair<Rule>) -> Expr {
 
 fn build_formula(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let first = inner.next().unwrap();
+    let first = inner
+        .next()
+        .expect("parser: formula_expr should have at least one child");
 
     if first.as_rule() == Rule::formula_expr {
         // Unary formula: "~" ~ formula_expr
@@ -264,7 +303,11 @@ fn build_formula(pair: Pair<Rule>) -> Expr {
         match inner.next() {
             None => lhs,
             Some(op_pair) => {
-                let rhs = build_expr(inner.next().unwrap());
+                let rhs = build_expr(
+                    inner
+                        .next()
+                        .expect("parser: formula_expr should have RHS after tilde op"),
+                );
                 let remaining: Vec<_> = inner.collect();
 
                 if op_pair.as_rule() == Rule::tilde_op
@@ -285,7 +328,11 @@ fn build_formula(pair: Pair<Rule>) -> Expr {
 
                 let mut remaining = remaining.into_iter();
                 while let Some(next_op) = remaining.next() {
-                    let next_rhs = build_expr(remaining.next().unwrap());
+                    let next_rhs = build_expr(
+                        remaining
+                            .next()
+                            .expect("parser: chained tilde should have RHS after operator"),
+                    );
                     expr = Expr::BinaryOp {
                         op: map_tilde_op(&next_op),
                         lhs: Box::new(expr),
@@ -313,10 +360,18 @@ fn map_tilde_op(pair: &Pair<Rule>) -> BinaryOp {
 
 fn build_binary_left(pair: Pair<Rule>, map_op: impl Fn(&Pair<Rule>) -> BinaryOp) -> Expr {
     let mut inner = pair.into_inner();
-    let mut lhs = build_expr(inner.next().unwrap());
+    let mut lhs = build_expr(
+        inner
+            .next()
+            .expect("parser: binary expression should have LHS"),
+    );
     while let Some(op_pair) = inner.next() {
         let op = map_op(&op_pair);
-        let rhs = build_expr(inner.next().unwrap());
+        let rhs = build_expr(
+            inner
+                .next()
+                .expect("parser: binary expression should have RHS after operator"),
+        );
         lhs = Expr::BinaryOp {
             op,
             lhs: Box::new(lhs),
@@ -328,7 +383,7 @@ fn build_binary_left(pair: Pair<Rule>, map_op: impl Fn(&Pair<Rule>) -> BinaryOp)
 
 fn build_not(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let first = inner.next().unwrap();
+    let first = inner.next().expect("parser: not_expr should have operand");
     if first.as_rule() == Rule::compare_expr {
         build_expr(first)
     } else {
@@ -343,7 +398,11 @@ fn build_not(pair: Pair<Rule>) -> Expr {
 
 fn build_special_pipe(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let mut lhs = build_expr(inner.next().unwrap());
+    let mut lhs = build_expr(
+        inner
+            .next()
+            .expect("parser: special_pipe_expr should have LHS"),
+    );
     while let Some(op_pair) = inner.next() {
         let op = match op_pair.as_rule() {
             Rule::pipe_op => BinaryOp::Pipe,
@@ -357,7 +416,11 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
             },
             _ => unreachable!(),
         };
-        let rhs = build_expr(inner.next().unwrap());
+        let rhs = build_expr(
+            inner
+                .next()
+                .expect("parser: special/pipe expression should have RHS after operator"),
+        );
         lhs = Expr::BinaryOp {
             op,
             lhs: Box::new(lhs),
@@ -369,7 +432,7 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
 
 fn build_colon(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let mut lhs = build_expr(inner.next().unwrap());
+    let mut lhs = build_expr(inner.next().expect("parser: colon_expr should have LHS"));
     for rhs_pair in inner {
         lhs = Expr::BinaryOp {
             op: BinaryOp::Range,
@@ -382,7 +445,9 @@ fn build_colon(pair: Pair<Rule>) -> Expr {
 
 fn build_unary(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let first = inner.next().unwrap();
+    let first = inner
+        .next()
+        .expect("parser: unary_expr should have operator or operand");
     match first.as_rule() {
         Rule::unary_op => {
             let op = match first.as_str() {
@@ -390,7 +455,11 @@ fn build_unary(pair: Pair<Rule>) -> Expr {
                 "+" => UnaryOp::Pos,
                 _ => unreachable!(),
             };
-            let operand = build_expr(inner.next().unwrap());
+            let operand = build_expr(
+                inner
+                    .next()
+                    .expect("parser: unary_expr should have operand after unary operator"),
+            );
             Expr::UnaryOp {
                 op,
                 operand: Box::new(operand),
@@ -410,13 +479,19 @@ fn build_unary(pair: Pair<Rule>) -> Expr {
 
 fn build_power(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let base = build_expr(inner.next().unwrap());
+    let base = build_expr(
+        inner
+            .next()
+            .expect("parser: power_expr should have base expression"),
+    );
     // Skip the power_op token if present
     match inner.next() {
         None => base,
         Some(next) => {
             let rhs_pair = if next.as_rule() == Rule::power_op {
-                inner.next().unwrap()
+                inner
+                    .next()
+                    .expect("parser: power_expr should have exponent after '^'/'**'")
             } else {
                 next
             };
@@ -435,7 +510,11 @@ fn build_power(pair: Pair<Rule>) -> Expr {
 
 fn build_postfix_expr(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let mut expr = build_expr(inner.next().unwrap());
+    let mut expr = build_expr(
+        inner
+            .next()
+            .expect("parser: postfix_expr should have base expression"),
+    );
     for suffix in inner {
         expr = build_postfix_suffix(expr, suffix);
     }
@@ -445,7 +524,9 @@ fn build_postfix_expr(pair: Pair<Rule>) -> Expr {
 fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
     // Unwrap postfix_suffix wrapper if present
     let pair = if pair.as_rule() == Rule::postfix_suffix {
-        pair.into_inner().next().unwrap()
+        pair.into_inner()
+            .next()
+            .expect("parser: postfix_suffix should have inner suffix kind")
     } else {
         pair
     };
@@ -484,7 +565,10 @@ fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
             }
         }
         Rule::dollar_suffix => {
-            let inner = pair.into_inner().next().unwrap();
+            let inner = pair
+                .into_inner()
+                .next()
+                .expect("parser: dollar_suffix should have member name");
             let name = match inner.as_rule() {
                 Rule::dots => "...".to_string(),
                 _ => parse_ident_or_string(inner),
@@ -495,7 +579,10 @@ fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
             }
         }
         Rule::slot_suffix => {
-            let inner = pair.into_inner().next().unwrap();
+            let inner = pair
+                .into_inner()
+                .next()
+                .expect("parser: slot_suffix should have slot name");
             let name = parse_ident_str(inner);
             Expr::Slot {
                 object: Box::new(object),
@@ -508,13 +595,21 @@ fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
 
 fn build_namespace_expr(pair: Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    let mut expr = build_expr(inner.next().unwrap());
+    let mut expr = build_expr(
+        inner
+            .next()
+            .expect("parser: namespace_expr should have base expression"),
+    );
     for suffix in inner {
         if suffix.as_rule() == Rule::namespace_suffix {
             let mut ns_inner = suffix.into_inner();
-            let op_pair = ns_inner.next().unwrap(); // namespace_op
+            let op_pair = ns_inner
+                .next()
+                .expect("parser: namespace_suffix should have '::' or ':::'");
             let op_str = op_pair.as_str();
-            let name_pair = ns_inner.next().unwrap();
+            let name_pair = ns_inner
+                .next()
+                .expect("parser: namespace_suffix should have name after '::'/':::'");
             let name = parse_ident_or_string(name_pair);
             expr = if op_str == ":::" {
                 Expr::NsGetInt {
@@ -538,7 +633,10 @@ fn build_namespace_expr(pair: Pair<Rule>) -> Expr {
 
 fn build_primary(pair: Pair<Rule>) -> Expr {
     let pair = match pair.as_rule() {
-        Rule::primary_expr | Rule::keyword_constant => pair.into_inner().next().unwrap(),
+        Rule::primary_expr | Rule::keyword_constant => pair
+            .into_inner()
+            .next()
+            .expect("parser: primary_expr/keyword_constant should have inner content"),
         _ => pair,
     };
 
@@ -618,7 +716,7 @@ fn build_primary(pair: Pair<Rule>) -> Expr {
             let inner = pair
                 .into_inner()
                 .find(|p| p.as_rule() == Rule::expr)
-                .unwrap();
+                .expect("parser: paren_expr should contain an expression");
             build_expr(inner)
         }
         _ => build_expr(pair),
@@ -709,7 +807,9 @@ fn build_param_list(pair: Pair<Rule>) -> Vec<Param> {
         .filter(|p| p.as_rule() == Rule::param)
         .map(|p| {
             let mut inner = p.into_inner();
-            let first = inner.next().unwrap();
+            let first = inner
+                .next()
+                .expect("parser: param should have name or dots");
             if first.as_rule() == Rule::dots {
                 Param {
                     name: "...".to_string(),
@@ -788,7 +888,10 @@ fn build_sub_list(pair: Pair<Rule>) -> Vec<Arg> {
 
 /// Shared logic for both call args and index args — structurally identical.
 fn build_arg_or_sub(pair: Pair<Rule>) -> Arg {
-    let inner_pair = pair.into_inner().next().unwrap();
+    let inner_pair = pair
+        .into_inner()
+        .next()
+        .expect("parser: arg/sub should have content");
     match inner_pair.as_rule() {
         Rule::named_arg | Rule::named_sub_arg => build_named_arg(inner_pair),
         _ => Arg {
@@ -800,10 +903,15 @@ fn build_arg_or_sub(pair: Pair<Rule>) -> Arg {
 
 fn build_named_arg(pair: Pair<Rule>) -> Arg {
     let mut inner = pair.into_inner();
-    let name_pair = inner.next().unwrap(); // arg_name
+    let name_pair = inner
+        .next()
+        .expect("parser: named_arg should have arg name");
     let name = match name_pair.as_rule() {
         Rule::arg_name => {
-            let inner_name = name_pair.into_inner().next().unwrap();
+            let inner_name = name_pair
+                .into_inner()
+                .next()
+                .expect("parser: arg_name should have identifier, string, or dots");
             match inner_name.as_rule() {
                 Rule::dots => "...".to_string(),
                 Rule::dotdot => inner_name.as_str().to_string(),
