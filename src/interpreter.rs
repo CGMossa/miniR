@@ -7,6 +7,7 @@ pub mod coerce;
 mod control_flow;
 pub mod environment;
 pub mod graphics;
+pub mod grid;
 pub(crate) mod indexing;
 mod ops;
 pub mod packages;
