@@ -302,10 +302,15 @@ fn resolve_one(value: f64, unit_type: &UnitType, ctx: &UnitContext, axis: Axis) 
             // Rough estimate: string height is ~1.0 * fontsize in points
             ctx.fontsize_pt / 72.0 * 2.54
         }
-        UnitType::GrobWidth(_) | UnitType::GrobHeight(_) => {
+        UnitType::GrobWidth(_) => {
             // Grob dimensions require looking up the grob by name and measuring it.
-            // This is not yet implemented; return 0 as a stub.
-            0.0
+            // Estimate: typical grob is ~3cm wide (text label at default font).
+            // Full implementation needs GrobStore access which isn't available here.
+            value * 3.0
+        }
+        UnitType::GrobHeight(_) => {
+            // Estimate: typical grob is ~1cm tall (single line of text).
+            value * 1.0
         }
     }
 }
