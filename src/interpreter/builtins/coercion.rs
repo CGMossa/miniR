@@ -123,12 +123,12 @@ fn builtin_as_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     .map(|&x| (None, RValue::vec(Vector::Raw(vec![x]))))
                     .collect(),
                 Vector::Double(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Double(vec![*x].into()))))
+                    .iter_opt()
+                    .map(|x| (None, RValue::vec(Vector::Double(vec![x].into()))))
                     .collect(),
                 Vector::Integer(vals) => vals
-                    .iter()
-                    .map(|x| (None, RValue::vec(Vector::Integer(vec![*x].into()))))
+                    .iter_opt()
+                    .map(|x| (None, RValue::vec(Vector::Integer(vec![x].into()))))
                     .collect(),
                 Vector::Logical(vals) => vals
                     .iter()

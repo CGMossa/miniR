@@ -119,11 +119,11 @@ fn format_column_values(v: &Vector, nrow: usize) -> Vec<String> {
                     Some(false) => "FALSE".to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Integer(vals) => match vals[i] {
+                Vector::Integer(vals) => match vals.get_opt(i) {
                     Some(n) => n.to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Double(vals) => match vals[i] {
+                Vector::Double(vals) => match vals.get_opt(i) {
                     Some(f) => format_r_double(f),
                     None => "NA".to_string(),
                 },

@@ -500,18 +500,18 @@ fn filter_non_na(v: &Vector, na_flags: &[bool]) -> Vector {
                 .into(),
         ),
         Vector::Integer(vals) => Vector::Integer(
-            vals.iter()
+            vals.iter_opt()
                 .zip(na_flags)
                 .filter(|(_, &is_na)| !is_na)
-                .map(|(x, _)| *x)
+                .map(|(x, _)| x)
                 .collect::<Vec<_>>()
                 .into(),
         ),
         Vector::Double(vals) => Vector::Double(
-            vals.iter()
+            vals.iter_opt()
                 .zip(na_flags)
                 .filter(|(_, &is_na)| !is_na)
-                .map(|(x, _)| *x)
+                .map(|(x, _)| x)
                 .collect::<Vec<_>>()
                 .into(),
         ),

@@ -746,18 +746,18 @@ impl<'a> XdrReader<'a> {
                         Some(Some(b)) => Expr::Bool(*b),
                         _ => Expr::Na(crate::parser::ast::NaType::Logical),
                     },
-                    Vector::Integer(vals) if vals.len() == 1 => match vals.first() {
-                        Some(Some(i)) => Expr::Integer(*i),
+                    Vector::Integer(vals) if vals.len() == 1 => match vals.first_opt() {
+                        Some(i) => Expr::Integer(i),
                         _ => Expr::Na(crate::parser::ast::NaType::Integer),
                     },
-                    Vector::Double(vals) if vals.len() == 1 => match vals.first() {
-                        Some(Some(d)) => {
-                            if *d == f64::INFINITY {
+                    Vector::Double(vals) if vals.len() == 1 => match vals.first_opt() {
+                        Some(d) => {
+                            if d == f64::INFINITY {
                                 Expr::Inf
                             } else if d.is_nan() {
                                 Expr::NaN
                             } else {
-                                Expr::Double(*d)
+                                Expr::Double(d)
                             }
                         }
                         _ => Expr::Na(crate::parser::ast::NaType::Real),
@@ -2732,9 +2732,9 @@ mod tests {
                 assert!(matches!(&rv.inner, Vector::Integer(_)));
                 if let Vector::Integer(ints) = &rv.inner {
                     assert_eq!(ints.len(), 3);
-                    assert_eq!(ints[0], Some(1));
-                    assert_eq!(ints[1], Some(2));
-                    assert_eq!(ints[2], Some(3));
+                    assert_eq!(ints.get_opt(0), Some(1));
+                    assert_eq!(ints.get_opt(1), Some(2));
+                    assert_eq!(ints.get_opt(2), Some(3));
                 }
             }
             other => panic!("expected Vector, got {:?}", other),
@@ -2802,10 +2802,10 @@ mod tests {
             RValue::Vector(rv) => {
                 if let Vector::Integer(ints) = &rv.inner {
                     assert_eq!(ints.len(), 4);
-                    assert_eq!(ints[0], Some(1));
-                    assert_eq!(ints[1], Some(2));
-                    assert_eq!(ints[2], None);
-                    assert_eq!(ints[3], Some(4));
+                    assert_eq!(ints.get_opt(0), Some(1));
+                    assert_eq!(ints.get_opt(1), Some(2));
+                    assert_eq!(ints.get_opt(2), None);
+                    assert_eq!(ints.get_opt(3), Some(4));
                 } else {
                     panic!("expected Integer vector");
                 }
@@ -2825,11 +2825,14 @@ mod tests {
             RValue::Vector(rv) => {
                 if let Vector::Double(dbls) = &rv.inner {
                     assert_eq!(dbls.len(), 4);
-                    assert_eq!(dbls[0], Some(0.1));
-                    assert_eq!(dbls[1], Some(f64::INFINITY));
-                    assert_eq!(dbls[2], None);
+                    assert_eq!(dbls.get_opt(0), Some(0.1));
+                    assert_eq!(dbls.get_opt(1), Some(f64::INFINITY));
+                    assert_eq!(dbls.get_opt(2), None);
                     // Check -0.0 bit pattern
-                    assert_eq!(dbls[3].unwrap().to_bits(), (-0.0f64).to_bits());
+                    assert_eq!(
+                        dbls.get_opt(3).expect("-0.0 should not be NA").to_bits(),
+                        (-0.0f64).to_bits()
+                    );
                 } else {
                     panic!("expected Double vector");
                 }

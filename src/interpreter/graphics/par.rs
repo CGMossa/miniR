@@ -30,11 +30,11 @@ impl LineType {
                     Self::from_str(s)
                 }
                 Vector::Integer(i) => {
-                    let n = i.first().copied().flatten().unwrap_or(1);
+                    let n = i.first_opt().unwrap_or(1);
                     Self::from_int(n)
                 }
                 Vector::Double(d) => {
-                    let n = d.first().copied().flatten().map(|v| v as i64).unwrap_or(1);
+                    let n = d.first_opt().map(|v| v as i64).unwrap_or(1);
                     Self::from_int(n)
                 }
                 _ => Err(RError::new(

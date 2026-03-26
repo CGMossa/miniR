@@ -302,19 +302,13 @@ fn rvector_to_arrow_array(vec: &Vector, len: usize) -> Result<Arc<dyn Array>, RE
             Ok(Arc::new(arr))
         }
         Vector::Integer(v) => {
-            let arr = Int64Array::from(
-                (0..len)
-                    .map(|i| v.get(i).copied().flatten())
-                    .collect::<Vec<Option<i64>>>(),
-            );
+            let arr =
+                Int64Array::from((0..len).map(|i| v.get_opt(i)).collect::<Vec<Option<i64>>>());
             Ok(Arc::new(arr))
         }
         Vector::Double(v) => {
-            let arr = Float64Array::from(
-                (0..len)
-                    .map(|i| v.get(i).copied().flatten())
-                    .collect::<Vec<Option<f64>>>(),
-            );
+            let arr =
+                Float64Array::from((0..len).map(|i| v.get_opt(i)).collect::<Vec<Option<f64>>>());
             Ok(Arc::new(arr))
         }
         Vector::Character(v) => {
@@ -523,7 +517,7 @@ fn concatenate_rvectors(values: Vec<RValue>) -> Result<RValue, RError> {
                 for v in &values {
                     if let RValue::Vector(rv) = v {
                         if let Vector::Integer(l) = &rv.inner {
-                            result.extend_from_slice(l);
+                            result.extend(l.iter_opt());
                         }
                     }
                 }
@@ -534,7 +528,7 @@ fn concatenate_rvectors(values: Vec<RValue>) -> Result<RValue, RError> {
                 for v in &values {
                     if let RValue::Vector(rv) = v {
                         if let Vector::Double(l) = &rv.inner {
-                            result.extend_from_slice(l);
+                            result.extend(l.iter_opt());
                         }
                     }
                 }

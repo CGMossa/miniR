@@ -752,7 +752,7 @@ fn vector_to_toml(vec: &Vector) -> Result<toml_edit::Value, RError> {
         }
         Vector::Integer(v) => {
             if v.len() == 1 {
-                match v[0] {
+                match v.get_opt(0) {
                     Some(i) => Ok(toml_edit::Value::from(i)),
                     None => Err(RError::new(
                         RErrorKind::Type,
@@ -761,9 +761,9 @@ fn vector_to_toml(vec: &Vector) -> Result<toml_edit::Value, RError> {
                 }
             } else {
                 let mut arr = toml_edit::Array::new();
-                for item in v.iter() {
+                for item in v.iter_opt() {
                     match item {
-                        Some(i) => arr.push_formatted(toml_edit::Value::from(*i)),
+                        Some(i) => arr.push_formatted(toml_edit::Value::from(i)),
                         None => {
                             return Err(RError::new(
                                 RErrorKind::Type,
@@ -777,7 +777,7 @@ fn vector_to_toml(vec: &Vector) -> Result<toml_edit::Value, RError> {
         }
         Vector::Double(v) => {
             if v.len() == 1 {
-                match v[0] {
+                match v.get_opt(0) {
                     Some(f) => double_to_toml(f),
                     None => Err(RError::new(
                         RErrorKind::Type,
@@ -786,9 +786,9 @@ fn vector_to_toml(vec: &Vector) -> Result<toml_edit::Value, RError> {
                 }
             } else {
                 let mut arr = toml_edit::Array::new();
-                for item in v.iter() {
+                for item in v.iter_opt() {
                     match item {
-                        Some(f) => arr.push_formatted(double_to_toml(*f)?),
+                        Some(f) => arr.push_formatted(double_to_toml(f)?),
                         None => {
                             return Err(RError::new(
                                 RErrorKind::Type,

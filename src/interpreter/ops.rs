@@ -232,7 +232,6 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
             }
         }
 
-        BinaryOp::Pipe => unreachable!("pipe handled separately"),
         BinaryOp::Tilde | BinaryOp::DoubleTilde => Ok(RValue::Null), // formula/plotmath stubs
     }
 }
@@ -608,8 +607,8 @@ fn eval_matmul(left: &RValue, right: &RValue) -> Result<RValue, RFlow> {
         let (nrow, ncol) = match dim_attr {
             Some(RValue::Vector(rv)) => match &rv.inner {
                 Vector::Integer(d) if d.len() >= 2 => (
-                    usize::try_from(d[0].unwrap_or(0))?,
-                    usize::try_from(d[1].unwrap_or(0))?,
+                    usize::try_from(d.get_opt(0).unwrap_or(0))?,
+                    usize::try_from(d.get_opt(1).unwrap_or(0))?,
                 ),
                 _ => (data.len(), 1), // treat as column vector
             },

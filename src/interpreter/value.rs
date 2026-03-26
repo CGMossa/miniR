@@ -1,3 +1,4 @@
+pub mod buffer;
 pub mod character;
 pub mod complex;
 pub mod double;
@@ -7,6 +8,7 @@ pub mod logical;
 pub mod traits;
 pub mod vector;
 
+pub use buffer::NullableBuffer;
 pub use character::Character;
 pub use complex::ComplexVec;
 pub use double::Double;

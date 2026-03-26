@@ -452,13 +452,13 @@ fn vector_to_json(vec: &Vector) -> Result<serde_json::Value, RError> {
         }
         Vector::Integer(v) => {
             if v.len() == 1 {
-                match v[0] {
+                match v.get_opt(0) {
                     Some(i) => Ok(serde_json::json!(i)),
                     None => Ok(serde_json::Value::Null),
                 }
             } else {
                 let arr: Vec<serde_json::Value> = v
-                    .iter()
+                    .iter_opt()
                     .map(|x| match x {
                         Some(i) => serde_json::json!(i),
                         None => serde_json::Value::Null,
@@ -469,15 +469,15 @@ fn vector_to_json(vec: &Vector) -> Result<serde_json::Value, RError> {
         }
         Vector::Double(v) => {
             if v.len() == 1 {
-                match v[0] {
+                match v.get_opt(0) {
                     Some(f) => double_to_json(f),
                     None => Ok(serde_json::Value::Null),
                 }
             } else {
                 let arr: Result<Vec<serde_json::Value>, RError> = v
-                    .iter()
+                    .iter_opt()
                     .map(|x| match x {
-                        Some(f) => double_to_json(*f),
+                        Some(f) => double_to_json(f),
                         None => Ok(serde_json::Value::Null),
                     })
                     .collect();

@@ -239,7 +239,7 @@ fn interp_format(
         Some(RValue::Vector(rv)) if has_format_opts => {
             let formatted: Vec<Option<String>> = match &rv.inner {
                 Vector::Double(vals) => vals
-                    .iter()
+                    .iter_opt()
                     .map(|x| {
                         x.map(|f| {
                             format_double_with_opts(
@@ -253,7 +253,7 @@ fn interp_format(
                     })
                     .collect(),
                 Vector::Integer(vals) => vals
-                    .iter()
+                    .iter_opt()
                     .map(|x| x.map(|i| format_integer_with_opts(i, big_mark.as_deref())))
                     .collect(),
                 other => other.to_characters(),
@@ -534,11 +534,11 @@ fn format_column_elements(v: &Vector, nrow: usize) -> Vec<String> {
                     Some(false) => "FALSE".to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Integer(vals) => match vals[i] {
+                Vector::Integer(vals) => match vals.get_opt(i) {
                     Some(n) => n.to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Double(vals) => match vals[i] {
+                Vector::Double(vals) => match vals.get_opt(i) {
                     Some(f) => format_r_double(f),
                     None => "NA".to_string(),
                 },
@@ -731,11 +731,11 @@ fn format_matrix_elements(v: &Vector, nrow: usize, ncol: usize) -> Vec<String> {
                     Some(false) => "FALSE".to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Integer(vals) => match vals[flat_idx] {
+                Vector::Integer(vals) => match vals.get_opt(flat_idx) {
                     Some(n) => n.to_string(),
                     None => "NA".to_string(),
                 },
-                Vector::Double(vals) => match vals[flat_idx] {
+                Vector::Double(vals) => match vals.get_opt(flat_idx) {
                     Some(f) => format_r_double(f),
                     None => "NA".to_string(),
                 },
@@ -1920,12 +1920,12 @@ fn rvalue_to_items(x: &RValue) -> Vec<RValue> {
                 .map(|&x| RValue::vec(Vector::Raw(vec![x])))
                 .collect(),
             Vector::Double(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Double(vec![*x].into())))
+                .iter_opt()
+                .map(|x| RValue::vec(Vector::Double(vec![x].into())))
                 .collect(),
             Vector::Integer(vals) => vals
-                .iter()
-                .map(|x| RValue::vec(Vector::Integer(vec![*x].into())))
+                .iter_opt()
+                .map(|x| RValue::vec(Vector::Integer(vec![x].into())))
                 .collect(),
             Vector::Complex(vals) => vals
                 .iter()
@@ -4876,13 +4876,13 @@ fn rvalue_to_expr(val: &RValue) -> Expr {
     match val {
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
-            Vector::Double(d) if d.len() == 1 => match d[0] {
+            Vector::Double(d) if d.len() == 1 => match d.get_opt(0) {
                 Some(v) if v.is_infinite() && v > 0.0 => Expr::Inf,
                 Some(v) if v.is_nan() => Expr::NaN,
                 Some(v) => Expr::Double(v),
                 None => Expr::Na(crate::parser::ast::NaType::Real),
             },
-            Vector::Integer(i) if i.len() == 1 => match i[0] {
+            Vector::Integer(i) if i.len() == 1 => match i.get_opt(0) {
                 Some(v) => Expr::Integer(v),
                 None => Expr::Na(crate::parser::ast::NaType::Integer),
             },

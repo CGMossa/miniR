@@ -408,14 +408,14 @@ fn select_rows_from_column(
                 Vector::Double(vals) => {
                     let result: Vec<Option<f64>> = indices
                         .iter()
-                        .map(|idx| idx.and_then(|i| if i < len { vals[i] } else { None }))
+                        .map(|idx| idx.and_then(|i| if i < len { vals.get_opt(i) } else { None }))
                         .collect();
                     RValue::vec(Vector::Double(result.into()))
                 }
                 Vector::Integer(vals) => {
                     let result: Vec<Option<i64>> = indices
                         .iter()
-                        .map(|idx| idx.and_then(|i| if i < len { vals[i] } else { None }))
+                        .map(|idx| idx.and_then(|i| if i < len { vals.get_opt(i) } else { None }))
                         .collect();
                     RValue::vec(Vector::Integer(result.into()))
                 }

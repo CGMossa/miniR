@@ -1459,8 +1459,8 @@ fn builtin_write_table(
                 Some(RValue::Vector(dim_rv)) => {
                     if let Vector::Integer(d) = &dim_rv.inner {
                         if d.len() >= 2 {
-                            let nrow = usize::try_from(d[0].unwrap_or(0))?;
-                            let ncol = usize::try_from(d[1].unwrap_or(0))?;
+                            let nrow = usize::try_from(d.get_opt(0).unwrap_or(0))?;
+                            let ncol = usize::try_from(d.get_opt(1).unwrap_or(0))?;
                             for r in 0..nrow {
                                 let cells: Vec<String> = (0..ncol)
                                     .map(|c| {
@@ -1516,12 +1516,10 @@ fn format_cell(val: &RValue, idx: usize, quote: bool) -> String {
                 .get(idx)
                 .map_or("00".to_string(), |b| format!("{:02x}", b)),
             Vector::Double(v) => v
-                .get(idx)
-                .and_then(|x| *x)
+                .get_opt(idx)
                 .map_or("NA".to_string(), |f| format!("{}", f)),
             Vector::Integer(v) => v
-                .get(idx)
-                .and_then(|x| *x)
+                .get_opt(idx)
                 .map_or("NA".to_string(), |i| format!("{}", i)),
             Vector::Logical(v) => v.get(idx).and_then(|x| *x).map_or("NA".to_string(), |b| {
                 if b { "TRUE" } else { "FALSE" }.to_string()

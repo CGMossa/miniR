@@ -235,7 +235,7 @@ fn eval_matrix_index(
 
     let dims = match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Integer(d) => d.0.clone(),
+            Vector::Integer(d) => d.to_option_vec(),
             _ => {
                 return Err(IndexingError::IncorrectDimensions.into());
             }
@@ -569,7 +569,7 @@ pub(crate) fn index_by_integer(
     v: &Vector,
     indices: &[Option<i64>],
 ) -> Result<RValue, RFlow> {
-    macro_rules! index_vec {
+    macro_rules! index_vec_option {
         ($vals:expr, $variant:ident) => {{
             let result: Vec<_> = indices
                 .iter()
@@ -578,6 +578,25 @@ pub(crate) fn index_by_integer(
                         let i = usize::try_from(i).unwrap_or(0);
                         if i > 0 && i <= $vals.len() {
                             $vals[i - 1].clone().into()
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            Ok(RValue::vec(Vector::$variant(result.into())))
+        }};
+    }
+
+    macro_rules! index_vec_buffer {
+        ($vals:expr, $variant:ident) => {{
+            let result: Vec<_> = indices
+                .iter()
+                .map(|idx| {
+                    idx.and_then(|i| {
+                        let i = usize::try_from(i).unwrap_or(0);
+                        if i > 0 && i <= $vals.len() {
+                            $vals.get_opt(i - 1)
                         } else {
                             None
                         }
@@ -606,11 +625,11 @@ pub(crate) fn index_by_integer(
                 .collect();
             Ok(RValue::vec(Vector::Raw(result)))
         }
-        Vector::Double(vals) => index_vec!(vals, Double),
-        Vector::Integer(vals) => index_vec!(vals, Integer),
-        Vector::Logical(vals) => index_vec!(vals, Logical),
-        Vector::Complex(vals) => index_vec!(vals, Complex),
-        Vector::Character(vals) => index_vec!(vals, Character),
+        Vector::Double(vals) => index_vec_buffer!(vals, Double),
+        Vector::Integer(vals) => index_vec_buffer!(vals, Integer),
+        Vector::Logical(vals) => index_vec_option!(vals, Logical),
+        Vector::Complex(vals) => index_vec_option!(vals, Complex),
+        Vector::Character(vals) => index_vec_option!(vals, Character),
     }
 }
 
@@ -624,13 +643,25 @@ fn index_by_negative(
         .filter_map(|x| x.and_then(|i| usize::try_from(-i).ok()))
         .collect();
 
-    macro_rules! filter_vec {
+    macro_rules! filter_vec_option {
         ($vals:expr, $variant:ident) => {{
             let result: Vec<_> = $vals
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| !exclude.contains(&(i + 1)))
                 .map(|(_, v)| v.clone())
+                .collect();
+            Ok(RValue::vec(Vector::$variant(result.into())))
+        }};
+    }
+
+    macro_rules! filter_vec_buffer {
+        ($vals:expr, $variant:ident) => {{
+            let result: Vec<_> = $vals
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude.contains(&(i + 1)))
+                .map(|(_, v)| v.copied())
                 .collect();
             Ok(RValue::vec(Vector::$variant(result.into())))
         }};
@@ -646,11 +677,11 @@ fn index_by_negative(
                 .collect();
             Ok(RValue::vec(Vector::Raw(result)))
         }
-        Vector::Double(vals) => filter_vec!(vals, Double),
-        Vector::Integer(vals) => filter_vec!(vals, Integer),
-        Vector::Logical(vals) => filter_vec!(vals, Logical),
-        Vector::Complex(vals) => filter_vec!(vals, Complex),
-        Vector::Character(vals) => filter_vec!(vals, Character),
+        Vector::Double(vals) => filter_vec_buffer!(vals, Double),
+        Vector::Integer(vals) => filter_vec_buffer!(vals, Integer),
+        Vector::Logical(vals) => filter_vec_option!(vals, Logical),
+        Vector::Complex(vals) => filter_vec_option!(vals, Complex),
+        Vector::Character(vals) => filter_vec_option!(vals, Character),
     }
 }
 
@@ -670,11 +701,24 @@ fn index_by_logical(
     // None (NA) -> include NA.
     let recycled_mask = |i: usize| -> Option<bool> { mask[i % mask.len()] };
 
-    macro_rules! mask_vec {
+    macro_rules! mask_vec_option {
         ($vals:expr, $variant:ident) => {{
             let result: Vec<_> = (0..vlen)
                 .filter_map(|i| match recycled_mask(i) {
                     Some(true) => Some($vals.get(i).cloned().unwrap_or(None)),
+                    Some(false) => None,
+                    None => Some(None), // NA in mask -> NA in result
+                })
+                .collect();
+            Ok(RValue::vec(Vector::$variant(result.into())))
+        }};
+    }
+
+    macro_rules! mask_vec_buffer {
+        ($vals:expr, $variant:ident) => {{
+            let result: Vec<Option<_>> = (0..vlen)
+                .filter_map(|i| match recycled_mask(i) {
+                    Some(true) => Some($vals.get_opt(i)),
                     Some(false) => None,
                     None => Some(None), // NA in mask -> NA in result
                 })
@@ -694,11 +738,11 @@ fn index_by_logical(
                 .collect();
             Ok(RValue::vec(Vector::Raw(result)))
         }
-        Vector::Double(vals) => mask_vec!(vals, Double),
-        Vector::Integer(vals) => mask_vec!(vals, Integer),
-        Vector::Logical(vals) => mask_vec!(vals, Logical),
-        Vector::Complex(vals) => mask_vec!(vals, Complex),
-        Vector::Character(vals) => mask_vec!(vals, Character),
+        Vector::Double(vals) => mask_vec_buffer!(vals, Double),
+        Vector::Integer(vals) => mask_vec_buffer!(vals, Integer),
+        Vector::Logical(vals) => mask_vec_option!(vals, Logical),
+        Vector::Complex(vals) => mask_vec_option!(vals, Complex),
+        Vector::Character(vals) => mask_vec_option!(vals, Character),
     }
 }
 
@@ -906,8 +950,8 @@ pub(super) fn eval_index_double(
 pub fn extract_vector_element(v: &RVector, idx: usize) -> RValue {
     match &v.inner {
         Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[idx]])),
-        Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[idx]].into())),
-        Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[idx]].into())),
+        Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals.get_opt(idx)].into())),
+        Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals.get_opt(idx)].into())),
         Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[idx]].into())),
         Vector::Complex(vals) => RValue::vec(Vector::Complex(vec![vals[idx]].into())),
         Vector::Character(vals) => RValue::vec(Vector::Character(vec![vals[idx].clone()].into())),

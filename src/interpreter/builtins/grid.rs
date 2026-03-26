@@ -234,23 +234,19 @@ fn parse_grid_color(value: &RValue) -> Option<[u8; 4]> {
                 }
             }
             Vector::Integer(iv) => {
-                if let Some(Some(i)) = iv.first().copied() {
-                    // Basic palette: 0=white, 1=black, 2=red, 3=green, 4=blue, ...
-                    Some(match i {
-                        0 => [255, 255, 255, 0],   // transparent
-                        1 => [0, 0, 0, 255],       // black
-                        2 => [255, 0, 0, 255],     // red
-                        3 => [0, 128, 0, 255],     // green
-                        4 => [0, 0, 255, 255],     // blue
-                        5 => [0, 255, 255, 255],   // cyan
-                        6 => [255, 0, 255, 255],   // magenta
-                        7 => [255, 255, 0, 255],   // yellow
-                        8 => [128, 128, 128, 255], // gray
-                        _ => [0, 0, 0, 255],       // default black
-                    })
-                } else {
-                    None
-                }
+                // Basic palette: 0=white, 1=black, 2=red, 3=green, 4=blue, ...
+                iv.first_opt().map(|i| match i {
+                    0 => [255, 255, 255, 0],   // transparent
+                    1 => [0, 0, 0, 255],       // black
+                    2 => [255, 0, 0, 255],     // red
+                    3 => [0, 128, 0, 255],     // green
+                    4 => [0, 0, 255, 255],     // blue
+                    5 => [0, 255, 255, 255],   // cyan
+                    6 => [255, 0, 255, 255],   // magenta
+                    7 => [255, 255, 0, 255],   // yellow
+                    8 => [128, 128, 128, 255], // gray
+                    _ => [0, 0, 0, 255],       // default black
+                })
             }
             _ => None,
         },
@@ -379,8 +375,8 @@ fn extract_justification(
                 }
             }
             Vector::Double(d) => {
-                let h = d.first().copied().flatten().unwrap_or(0.5);
-                let v_val = d.get(1).copied().flatten().unwrap_or(h);
+                let h = d.first_opt().unwrap_or(0.5);
+                let v_val = d.get_opt(1).unwrap_or(h);
                 (num_to_just(h), num_to_just(v_val))
             }
             _ => (Justification::Centre, Justification::Centre),

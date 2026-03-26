@@ -332,7 +332,7 @@ fn builtin_as_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue
                     // Integer: same as double, needs origin
                     let origin_days = resolve_origin(origin)?;
                     let days: Vec<Option<f64>> = iv
-                        .iter()
+                        .iter_opt()
                         .map(|opt_i| opt_i.map(|i| i as f64 + origin_days))
                         .collect();
                     Ok(r_date_vec(days))
@@ -417,7 +417,7 @@ fn builtin_as_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result<RVa
                 }
                 Vector::Double(dv) => {
                     // Numeric: treat as seconds since epoch
-                    let secs: Vec<Option<f64>> = dv.iter().copied().collect();
+                    let secs: Vec<Option<f64>> = dv.iter_opt().collect();
                     Ok(r_posixct_vec(secs, tz.as_deref()))
                 }
                 _ => Err(RError::new(
@@ -463,7 +463,7 @@ fn builtin_format_date(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(vals) => {
                 let result: Vec<Option<String>> = vals
-                    .iter()
+                    .iter_opt()
                     .map(|opt_d| {
                         opt_d.and_then(|d| {
                             days_to_date(d).map(|date| date.strftime(&jiff_fmt).to_string())
@@ -522,7 +522,7 @@ fn builtin_format_posixct(args: &[RValue], named: &[(String, RValue)]) -> Result
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(vals) => {
                 let result: Vec<Option<String>> = vals
-                    .iter()
+                    .iter_opt()
                     .map(|opt_d| {
                         opt_d.and_then(|secs| {
                             secs_to_timestamp(secs)
@@ -803,7 +803,7 @@ fn extract_date_component(
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(vals) => {
                 let result: Vec<Option<String>> = vals
-                    .iter()
+                    .iter_opt()
                     .map(|opt_d| opt_d.and_then(|d| days_to_date(d).and_then(&f)))
                     .collect();
                 Ok(RValue::vec(Vector::Character(result.into())))

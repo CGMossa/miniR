@@ -55,7 +55,7 @@ fn replace_elements(
     replacement: &Vector,
     max_idx: usize,
 ) -> Vector {
-    macro_rules! replace_typed {
+    macro_rules! replace_typed_option {
         ($target_vals:expr, $repl_vals:expr, $variant:ident) => {{
             let mut result = $target_vals.to_vec();
             while result.len() < max_idx {
@@ -76,13 +76,31 @@ fn replace_elements(
         }};
     }
 
+    macro_rules! replace_typed_buffer {
+        ($target_vals:expr, $repl_vals:expr, $variant:ident) => {{
+            let mut result = $target_vals.to_option_vec();
+            while result.len() < max_idx {
+                result.push(Default::default());
+            }
+            for (j, idx) in indices.iter().enumerate() {
+                if let Some(i) = idx {
+                    let i = usize::try_from(*i).unwrap_or(0);
+                    if i > 0 && i <= result.len() {
+                        result[i - 1] = $repl_vals.get_opt(j % $repl_vals.len());
+                    }
+                }
+            }
+            Vector::$variant(result.into())
+        }};
+    }
+
     // Same-type fast path
     match (target, replacement) {
-        (Vector::Integer(tv), Vector::Integer(rv)) => replace_typed!(tv, rv, Integer),
-        (Vector::Double(tv), Vector::Double(rv)) => replace_typed!(tv, rv, Double),
-        (Vector::Character(tv), Vector::Character(rv)) => replace_typed!(tv, rv, Character),
-        (Vector::Logical(tv), Vector::Logical(rv)) => replace_typed!(tv, rv, Logical),
-        (Vector::Complex(tv), Vector::Complex(rv)) => replace_typed!(tv, rv, Complex),
+        (Vector::Integer(tv), Vector::Integer(rv)) => replace_typed_buffer!(tv, rv, Integer),
+        (Vector::Double(tv), Vector::Double(rv)) => replace_typed_buffer!(tv, rv, Double),
+        (Vector::Character(tv), Vector::Character(rv)) => replace_typed_option!(tv, rv, Character),
+        (Vector::Logical(tv), Vector::Logical(rv)) => replace_typed_option!(tv, rv, Logical),
+        (Vector::Complex(tv), Vector::Complex(rv)) => replace_typed_option!(tv, rv, Complex),
         (Vector::Raw(tv), Vector::Raw(rv)) => {
             let mut result = tv.to_vec();
             while result.len() < max_idx {

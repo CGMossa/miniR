@@ -217,8 +217,12 @@ impl Interpreter {
                     self.check_interrupt()?;
                     let elem = match &v.inner {
                         Vector::Raw(vals) => RValue::vec(Vector::Raw(vec![vals[i]])),
-                        Vector::Double(vals) => RValue::vec(Vector::Double(vec![vals[i]].into())),
-                        Vector::Integer(vals) => RValue::vec(Vector::Integer(vec![vals[i]].into())),
+                        Vector::Double(vals) => {
+                            RValue::vec(Vector::Double(vec![vals.get_opt(i)].into()))
+                        }
+                        Vector::Integer(vals) => {
+                            RValue::vec(Vector::Integer(vec![vals.get_opt(i)].into()))
+                        }
                         Vector::Logical(vals) => RValue::vec(Vector::Logical(vec![vals[i]].into())),
                         Vector::Complex(vals) => RValue::vec(Vector::Complex(vec![vals[i]].into())),
                         Vector::Character(vals) => {

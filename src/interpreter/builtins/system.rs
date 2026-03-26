@@ -1776,9 +1776,9 @@ fn interp_print_proc_time(
     let (user, system, elapsed) = match val {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(d) => {
-                let u = d.first().copied().flatten().unwrap_or(0.0);
-                let s = d.get(1).copied().flatten().unwrap_or(0.0);
-                let e = d.get(2).copied().flatten().unwrap_or(0.0);
+                let u = d.first_opt().unwrap_or(0.0);
+                let s = d.get_opt(1).unwrap_or(0.0);
+                let e = d.get_opt(2).unwrap_or(0.0);
                 (u, s, e)
             }
             _ => (0.0, 0.0, 0.0),

@@ -1261,8 +1261,8 @@ fn tri_matrix(args: &[RValue], diag_incl: bool, lower: bool) -> Result<RValue, R
         Some(RValue::Vector(rv)) => match rv.get_attr("dim") {
             Some(RValue::Vector(dim_rv)) => match &dim_rv.inner {
                 Vector::Integer(d) if d.len() >= 2 => (
-                    usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
-                    usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+                    usize::try_from(d.get_opt(0).unwrap_or(0)).unwrap_or(0),
+                    usize::try_from(d.get_opt(1).unwrap_or(0)).unwrap_or(0),
                 ),
                 _ => {
                     return Err(RError::new(
@@ -1327,8 +1327,8 @@ fn builtin_diag(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
             if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
                 if let Vector::Integer(d) = &dim_rv.inner {
                     if d.len() >= 2 {
-                        let nrow = usize::try_from(d[0].unwrap_or(0)).unwrap_or(0);
-                        let ncol = usize::try_from(d[1].unwrap_or(0)).unwrap_or(0);
+                        let nrow = usize::try_from(d.get_opt(0).unwrap_or(0)).unwrap_or(0);
+                        let ncol = usize::try_from(d.get_opt(1).unwrap_or(0)).unwrap_or(0);
                         let data = rv.to_doubles();
                         let n = nrow.min(ncol);
                         let result: Vec<Option<f64>> = (0..n)
@@ -1600,7 +1600,7 @@ fn builtin_sd(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, REr
     match builtin_var(args, named)? {
         RValue::Vector(rv) => match rv.inner {
             Vector::Double(v) => Ok(RValue::vec(Vector::Double(
-                v.iter()
+                v.iter_opt()
                     .map(|x| x.map(f64::sqrt))
                     .collect::<Vec<_>>()
                     .into(),
@@ -1935,11 +1935,13 @@ fn rep_vector(
     // Actually, let's handle it per-type to preserve type fidelity.
     let result = match v {
         Vector::Double(vals) => {
-            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            let opt_vec = vals.to_option_vec();
+            let expanded = rep_each_then_times(opt_vec.as_slice(), each, times);
             Vector::Double(apply_length_out_cloneable(expanded, length_out)?.into())
         }
         Vector::Integer(vals) => {
-            let expanded = rep_each_then_times(vals.as_slice(), each, times);
+            let opt_vec = vals.to_option_vec();
+            let expanded = rep_each_then_times(opt_vec.as_slice(), each, times);
             Vector::Integer(apply_length_out_cloneable(expanded, length_out)?.into())
         }
         Vector::Logical(vals) => {
@@ -2097,7 +2099,8 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
                 Vector::Double(vals) => {
-                    let (mut non_na, na_count) = partition_na_doubles(&vals.0);
+                    let opt_vec = vals.to_option_vec();
+                    let (mut non_na, na_count) = partition_na_doubles(&opt_vec);
                     non_na.sort_by(|a, b| {
                         if decreasing {
                             b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
@@ -2113,7 +2116,8 @@ fn builtin_sort(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
                     Vector::Double(result.into())
                 }
                 Vector::Integer(vals) => {
-                    let (mut non_na, na_count) = partition_na_options(vals.as_slice());
+                    let opt_vec = vals.to_option_vec();
+                    let (mut non_na, na_count) = partition_na_options(&opt_vec);
                     non_na.sort_by(|a, b| if decreasing { b.cmp(a) } else { a.cmp(b) });
                     let result = reassemble_with_na(
                         non_na.into_iter().map(Some).collect(),
@@ -2332,11 +2336,11 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 Vector::Double(vals) => {
                     let mut seen = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals.iter() {
+                    for x in vals.iter_opt() {
                         let key = format!("{:?}", x);
                         if !seen.contains(&key) {
                             seen.push(key);
-                            result.push(*x);
+                            result.push(x);
                         }
                     }
                     Vector::Double(result.into())
@@ -2344,10 +2348,10 @@ fn builtin_unique(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
                 Vector::Integer(vals) => {
                     let mut seen: Vec<Option<i64>> = Vec::new();
                     let mut result = Vec::new();
-                    for x in vals.iter() {
-                        if !seen.contains(x) {
-                            seen.push(*x);
-                            result.push(*x);
+                    for x in vals.iter_opt() {
+                        if !seen.contains(&x) {
+                            seen.push(x);
+                            result.push(x);
                         }
                     }
                     Vector::Integer(result.into())
@@ -2410,7 +2414,7 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
                     // Total ordering key: flip bits so BTreeSet gives numeric order.
                     // Positive floats: bits as-is. Negative floats: flip all bits.
                     // This maps f64 ordering to u64 ordering. NAs (None) sort last.
-                    fn sort_key(v: &Option<f64>) -> (bool, u64) {
+                    fn sort_key(v: Option<f64>) -> (bool, u64) {
                         match v {
                             None => (true, 0), // NAs last
                             Some(f) => {
@@ -2424,7 +2428,7 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
                             }
                         }
                     }
-                    let set: BTreeSet<(bool, u64)> = vals.iter().map(sort_key).collect();
+                    let set: BTreeSet<(bool, u64)> = vals.iter_opt().map(sort_key).collect();
                     // Reverse-map keys back to f64 values
                     let mut result: Vec<Option<f64>> = set
                         .into_iter()
@@ -2447,8 +2451,8 @@ fn builtin_sort_unique(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
                     Vector::Double(result.into())
                 }
                 Vector::Integer(vals) => {
-                    let has_na = vals.iter().any(|x| x.is_none());
-                    let set: BTreeSet<i64> = vals.iter().filter_map(|x| *x).collect();
+                    let has_na = vals.iter_opt().any(|x| x.is_none());
+                    let set: BTreeSet<i64> = vals.iter_opt().flatten().collect();
                     let mut result: Vec<Option<i64>> = set.into_iter().map(Some).collect();
                     if decreasing {
                         result.reverse();
@@ -2732,8 +2736,8 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
                 Vector::Raw(vals) => Vector::Raw(vals[..n.min(vals.len())].to_vec()),
-                Vector::Double(vals) => Vector::Double(vals[..n.min(vals.len())].to_vec().into()),
-                Vector::Integer(vals) => Vector::Integer(vals[..n.min(vals.len())].to_vec().into()),
+                Vector::Double(vals) => Vector::Double(vals.slice(..n.min(vals.len())).into()),
+                Vector::Integer(vals) => Vector::Integer(vals.slice(..n.min(vals.len())).into()),
                 Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Complex(vals) => Vector::Complex(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Character(vals) => {
@@ -2767,8 +2771,8 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             let start = len.saturating_sub(n);
             let result = match &v.inner {
                 Vector::Raw(vals) => Vector::Raw(vals[start..].to_vec()),
-                Vector::Double(vals) => Vector::Double(vals[start..].to_vec().into()),
-                Vector::Integer(vals) => Vector::Integer(vals[start..].to_vec().into()),
+                Vector::Double(vals) => Vector::Double(vals.slice(start..).into()),
+                Vector::Integer(vals) => Vector::Integer(vals.slice(start..).into()),
                 Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec().into()),
                 Vector::Complex(vals) => Vector::Complex(vals[start..].to_vec().into()),
                 Vector::Character(vals) => Vector::Character(vals[start..].to_vec().into()),
@@ -3047,18 +3051,16 @@ fn builtin_rep_len(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     vals.iter().cycle().take(length_out).copied().collect(),
                 ))),
                 Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
-                    vals.iter()
+                    vals.iter_opt()
                         .cycle()
                         .take(length_out)
-                        .cloned()
                         .collect::<Vec<_>>()
                         .into(),
                 ))),
                 Vector::Integer(vals) => Ok(RValue::vec(Vector::Integer(
-                    vals.iter()
+                    vals.iter_opt()
                         .cycle()
                         .take(length_out)
-                        .cloned()
                         .collect::<Vec<_>>()
                         .into(),
                 ))),
@@ -3123,18 +3125,16 @@ fn builtin_rep_int(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
                     .collect(),
             ))),
             Vector::Double(vals) => Ok(RValue::vec(Vector::Double(
-                vals.iter()
+                vals.iter_opt()
                     .cycle()
                     .take(vals.len() * times)
-                    .cloned()
                     .collect::<Vec<_>>()
                     .into(),
             ))),
             Vector::Integer(vals) => Ok(RValue::vec(Vector::Integer(
-                vals.iter()
+                vals.iter_opt()
                     .cycle()
                     .take(vals.len() * times)
-                    .cloned()
                     .collect::<Vec<_>>()
                     .into(),
             ))),
@@ -3185,8 +3185,8 @@ fn rvalue_to_array2(val: &RValue) -> Result<Array2<f64>, RError> {
     let (nrow, ncol) = match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Integer(d) if d.len() >= 2 => (
-                usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
-                usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d.get_opt(0).unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d.get_opt(1).unwrap_or(0)).unwrap_or(0),
             ),
             _ => (data.len(), 1),
         },
@@ -3236,8 +3236,8 @@ fn rvalue_to_dmatrix(val: &RValue) -> Result<DMatrix<f64>, RError> {
     let (nrow, ncol) = match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
             Vector::Integer(d) if d.len() >= 2 => (
-                usize::try_from(d[0].unwrap_or(0)).unwrap_or(0),
-                usize::try_from(d[1].unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d.get_opt(0).unwrap_or(0)).unwrap_or(0),
+                usize::try_from(d.get_opt(1).unwrap_or(0)).unwrap_or(0),
             ),
             _ => (data.len(), 1),
         },

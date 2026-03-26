@@ -893,9 +893,12 @@ fn interp_col2rgb(
                 .iter()
                 .map(|s| s.clone().unwrap_or_else(|| "NA".to_string()))
                 .collect(),
-            Vector::Integer(ints) => ints.iter().map(|i| format!("{}", i.unwrap_or(0))).collect(),
+            Vector::Integer(ints) => ints
+                .iter_opt()
+                .map(|i| format!("{}", i.unwrap_or(0)))
+                .collect(),
             Vector::Double(doubles) => doubles
-                .iter()
+                .iter_opt()
                 .map(|d| format!("{}", d.map(|v| v as i64).unwrap_or(0)))
                 .collect(),
             _ => {

@@ -62,10 +62,15 @@ fn row_names_to_strings(value: &RValue) -> Option<RowNames> {
     match value {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Character(values) => Some(values.to_vec()),
-            Vector::Integer(values) => {
-                Some(values.iter().map(|v| v.map(|v| v.to_string())).collect())
+            Vector::Integer(values) => Some(
+                values
+                    .iter_opt()
+                    .map(|v| v.map(|v| v.to_string()))
+                    .collect(),
+            ),
+            Vector::Double(values) => {
+                Some(values.iter_opt().map(|v| v.map(format_r_double)).collect())
             }
-            Vector::Double(values) => Some(values.iter().map(|v| v.map(format_r_double)).collect()),
             _ => None,
         },
         _ => None,
@@ -183,13 +188,13 @@ pub(super) fn recycle_value(value: &RValue, target_len: usize) -> Result<RValue,
                 ),
                 Vector::Integer(values) => Vector::Integer(
                     (0..target_len)
-                        .map(|idx| values[idx % values.len()])
+                        .map(|idx| values.get_opt(idx % values.len()))
                         .collect::<Vec<_>>()
                         .into(),
                 ),
                 Vector::Double(values) => Vector::Double(
                     (0..target_len)
-                        .map(|idx| values[idx % values.len()])
+                        .map(|idx| values.get_opt(idx % values.len()))
                         .collect::<Vec<_>>()
                         .into(),
                 ),
@@ -309,9 +314,7 @@ fn matrix_columns(
                         (None, Some(name)) => name,
                         (None, None) => format!("X{}", col_idx + 1),
                     },
-                    value: RValue::vec(Vector::Integer(
-                        values[start..start + nrow].to_vec().into(),
-                    )),
+                    value: RValue::vec(Vector::Integer(values.slice(start..start + nrow).into())),
                     row_count: nrow,
                     row_names: row_names.clone(),
                 }
@@ -334,7 +337,7 @@ fn matrix_columns(
                         (None, Some(name)) => name,
                         (None, None) => format!("X{}", col_idx + 1),
                     },
-                    value: RValue::vec(Vector::Double(values[start..start + nrow].to_vec().into())),
+                    value: RValue::vec(Vector::Double(values.slice(start..start + nrow).into())),
                     row_count: nrow,
                     row_names: row_names.clone(),
                 }
@@ -1530,11 +1533,11 @@ fn rvalue_to_expr(val: &RValue) -> Expr {
         RValue::Language(expr) => *expr.inner.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
-            Vector::Double(d) if d.len() == 1 => match d[0] {
+            Vector::Double(d) if d.len() == 1 => match d.get_opt(0) {
                 Some(v) => Expr::Double(v),
                 None => Expr::Na(crate::parser::ast::NaType::Real),
             },
-            Vector::Integer(i) if i.len() == 1 => match i[0] {
+            Vector::Integer(i) if i.len() == 1 => match i.get_opt(0) {
                 Some(v) => Expr::Integer(v),
                 None => Expr::Na(crate::parser::ast::NaType::Integer),
             },

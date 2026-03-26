@@ -1081,11 +1081,11 @@ fn builtin_cat(
                         .map(|x| x.clone().unwrap_or_else(|| "NA".to_string()))
                         .collect(),
                     Vector::Double(vals) => vals
-                        .iter()
+                        .iter_opt()
                         .map(|x| x.map(format_r_double).unwrap_or_else(|| "NA".to_string()))
                         .collect(),
                     Vector::Integer(vals) => vals
-                        .iter()
+                        .iter_opt()
                         .map(|x| x.map(|i| i.to_string()).unwrap_or_else(|| "NA".to_string()))
                         .collect(),
                     Vector::Logical(vals) => vals
@@ -1335,14 +1335,14 @@ fn coerce_name_strings(value: &RValue) -> RValue {
             Vector::Character(_) => value.clone(),
             Vector::Integer(values) => RValue::vec(Vector::Character(
                 values
-                    .iter()
+                    .iter_opt()
                     .map(|value| value.map(|value| value.to_string()))
                     .collect::<Vec<_>>()
                     .into(),
             )),
             Vector::Double(values) => RValue::vec(Vector::Character(
                 values
-                    .iter()
+                    .iter_opt()
                     .map(|value| value.map(format_r_double))
                     .collect::<Vec<_>>()
                     .into(),
@@ -1971,11 +1971,11 @@ fn str_vector_preview(v: &RVector) -> String {
                 Some(false) => "FALSE".to_string(),
                 None => "NA".to_string(),
             },
-            Vector::Integer(vals) => match vals[i] {
+            Vector::Integer(vals) => match vals.get_opt(i) {
                 Some(n) => n.to_string(),
                 None => "NA".to_string(),
             },
-            Vector::Double(vals) => match vals[i] {
+            Vector::Double(vals) => match vals.get_opt(i) {
                 Some(f) => format_r_double(f),
                 None => "NA".to_string(),
             },
@@ -2761,12 +2761,12 @@ fn vector_to_items(x: &RValue) -> Vec<RValue> {
     match x {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Double(vals) => vals
-                .iter()
-                .map(|v| RValue::vec(Vector::Double(vec![*v].into())))
+                .iter_opt()
+                .map(|v| RValue::vec(Vector::Double(vec![v].into())))
                 .collect(),
             Vector::Integer(vals) => vals
-                .iter()
-                .map(|v| RValue::vec(Vector::Integer(vec![*v].into())))
+                .iter_opt()
+                .map(|v| RValue::vec(Vector::Integer(vec![v].into())))
                 .collect(),
             Vector::Logical(vals) => vals
                 .iter()
@@ -5448,7 +5448,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 pub(crate) fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
     match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Integer(dims) => Some(dims.0.clone()),
+            Vector::Integer(dims) => Some(dims.to_option_vec()),
             _ => None,
         },
         _ => None,
@@ -6226,13 +6226,13 @@ fn rvalue_to_expr(val: &RValue) -> Expr {
         RValue::Language(expr) => *expr.inner.clone(),
         RValue::Null => Expr::Null,
         RValue::Vector(rv) => match &rv.inner {
-            Vector::Double(d) if d.len() == 1 => match d[0] {
+            Vector::Double(d) if d.len() == 1 => match d.get_opt(0) {
                 Some(v) if v.is_infinite() && v > 0.0 => Expr::Inf,
                 Some(v) if v.is_nan() => Expr::NaN,
                 Some(v) => Expr::Double(v),
                 None => Expr::Na(crate::parser::ast::NaType::Real),
             },
-            Vector::Integer(i) if i.len() == 1 => match i[0] {
+            Vector::Integer(i) if i.len() == 1 => match i.get_opt(0) {
                 Some(v) => Expr::Integer(v),
                 None => Expr::Na(crate::parser::ast::NaType::Integer),
             },

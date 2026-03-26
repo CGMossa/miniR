@@ -807,7 +807,7 @@ impl Interpreter {
                         // Evaluate the pipe (which evaluates LHS and calls RHS)
                         // but return the original LHS value, not the RHS result.
                         let left_val = self.eval_in(lhs, env)?;
-                        if self.eval_pipe(lhs, rhs, env).is_err() {}
+                        let _ = self.eval_pipe(lhs, rhs, env);
                         return Ok(left_val);
                     }
                     BinaryOp::ExpoPipe => {
