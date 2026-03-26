@@ -17,12 +17,13 @@ impl Interpreter {
             Expr::Call { func, args } => {
                 let f = self.eval_in(func, env)?;
 
-                // Check if any argument uses `_` as a placeholder for the LHS.
-                // R 4.2+ allows: x |> f(a, b = _) → f(a, b = x)
+                // Check if any argument uses `_` or `.` as a placeholder for the LHS.
+                // `_` is R 4.2+ native pipe syntax; `.` is magrittr compatibility.
+                let is_placeholder = |s: &str| s == "_" || s == ".";
                 let has_placeholder = args.iter().any(|arg| {
                     matches!(
                         &arg.value,
-                        Some(Expr::Symbol(s)) if s == "_"
+                        Some(Expr::Symbol(s)) if is_placeholder(s)
                     )
                 });
 
@@ -34,7 +35,8 @@ impl Interpreter {
                     for arg in args {
                         if let Some(name) = &arg.name {
                             if let Some(val_expr) = &arg.value {
-                                let val = if matches!(val_expr, Expr::Symbol(s) if s == "_") {
+                                let val = if matches!(val_expr, Expr::Symbol(s) if is_placeholder(s))
+                                {
                                     left_val.clone()
                                 } else {
                                     self.eval_in(val_expr, env)?
@@ -42,7 +44,7 @@ impl Interpreter {
                                 named_args.push((name.clone(), val));
                             }
                         } else if let Some(val_expr) = &arg.value {
-                            let val = if matches!(val_expr, Expr::Symbol(s) if s == "_") {
+                            let val = if matches!(val_expr, Expr::Symbol(s) if is_placeholder(s)) {
                                 left_val.clone()
                             } else {
                                 self.eval_in(val_expr, env)?
