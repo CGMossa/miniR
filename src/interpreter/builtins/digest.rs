@@ -215,3 +215,70 @@ fn builtin_blake3_file(args: &[RValue], _named: &[(String, RValue)]) -> Result<R
 }
 
 // endregion
+
+// region: Base64 encoding/decoding
+
+/// Encode a character string or raw vector to base64.
+///
+/// @param x character string or raw vector to encode
+/// @return character string with base64 encoding
+#[builtin(name = "base64enc", min_args = 1, namespace = "base")]
+fn builtin_base64enc(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    use base64::Engine;
+    let input = &args[0];
+    let bytes = match input {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(vals) => vals
+                .first()
+                .and_then(|s| s.as_ref())
+                .map(|s| s.as_bytes().to_vec())
+                .unwrap_or_default(),
+            Vector::Raw(vals) => vals.to_vec(),
+            _ => {
+                return Err(RError::new(
+                    RErrorKind::Argument,
+                    "base64enc() requires a character string or raw vector".to_string(),
+                ))
+            }
+        },
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "base64enc() requires a character string or raw vector".to_string(),
+            ))
+        }
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(RValue::vec(Vector::Character(vec![Some(encoded)].into())))
+}
+
+/// Decode a base64-encoded string to a character string.
+///
+/// @param x base64-encoded character string
+/// @return decoded character string
+#[builtin(name = "base64dec", min_args = 1, namespace = "base")]
+fn builtin_base64dec(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    use base64::Engine;
+    let input = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "base64dec() requires a character string".to_string(),
+            )
+        })?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&input)
+        .map_err(|e| RError::new(RErrorKind::Other, format!("base64 decode error: {e}")))?;
+    let decoded = String::from_utf8(bytes).map_err(|e| {
+        RError::new(
+            RErrorKind::Other,
+            format!("base64 decode: invalid UTF-8: {e}"),
+        )
+    })?;
+    Ok(RValue::vec(Vector::Character(vec![Some(decoded)].into())))
+}
+
+// endregion
