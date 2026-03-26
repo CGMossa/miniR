@@ -3384,6 +3384,7 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "base64",
  "blake3",
  "bstr",
  "bytecount",
