@@ -1554,3 +1554,108 @@ fn rvalue_to_expr(val: &RValue) -> Expr {
         _ => Expr::Symbol(format!("{}", val)),
     }
 }
+
+// region: library / require (NSE for package names)
+
+/// Extract a package name from a pre-eval argument list.
+/// Accepts both `library("pkg")` (string) and `library(pkg)` (bare symbol).
+fn extract_package_name_nse(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<String, RError> {
+    let first_arg = args.first().and_then(|a| a.value.as_ref()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "library/require requires a package name".to_string(),
+        )
+    })?;
+
+    match first_arg {
+        // Bare symbol: library(dplyr) → package name is "dplyr"
+        Expr::Symbol(name) => Ok(name.clone()),
+        // String literal: library("dplyr")
+        Expr::String(s) => Ok(s.clone()),
+        // Anything else: evaluate it and hope for a character scalar
+        other => {
+            let val = context
+                .with_interpreter(|interp| interp.eval_in(other, env).map_err(RError::from))?;
+            val.as_vector()
+                .and_then(|v| v.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "invalid package name argument".to_string(),
+                    )
+                })
+        }
+    }
+}
+
+/// Load and attach a package by name.
+///
+/// Accepts both quoted and unquoted package names:
+///   library("dplyr")   # quoted string
+///   library(dplyr)     # bare symbol (NSE)
+///
+/// @param package name of the package to load
+/// @return character string with the package name (invisibly)
+#[pre_eval_builtin(name = "library", min_args = 1)]
+fn pre_eval_library(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = extract_package_name_nse(args, env, context)?;
+
+    context.with_interpreter(|interp| {
+        interp.load_namespace(&pkg)?;
+        interp.attach_package(&pkg)?;
+        Ok(RValue::vec(Vector::Character(vec![Some(pkg)].into())))
+    })
+}
+
+/// Load a package if available, returning TRUE/FALSE.
+///
+/// Like library(), but returns FALSE instead of erroring if the
+/// package is not found. Accepts bare symbols: require(dplyr)
+///
+/// @param package name of the package to load
+/// @param quietly logical: suppress messages?
+/// @return logical: TRUE if loaded, FALSE otherwise
+#[pre_eval_builtin(name = "require", min_args = 1)]
+fn pre_eval_require(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = extract_package_name_nse(args, env, context)?;
+
+    // Check for quietly parameter
+    let quietly = args.iter().any(|a| {
+        a.name.as_deref() == Some("quietly")
+            && a.value
+                .as_ref()
+                .is_some_and(|e| matches!(e, Expr::Bool(true)))
+    });
+
+    let result = context.with_interpreter(|interp| match interp.load_namespace(&pkg) {
+        Ok(_) => {
+            interp.attach_package(&pkg)?;
+            Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+        }
+        Err(_) => Ok(RValue::vec(Vector::Logical(vec![Some(false)].into()))),
+    });
+
+    if let Ok(RValue::Vector(rv)) = &result {
+        if rv.as_logical_scalar() == Some(false) && !quietly {
+            context.write_err(&format!(
+                "Warning message:\nthere is no package called '{}'\n",
+                pkg
+            ));
+        }
+    }
+    result
+}
+
+// endregion
