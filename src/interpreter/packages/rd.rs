@@ -806,7 +806,7 @@ impl<'a> RdParser<'a> {
                 out.push('R');
                 // Consume optional empty braces
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // \cr — line break
@@ -823,16 +823,16 @@ impl<'a> RdParser<'a> {
                     self.skip_bracket_arg();
                 }
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // \if{format}{text}\else{text} — skip conditionals
             "ifelse" | "if" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
                 // Check for \else
                 self.skip_spaces();
@@ -849,7 +849,7 @@ impl<'a> RdParser<'a> {
             // \tabular{fmt}{rows} — extract content
             "tabular" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?; // format spec
+                    self.read_brace_arg()?; // format spec
                 }
                 if self.peek() == Some('{') {
                     let content = self.read_brace_arg()?;
@@ -866,7 +866,7 @@ impl<'a> RdParser<'a> {
             // \dontrun{...} — skip content
             "dontrun" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // \donttest{...} and \dontshow{...} — include content
@@ -879,10 +879,10 @@ impl<'a> RdParser<'a> {
             // \newcommand, \renewcommand — skip
             "newcommand" | "renewcommand" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // Package macros — consume braces, output nothing meaningful
@@ -908,7 +908,7 @@ impl<'a> RdParser<'a> {
             // \Rdversion{...}, \RdOpts{...}, \encoding{...} — skip
             "Rdversion" | "RdOpts" | "encoding" | "concept" | "source" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // \out{...} — raw output (HTML/LaTeX), just include as text
@@ -1136,22 +1136,22 @@ impl<'a> RdParser<'a> {
             // Top-level commands we want to skip entirely (single arg)
             "Rdversion" | "RdOpts" | "encoding" | "concept" | "source" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // Macro definitions have two brace args
             "newcommand" | "renewcommand" => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
             // Unknown top-level command — consume its brace argument if present
             _ => {
                 if self.peek() == Some('{') {
-                    let _ = self.read_brace_arg()?;
+                    self.read_brace_arg()?;
                 }
             }
         }
@@ -1202,7 +1202,7 @@ impl<'a> RdParser<'a> {
                     } else if !cmd.is_empty() {
                         // Some other command inside arguments — skip its args
                         if self.peek() == Some('{') {
-                            let _ = self.read_brace_arg()?;
+                            self.read_brace_arg()?;
                         }
                     }
                 }

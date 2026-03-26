@@ -188,8 +188,10 @@ pub fn flush_plot(interp: &crate::interpreter::Interpreter) {
         {
             let tx = interp.plot_tx.borrow();
             if let Some(tx) = tx.as_ref() {
-                let _ = tx
-                    .send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state));
+                tx.send(crate::interpreter::graphics::egui_device::PlotMessage::Show(plot_state))
+                    .map_err(|e| {
+                        RError::new(RErrorKind::Other, format!("plot channel send failed: {e}"))
+                    })?;
             }
         }
         #[cfg(not(feature = "plot"))]
