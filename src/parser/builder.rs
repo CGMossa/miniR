@@ -414,6 +414,9 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
                 "%/%" => BinaryOp::IntDiv,
                 // %>% is identical to |> — both support _ and . placeholders
                 "%>%" => BinaryOp::Pipe,
+                "%<>%" => BinaryOp::AssignPipe,
+                "%T>%" => BinaryOp::TeePipe,
+                "%$%" => BinaryOp::ExpoPipe,
                 _ => BinaryOp::Special(SpecialOp::Other),
             },
             _ => unreachable!(),

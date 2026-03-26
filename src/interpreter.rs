@@ -788,9 +788,44 @@ impl Interpreter {
                 self.eval_unary(*op, &val)
             }
             Expr::BinaryOp { op, lhs, rhs } => {
-                // Special handling for pipe
-                if matches!(op, BinaryOp::Pipe) {
-                    return self.eval_pipe(lhs, rhs, env);
+                // Special handling for pipe operators
+                match op {
+                    BinaryOp::Pipe => return self.eval_pipe(lhs, rhs, env),
+                    BinaryOp::AssignPipe => {
+                        // %<>% — pipe and assign back: x %<>% f() → x <- f(x)
+                        let result = self.eval_pipe(lhs, rhs, env)?;
+                        self.eval_assign(
+                            &crate::parser::ast::AssignOp::LeftAssign,
+                            lhs,
+                            result.clone(),
+                            env,
+                        )?;
+                        return Ok(result);
+                    }
+                    BinaryOp::TeePipe => {
+                        // %T>% — pipe for side effect, return LHS
+                        // Evaluate the pipe (which evaluates LHS and calls RHS)
+                        // but return the original LHS value, not the RHS result.
+                        let left_val = self.eval_in(lhs, env)?;
+                        if self.eval_pipe(lhs, rhs, env).is_err() {}
+                        return Ok(left_val);
+                    }
+                    BinaryOp::ExpoPipe => {
+                        // %$% — expose LHS names to RHS (like with())
+                        let left_val = self.eval_in(lhs, env)?;
+                        let child_env =
+                            crate::interpreter::environment::Environment::new_child(env);
+                        // Expose list/data.frame columns as bindings
+                        if let RValue::List(list) = &left_val {
+                            for (name, val) in &list.values {
+                                if let Some(n) = name {
+                                    child_env.set(n.clone(), val.clone());
+                                }
+                            }
+                        }
+                        return self.eval_in(rhs, &child_env);
+                    }
+                    _ => {}
                 }
                 let left = self.eval_in(lhs, env)?;
                 let right = self.eval_in(rhs, env)?;

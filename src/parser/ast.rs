@@ -157,6 +157,9 @@ pub enum BinaryOp {
     OrScalar,
     Range,
     Pipe,
+    AssignPipe, // %<>% — pipe and assign back to LHS
+    TeePipe,    // %T>% — pipe for side effect, return LHS
+    ExpoPipe,   // %$%  — expose LHS names to RHS
     Special(SpecialOp),
     #[allow(dead_code)]
     Tilde,

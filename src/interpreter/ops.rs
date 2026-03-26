@@ -167,6 +167,11 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
         }
         BinaryOp::Special(_) => Ok(RValue::Null),
 
+        // Pipe ops are handled in eval_in before reaching eval_binary
+        BinaryOp::Pipe | BinaryOp::AssignPipe | BinaryOp::TeePipe | BinaryOp::ExpoPipe => {
+            Ok(RValue::Null)
+        }
+
         // Arithmetic (vectorized with recycling) — raw vectors cannot participate
         BinaryOp::Add
         | BinaryOp::Sub
