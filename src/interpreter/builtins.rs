@@ -5448,7 +5448,7 @@ fn builtin_inherits(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
 pub(crate) fn get_dim_ints(dim_attr: Option<&RValue>) -> Option<Vec<Option<i64>>> {
     match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Integer(dims) => Some(dims.to_option_vec()),
+            Vector::Integer(dims) => Some(dims.iter_opt().collect()),
             _ => None,
         },
         _ => None,

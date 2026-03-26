@@ -130,7 +130,7 @@ impl Vector {
     /// Convert entire vector to doubles
     pub fn to_doubles(&self) -> Vec<Option<f64>> {
         match self {
-            Vector::Double(v) => v.to_option_vec(),
+            Vector::Double(v) => v.iter_opt().collect(),
             Vector::Integer(v) => v.iter_opt().map(|x| x.map(coerce::i64_to_f64)).collect(),
             Vector::Logical(v) => v
                 .iter()
@@ -148,7 +148,7 @@ impl Vector {
     /// Convert entire vector to integers
     pub fn to_integers(&self) -> Vec<Option<i64>> {
         match self {
-            Vector::Integer(v) => v.to_option_vec(),
+            Vector::Integer(v) => v.iter_opt().collect(),
             Vector::Double(v) => v
                 .iter_opt()
                 .map(|x| x.and_then(|f| coerce::f64_to_i64(f).ok()))

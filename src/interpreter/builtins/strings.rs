@@ -1046,7 +1046,7 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             };
             let lengths = match rv.get_attr("match.length") {
                 Some(RValue::Vector(lv)) => match &lv.inner {
-                    Vector::Integer(l) => l.to_option_vec(),
+                    Vector::Integer(l) => l.clone(),
                     _ => {
                         return Err(RError::new(
                             RErrorKind::Argument,
@@ -1064,7 +1064,7 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
             let mut result = Vec::new();
             for (i, pos) in positions.iter_opt().enumerate() {
                 let p = pos.unwrap_or(-1);
-                let l = lengths.get(i).copied().flatten().unwrap_or(-1);
+                let l = lengths.get_opt(i).unwrap_or(-1);
                 if p > 0 && l > 0 {
                     if let Some(Some(s)) = x.get(i) {
                         let start = usize::try_from(p - 1)?;
@@ -1100,18 +1100,18 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                     ));
                     continue;
                 };
-                let lengths: Vec<Option<i64>> = match rv.get_attr("match.length") {
+                let lengths: Integer = match rv.get_attr("match.length") {
                     Some(RValue::Vector(lv)) => match &lv.inner {
-                        Vector::Integer(l) => l.to_option_vec(),
-                        _ => vec![],
+                        Vector::Integer(l) => l.clone(),
+                        _ => Integer(NullableBuffer::from_values(vec![])),
                     },
-                    _ => vec![],
+                    _ => Integer(NullableBuffer::from_values(vec![])),
                 };
                 let s = x.get(i).and_then(|s| s.as_ref());
                 let mut matches = Vec::new();
                 for (j, pos) in positions.iter_opt().enumerate() {
                     let p = pos.unwrap_or(-1);
-                    let l = lengths.get(j).copied().flatten().unwrap_or(-1);
+                    let l = lengths.get_opt(j).unwrap_or(-1);
                     if p > 0 && l > 0 {
                         if let Some(s) = s {
                             let start = usize::try_from(p - 1)?;
@@ -1181,9 +1181,9 @@ fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<
             let Vector::Integer(positions) = &rv.inner else {
                 unreachable!()
             };
-            let lengths: Vec<Option<i64>> = match rv.get_attr("match.length") {
+            let lengths: Integer = match rv.get_attr("match.length") {
                 Some(RValue::Vector(lv)) => match &lv.inner {
-                    Vector::Integer(l) => l.to_option_vec(),
+                    Vector::Integer(l) => l.clone(),
                     _ => {
                         return Err(RError::new(
                             RErrorKind::Argument,
@@ -1211,7 +1211,7 @@ fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<
             let mut result: Vec<Option<String>> = x.to_vec();
             for (i, pos) in positions.iter_opt().enumerate() {
                 let p = pos.unwrap_or(-1);
-                let l = lengths.get(i).copied().flatten().unwrap_or(-1);
+                let l = lengths.get_opt(i).unwrap_or(-1);
                 if p > 0 && l >= 0 {
                     if let Some(Some(s)) = result.get(i) {
                         let start = usize::try_from(p - 1)?;
@@ -1250,12 +1250,12 @@ fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<
                 let Vector::Integer(positions) = &rv.inner else {
                     continue;
                 };
-                let lengths: Vec<Option<i64>> = match rv.get_attr("match.length") {
+                let lengths: Integer = match rv.get_attr("match.length") {
                     Some(RValue::Vector(lv)) => match &lv.inner {
-                        Vector::Integer(l) => l.to_option_vec(),
-                        _ => vec![],
+                        Vector::Integer(l) => l.clone(),
+                        _ => Integer(NullableBuffer::from_values(vec![])),
                     },
-                    _ => vec![],
+                    _ => Integer(NullableBuffer::from_values(vec![])),
                 };
 
                 let repls: Vec<Option<String>> = match repl_list.values.get(i) {
@@ -1269,7 +1269,7 @@ fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<
                     let mut edits: Vec<(usize, usize, &str)> = Vec::new();
                     for (j, pos) in positions.iter_opt().enumerate() {
                         let p = pos.unwrap_or(-1);
-                        let l = lengths.get(j).copied().flatten().unwrap_or(-1);
+                        let l = lengths.get_opt(j).unwrap_or(-1);
                         if p > 0 && l >= 0 {
                             let start = usize::try_from(p - 1)?;
                             let end = start + usize::try_from(l)?;

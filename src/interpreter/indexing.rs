@@ -233,9 +233,9 @@ fn eval_matrix_index(
         }
     };
 
-    let dims = match dim_attr {
+    let dims: Vec<Option<i64>> = match dim_attr {
         Some(RValue::Vector(rv)) => match &rv.inner {
-            Vector::Integer(d) => d.to_option_vec(),
+            Vector::Integer(d) => d.iter_opt().collect(),
             _ => {
                 return Err(IndexingError::IncorrectDimensions.into());
             }

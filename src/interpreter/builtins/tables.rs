@@ -12,7 +12,7 @@ use super::factors::rvalue_to_char_vec;
 fn builtin_tabulate(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let bins: Vec<Option<i64>> = match &args[0] {
         RValue::Vector(rv) => match &rv.inner {
-            Vector::Integer(v) => v.to_option_vec(),
+            Vector::Integer(v) => v.iter_opt().collect(),
             Vector::Double(v) => v
                 .iter_opt()
                 .map(|d| d.map(f64_to_i64).transpose())

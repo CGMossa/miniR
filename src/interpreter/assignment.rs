@@ -78,19 +78,20 @@ fn replace_elements(
 
     macro_rules! replace_typed_buffer {
         ($target_vals:expr, $repl_vals:expr, $variant:ident) => {{
-            let mut result = $target_vals.to_option_vec();
+            let mut result = $target_vals.clone();
+            // Extend to max_idx if needed
             while result.len() < max_idx {
-                result.push(Default::default());
+                result.push(None);
             }
             for (j, idx) in indices.iter().enumerate() {
                 if let Some(i) = idx {
                     let i = usize::try_from(*i).unwrap_or(0);
                     if i > 0 && i <= result.len() {
-                        result[i - 1] = $repl_vals.get_opt(j % $repl_vals.len());
+                        result.set(i - 1, $repl_vals.get_opt(j % $repl_vals.len()));
                     }
                 }
             }
-            Vector::$variant(result.into())
+            Vector::$variant(result)
         }};
     }
 
