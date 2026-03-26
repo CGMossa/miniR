@@ -228,7 +228,9 @@ fn repl_main(session: &mut Session) {
                         eprint_colored(&e.render());
                     }
                 }
-                // Auto-flush any accumulated plot to the GUI window.
+                // Auto-flush any accumulated grid graphics to the GUI window.
+                r::interpreter::builtins::grid::flush_grid(session.interpreter());
+                // Auto-flush any accumulated base plot to the GUI window.
                 r::interpreter::builtins::graphics::flush_plot(session.interpreter());
             }
             Ok(Signal::CtrlC) => {

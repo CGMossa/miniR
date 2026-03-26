@@ -256,10 +256,16 @@ pub struct Interpreter {
     pub(crate) progress_bars: RefCell<Vec<Option<builtins::progress::ProgressBarState>>>,
     /// Graphics parameters (par state) — per-interpreter, not global.
     pub(crate) par_state: RefCell<graphics::par::ParState>,
-    /// Grid graphics display list — records grob objects drawn on the page.
+    /// Grid graphics display list — records grob objects drawn on the page (R-level).
     pub(crate) grid_display_list: RefCell<Vec<RValue>>,
-    /// Grid viewport stack — tracks pushed viewports for grid graphics.
+    /// Grid viewport stack — tracks pushed viewports for grid graphics (R-level).
     pub(crate) grid_viewport_stack: RefCell<Vec<RValue>>,
+    /// Grid grob store — stores Rust-level grobs indexed by GrobId for rendering.
+    pub(crate) grid_grob_store: RefCell<grid::grob::GrobStore>,
+    /// Grid Rust-level display list — records viewport pushes/pops and grob draws for replay.
+    pub(crate) grid_rust_display_list: RefCell<grid::display::DisplayList>,
+    /// Grid Rust-level viewport stack — tracks pushed viewports for rendering.
+    pub(crate) grid_rust_viewport_stack: RefCell<grid::viewport::ViewportStack>,
     /// Color palette for indexed color access (e.g. col=1 means palette[0]).
     pub(crate) color_palette: RefCell<Vec<graphics::color::RColor>>,
     /// Current plot being accumulated (for egui_plot rendering).
@@ -420,6 +426,11 @@ impl Interpreter {
             par_state: RefCell::new(graphics::par::ParState::default()),
             grid_display_list: RefCell::new(Vec::new()),
             grid_viewport_stack: RefCell::new(Vec::new()),
+            grid_grob_store: RefCell::new(grid::grob::GrobStore::new()),
+            grid_rust_display_list: RefCell::new(grid::display::DisplayList::new()),
+            grid_rust_viewport_stack: RefCell::new(grid::viewport::ViewportStack::new(
+                17.78, 17.78,
+            )),
             color_palette: RefCell::new(graphics::color::default_palette()),
             current_plot: RefCell::new(None),
             file_device: RefCell::new(None),

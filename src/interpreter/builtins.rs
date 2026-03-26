@@ -11,7 +11,7 @@ mod datetime;
 mod digest;
 mod factors;
 pub mod graphics;
-mod grid;
+pub mod grid;
 mod interp;
 #[cfg(feature = "io")]
 pub mod io;

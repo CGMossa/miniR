@@ -7,6 +7,7 @@
 //! - Grobs: `list(x=..., y=..., gp=..., ...)` with class c("<type>", "grob")
 
 use super::CallArgs;
+use crate::interpreter::grid;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use minir_macros::interpreter_builtin;
@@ -121,6 +122,392 @@ fn find_viewport_by_name(name: &str, ctx: &BuiltinContext) -> Option<usize> {
 
 // endregion
 
+// region: R-to-Rust conversion helpers
+
+/// Extract a Rust `Unit` from an R value representing a unit object.
+///
+/// Handles both:
+/// - A unit object (list with class "unit", fields "value" and "units")
+/// - A bare numeric vector (treated as NPC by default)
+fn extract_unit_from_rvalue(val: &RValue) -> grid::units::Unit {
+    if let RValue::List(list) = val {
+        // Look for "value" and "units" entries
+        let mut values_opt = None;
+        let mut units_opt = None;
+        for (key, v) in &list.values {
+            match key.as_deref() {
+                Some("value") => values_opt = Some(v),
+                Some("units") => units_opt = Some(v),
+                _ => {}
+            }
+        }
+
+        if let (Some(values_val), Some(units_val)) = (values_opt, units_opt) {
+            let nums: Vec<f64> = if let Some(rv) = values_val.as_vector() {
+                rv.to_doubles()
+                    .into_iter()
+                    .map(|v| v.unwrap_or(0.0))
+                    .collect()
+            } else {
+                vec![0.0]
+            };
+
+            let unit_strs: Vec<String> = if let Some(rv) = units_val.as_vector() {
+                rv.to_characters()
+                    .into_iter()
+                    .map(|v: Option<String>| v.unwrap_or_else(|| "npc".to_string()))
+                    .collect()
+            } else {
+                vec!["npc".to_string()]
+            };
+
+            let mut unit_types = Vec::with_capacity(unit_strs.len());
+            for s in &unit_strs {
+                unit_types.push(parse_unit_type(s));
+            }
+
+            // Recycle to match lengths
+            let n = nums.len().max(unit_types.len());
+            let values: Vec<f64> = (0..n).map(|i| nums[i % nums.len()]).collect();
+            let units: Vec<grid::units::UnitType> = (0..n)
+                .map(|i| unit_types[i % unit_types.len()].clone())
+                .collect();
+
+            return grid::units::Unit { values, units };
+        }
+    }
+
+    // Bare numeric — treat as NPC
+    if let Some(rv) = val.as_vector() {
+        let nums: Vec<f64> = rv
+            .to_doubles()
+            .into_iter()
+            .map(|v| v.unwrap_or(0.0))
+            .collect();
+        if !nums.is_empty() {
+            return grid::units::Unit {
+                values: nums.clone(),
+                units: nums.iter().map(|_| grid::units::UnitType::Npc).collect(),
+            };
+        }
+    }
+
+    // Default: 0.5 npc
+    grid::units::Unit::npc(0.5)
+}
+
+/// Parse a unit type string into a `UnitType`.
+fn parse_unit_type(s: &str) -> grid::units::UnitType {
+    match s {
+        "npc" => grid::units::UnitType::Npc,
+        "cm" => grid::units::UnitType::Cm,
+        "inches" | "in" => grid::units::UnitType::Inches,
+        "mm" => grid::units::UnitType::Mm,
+        "points" | "pt" | "bigpts" | "picas" | "dida" | "cicero" | "scaledpts" => {
+            grid::units::UnitType::Points
+        }
+        "lines" => grid::units::UnitType::Lines,
+        "char" => grid::units::UnitType::Char,
+        "native" => grid::units::UnitType::Native,
+        "null" => grid::units::UnitType::Null,
+        "snpc" => grid::units::UnitType::Snpc,
+        "strwidth" => grid::units::UnitType::StrWidth(String::new()),
+        "strheight" => grid::units::UnitType::StrHeight(String::new()),
+        "grobwidth" => grid::units::UnitType::GrobWidth(String::new()),
+        "grobheight" => grid::units::UnitType::GrobHeight(String::new()),
+        _ => grid::units::UnitType::Npc,
+    }
+}
+
+/// Parse an R color value to RGBA.
+///
+/// Supports: color name strings, hex strings (#RRGGBB / #RRGGBBAA),
+/// and integer indices (treated as palette lookups, default black).
+fn parse_grid_color(value: &RValue) -> Option<[u8; 4]> {
+    match value {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(c) => {
+                if let Some(Some(s)) = c.first() {
+                    Some(parse_color_string(s))
+                } else {
+                    None
+                }
+            }
+            Vector::Integer(iv) => {
+                if let Some(Some(i)) = iv.first().copied() {
+                    // Basic palette: 0=white, 1=black, 2=red, 3=green, 4=blue, ...
+                    Some(match i {
+                        0 => [255, 255, 255, 0],   // transparent
+                        1 => [0, 0, 0, 255],       // black
+                        2 => [255, 0, 0, 255],     // red
+                        3 => [0, 128, 0, 255],     // green
+                        4 => [0, 0, 255, 255],     // blue
+                        5 => [0, 255, 255, 255],   // cyan
+                        6 => [255, 0, 255, 255],   // magenta
+                        7 => [255, 255, 0, 255],   // yellow
+                        8 => [128, 128, 128, 255], // gray
+                        _ => [0, 0, 0, 255],       // default black
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+        RValue::Null => None,
+        _ => None,
+    }
+}
+
+/// Parse a hex color string to RGBA.
+fn parse_color_string(s: &str) -> [u8; 4] {
+    // Named colors
+    match s.to_lowercase().as_str() {
+        "black" => return [0, 0, 0, 255],
+        "white" => return [255, 255, 255, 255],
+        "red" => return [255, 0, 0, 255],
+        "green" => return [0, 128, 0, 255],
+        "blue" => return [0, 0, 255, 255],
+        "cyan" => return [0, 255, 255, 255],
+        "magenta" => return [255, 0, 255, 255],
+        "yellow" => return [255, 255, 0, 255],
+        "gray" | "grey" => return [190, 190, 190, 255],
+        "orange" => return [255, 165, 0, 255],
+        "purple" => return [128, 0, 128, 255],
+        "brown" => return [165, 42, 42, 255],
+        "pink" => return [255, 192, 203, 255],
+        "transparent" | "na" => return [0, 0, 0, 0],
+        _ => {}
+    }
+
+    // Hex format
+    if let Some(hex) = s.strip_prefix('#') {
+        match hex.len() {
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+                return [r, g, b, 255];
+            }
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+                let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
+                return [r, g, b, a];
+            }
+            _ => {}
+        }
+    }
+
+    [0, 0, 0, 255] // default black
+}
+
+/// Extract a Rust `Gpar` from an R gpar list object.
+fn extract_gpar_from_rvalue(val: &RValue) -> grid::gpar::Gpar {
+    let mut gp = grid::gpar::Gpar::new();
+
+    if let RValue::List(list) = val {
+        for (key, v) in &list.values {
+            match key.as_deref() {
+                Some("col") => {
+                    gp.col = parse_grid_color(v);
+                }
+                Some("fill") => {
+                    gp.fill = parse_grid_color(v);
+                }
+                Some("lwd") => {
+                    if let Some(rv) = v.as_vector() {
+                        gp.lwd = rv.as_double_scalar();
+                    }
+                }
+                Some("fontsize") => {
+                    if let Some(rv) = v.as_vector() {
+                        gp.fontsize = rv.as_double_scalar();
+                    }
+                }
+                Some("lineheight") => {
+                    if let Some(rv) = v.as_vector() {
+                        gp.lineheight = rv.as_double_scalar();
+                    }
+                }
+                Some("cex") => {
+                    if let Some(rv) = v.as_vector() {
+                        gp.cex = rv.as_double_scalar();
+                    }
+                }
+                Some("alpha") => {
+                    if let Some(rv) = v.as_vector() {
+                        gp.alpha = rv.as_double_scalar();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    gp
+}
+
+/// Extract justification from an R value.
+///
+/// Accepts: a character string ("centre", "left", etc.), a numeric vector
+/// c(hjust, vjust), or NULL (returns default centre/centre).
+fn extract_justification(
+    val: &RValue,
+) -> (grid::viewport::Justification, grid::viewport::Justification) {
+    use grid::viewport::Justification;
+
+    match val {
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Character(c) => {
+                if c.len() >= 2 {
+                    let h = c[0]
+                        .as_deref()
+                        .and_then(Justification::parse)
+                        .unwrap_or(Justification::Centre);
+                    let v_j = c[1]
+                        .as_deref()
+                        .and_then(Justification::parse)
+                        .unwrap_or(Justification::Centre);
+                    (h, v_j)
+                } else if let Some(Some(s)) = c.first() {
+                    let j = Justification::parse(s).unwrap_or(Justification::Centre);
+                    (j, j)
+                } else {
+                    (Justification::Centre, Justification::Centre)
+                }
+            }
+            Vector::Double(d) => {
+                let h = d.first().copied().flatten().unwrap_or(0.5);
+                let v_val = d.get(1).copied().flatten().unwrap_or(h);
+                (num_to_just(h), num_to_just(v_val))
+            }
+            _ => (Justification::Centre, Justification::Centre),
+        },
+        RValue::Null => (Justification::Centre, Justification::Centre),
+        _ => (Justification::Centre, Justification::Centre),
+    }
+}
+
+/// Convert a numeric justification (0.0, 0.5, 1.0) to a `Justification`.
+fn num_to_just(v: f64) -> grid::viewport::Justification {
+    use grid::viewport::Justification;
+    if v <= 0.25 {
+        Justification::Left
+    } else if v >= 0.75 {
+        Justification::Right
+    } else {
+        Justification::Centre
+    }
+}
+
+/// Extract a Rust `Viewport` from an R viewport list object.
+fn extract_viewport_from_rvalue(val: &RValue) -> grid::viewport::Viewport {
+    let mut vp = grid::viewport::Viewport::new();
+
+    if let RValue::List(list) = val {
+        for (key, v) in &list.values {
+            match key.as_deref() {
+                Some("x") => vp.x = extract_unit_from_rvalue(v),
+                Some("y") => vp.y = extract_unit_from_rvalue(v),
+                Some("width") => vp.width = extract_unit_from_rvalue(v),
+                Some("height") => vp.height = extract_unit_from_rvalue(v),
+                Some("just") => {
+                    let (h, v_just) = extract_justification(v);
+                    vp.just = (h, v_just);
+                }
+                Some("xscale") => {
+                    if let Some(rv) = v.as_vector() {
+                        let doubles = rv.to_doubles();
+                        if doubles.len() >= 2 {
+                            vp.xscale = (doubles[0].unwrap_or(0.0), doubles[1].unwrap_or(1.0));
+                        }
+                    }
+                }
+                Some("yscale") => {
+                    if let Some(rv) = v.as_vector() {
+                        let doubles = rv.to_doubles();
+                        if doubles.len() >= 2 {
+                            vp.yscale = (doubles[0].unwrap_or(0.0), doubles[1].unwrap_or(1.0));
+                        }
+                    }
+                }
+                Some("angle") => {
+                    if let Some(rv) = v.as_vector() {
+                        vp.angle = rv.as_double_scalar().unwrap_or(0.0);
+                    }
+                }
+                Some("clip") => {
+                    if let Some(rv) = v.as_vector() {
+                        if let Some(s) = rv.as_character_scalar() {
+                            vp.clip = s == "on";
+                        }
+                    }
+                }
+                Some("gp") => {
+                    vp.gp = extract_gpar_from_rvalue(v);
+                }
+                Some("name") => {
+                    if let Some(rv) = v.as_vector() {
+                        vp.name = rv.as_character_scalar();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    vp
+}
+
+/// Record a Rust grob on the Rust display list.
+///
+/// Creates the Rust `Grob`, adds it to the `GrobStore`, and records a
+/// `DisplayItem::Draw` on the Rust `DisplayList`.
+fn record_rust_grob(grob: grid::grob::Grob, ctx: &BuiltinContext) {
+    let grob_id = ctx.interpreter().grid_grob_store.borrow_mut().add(grob);
+    ctx.interpreter()
+        .grid_rust_display_list
+        .borrow_mut()
+        .record(grid::display::DisplayItem::Draw(grob_id));
+}
+
+/// Extract a vector of label strings from an R value.
+fn extract_labels(val: &RValue) -> Vec<String> {
+    match val {
+        RValue::Vector(rv) => rv
+            .inner
+            .to_characters()
+            .into_iter()
+            .map(|v| v.unwrap_or_default())
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Extract rotation angle from an R value.
+fn extract_rot(val: &RValue) -> f64 {
+    if let Some(rv) = val.as_vector() {
+        rv.as_double_scalar().unwrap_or(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// Extract pch (plotting character) from an R value.
+fn extract_pch(val: &RValue) -> u8 {
+    if let Some(rv) = val.as_vector() {
+        rv.as_integer_scalar()
+            .and_then(|i| u8::try_from(i).ok())
+            .unwrap_or(1)
+    } else {
+        1
+    }
+}
+
+// endregion
+
 // region: Page management
 
 /// Clear the grid display list and viewport stack, starting a new page.
@@ -132,12 +519,27 @@ fn interp_grid_newpage(
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    // Flush any existing grid content before clearing
+    flush_grid_to_plot(context);
+
+    // Clear R-level state
     context.interpreter().grid_display_list.borrow_mut().clear();
     context
         .interpreter()
         .grid_viewport_stack
         .borrow_mut()
         .clear();
+
+    // Clear Rust-level state
+    context
+        .interpreter()
+        .grid_rust_display_list
+        .borrow_mut()
+        .clear();
+    *context.interpreter().grid_grob_store.borrow_mut() = grid::grob::GrobStore::new();
+    *context.interpreter().grid_rust_viewport_stack.borrow_mut() =
+        grid::viewport::ViewportStack::new(17.78, 17.78);
+
     context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
@@ -154,6 +556,30 @@ fn interp_grid_draw(
 ) -> Result<RValue, RError> {
     let grob = args[0].clone();
     record_on_display_list(&grob, context);
+
+    // Also record on the Rust display list if we can determine the grob type
+    if let RValue::List(list) = &grob {
+        if let Some(classes) = list.class() {
+            // The first class before "grob" is the type class
+            let type_class = classes
+                .iter()
+                .find(|c| *c != "grob")
+                .cloned()
+                .unwrap_or_default();
+
+            // Build entries from the list
+            let entries: Vec<(String, RValue)> = list
+                .values
+                .iter()
+                .filter_map(|(k, v)| k.as_ref().map(|k| (k.clone(), v.clone())))
+                .collect();
+
+            if let Some(rust_grob) = build_rust_grob(&type_class, &entries) {
+                record_rust_grob(rust_grob, context);
+            }
+        }
+    }
+
     context.interpreter().set_invisible();
     Ok(grob)
 }
@@ -375,7 +801,7 @@ fn interp_push_viewport(
 ) -> Result<RValue, RError> {
     let vp = args[0].clone();
 
-    // Record the push on the display list
+    // Record the push on the R-level display list
     let push_record = make_grid_object(
         vec![
             (
@@ -389,6 +815,19 @@ fn interp_push_viewport(
         &["vpOperation"],
     );
     record_on_display_list(&push_record, context);
+
+    // Also push on the Rust-level viewport stack and display list
+    let rust_vp = extract_viewport_from_rvalue(&vp);
+    context
+        .interpreter()
+        .grid_rust_viewport_stack
+        .borrow_mut()
+        .push(rust_vp.clone());
+    context
+        .interpreter()
+        .grid_rust_display_list
+        .borrow_mut()
+        .record(grid::display::DisplayItem::PushViewport(Box::new(rust_vp)));
 
     context
         .interpreter()
@@ -424,8 +863,18 @@ fn interp_pop_viewport(
         stack.pop();
     }
 
-    // Record the pop on the display list
+    // Also pop from the Rust-level viewport stack and record on Rust display list
     drop(stack);
+    {
+        let mut rust_stack = context.interpreter().grid_rust_viewport_stack.borrow_mut();
+        let mut rust_dl = context.interpreter().grid_rust_display_list.borrow_mut();
+        for _ in 0..n {
+            rust_stack.pop();
+            rust_dl.record(grid::display::DisplayItem::PopViewport);
+        }
+    }
+
+    // Record the pop on the R-level display list
     let pop_record = make_grid_object(
         vec![
             (
@@ -781,15 +1230,21 @@ fn make_grob(
     vp: RValue,
     ctx: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    let grob = make_grid_object(entries, &[type_class, "grob"]);
+    let grob = make_grid_object(entries.clone(), &[type_class, "grob"]);
 
     if draw {
+        // Build the Rust-level grob from the R entries
+        let rust_grob = build_rust_grob(type_class, &entries);
+
         match vp {
             RValue::Null => {
                 record_on_display_list(&grob, ctx);
+                if let Some(rg) = rust_grob {
+                    record_rust_grob(rg, ctx);
+                }
             }
             _ => {
-                // Push viewport, draw, pop
+                // Push viewport, draw, pop — both R-level and Rust-level
                 let push_record = make_grid_object(
                     vec![
                         (
@@ -804,11 +1259,35 @@ fn make_grob(
                 );
                 record_on_display_list(&push_record, ctx);
 
+                // Rust-level viewport push
+                let rust_vp = extract_viewport_from_rvalue(&vp);
+                ctx.interpreter()
+                    .grid_rust_viewport_stack
+                    .borrow_mut()
+                    .push(rust_vp.clone());
+                ctx.interpreter()
+                    .grid_rust_display_list
+                    .borrow_mut()
+                    .record(grid::display::DisplayItem::PushViewport(Box::new(rust_vp)));
+
                 ctx.interpreter().grid_viewport_stack.borrow_mut().push(vp);
 
                 record_on_display_list(&grob, ctx);
+                if let Some(rg) = rust_grob {
+                    record_rust_grob(rg, ctx);
+                }
 
                 ctx.interpreter().grid_viewport_stack.borrow_mut().pop();
+
+                // Rust-level viewport pop
+                ctx.interpreter()
+                    .grid_rust_viewport_stack
+                    .borrow_mut()
+                    .pop();
+                ctx.interpreter()
+                    .grid_rust_display_list
+                    .borrow_mut()
+                    .record(grid::display::DisplayItem::PopViewport);
 
                 let pop_record = make_grid_object(
                     vec![
@@ -832,6 +1311,102 @@ fn make_grob(
 
     ctx.interpreter().set_invisible();
     Ok(grob)
+}
+
+/// Build a Rust-level `Grob` from a type class name and list entries.
+///
+/// Returns `None` for grob types we don't yet have Rust-level support for
+/// (e.g. axes, which are composite grobs).
+fn build_rust_grob(type_class: &str, entries: &[(String, RValue)]) -> Option<grid::grob::Grob> {
+    // Helper to look up an entry by name
+    let get =
+        |name: &str| -> Option<&RValue> { entries.iter().find(|(k, _)| k == name).map(|(_, v)| v) };
+
+    match type_class {
+        "lines" => {
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Lines { x, y, gp })
+        }
+        "segments" => {
+            let x0 = extract_unit_from_rvalue(get("x0").unwrap_or(&RValue::Null));
+            let y0 = extract_unit_from_rvalue(get("y0").unwrap_or(&RValue::Null));
+            let x1 = extract_unit_from_rvalue(get("x1").unwrap_or(&RValue::Null));
+            let y1 = extract_unit_from_rvalue(get("y1").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Segments { x0, y0, x1, y1, gp })
+        }
+        "points" => {
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let pch = extract_pch(get("pch").unwrap_or(&RValue::Null));
+            let size = if let Some(sv) = get("size") {
+                if matches!(sv, RValue::Null) {
+                    grid::units::Unit::points(4.0)
+                } else {
+                    extract_unit_from_rvalue(sv)
+                }
+            } else {
+                grid::units::Unit::points(4.0)
+            };
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Points {
+                x,
+                y,
+                pch,
+                size,
+                gp,
+            })
+        }
+        "rect" => {
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let width = extract_unit_from_rvalue(get("width").unwrap_or(&RValue::Null));
+            let height = extract_unit_from_rvalue(get("height").unwrap_or(&RValue::Null));
+            let just = extract_justification(get("just").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Rect {
+                x,
+                y,
+                width,
+                height,
+                just,
+                gp,
+            })
+        }
+        "circle" => {
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let r = extract_unit_from_rvalue(get("r").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Circle { x, y, r, gp })
+        }
+        "polygon" => {
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Polygon { x, y, gp })
+        }
+        "text" => {
+            let label = extract_labels(get("label").unwrap_or(&RValue::Null));
+            let x = extract_unit_from_rvalue(get("x").unwrap_or(&RValue::Null));
+            let y = extract_unit_from_rvalue(get("y").unwrap_or(&RValue::Null));
+            let just = extract_justification(get("just").unwrap_or(&RValue::Null));
+            let rot = extract_rot(get("rot").unwrap_or(&RValue::Null));
+            let gp = extract_gpar_from_rvalue(get("gp").unwrap_or(&RValue::Null));
+            Some(grid::grob::Grob::Text {
+                label,
+                x,
+                y,
+                just,
+                rot,
+                gp,
+            })
+        }
+        // Axes and other composite grobs don't have direct Rust Grob equivalents yet
+        _ => None,
+    }
 }
 
 /// Draw line segments (polyline) on the grid graphics device.
@@ -1325,17 +1900,93 @@ fn interp_grid_layout(
     Ok(make_grid_object(entries, &["layout"]))
 }
 
-/// Visualize a grid layout (stub).
+/// Visualize a grid layout by drawing labeled rectangles for each cell.
 ///
 /// @param layout a layout object to visualize
 /// @return NULL (invisibly)
-#[interpreter_builtin(name = "grid.show.layout", namespace = "grid")]
+#[interpreter_builtin(name = "grid.show.layout", namespace = "grid", min_args = 1)]
 fn interp_grid_show_layout(
-    _args: &[RValue],
+    args: &[RValue],
     _named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    // Stub — full visualization not yet implemented
+    let layout = &args[0];
+
+    // Extract nrow, ncol from the layout object
+    let (nrow, ncol) = if let RValue::List(list) = layout {
+        let mut nr = 1i64;
+        let mut nc = 1i64;
+        for (key, val) in &list.values {
+            match key.as_deref() {
+                Some("nrow") => {
+                    if let Some(rv) = val.as_vector() {
+                        nr = rv.as_integer_scalar().unwrap_or(1);
+                    }
+                }
+                Some("ncol") => {
+                    if let Some(rv) = val.as_vector() {
+                        nc = rv.as_integer_scalar().unwrap_or(1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        (nr.max(1) as usize, nc.max(1) as usize)
+    } else {
+        (1, 1)
+    };
+
+    // Draw a grid of rectangles with labels showing (row, col)
+    let cell_width = 1.0 / ncol as f64;
+    let cell_height = 1.0 / nrow as f64;
+
+    for row in 0..nrow {
+        for col in 0..ncol {
+            let x_center = (col as f64 + 0.5) * cell_width;
+            let y_center = 1.0 - (row as f64 + 0.5) * cell_height;
+
+            // Draw the cell rectangle (Rust-level)
+            let rect_gp = grid::gpar::Gpar {
+                col: Some([0, 0, 0, 255]),
+                fill: Some([255, 255, 255, 0]),
+                lwd: Some(0.5),
+                ..Default::default()
+            };
+            let rect_grob = grid::grob::Grob::Rect {
+                x: grid::units::Unit::npc(x_center),
+                y: grid::units::Unit::npc(y_center),
+                width: grid::units::Unit::npc(cell_width),
+                height: grid::units::Unit::npc(cell_height),
+                just: (
+                    grid::viewport::Justification::Centre,
+                    grid::viewport::Justification::Centre,
+                ),
+                gp: rect_gp,
+            };
+            record_rust_grob(rect_grob, context);
+
+            // Draw the cell label
+            let label = format!("({}, {})", row + 1, col + 1);
+            let text_gp = grid::gpar::Gpar {
+                col: Some([100, 100, 100, 255]),
+                fontsize: Some(8.0),
+                ..Default::default()
+            };
+            let text_grob = grid::grob::Grob::Text {
+                label: vec![label],
+                x: grid::units::Unit::npc(x_center),
+                y: grid::units::Unit::npc(y_center),
+                just: (
+                    grid::viewport::Justification::Centre,
+                    grid::viewport::Justification::Centre,
+                ),
+                rot: 0.0,
+                gp: text_gp,
+            };
+            record_rust_grob(text_grob, context);
+        }
+    }
+
     context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
@@ -1547,6 +2198,242 @@ fn interp_grid_yaxis(
     ];
 
     make_grob("yaxis", entries, draw, vp, context)
+}
+
+// endregion
+
+// region: Grid-to-PlotState rendering
+
+use crate::interpreter::graphics::plot_data::{PlotItem, PlotState};
+
+/// Device dimensions in centimeters (default ~7 inches square).
+const DEVICE_WIDTH_CM: f64 = 17.78;
+const DEVICE_HEIGHT_CM: f64 = 17.78;
+
+/// Convert the grid Rust display list into a `PlotState` for the existing
+/// egui rendering pipeline.
+///
+/// This replays the display list through a `PlotStateRenderer` that converts
+/// grid grobs (in cm coordinates) to `PlotItem`s in normalized [0,1] space.
+fn grid_to_plot_state(
+    display_list: &grid::display::DisplayList,
+    grob_store: &grid::grob::GrobStore,
+) -> PlotState {
+    let mut renderer = PlotStateRenderer::new(DEVICE_WIDTH_CM, DEVICE_HEIGHT_CM);
+    grid::render::replay(display_list, grob_store, &mut renderer);
+    renderer.into_plot_state()
+}
+
+/// A `GridRenderer` implementation that converts grid drawing operations
+/// into `PlotItem`s for the existing egui_plot rendering pipeline.
+///
+/// Coordinates are mapped from cm to normalized [0, device_size] coordinates,
+/// then to a PlotState with x_lim and y_lim set to the device extent.
+struct PlotStateRenderer {
+    items: Vec<PlotItem>,
+    device_width_cm: f64,
+    device_height_cm: f64,
+}
+
+impl PlotStateRenderer {
+    fn new(width_cm: f64, height_cm: f64) -> Self {
+        PlotStateRenderer {
+            items: Vec::new(),
+            device_width_cm: width_cm,
+            device_height_cm: height_cm,
+        }
+    }
+
+    fn into_plot_state(self) -> PlotState {
+        PlotState {
+            items: self.items,
+            title: None,
+            x_label: None,
+            y_label: None,
+            x_lim: Some((0.0, self.device_width_cm)),
+            y_lim: Some((0.0, self.device_height_cm)),
+            show_legend: false,
+        }
+    }
+
+    /// Convert RGBA with optional alpha to final RGBA.
+    fn apply_alpha(rgba: [u8; 4], gp: &grid::gpar::Gpar) -> [u8; 4] {
+        let alpha = gp.effective_alpha();
+        if (alpha - 1.0).abs() < f64::EPSILON {
+            rgba
+        } else {
+            let a = (f64::from(rgba[3]) * alpha) as u8;
+            [rgba[0], rgba[1], rgba[2], a]
+        }
+    }
+}
+
+impl grid::render::GridRenderer for PlotStateRenderer {
+    fn line(&mut self, x0_cm: f64, y0_cm: f64, x1_cm: f64, y1_cm: f64, gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        let width = gp.effective_lwd() as f32;
+        self.items.push(PlotItem::Line {
+            x: vec![x0_cm, x1_cm],
+            y: vec![y0_cm, y1_cm],
+            color: col,
+            width,
+            label: None,
+        });
+    }
+
+    fn polyline(&mut self, x_cm: &[f64], y_cm: &[f64], gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        let width = gp.effective_lwd() as f32;
+        self.items.push(PlotItem::Line {
+            x: x_cm.to_vec(),
+            y: y_cm.to_vec(),
+            color: col,
+            width,
+            label: None,
+        });
+    }
+
+    fn rect(&mut self, x_cm: f64, y_cm: f64, w_cm: f64, h_cm: f64, gp: &grid::gpar::Gpar) {
+        let fill = gp.effective_fill();
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        let width = gp.effective_lwd() as f32;
+
+        // Draw fill as a polygon if not transparent
+        if fill[3] > 0 {
+            // Use a line to represent the rectangle outline (4 corners + close)
+            let fill_color = Self::apply_alpha(fill, gp);
+            self.items.push(PlotItem::Line {
+                x: vec![x_cm, x_cm + w_cm, x_cm + w_cm, x_cm, x_cm],
+                y: vec![y_cm, y_cm, y_cm + h_cm, y_cm + h_cm, y_cm],
+                color: fill_color,
+                width: 0.5,
+                label: None,
+            });
+        }
+
+        // Draw outline
+        if col[3] > 0 {
+            self.items.push(PlotItem::Line {
+                x: vec![x_cm, x_cm + w_cm, x_cm + w_cm, x_cm, x_cm],
+                y: vec![y_cm, y_cm, y_cm + h_cm, y_cm + h_cm, y_cm],
+                color: col,
+                width,
+                label: None,
+            });
+        }
+    }
+
+    fn circle(&mut self, x_cm: f64, y_cm: f64, r_cm: f64, gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        // Approximate circle with a polygon (24 segments)
+        let n = 24;
+        let mut xs = Vec::with_capacity(n + 1);
+        let mut ys = Vec::with_capacity(n + 1);
+        for i in 0..=n {
+            let theta = 2.0 * std::f64::consts::PI * (i as f64 / n as f64);
+            xs.push(x_cm + r_cm * theta.cos());
+            ys.push(y_cm + r_cm * theta.sin());
+        }
+        self.items.push(PlotItem::Line {
+            x: xs,
+            y: ys,
+            color: col,
+            width: gp.effective_lwd() as f32,
+            label: None,
+        });
+    }
+
+    fn polygon(&mut self, x_cm: &[f64], y_cm: &[f64], gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        let mut xs = x_cm.to_vec();
+        let mut ys = y_cm.to_vec();
+        // Close the polygon
+        if let (Some(&first_x), Some(&first_y)) = (x_cm.first(), y_cm.first()) {
+            xs.push(first_x);
+            ys.push(first_y);
+        }
+        self.items.push(PlotItem::Line {
+            x: xs,
+            y: ys,
+            color: col,
+            width: gp.effective_lwd() as f32,
+            label: None,
+        });
+    }
+
+    fn text(&mut self, x_cm: f64, y_cm: f64, label: &str, _rot: f64, gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        self.items.push(PlotItem::Text {
+            x: x_cm,
+            y: y_cm,
+            text: label.to_string(),
+            color: col,
+        });
+    }
+
+    fn point(&mut self, x_cm: f64, y_cm: f64, pch: u8, size_cm: f64, gp: &grid::gpar::Gpar) {
+        let col = Self::apply_alpha(gp.effective_col(), gp);
+        self.items.push(PlotItem::Points {
+            x: vec![x_cm],
+            y: vec![y_cm],
+            color: col,
+            size: size_cm as f32 * 4.0, // scale up for visibility
+            shape: pch,
+            label: None,
+        });
+    }
+
+    fn clip(&mut self, _x_cm: f64, _y_cm: f64, _w_cm: f64, _h_cm: f64) {
+        // Clipping is not supported in the PlotState model; ignore silently
+    }
+
+    fn unclip(&mut self) {
+        // No-op
+    }
+
+    fn device_size_cm(&self) -> (f64, f64) {
+        (self.device_width_cm, self.device_height_cm)
+    }
+}
+
+/// Internal: flush the grid display list to a PlotState and send it to the
+/// plot channel (if the plot feature is enabled).
+fn flush_grid_to_plot(ctx: &BuiltinContext) {
+    let dl = ctx.interpreter().grid_rust_display_list.borrow();
+    if dl.is_empty() {
+        return;
+    }
+    let store = ctx.interpreter().grid_grob_store.borrow();
+    let plot_state = grid_to_plot_state(&dl, &store);
+    drop(dl);
+    drop(store);
+
+    // Store it as the current_plot so existing flush_plot() picks it up
+    *ctx.interpreter().current_plot.borrow_mut() = Some(plot_state);
+}
+
+/// Public API: flush any accumulated grid graphics to the GUI thread.
+///
+/// Called by the REPL loop after each eval to auto-display grid graphics,
+/// alongside `flush_plot()` for base graphics.
+pub fn flush_grid(interp: &crate::interpreter::Interpreter) {
+    let dl = interp.grid_rust_display_list.borrow();
+    if dl.is_empty() {
+        return;
+    }
+    let store = interp.grid_grob_store.borrow();
+    let plot_state = grid_to_plot_state(&dl, &store);
+    drop(dl);
+    drop(store);
+
+    // If there's already a base-graphics plot, don't overwrite it — grid gets
+    // its own turn only if no base plot is pending.
+    if interp.current_plot.borrow().is_some() {
+        return;
+    }
+
+    *interp.current_plot.borrow_mut() = Some(plot_state);
+    // flush_plot() (called immediately after this) will send it to the GUI
 }
 
 // endregion

@@ -1,9 +1,7 @@
 //! Tests for the grid viewport system, display list, grob store, and replay.
 
-use r::interpreter::graphics::color::RColor;
-use r::interpreter::graphics::par::{FontFace, LineType};
 use r::interpreter::grid::display::{DisplayItem, DisplayList};
-use r::interpreter::grid::gpar::{Gpar, LineEnd, LineJoin};
+use r::interpreter::grid::gpar::Gpar;
 use r::interpreter::grid::grob::{Grob, GrobStore};
 use r::interpreter::grid::render::{replay, GridRenderer};
 use r::interpreter::grid::units::{Unit, UnitContext, UnitType};
@@ -14,55 +12,22 @@ use r::interpreter::grid::viewport::{
 // region: Unit tests
 
 #[test]
-fn unit_type_roundtrip() {
-    let types = [
-        ("npc", UnitType::Npc),
-        ("cm", UnitType::Cm),
-        ("inches", UnitType::Inches),
-        ("in", UnitType::Inches),
-        ("points", UnitType::Points),
-        ("pt", UnitType::Points),
-        ("native", UnitType::Native),
-        ("lines", UnitType::Lines),
-        ("mm", UnitType::Mm),
-        ("char", UnitType::Char),
-        ("null", UnitType::Null),
-    ];
-    for (s, expected) in types {
-        let parsed =
-            UnitType::parse(s).unwrap_or_else(|| panic!("failed to parse unit type '{s}'"));
-        assert_eq!(parsed, expected, "UnitType::parse(\"{s}\")");
-    }
-}
-
-#[test]
-fn unit_type_as_str() {
-    assert_eq!(UnitType::Npc.as_str(), "npc");
-    assert_eq!(UnitType::Cm.as_str(), "cm");
-    assert_eq!(UnitType::Inches.as_str(), "inches");
-}
-
-#[test]
 fn unit_constructors() {
     let u = Unit::npc(0.5);
-    assert_eq!(u.unit_type, UnitType::Npc);
+    assert_eq!(u.units[0], UnitType::Npc);
     assert!((u.value() - 0.5).abs() < 1e-12);
     assert_eq!(u.len(), 1);
     assert!(!u.is_empty());
 
     let u2 = Unit::cm(2.54);
-    assert_eq!(u2.unit_type, UnitType::Cm);
+    assert_eq!(u2.units[0], UnitType::Cm);
     assert!((u2.value() - 2.54).abs() < 1e-12);
 
-    let u3 = Unit::vec(vec![1.0, 2.0, 3.0], UnitType::Native);
+    let u3 = Unit {
+        values: vec![1.0, 2.0, 3.0],
+        units: vec![UnitType::Native, UnitType::Native, UnitType::Native],
+    };
     assert_eq!(u3.len(), 3);
-}
-
-#[test]
-fn unit_default_is_npc_half() {
-    let u = Unit::default();
-    assert_eq!(u.unit_type, UnitType::Npc);
-    assert!((u.value() - 0.5).abs() < 1e-12);
 }
 
 // endregion
@@ -105,7 +70,7 @@ fn resolve_native_maps_through_scale() {
         viewport_height_cm: 20.0,
         ..Default::default()
     };
-    let u = Unit::native(50.0);
+    let u = Unit::new(50.0, UnitType::Native);
     // 50 out of 0..100 = 0.5 * 10 cm = 5 cm
     assert!((ctx.resolve_x(&u, 0) - 5.0).abs() < 1e-12);
     // 50 out of 0..200 = 0.25 * 20 cm = 5 cm
@@ -180,7 +145,7 @@ fn viewport_root_covers_device() {
 fn viewport_default_is_full_npc() {
     let vp = Viewport::new();
     assert!(vp.name.is_none());
-    assert_eq!(vp.x.unit_type, UnitType::Npc);
+    assert_eq!(vp.x.units[0], UnitType::Npc);
     assert!((vp.x.value() - 0.5).abs() < 1e-12);
     assert!((vp.width.value() - 1.0).abs() < 1e-12);
     assert_eq!(vp.just.0, Justification::Centre);
@@ -339,39 +304,33 @@ fn viewport_rotation_accumulates() {
 #[test]
 fn gpar_inherit_fills_from_parent() {
     let parent = Gpar {
-        col: Some(RColor::BLACK),
-        fill: Some(RColor::WHITE),
+        col: Some([0, 0, 0, 255]),
+        fill: Some([255, 255, 255, 255]),
         lwd: Some(2.0),
         fontsize: Some(14.0),
         ..Default::default()
     };
     let child = Gpar {
-        col: Some(RColor::rgb(255, 0, 0)),
+        col: Some([255, 0, 0, 255]),
         ..Default::default()
     };
-    let merged = child.inherit(&parent);
-    assert_eq!(merged.col, Some(RColor::rgb(255, 0, 0))); // child overrides
-    assert_eq!(merged.fill, Some(RColor::WHITE)); // inherited from parent
+    let merged = child.with_parent(&parent);
+    assert_eq!(merged.col, Some([255, 0, 0, 255])); // child overrides
+    assert_eq!(merged.fill, Some([255, 255, 255, 255])); // inherited from parent
     assert_eq!(merged.lwd, Some(2.0)); // inherited
     assert_eq!(merged.fontsize, Some(14.0)); // inherited
 }
 
 #[test]
-fn gpar_resolve_defaults() {
+fn gpar_effective_defaults() {
     let gp = Gpar::new();
-    let resolved = gp.resolve();
-    assert_eq!(resolved.col, RColor::BLACK);
-    assert_eq!(resolved.fill, RColor::TRANSPARENT);
-    assert!((resolved.alpha - 1.0).abs() < 1e-12);
-    assert!((resolved.lwd - 1.0).abs() < 1e-12);
-    assert_eq!(resolved.lty, LineType::Solid);
-    assert_eq!(resolved.lineend, LineEnd::Round);
-    assert_eq!(resolved.linejoin, LineJoin::Round);
-    assert!((resolved.fontsize - 12.0).abs() < 1e-12);
-    assert_eq!(resolved.fontface, FontFace::Plain);
-    assert_eq!(resolved.fontfamily, "sans");
-    assert!((resolved.cex - 1.0).abs() < 1e-12);
-    assert!((resolved.lineheight - 1.2).abs() < 1e-12);
+    assert_eq!(gp.effective_col(), [0, 0, 0, 255]);
+    assert_eq!(gp.effective_fill(), [255, 255, 255, 0]);
+    assert!((gp.effective_alpha() - 1.0).abs() < 1e-12);
+    assert!((gp.effective_lwd() - 1.0).abs() < 1e-12);
+    assert!((gp.effective_fontsize() - 12.0).abs() < 1e-12);
+    assert!((gp.effective_cex() - 1.0).abs() < 1e-12);
+    assert!((gp.effective_lineheight() - 1.2).abs() < 1e-12);
 }
 
 // endregion
@@ -401,7 +360,7 @@ fn grob_store_add_and_get() {
 #[test]
 fn grob_gpar_accessor() {
     let gp = Gpar {
-        col: Some(RColor::rgb(0, 128, 255)),
+        col: Some([0, 128, 255, 255]),
         ..Default::default()
     };
     let rect = Grob::Rect {
@@ -415,7 +374,7 @@ fn grob_gpar_accessor() {
     assert!(rect.gpar().is_some());
     assert_eq!(
         rect.gpar().expect("should have gpar").col,
-        Some(RColor::rgb(0, 128, 255))
+        Some([0, 128, 255, 255])
     );
 
     let collection = Grob::Collection {
@@ -653,8 +612,14 @@ fn replay_text_grob() {
     let mut store = GrobStore::new();
     let text_id = store.add(Grob::Text {
         label: vec!["Hello".to_string(), "World".to_string()],
-        x: Unit::vec(vec![0.25, 0.75], UnitType::Npc),
-        y: Unit::vec(vec![0.5, 0.5], UnitType::Npc),
+        x: Unit {
+            values: vec![0.25, 0.75],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
+        y: Unit {
+            values: vec![0.5, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
         just: (Justification::Centre, Justification::Centre),
         rot: 0.0,
         gp: Gpar::new(),
@@ -675,10 +640,22 @@ fn replay_text_grob() {
 fn replay_segments_grob() {
     let mut store = GrobStore::new();
     let seg_id = store.add(Grob::Segments {
-        x0: Unit::vec(vec![0.0, 0.5], UnitType::Npc),
-        y0: Unit::vec(vec![0.0, 0.5], UnitType::Npc),
-        x1: Unit::vec(vec![1.0, 0.5], UnitType::Npc),
-        y1: Unit::vec(vec![1.0, 0.5], UnitType::Npc),
+        x0: Unit {
+            values: vec![0.0, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
+        y0: Unit {
+            values: vec![0.0, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
+        x1: Unit {
+            values: vec![1.0, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
+        y1: Unit {
+            values: vec![1.0, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc],
+        },
         gp: Gpar::new(),
     });
 
@@ -697,8 +674,14 @@ fn replay_segments_grob() {
 fn replay_polygon_grob() {
     let mut store = GrobStore::new();
     let poly_id = store.add(Grob::Polygon {
-        x: Unit::vec(vec![0.0, 1.0, 0.5], UnitType::Npc),
-        y: Unit::vec(vec![0.0, 0.0, 1.0], UnitType::Npc),
+        x: Unit {
+            values: vec![0.0, 1.0, 0.5],
+            units: vec![UnitType::Npc, UnitType::Npc, UnitType::Npc],
+        },
+        y: Unit {
+            values: vec![0.0, 0.0, 1.0],
+            units: vec![UnitType::Npc, UnitType::Npc, UnitType::Npc],
+        },
         gp: Gpar::new(),
     });
 
@@ -745,16 +728,22 @@ fn replay_collection_grob() {
 #[test]
 fn replay_lines_grob_needs_at_least_two_points() {
     let mut store = GrobStore::new();
-    // Only 1 point — should not draw
+    // Only 1 point - should not draw
     let lines_1 = store.add(Grob::Lines {
-        x: Unit::vec(vec![0.5], UnitType::Npc),
-        y: Unit::vec(vec![0.5], UnitType::Npc),
+        x: Unit::npc(0.5),
+        y: Unit::npc(0.5),
         gp: Gpar::new(),
     });
-    // 3 points — should draw
+    // 3 points - should draw
     let lines_3 = store.add(Grob::Lines {
-        x: Unit::vec(vec![0.0, 0.5, 1.0], UnitType::Npc),
-        y: Unit::vec(vec![0.0, 0.5, 1.0], UnitType::Npc),
+        x: Unit {
+            values: vec![0.0, 0.5, 1.0],
+            units: vec![UnitType::Npc, UnitType::Npc, UnitType::Npc],
+        },
+        y: Unit {
+            values: vec![0.0, 0.5, 1.0],
+            units: vec![UnitType::Npc, UnitType::Npc, UnitType::Npc],
+        },
         gp: Gpar::new(),
     });
 
