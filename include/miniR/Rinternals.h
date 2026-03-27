@@ -186,6 +186,8 @@ SEXP Rf_ScalarString(SEXP x);
 
 /* Length */
 R_len_t Rf_length(SEXP x);
+SEXP Rf_lengthgets(SEXP x, R_len_t n);
+#define lengthgets Rf_lengthgets
 
 /* Strings */
 SEXP Rf_mkChar(const char *str);

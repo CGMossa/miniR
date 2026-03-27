@@ -1083,6 +1083,38 @@ pub extern "C" fn R_alloc(nelem: usize, eltsize: c_int) -> *mut c_char {
 
 // region: Misc
 
+/// Rf_lengthgets — resize a vector (copy into a new allocation).
+#[no_mangle]
+pub extern "C" fn Rf_lengthgets(x: Sexp, new_len: c_int) -> Sexp {
+    if x.is_null() {
+        return unsafe { R_NilValue };
+    }
+    let stype = unsafe { (*x).stype };
+    let old_len = unsafe { (*x).length };
+    let out = Rf_allocVector(stype as c_int, new_len as isize);
+    let copy_len = std::cmp::min(old_len, new_len) as usize;
+    if copy_len > 0 {
+        let elem_size = match stype {
+            sexp::REALSXP => 8,
+            sexp::INTSXP | sexp::LGLSXP => 4,
+            sexp::RAWSXP => 1,
+            sexp::CPLXSXP => 16,
+            sexp::STRSXP | sexp::VECSXP => std::mem::size_of::<Sexp>(),
+            _ => 0,
+        };
+        if elem_size > 0 {
+            unsafe {
+                ptr::copy_nonoverlapping((*x).data, (*out).data, copy_len * elem_size);
+            }
+        }
+    }
+    // Copy attributes
+    unsafe {
+        (*out).attrib = (*x).attrib;
+    }
+    out
+}
+
 #[no_mangle]
 pub extern "C" fn R_CheckUserInterrupt() {}
 
