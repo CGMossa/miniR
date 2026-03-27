@@ -129,6 +129,16 @@ fn raw_to_sexp(r: &[u8]) -> Sexp {
 }
 
 fn list_to_sexp(list: &RList) -> Sexp {
+    // Check if this is a wrapped external pointer (has .sexp_ptr attribute)
+    if let Some(attrs) = &list.attrs {
+        if let Some(ptr_val) = attrs.get(".sexp_ptr") {
+            if let Some(addr) = ptr_val.as_vector().and_then(|v| v.as_double_scalar()) {
+                // Return the raw SEXP without copying — it's an external pointer
+                return addr as usize as Sexp;
+            }
+        }
+    }
+
     let len = list.values.len();
     let s = sexp::alloc_vector(sexp::VECSXP, len as i32);
     unsafe {
@@ -166,6 +176,27 @@ pub unsafe fn sexp_to_rvalue(s: Sexp) -> RValue {
         sexp::CHARSXP => {
             let st = sexp::char_data(s);
             RValue::vec(Vector::Character(vec![Some(st.to_string())].into()))
+        }
+        // External pointer — wrap as a List with a ".sexp_ptr" attribute
+        // storing the raw address as an integer. This allows round-trips
+        // through .Call without adding a new RValue variant.
+        22 => {
+            // EXTPTRSXP = 22
+            let addr = s as usize;
+            let mut list = RList::new(vec![]);
+            let mut attrs = indexmap::IndexMap::new();
+            attrs.insert(
+                ".sexp_ptr".to_string(),
+                RValue::vec(Vector::Double(vec![Some(addr as f64)].into())),
+            );
+            attrs.insert(
+                "class".to_string(),
+                RValue::vec(Vector::Character(
+                    vec![Some("externalptr".to_string())].into(),
+                )),
+            );
+            list.attrs = Some(Box::new(attrs));
+            return RValue::List(list);
         }
         _ => return RValue::Null,
     };

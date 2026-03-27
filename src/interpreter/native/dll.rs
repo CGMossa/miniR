@@ -319,12 +319,19 @@ impl Interpreter {
             cleanup();
         }
 
-        // Free Rust-allocated input SEXPs.
-        // These are safe to free separately because they were allocated by Rust's
-        // sexp module (using calloc, same allocator as C), and are NOT tracked
-        // in the .so's alloc list. No double-free risk.
+        // Free Rust-allocated input SEXPs. External pointers (wrapped as
+        // lists with .sexp_ptr attr) pass the raw SEXP directly — skip freeing those.
         unsafe {
-            for s in sexp_args {
+            for (s, arg) in sexp_args.into_iter().zip(args.iter()) {
+                if let RValue::List(list) = arg {
+                    if list
+                        .attrs
+                        .as_ref()
+                        .is_some_and(|a| a.contains_key(".sexp_ptr"))
+                    {
+                        continue; // external pointer — owned by C
+                    }
+                }
                 sexp::free_sexp(s);
             }
         }

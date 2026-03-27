@@ -228,6 +228,7 @@ SEXP R_MakeExternalPtr(void *p, SEXP tag, SEXP prot) {
     SEXP s = (SEXP)calloc(1, sizeof(struct SEXPREC));
     if (!s) return R_NilValue;
     s->type = EXTPTRSXP;
+    s->flags = 1; /* persistent — survives _minir_free_allocs */
     s->attrib = R_NilValue;
     _extptr_data *d = (_extptr_data*)calloc(1, sizeof(_extptr_data));
     if (d) { d->ptr = p; d->tag = tag; d->prot = prot; }
@@ -735,28 +736,40 @@ int _minir_has_error_flag(void) {
 
 void _minir_free_allocs(void) {
     _alloc_node *node = _alloc_head;
+    _alloc_node *persistent_head = NULL;
 
-    /* First pass: free data buffers */
+    /* First pass: free data buffers (skip persistent SEXPs like external pointers) */
     while (node) {
+        _alloc_node *next = node->next;
         SEXP s = node->s;
-        if (s && s != R_NilValue && s->data) {
-            free(s->data);
-            s->data = NULL;
+        if (s && s != R_NilValue && s->flags == 1) {
+            /* Persistent — keep for next call */
+            node->next = persistent_head;
+            persistent_head = node;
+        } else {
+            if (s && s != R_NilValue && s->data) {
+                free(s->data);
+                s->data = NULL;
+            }
         }
-        node = node->next;
+        node = next;
     }
 
-    /* Second pass: free SEXPREC structs and list nodes */
+    /* Second pass: free non-persistent SEXPREC structs and list nodes */
     node = _alloc_head;
     while (node) {
         _alloc_node *next = node->next;
         SEXP s = node->s;
-        if (s && s != R_NilValue) {
+        if (s && s != R_NilValue && s->flags != 1) {
             free(s);
+            free(node);
         }
-        free(node);
+        /* persistent nodes already moved to persistent_head */
         node = next;
     }
+
+    /* Restore persistent allocations for the next call */
+    _alloc_head = persistent_head;
 
     _alloc_head = NULL;
     _protect_count = 0;
