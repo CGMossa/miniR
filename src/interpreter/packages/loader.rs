@@ -248,6 +248,31 @@ impl Interpreter {
         #[cfg(feature = "native")]
         if !namespace.use_dyn_libs.is_empty() {
             self.load_package_native_code(pkg_name, pkg_dir, &namespace.use_dyn_libs)?;
+
+            // Bind registered symbol names into the namespace environment.
+            // useDynLib(pkg, sym1, sym2) creates bindings so .Call(sym1, ...) works
+            // with bare symbols (not strings). We bind each as a NativeSymbolInfo-
+            // like list with $name and $address fields.
+            for directive in &namespace.use_dyn_libs {
+                for reg in &directive.registrations {
+                    let sym_name = reg.trim();
+                    if sym_name.is_empty() || sym_name.starts_with('.') || sym_name.contains('=') {
+                        continue; // skip .registration=TRUE and similar
+                    }
+                    // Create a simple list with $name that .Call can read
+                    let info = RValue::List(crate::interpreter::value::RList::new(vec![
+                        (
+                            Some("name".to_string()),
+                            RValue::vec(Vector::Character(vec![Some(sym_name.to_string())].into())),
+                        ),
+                        (
+                            Some("package".to_string()),
+                            RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into())),
+                        ),
+                    ]));
+                    namespace_env.set(sym_name.to_string(), info);
+                }
+            }
         }
 
         // Build exports environment

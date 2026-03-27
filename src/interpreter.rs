@@ -832,6 +832,43 @@ impl Interpreter {
                         }
                         return self.eval_in(rhs, &child_env);
                     }
+                    // Short-circuit && and || — don't evaluate RHS if LHS determines result
+                    BinaryOp::AndScalar => {
+                        let left = self.eval_in(lhs, env)?;
+                        let a = left.as_vector().and_then(|v| v.as_logical_scalar());
+                        if a == Some(false) {
+                            return Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())));
+                        }
+                        let right = self.eval_in(rhs, env)?;
+                        let b = right.as_vector().and_then(|v| v.as_logical_scalar());
+                        return match (a, b) {
+                            (Some(true), Some(true)) => {
+                                Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+                            }
+                            (Some(false), _) | (_, Some(false)) => {
+                                Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+                            }
+                            _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
+                        };
+                    }
+                    BinaryOp::OrScalar => {
+                        let left = self.eval_in(lhs, env)?;
+                        let a = left.as_vector().and_then(|v| v.as_logical_scalar());
+                        if a == Some(true) {
+                            return Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())));
+                        }
+                        let right = self.eval_in(rhs, env)?;
+                        let b = right.as_vector().and_then(|v| v.as_logical_scalar());
+                        return match (a, b) {
+                            (Some(true), _) | (_, Some(true)) => {
+                                Ok(RValue::vec(Vector::Logical(vec![Some(true)].into())))
+                            }
+                            (Some(false), Some(false)) => {
+                                Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+                            }
+                            _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
+                        };
+                    }
                     _ => {}
                 }
                 let left = self.eval_in(lhs, env)?;

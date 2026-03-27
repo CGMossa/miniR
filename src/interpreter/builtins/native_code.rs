@@ -32,17 +32,37 @@ fn builtin_dot_call(
         ));
     }
 
-    // First arg is the symbol name (character string)
-    let symbol_name = args[0]
-        .as_vector()
-        .and_then(|v| v.as_character_scalar())
-        .ok_or_else(|| {
+    // First arg is the symbol name — either a character string or a
+    // NativeSymbolInfo list (created by useDynLib in NAMESPACE).
+    let symbol_name = match &args[0] {
+        RValue::Vector(rv) => rv.as_character_scalar().ok_or_else(|| {
             RError::new(
                 RErrorKind::Argument,
-                ".Call: first argument must be a character string naming the C function"
+                ".Call: first argument must be a character string or native symbol reference"
                     .to_string(),
             )
-        })?;
+        })?,
+        RValue::List(list) => {
+            // NativeSymbolInfo-like list — extract $name
+            list.values
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("name"))
+                .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        ".Call: native symbol reference must have a $name field".to_string(),
+                    )
+                })?
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                ".Call: first argument must be a character string or native symbol reference"
+                    .to_string(),
+            ))
+        }
+    };
 
     // Remaining args are passed to the native function
     let native_args = &args[1..];
