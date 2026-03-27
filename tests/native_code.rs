@@ -651,10 +651,7 @@ SEXP c_double_vec(SEXP x) {
 
     let mut s = Session::new();
     // Set R_LIBS to our temp library so library() can find the package
-    s.eval_source(&format!(
-        "Sys.setenv(R_LIBS = \"{}\")",
-        lib_dir.display()
-    ));
+    s.eval_source(&format!("Sys.setenv(R_LIBS = \"{}\")", lib_dir.display()));
     s.eval_source(".libPaths()");
 
     // library() should: parse NAMESPACE → see useDynLib → compile src/ → load .so

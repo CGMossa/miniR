@@ -3388,6 +3388,7 @@ dependencies = [
  "blake3",
  "bstr",
  "bytecount",
+ "cc",
  "crc32fast",
  "crossterm",
  "csv",

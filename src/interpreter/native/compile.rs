@@ -1,7 +1,11 @@
-//! Package C code compilation — Makevars parser and compiler invocation.
+//! Package C/C++ code compilation — Makevars parser and compiler invocation.
 //!
-//! Compiles package `src/*.c` files into a shared library (.so/.dylib)
-//! using the system C compiler. Reads `src/Makevars` for custom flags.
+//! Compiles package `src/*.{c,cpp,cc,cxx}` files into a shared library
+//! (.so/.dylib). Uses the `cc` crate for compiler detection and flag
+//! management (respects CC, CXX, CFLAGS, CXXFLAGS env vars, handles
+//! cross-compilation). Only the final linking step uses `std::process::Command`.
+//!
+//! Reads `src/Makevars` for package-specific flags.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -116,8 +120,13 @@ impl Makevars {
         self.vars.get("PKG_LIBS").map_or("", |s| s.as_str())
     }
 
+    /// Get PKG_CXXFLAGS (C++ compiler flags).
+    pub fn pkg_cxxflags(&self) -> &str {
+        self.vars.get("PKG_CXXFLAGS").map_or("", |s| s.as_str())
+    }
+
     /// Get OBJECTS (explicit list of .o files to link).
-    /// If not set, the default is all .c files in src/.
+    /// If not set, the default is all .c/.cpp files in src/.
     pub fn objects(&self) -> Option<&str> {
         self.vars.get("OBJECTS").map(|s| s.as_str())
     }
@@ -174,30 +183,26 @@ fn strip_continuation(s: &str) -> (&str, bool) {
 
 // endregion
 
-// region: C compilation
+// region: C/C++ compilation
 
-/// Find the system C compiler.
-///
-/// Checks, in order: CC environment variable, then cc, clang, gcc.
-/// The `cc` crate is not used because it only produces static archives (.a),
-/// not shared libraries (.so/.dylib) which is what we need for dyn.load.
-fn find_cc() -> String {
-    if let Ok(cc) = std::env::var("CC") {
-        return cc;
+/// Get the current platform's target triple (e.g. "aarch64-apple-darwin").
+fn current_target_triple() -> String {
+    // Check if TARGET is set (e.g. in a Cargo build environment)
+    if let Ok(target) = std::env::var("TARGET") {
+        return target;
     }
-    // Try common compiler names in order of preference
-    for name in &["cc", "clang", "gcc"] {
-        if Command::new(name)
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok()
-        {
-            return (*name).to_string();
-        }
-    }
-    "cc".to_string()
+    // Construct from compile-time cfg values
+    let arch = std::env::consts::ARCH;
+    let os = std::env::consts::OS;
+    // Map to standard triple format
+    let vendor_os = match os {
+        "macos" => "apple-darwin",
+        "linux" => "unknown-linux-gnu",
+        "windows" => "pc-windows-msvc",
+        "freebsd" => "unknown-freebsd",
+        other => other,
+    };
+    format!("{arch}-{vendor_os}")
 }
 
 /// Shared library extension for the current platform.
@@ -209,11 +214,15 @@ fn dylib_ext() -> &'static str {
     }
 }
 
-/// Compile C source files in a package's `src/` directory into a shared library.
+/// Compile C/C++ source files in a package's `src/` directory into a shared library.
+///
+/// Uses the `cc` crate for compiler detection (respects CC, CXX, CFLAGS, CXXFLAGS
+/// env vars, handles cross-compilation). The `cc` crate compiles sources to `.o`
+/// files; we then link them into a `.so`/`.dylib` ourselves.
 ///
 /// # Arguments
-/// * `pkg_src_dir` — the package's `src/` directory containing `.c` files and optionally `Makevars`
-/// * `pkg_name` — package name (used for the output .so/.dylib name)
+/// * `pkg_src_dir` — the package's `src/` directory
+/// * `pkg_name` — package name (used for the output library name)
 /// * `output_dir` — directory to write the compiled shared library
 /// * `include_dir` — path to miniR's `include/` directory (for Rinternals.h)
 ///
@@ -228,11 +237,11 @@ pub fn compile_package(
     // Parse Makevars
     let makevars = Makevars::parse(&pkg_src_dir.join("Makevars"));
 
-    // Find C source files
-    let mut c_files = find_c_sources(pkg_src_dir, &makevars)?;
-    if c_files.is_empty() {
+    // Find C and C++ source files
+    let mut src_files = find_sources(pkg_src_dir, &makevars)?;
+    if src_files.is_empty() {
         return Err(format!(
-            "no C source files found in {}",
+            "no C/C++ source files found in {}",
             pkg_src_dir.display()
         ));
     }
@@ -240,7 +249,7 @@ pub fn compile_package(
     // Add minir_runtime.c — provides the C API implementations
     let runtime_c = include_dir.join("miniR").join("minir_runtime.c");
     if runtime_c.is_file() {
-        c_files.push(runtime_c);
+        src_files.push(runtime_c);
     } else {
         return Err(format!(
             "minir_runtime.c not found at {}",
@@ -248,67 +257,75 @@ pub fn compile_package(
         ));
     }
 
-    // Compile each .c file to .o
-    let cc = find_cc();
-    let mut object_files = Vec::new();
+    // Use cc::Build for compilation — it handles compiler detection,
+    // platform flags, cross-compilation, ccache/sccache, etc.
+    //
+    // cc::Build normally runs inside Cargo build scripts where TARGET/HOST
+    // env vars are set. At runtime we set them to the current platform.
+    let target = current_target_triple();
+    let mut build = cc::Build::new();
+    build
+        .pic(true)
+        .warnings(false) // package code may have warnings we can't fix
+        .target(&target)
+        .host(&target)
+        .opt_level(2)
+        .out_dir(output_dir)
+        .include(include_dir)
+        .include(include_dir.join("miniR"))
+        .include(pkg_src_dir);
 
-    for c_file in &c_files {
-        let obj_file = output_dir.join(
-            c_file
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-                + ".o",
-        );
-
-        let mut cmd = Command::new(&cc);
-        cmd.arg("-c")
-            .arg("-fPIC")
-            .arg("-o")
-            .arg(&obj_file)
-            .arg(c_file)
-            .arg(format!("-I{}", include_dir.display()))
-            .arg(format!("-I{}", include_dir.join("miniR").display()))
-            .arg(format!("-I{}", pkg_src_dir.display()));
-
-        // Add PKG_CPPFLAGS (preprocessor flags: -I, -D)
-        let cppflags = makevars.pkg_cppflags();
-        if !cppflags.is_empty() {
-            for flag in shell_split(cppflags) {
-                cmd.arg(flag);
-            }
-        }
-
-        // Add PKG_CFLAGS
-        let cflags = makevars.pkg_cflags();
-        if !cflags.is_empty() {
-            for flag in shell_split(cflags) {
-                cmd.arg(flag);
-            }
-        }
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("failed to run C compiler '{}': {e}", cc))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "compilation of {} failed:\n{}",
-                c_file.display(),
-                stderr
-            ));
-        }
-
-        object_files.push(obj_file);
+    // Check if any C++ files are present
+    let has_cpp = src_files.iter().any(|f| {
+        matches!(
+            f.extension().and_then(|e| e.to_str()),
+            Some("cpp" | "cc" | "cxx" | "C")
+        )
+    });
+    if has_cpp {
+        build.cpp(true).std("c++17");
     }
 
-    // Link into shared library
+    // Add Makevars flags
+    let cppflags = makevars.pkg_cppflags();
+    if !cppflags.is_empty() {
+        for flag in shell_split(cppflags) {
+            build.flag(&flag);
+        }
+    }
+    let cflags = makevars.pkg_cflags();
+    if !cflags.is_empty() && !has_cpp {
+        for flag in shell_split(cflags) {
+            build.flag(&flag);
+        }
+    }
+    let cxxflags = makevars.pkg_cxxflags();
+    if !cxxflags.is_empty() && has_cpp {
+        for flag in shell_split(cxxflags) {
+            build.flag(&flag);
+        }
+    }
+
+    // Add source files
+    for src in &src_files {
+        build.file(src);
+    }
+
+    // Compile to .o files (cc::Build handles compiler selection)
+    let object_files = build
+        .try_compile_intermediates()
+        .map_err(|e| format!("compilation of {} failed: {}", pkg_src_dir.display(), e))?;
+
+    // Link .o files into a shared library (.so/.dylib)
+    // cc::Build can't produce shared libs, so we do this step manually.
+    let linker = build
+        .try_get_compiler()
+        .map_err(|e| format!("cannot find compiler: {e}"))?;
+
     let lib_name = format!("{pkg_name}.{}", dylib_ext());
     let lib_path = output_dir.join(&lib_name);
 
-    let mut cmd = Command::new(&cc);
+    let mut cmd = Command::new(linker.path());
     cmd.arg("-shared").arg("-o").arg(&lib_path);
 
     for obj in &object_files {
@@ -318,6 +335,15 @@ pub fn compile_package(
     // Platform-specific flags
     if cfg!(target_os = "macos") {
         cmd.arg("-undefined").arg("dynamic_lookup");
+    }
+
+    // C++ runtime linking
+    if has_cpp {
+        if cfg!(target_os = "macos") {
+            cmd.arg("-lc++");
+        } else {
+            cmd.arg("-lstdc++");
+        }
     }
 
     // Add PKG_LIBS (linker flags)
@@ -330,7 +356,7 @@ pub fn compile_package(
 
     let output = cmd
         .output()
-        .map_err(|e| format!("failed to run linker '{}': {e}", cc))?;
+        .map_err(|e| format!("failed to run linker: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -340,41 +366,46 @@ pub fn compile_package(
     Ok(lib_path)
 }
 
-/// Find C source files to compile.
+/// Find C and C++ source files to compile.
 ///
 /// If Makevars specifies `OBJECTS`, derive source files from those .o names.
-/// Otherwise, glob `src/*.c`.
-fn find_c_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, String> {
+/// Otherwise, glob `src/*.{c,cpp,cc,cxx}`.
+fn find_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, String> {
     if let Some(objects) = makevars.objects() {
-        // OBJECTS lists .o files — convert to .c file paths
+        // OBJECTS lists .o files — find corresponding source files
         let mut sources = Vec::new();
         for obj in shell_split(objects) {
             let obj = obj.trim();
             if obj.is_empty() {
                 continue;
             }
-            // Convert foo.o → src/foo.c
-            let c_name = if let Some(stem) = obj.strip_suffix(".o") {
-                format!("{stem}.c")
+            let stem = if let Some(s) = obj.strip_suffix(".o") {
+                s
             } else {
                 continue;
             };
-            let c_path = src_dir.join(&c_name);
-            if c_path.is_file() {
-                sources.push(c_path);
+            // Try .c, then .cpp, .cc, .cxx
+            for ext in &["c", "cpp", "cc", "cxx"] {
+                let path = src_dir.join(format!("{stem}.{ext}"));
+                if path.is_file() {
+                    sources.push(path);
+                    break;
+                }
             }
         }
         Ok(sources)
     } else {
-        // Default: all .c files in src/
+        // Default: all C/C++ source files in src/
         let mut sources = Vec::new();
         let entries = std::fs::read_dir(src_dir)
             .map_err(|e| format!("cannot read {}: {e}", src_dir.display()))?;
         for entry in entries {
             let entry = entry.map_err(|e| format!("readdir error: {e}"))?;
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("c") {
-                sources.push(path);
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if matches!(ext, "c" | "cpp" | "cc" | "cxx") {
+                    sources.push(path);
+                }
             }
         }
         sources.sort();

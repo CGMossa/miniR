@@ -128,6 +128,7 @@ image = { version = "0.25", optional = true, default-features = false, features 
 resvg = { version = "0.45", optional = true }
 tiny-skia = { version = "0.11", optional = true }
 libloading = { version = "0.8", optional = true }
+cc = { version = "1", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
@@ -180,4 +181,4 @@ plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "de
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]
-native = ["dep:libloading"]
+native = ["dep:libloading", "dep:cc"]
