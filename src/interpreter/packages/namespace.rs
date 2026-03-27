@@ -278,6 +278,19 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
                 }
             }
         } else {
+            // Handle conditional directives: `if (getRversion() < "X.Y.Z") directive(args)`
+            // miniR is a modern R — treat all conditions as true, extract the directive.
+            let line = if line.starts_with("if ") || line.starts_with("if(") {
+                // Find the closing `)` of the condition, then the directive after it
+                if let Some(directive_start) = find_directive_after_if(line) {
+                    &line[directive_start..]
+                } else {
+                    continue; // malformed if — skip
+                }
+            } else {
+                line
+            };
+
             // Look for a new directive: `name(`
             if let Some(paren_pos) = line.find('(') {
                 let name = line[..paren_pos].trim().to_string();
@@ -360,6 +373,38 @@ fn strip_comment(line: &str) -> &str {
 
 /// Parse the argument content of a directive into individual string tokens.
 ///
+/// Given a line like `if (getRversion() < "3.2.0") export(anyNA)`,
+/// find the byte offset where the actual directive starts (after the if condition).
+/// Returns None if the line is malformed.
+fn find_directive_after_if(line: &str) -> Option<usize> {
+    // Find the opening `(` of the if condition
+    let cond_start = line.find('(')?;
+    // Walk forward counting parens to find the matching `)`
+    let mut depth = 0;
+    let mut cond_end = None;
+    for (i, ch) in line[cond_start..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    cond_end = Some(cond_start + i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let after_cond = cond_end?;
+    // Skip whitespace after the condition
+    let rest = line[after_cond..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    // Return offset into original line
+    Some(line.len() - rest.len())
+}
+
 /// Arguments are comma-separated. Surrounding quotes (single or double) are
 /// stripped. Named arguments like `.registration = TRUE` are preserved as
 /// single tokens.

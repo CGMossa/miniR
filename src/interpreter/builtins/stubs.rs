@@ -303,6 +303,70 @@ fn interp_as_namespace(
     Ok(RValue::Environment(env))
 }
 
+/// getFromNamespace — look up a name in a package namespace.
+///
+/// @param x character: the name to look up
+/// @param ns character or namespace environment
+/// @return the value of the name in the namespace
+/// @namespace utils
+#[interpreter_builtin(name = "getFromNamespace", min_args = 2)]
+fn interp_get_from_namespace(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "getFromNamespace: 'x' must be a character string".to_string(),
+            )
+        })?;
+
+    // Get namespace env — either from a string name or directly as environment
+    let ns_env = match args.get(1) {
+        Some(RValue::Environment(env)) => env.clone(),
+        Some(val) => {
+            let ns_name = val
+                .as_vector()
+                .and_then(|v| v.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        "getFromNamespace: 'ns' must be a string or namespace".to_string(),
+                    )
+                })?;
+            // Look up the namespace
+            let loaded = context.with_interpreter(|interp| {
+                interp
+                    .loaded_namespaces
+                    .borrow()
+                    .get(&ns_name)
+                    .map(|ns| ns.namespace_env.clone())
+            });
+            match loaded {
+                Some(env) => env,
+                None => context.with_interpreter(|interp| interp.load_namespace(&ns_name))?,
+            }
+        }
+        None => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "getFromNamespace: 'ns' argument is missing".to_string(),
+            ))
+        }
+    };
+
+    ns_env.get(&name).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Other,
+            format!("object '{name}' not found in namespace"),
+        )
+    })
+}
+
 /// Get the name of a namespace environment.
 ///
 /// @param ns namespace environment

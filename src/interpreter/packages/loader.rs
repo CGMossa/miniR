@@ -410,18 +410,13 @@ impl Interpreter {
             all_files
         };
 
-        let mut errors = Vec::new();
         for r_file in &r_files {
             if let Err(e) = self.source_file_into(r_file, env) {
-                errors.push(format!("{}: {}", r_file.display(), e));
+                // Warn but continue — some files may reference unavailable packages
+                // (e.g. backports defines functions for old R versions that import
+                // from packages we don't have). The NAMESPACE controls what's exported.
+                tracing::warn!("warning sourcing {}: {}", r_file.display(), e);
             }
-        }
-
-        if !errors.is_empty() {
-            return Err(RError::other(format!(
-                "errors sourcing R files:\n  {}",
-                errors.join("\n  ")
-            )));
         }
 
         Ok(())

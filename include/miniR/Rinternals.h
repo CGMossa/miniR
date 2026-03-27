@@ -140,6 +140,10 @@ extern SEXP R_LevelsSymbol;
 #define R_CHAR(x)    ((const char*)((x)->data))
 #define CHAR(x)      R_CHAR(x)
 
+/* SETLENGTH — resize a vector (only shrinking is safe without realloc) */
+#define SETLENGTH(x, n) ((x)->length = (int32_t)(n))
+#define SET_TRUELENGTH(x, n) ((void)(n))
+
 /* Pairlist accessors (LISTSXP / LANGSXP) */
 #define CAR(x)   (((minir_pairlist_data*)((x)->data))->car)
 #define CDR(x)   (((minir_pairlist_data*)((x)->data))->cdr)
@@ -153,6 +157,7 @@ extern SEXP R_LevelsSymbol;
 /* Allocation */
 SEXP Rf_allocVector(SEXPTYPE type, R_xlen_t length);
 SEXP Rf_allocMatrix(SEXPTYPE type, int nrow, int ncol);
+char *R_alloc(size_t nelem, int eltsize);
 SEXP Rf_ScalarReal(double x);
 SEXP Rf_ScalarInteger(int x);
 SEXP Rf_ScalarLogical(int x);

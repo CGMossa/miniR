@@ -109,6 +109,25 @@ SEXP Rf_allocMatrix(SEXPTYPE type, int nrow, int ncol) {
     return Rf_allocVector(type, (R_xlen_t)nrow * ncol);
 }
 
+/* R_alloc — session-scoped allocator. Memory is freed by _minir_free_allocs.
+ * We wrap it in a RAWSXP SEXP so it's tracked in the allocation list. */
+char *R_alloc(size_t nelem, int eltsize) {
+    size_t bytes = nelem * (size_t)eltsize;
+    char *ptr = (char*)calloc(1, bytes);
+    if (ptr) {
+        /* Track via a dummy SEXP so _minir_free_allocs frees it */
+        SEXP dummy = (SEXP)calloc(1, sizeof(struct SEXPREC));
+        if (dummy) {
+            dummy->type = RAWSXP;
+            dummy->data = ptr;
+            dummy->length = (int32_t)bytes;
+            dummy->attrib = R_NilValue;
+            _track(dummy);
+        }
+    }
+    return ptr;
+}
+
 SEXP Rf_ScalarReal(double x) {
     SEXP s = Rf_allocVector(REALSXP, 1);
     REAL(s)[0] = x;
