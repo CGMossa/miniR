@@ -152,6 +152,11 @@ SEXP Rf_ScalarString(SEXP x) {
     return s;
 }
 
+R_len_t Rf_length(SEXP x) {
+    if (!x || x == R_NilValue) return 0;
+    return (R_len_t)x->length;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
  * String / char functions
  * ════════════════════════════════════════════════════════════════════════════ */
@@ -187,6 +192,88 @@ SEXP Rf_mkString(const char *str) {
     SEXP s = Rf_allocVector(STRSXP, 1);
     SET_STRING_ELT(s, 0, Rf_mkChar(str));
     return s;
+}
+
+/* miniR uses UTF-8 internally, so encoding parameter is ignored */
+SEXP Rf_mkCharCE(const char *str, cetype_t encoding) {
+    (void)encoding;
+    return Rf_mkChar(str);
+}
+
+cetype_t Rf_getCharCE(SEXP x) {
+    (void)x;
+    return CE_UTF8; /* miniR is always UTF-8 */
+}
+
+Rboolean Rf_StringBlank(SEXP x) {
+    if (!x || x == R_NilValue || x == R_BlankString) return TRUE;
+    if (TYPEOF(x) != CHARSXP) return TRUE;
+    const char *s = R_CHAR(x);
+    return (!s || s[0] == '\0') ? TRUE : FALSE;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * External pointers
+ *
+ * External pointers let C code attach opaque native pointers to R objects.
+ * We store (ptr, tag, prot) in a 3-element array at data.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+typedef struct { void *ptr; SEXP tag; SEXP prot; } _extptr_data;
+
+SEXP R_MakeExternalPtr(void *p, SEXP tag, SEXP prot) {
+    SEXP s = (SEXP)calloc(1, sizeof(struct SEXPREC));
+    if (!s) return R_NilValue;
+    s->type = EXTPTRSXP;
+    s->attrib = R_NilValue;
+    _extptr_data *d = (_extptr_data*)calloc(1, sizeof(_extptr_data));
+    if (d) { d->ptr = p; d->tag = tag; d->prot = prot; }
+    s->data = d;
+    _track(s);
+    return s;
+}
+
+void *R_ExternalPtrAddr(SEXP s) {
+    if (!s || TYPEOF(s) != EXTPTRSXP || !s->data) return NULL;
+    return ((_extptr_data*)s->data)->ptr;
+}
+
+SEXP R_ExternalPtrTag(SEXP s) {
+    if (!s || TYPEOF(s) != EXTPTRSXP || !s->data) return R_NilValue;
+    return ((_extptr_data*)s->data)->tag;
+}
+
+SEXP R_ExternalPtrProtected(SEXP s) {
+    if (!s || TYPEOF(s) != EXTPTRSXP || !s->data) return R_NilValue;
+    return ((_extptr_data*)s->data)->prot;
+}
+
+void R_ClearExternalPtr(SEXP s) {
+    if (s && TYPEOF(s) == EXTPTRSXP && s->data)
+        ((_extptr_data*)s->data)->ptr = NULL;
+}
+
+void R_SetExternalPtrAddr(SEXP s, void *p) {
+    if (s && TYPEOF(s) == EXTPTRSXP && s->data)
+        ((_extptr_data*)s->data)->ptr = p;
+}
+
+/* Weak ref-style finalizers — registered but only run on cleanup */
+static void (*_finalizers[256])(SEXP);
+static SEXP   _finalizer_targets[256];
+static int    _finalizer_count = 0;
+
+void R_RegisterCFinalizer(SEXP s, void (*fun)(SEXP)) {
+    if (_finalizer_count < 256) {
+        _finalizers[_finalizer_count] = fun;
+        _finalizer_targets[_finalizer_count] = s;
+        _finalizer_count++;
+    }
+}
+
+void R_RegisterCFinalizerEx(SEXP s, void (*fun)(SEXP), Rboolean onexit) {
+    (void)onexit;
+    R_RegisterCFinalizer(s, fun);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

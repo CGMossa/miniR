@@ -152,6 +152,24 @@ extern SEXP R_LevelsSymbol;
 #define SETCDR(x, v)  (CDR(x) = (v))
 #define SET_TAG(x, v) (TAG(x) = (v))
 
+/* ── Character encoding ── */
+
+typedef enum { CE_NATIVE = 0, CE_UTF8 = 1, CE_LATIN1 = 2, CE_BYTES = 3, CE_SYMBOL = 5, CE_ANY = 99 } cetype_t;
+
+/* NA_STRING — canonical NA for character vectors */
+#define NA_STRING R_NaString
+
+/* ── External pointer API ── */
+
+SEXP R_MakeExternalPtr(void *p, SEXP tag, SEXP prot);
+void *R_ExternalPtrAddr(SEXP s);
+SEXP R_ExternalPtrTag(SEXP s);
+SEXP R_ExternalPtrProtected(SEXP s);
+void R_ClearExternalPtr(SEXP s);
+void R_SetExternalPtrAddr(SEXP s, void *p);
+void R_RegisterCFinalizer(SEXP s, void (*fun)(SEXP));
+void R_RegisterCFinalizerEx(SEXP s, void (*fun)(SEXP), Rboolean onexit);
+
 /* ── Function declarations (implemented in minir_runtime.c) ── */
 
 /* Allocation */
@@ -163,9 +181,15 @@ SEXP Rf_ScalarInteger(int x);
 SEXP Rf_ScalarLogical(int x);
 SEXP Rf_ScalarString(SEXP x);
 
+/* Length */
+R_len_t Rf_length(SEXP x);
+
 /* Strings */
 SEXP Rf_mkChar(const char *str);
 SEXP Rf_mkCharLen(const char *str, int len);
+SEXP Rf_mkCharCE(const char *str, cetype_t encoding);
+cetype_t Rf_getCharCE(SEXP x);
+Rboolean Rf_StringBlank(SEXP x);
 SEXP Rf_mkString(const char *str);
 
 /* Symbols */
@@ -219,15 +243,17 @@ SEXP R_do_slot(SEXP obj, SEXP name);
 
 /* ── R_RegisterRoutines ── */
 
+typedef void (*DL_FUNC)();
+
 typedef struct {
     const char *name;
-    void *fun;  /* DL_FUNC */
+    DL_FUNC fun;
     int numArgs;
 } R_CallMethodDef;
 
 typedef struct {
     const char *name;
-    void *fun;
+    DL_FUNC fun;
     int numArgs;
 } R_CMethodDef;
 
@@ -267,7 +293,7 @@ void _minir_free_allocs(void);
 /* Get registered .Call methods */
 typedef struct {
     const char *name;
-    void *fun;
+    DL_FUNC fun;
     int numArgs;
 } _minir_registered_call;
 
@@ -282,8 +308,13 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define ScalarInteger   Rf_ScalarInteger
 #define ScalarLogical   Rf_ScalarLogical
 #define ScalarString    Rf_ScalarString
+/* Note: lowercase `length` is NOT aliased because it conflicts with the
+   struct field `s->length`. Use LENGTH() macro or Rf_length() function. */
 #define mkChar          Rf_mkChar
 #define mkCharLen       Rf_mkCharLen
+#define mkCharCE        Rf_mkCharCE
+#define getCharCE       Rf_getCharCE
+#define StringBlank     Rf_StringBlank
 #define mkString        Rf_mkString
 #define install         Rf_install
 #define protect         Rf_protect

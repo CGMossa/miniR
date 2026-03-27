@@ -11,6 +11,6 @@
 
 #include "../Rinternals.h"
 
-typedef void (*DL_FUNC)();
+/* DL_FUNC already defined in Rinternals.h */
 
 #endif /* MINIR_R_EXT_RDYNLOAD_H */

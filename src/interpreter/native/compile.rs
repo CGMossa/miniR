@@ -263,62 +263,102 @@ pub fn compile_package(
     // cc::Build normally runs inside Cargo build scripts where TARGET/HOST
     // env vars are set. At runtime we set them to the current platform.
     let target = current_target_triple();
-    let mut build = cc::Build::new();
-    build
-        .pic(true)
-        .warnings(false) // package code may have warnings we can't fix
-        .target(&target)
-        .host(&target)
-        .opt_level(2)
-        .out_dir(output_dir)
-        .include(include_dir)
-        .include(include_dir.join("miniR"))
-        .include(pkg_src_dir);
 
-    // Check if any C++ files are present
-    let has_cpp = src_files.iter().any(|f| {
-        matches!(
+    // Split files into C and C++ groups — must compile separately because
+    // cc::Build with .cpp(true) compiles ALL files as C++, which breaks
+    // C files that rely on C linkage (extern declarations without extern "C").
+    let (c_files, cpp_files): (Vec<_>, Vec<_>) = src_files.iter().partition(|f| {
+        !matches!(
             f.extension().and_then(|e| e.to_str()),
             Some("cpp" | "cc" | "cxx" | "C")
         )
     });
+    let has_cpp = !cpp_files.is_empty();
+
+    // Helper: configure common build settings
+    let configure_build = |build: &mut cc::Build| {
+        build
+            .pic(true)
+            .warnings(false)
+            .target(&target)
+            .host(&target)
+            .opt_level(2)
+            .out_dir(output_dir)
+            .include(include_dir)
+            .include(include_dir.join("miniR"))
+            .include(pkg_src_dir);
+
+        // Add PKG_CPPFLAGS (preprocessor flags, applies to both C and C++)
+        let cppflags = makevars.pkg_cppflags();
+        if !cppflags.is_empty() {
+            for flag in shell_split(cppflags) {
+                if let Some(rel_path) = flag.strip_prefix("-I") {
+                    let path = Path::new(rel_path);
+                    if path.is_relative() {
+                        build.include(pkg_src_dir.join(path));
+                    } else {
+                        build.include(path);
+                    }
+                } else {
+                    build.flag(&flag);
+                }
+            }
+        }
+    };
+
+    let mut object_files = Vec::new();
+
+    // Compile C files
+    if !c_files.is_empty() {
+        let mut c_build = cc::Build::new();
+        configure_build(&mut c_build);
+        let cflags = makevars.pkg_cflags();
+        if !cflags.is_empty() {
+            for flag in shell_split(cflags) {
+                c_build.flag(&flag);
+            }
+        }
+        for src in &c_files {
+            c_build.file(src);
+        }
+        let c_objs = c_build
+            .try_compile_intermediates()
+            .map_err(|e| format!("C compilation failed: {e}"))?;
+        object_files.extend(c_objs);
+    }
+
+    // Compile C++ files
     if has_cpp {
-        build.cpp(true).std("c++17");
-    }
-
-    // Add Makevars flags
-    let cppflags = makevars.pkg_cppflags();
-    if !cppflags.is_empty() {
-        for flag in shell_split(cppflags) {
-            build.flag(&flag);
+        let mut cxx_build = cc::Build::new();
+        configure_build(&mut cxx_build);
+        cxx_build.cpp(true).std("c++17");
+        let cxxflags = makevars.pkg_cxxflags();
+        if !cxxflags.is_empty() {
+            for flag in shell_split(cxxflags) {
+                cxx_build.flag(&flag);
+            }
         }
-    }
-    let cflags = makevars.pkg_cflags();
-    if !cflags.is_empty() && !has_cpp {
-        for flag in shell_split(cflags) {
-            build.flag(&flag);
+        for src in &cpp_files {
+            cxx_build.file(src);
         }
+        let cxx_objs = cxx_build
+            .try_compile_intermediates()
+            .map_err(|e| format!("C++ compilation failed: {e}"))?;
+        object_files.extend(cxx_objs);
     }
-    let cxxflags = makevars.pkg_cxxflags();
-    if !cxxflags.is_empty() && has_cpp {
-        for flag in shell_split(cxxflags) {
-            build.flag(&flag);
-        }
-    }
-
-    // Add source files
-    for src in &src_files {
-        build.file(src);
-    }
-
-    // Compile to .o files (cc::Build handles compiler selection)
-    let object_files = build
-        .try_compile_intermediates()
-        .map_err(|e| format!("compilation of {} failed: {}", pkg_src_dir.display(), e))?;
 
     // Link .o files into a shared library (.so/.dylib)
-    // cc::Build can't produce shared libs, so we do this step manually.
-    let linker = build
+    // Use the C++ compiler as linker if any C++ files were compiled.
+    let linker_build = if has_cpp {
+        let mut b = cc::Build::new();
+        b.cpp(true).target(&target).host(&target).opt_level(2);
+        b
+    } else {
+        let mut b = cc::Build::new();
+        b.target(&target).host(&target).opt_level(2);
+        b
+    };
+    let linker = linker_build
         .try_get_compiler()
         .map_err(|e| format!("cannot find compiler: {e}"))?;
 
