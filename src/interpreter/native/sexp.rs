@@ -78,6 +78,15 @@ pub struct SexpRec {
 /// The SEXP pointer type — equivalent to C's `SEXP`.
 pub type Sexp = *mut SexpRec;
 
+/// Pairlist node data — matches `minir_pairlist_data` in Rinternals.h.
+/// Used by LISTSXP/LANGSXP nodes. Stored at `data` pointer of the SexpRec.
+#[repr(C)]
+pub struct PairlistData {
+    pub car: Sexp,
+    pub cdr: Sexp,
+    pub tag: Sexp,
+}
+
 /// Null SEXP sentinel.
 pub const R_NIL_VALUE: Sexp = std::ptr::null_mut();
 
@@ -101,6 +110,8 @@ pub fn alloc_vector(stype: u8, length: i32) -> Sexp {
             (*rec).data = match stype {
                 REALSXP => calloc(len, std::mem::size_of::<f64>()),
                 INTSXP | LGLSXP => calloc(len, std::mem::size_of::<i32>()),
+                // Rcomplex = { double r, i } = 16 bytes
+                CPLXSXP => calloc(len, 2 * std::mem::size_of::<f64>()),
                 STRSXP | VECSXP => calloc(len, std::mem::size_of::<Sexp>()),
                 RAWSXP => calloc(len, 1),
                 _ => std::ptr::null_mut(),

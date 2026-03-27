@@ -370,3 +370,228 @@ stopifnot(result == 2L)
 }
 
 // endregion
+
+// region: Rf_error handling (setjmp trampoline)
+
+#[test]
+fn dot_call_rf_error_returns_r_error() {
+    use r::interpreter::native::compile;
+
+    let c_code = r#"
+#include <Rinternals.h>
+
+SEXP test_error(SEXP x) {
+    if (LENGTH(x) == 0) {
+        Rf_error("input vector must not be empty");
+    }
+    return x;
+}
+"#;
+
+    let (tmp, src_dir) = make_test_package(c_code);
+    let output_dir = tmp.path().join("output");
+    std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+    let lib_path = compile::compile_package(&src_dir, "testpkg", &output_dir, &include_dir())
+        .expect("compilation failed");
+
+    let mut s = Session::new();
+    s.eval_source(&format!("dyn.load(\"{}\")", lib_path.display()));
+
+    // Should succeed with non-empty vector
+    s.eval_source(
+        r#"
+result <- .Call("test_error", 1:3)
+stopifnot(identical(result, 1:3))
+"#,
+    );
+
+    // Should fail with empty vector (Rf_error)
+    let result = s.eval_source(r#".Call("test_error", integer(0))"#);
+    assert!(result.is_err(), "expected Rf_error to propagate as RError");
+}
+
+// endregion
+
+// region: R_RegisterRoutines
+
+#[test]
+fn r_register_routines() {
+    use r::interpreter::native::compile;
+
+    let c_code = r#"
+#include <Rinternals.h>
+
+SEXP my_registered_fn(SEXP x) {
+    return Rf_ScalarInteger(LENGTH(x) * 10);
+}
+
+static const R_CallMethodDef callMethods[] = {
+    {"my_registered_fn", (void*)&my_registered_fn, 1},
+    {NULL, NULL, 0}
+};
+
+void R_init_testpkg(DllInfo *info) {
+    R_registerRoutines(info, NULL, callMethods, NULL, NULL);
+}
+"#;
+
+    let (tmp, src_dir) = make_test_package(c_code);
+    let output_dir = tmp.path().join("output");
+    std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+    let lib_path = compile::compile_package(&src_dir, "testpkg", &output_dir, &include_dir())
+        .expect("compilation failed");
+
+    let mut s = Session::new();
+    s.eval_source(&format!("dyn.load(\"{}\")", lib_path.display()));
+
+    // The function should be callable by its registered name
+    s.eval_source(
+        r#"
+result <- .Call("my_registered_fn", 1:5)
+stopifnot(result == 50L)
+"#,
+    );
+}
+
+// endregion
+
+// region: Complex vector support
+
+#[test]
+fn dot_call_complex_vector() {
+    use r::interpreter::native::compile;
+
+    let c_code = r#"
+#include <Rinternals.h>
+
+SEXP test_complex_sum(SEXP x) {
+    int n = LENGTH(x);
+    Rcomplex *px = COMPLEX(x);
+    double re = 0.0, im = 0.0;
+    for (int i = 0; i < n; i++) {
+        re += px[i].r;
+        im += px[i].i;
+    }
+    SEXP result = PROTECT(Rf_allocVector(CPLXSXP, 1));
+    COMPLEX(result)[0].r = re;
+    COMPLEX(result)[0].i = im;
+    UNPROTECT(1);
+    return result;
+}
+"#;
+
+    let (tmp, src_dir) = make_test_package(c_code);
+    let output_dir = tmp.path().join("output");
+    std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+    let lib_path = compile::compile_package(&src_dir, "testpkg", &output_dir, &include_dir())
+        .expect("compilation failed");
+
+    let mut s = Session::new();
+    s.eval_source(&format!("dyn.load(\"{}\")", lib_path.display()));
+
+    s.eval_source(
+        r#"
+result <- .Call("test_complex_sum", c(1+2i, 3+4i))
+stopifnot(Re(result) == 4)
+stopifnot(Im(result) == 6)
+"#,
+    );
+}
+
+// endregion
+
+// region: Attributes
+
+#[test]
+fn dot_call_set_names_attribute() {
+    use r::interpreter::native::compile;
+
+    let c_code = r#"
+#include <Rinternals.h>
+
+SEXP test_with_names(SEXP x) {
+    int n = LENGTH(x);
+    SEXP result = PROTECT(Rf_duplicate(x));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, n));
+    for (int i = 0; i < n; i++) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "v%d", i + 1);
+        SET_STRING_ELT(names, i, Rf_mkChar(buf));
+    }
+    Rf_setAttrib(result, R_NamesSymbol, names);
+    UNPROTECT(2);
+    return result;
+}
+"#;
+
+    let (tmp, src_dir) = make_test_package(c_code);
+    let output_dir = tmp.path().join("output");
+    std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+    let lib_path = compile::compile_package(&src_dir, "testpkg", &output_dir, &include_dir())
+        .expect("compilation failed");
+
+    let mut s = Session::new();
+    s.eval_source(&format!("dyn.load(\"{}\")", lib_path.display()));
+
+    s.eval_source(
+        r#"
+result <- .Call("test_with_names", c(10, 20, 30))
+stopifnot(identical(names(result), c("v1", "v2", "v3")))
+stopifnot(identical(as.numeric(result), c(10, 20, 30)))
+"#,
+    );
+}
+
+// endregion
+
+// region: Multi-file compilation (tests that runtime.c is linked once)
+
+#[test]
+fn compile_multi_file_package() {
+    use r::interpreter::native::compile;
+
+    // Write two .c files — both include Rinternals.h
+    let tmp = temp_dir::TempDir::new().expect("create temp dir");
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).expect("create src dir");
+
+    std::fs::write(
+        src_dir.join("a.c"),
+        r#"
+#include <Rinternals.h>
+SEXP from_a(void) { return Rf_ScalarInteger(1); }
+"#,
+    )
+    .expect("write a.c");
+
+    std::fs::write(
+        src_dir.join("b.c"),
+        r#"
+#include <Rinternals.h>
+SEXP from_b(void) { return Rf_ScalarInteger(2); }
+"#,
+    )
+    .expect("write b.c");
+
+    let output_dir = tmp.path().join("output");
+    std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+    let lib_path = compile::compile_package(&src_dir, "multipkg", &output_dir, &include_dir())
+        .expect("multi-file compilation failed");
+
+    let mut s = Session::new();
+    s.eval_source(&format!("dyn.load(\"{}\")", lib_path.display()));
+
+    s.eval_source(
+        r#"
+stopifnot(.Call("from_a") == 1L)
+stopifnot(.Call("from_b") == 2L)
+"#,
+    );
+}
+
+// endregion

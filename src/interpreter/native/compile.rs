@@ -177,8 +177,27 @@ fn strip_continuation(s: &str) -> (&str, bool) {
 // region: C compilation
 
 /// Find the system C compiler.
+///
+/// Checks, in order: CC environment variable, then cc, clang, gcc.
+/// The `cc` crate is not used because it only produces static archives (.a),
+/// not shared libraries (.so/.dylib) which is what we need for dyn.load.
 fn find_cc() -> String {
-    std::env::var("CC").unwrap_or_else(|_| "cc".to_string())
+    if let Ok(cc) = std::env::var("CC") {
+        return cc;
+    }
+    // Try common compiler names in order of preference
+    for name in &["cc", "clang", "gcc"] {
+        if Command::new(name)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok()
+        {
+            return (*name).to_string();
+        }
+    }
+    "cc".to_string()
 }
 
 /// Shared library extension for the current platform.
@@ -210,11 +229,22 @@ pub fn compile_package(
     let makevars = Makevars::parse(&pkg_src_dir.join("Makevars"));
 
     // Find C source files
-    let c_files = find_c_sources(pkg_src_dir, &makevars)?;
+    let mut c_files = find_c_sources(pkg_src_dir, &makevars)?;
     if c_files.is_empty() {
         return Err(format!(
             "no C source files found in {}",
             pkg_src_dir.display()
+        ));
+    }
+
+    // Add minir_runtime.c — provides the C API implementations
+    let runtime_c = include_dir.join("miniR").join("minir_runtime.c");
+    if runtime_c.is_file() {
+        c_files.push(runtime_c);
+    } else {
+        return Err(format!(
+            "minir_runtime.c not found at {}",
+            runtime_c.display()
         ));
     }
 

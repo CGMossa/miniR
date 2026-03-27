@@ -33,10 +33,7 @@ fn vector_to_sexp(vec: &Vector) -> Sexp {
         Vector::Logical(l) => logical_to_sexp(l),
         Vector::Character(c) => character_to_sexp(c),
         Vector::Raw(r) => raw_to_sexp(r),
-        Vector::Complex(_) => {
-            // TODO: complex SEXP support
-            sexp::mk_null()
-        }
+        Vector::Complex(c) => complex_to_sexp(c),
     }
 }
 
@@ -98,6 +95,28 @@ fn character_to_sexp(c: &Character) -> Sexp {
     s
 }
 
+fn complex_to_sexp(c: &ComplexVec) -> Sexp {
+    let len = c.len();
+    let s = sexp::alloc_vector(sexp::CPLXSXP, len as i32);
+    unsafe {
+        // Rcomplex is { double r; double i; } — same layout as num_complex::Complex64
+        let ptr = (*s).data as *mut [f64; 2];
+        for i in 0..len {
+            match c[i] {
+                Some(z) => {
+                    (*ptr.add(i))[0] = z.re;
+                    (*ptr.add(i))[1] = z.im;
+                }
+                None => {
+                    (*ptr.add(i))[0] = sexp::NA_REAL;
+                    (*ptr.add(i))[1] = sexp::NA_REAL;
+                }
+            }
+        }
+    }
+    s
+}
+
 fn raw_to_sexp(r: &[u8]) -> Sexp {
     let len = r.len();
     let s = sexp::alloc_vector(sexp::RAWSXP, len as i32);
@@ -135,20 +154,61 @@ pub unsafe fn sexp_to_rvalue(s: Sexp) -> RValue {
         return RValue::Null;
     }
     let rec: &SexpRec = &*s;
-    match rec.stype {
-        sexp::NILSXP => RValue::Null,
+    let mut result = match rec.stype {
+        sexp::NILSXP => return RValue::Null,
         sexp::REALSXP => sexp_real_to_rvalue(rec),
         sexp::INTSXP => sexp_int_to_rvalue(rec),
         sexp::LGLSXP => sexp_lgl_to_rvalue(rec),
         sexp::STRSXP => sexp_str_to_rvalue(rec),
         sexp::VECSXP => sexp_vec_to_rvalue(rec),
         sexp::RAWSXP => sexp_raw_to_rvalue(rec),
+        sexp::CPLXSXP => sexp_complex_to_rvalue(rec),
         sexp::CHARSXP => {
-            // Single CHARSXP — wrap as length-1 character vector
             let st = sexp::char_data(s);
             RValue::vec(Vector::Character(vec![Some(st.to_string())].into()))
         }
-        _ => RValue::Null,
+        _ => return RValue::Null,
+    };
+
+    // Read attributes from the SEXP attrib pairlist
+    if !rec.attrib.is_null() {
+        read_sexp_attrs(rec.attrib, &mut result);
+    }
+
+    result
+}
+
+/// Read attributes from a SEXP pairlist (LISTSXP chain) and apply to an RValue.
+unsafe fn read_sexp_attrs(mut attr: Sexp, result: &mut RValue) {
+    // Walk the pairlist: each node has TAG (name symbol), CAR (value), CDR (next)
+    while !attr.is_null() && (*attr).stype == sexp::LISTSXP {
+        let pairlist_data = (*attr).data as *const sexp::PairlistData;
+        if pairlist_data.is_null() {
+            break;
+        }
+        let tag = (*pairlist_data).tag;
+        let car = (*pairlist_data).car;
+        let cdr = (*pairlist_data).cdr;
+
+        // Read attribute name from the tag symbol
+        if !tag.is_null() && (*tag).stype == sexp::SYMSXP && !(*tag).data.is_null() {
+            let name = sexp::char_data(tag); // SYMSXP stores name like CHARSXP
+            let value = sexp_to_rvalue(car);
+
+            match result {
+                RValue::Vector(rv) => {
+                    rv.set_attr(name.to_string(), value);
+                }
+                RValue::List(list) => {
+                    list.attrs
+                        .get_or_insert_with(|| Box::new(indexmap::IndexMap::new()))
+                        .insert(name.to_string(), value);
+                }
+                _ => {}
+            }
+        }
+
+        attr = cdr;
     }
 }
 
@@ -230,6 +290,21 @@ unsafe fn sexp_raw_to_rvalue(rec: &SexpRec) -> RValue {
         std::ptr::copy_nonoverlapping(rec.data, buf.as_mut_ptr(), len);
     }
     RValue::vec(Vector::Raw(buf))
+}
+
+unsafe fn sexp_complex_to_rvalue(rec: &SexpRec) -> RValue {
+    let len = rec.length.max(0) as usize;
+    let ptr = rec.data as *const [f64; 2]; // Rcomplex = { double r, i }
+    let mut vals = Vec::with_capacity(len);
+    for i in 0..len {
+        let pair = &*ptr.add(i);
+        if sexp::is_na_real(pair[0]) {
+            vals.push(None);
+        } else {
+            vals.push(Some(num_complex::Complex64::new(pair[0], pair[1])));
+        }
+    }
+    RValue::vec(Vector::Complex(vals.into()))
 }
 
 // endregion

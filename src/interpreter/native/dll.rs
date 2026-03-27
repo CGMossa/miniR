@@ -2,8 +2,15 @@
 //!
 //! Uses `libloading` to load shared libraries (.so on Linux, .dylib on macOS)
 //! and resolve function symbols for `.Call()` dispatch.
+//!
+//! The actual native function call goes through a C trampoline
+//! (`_minir_call_protected` in `minir_runtime.c`) which sets up `setjmp`
+//! so that `Rf_error()` in C code safely longjmps back instead of crashing.
+//! The trampoline also handles variable argument counts (up to 16 SEXP args).
 
 use std::collections::HashMap;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 
 use libloading::{Library, Symbol};
@@ -12,6 +19,37 @@ use super::convert;
 use super::sexp::{self, Sexp};
 use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
+
+// region: C trampoline types
+
+/// Signature of `_minir_call_protected` in the .so.
+type CallProtectedFn = unsafe extern "C" fn(
+    fn_ptr: *const (),
+    args: *const Sexp,
+    nargs: i32,
+    result: *mut Sexp,
+) -> i32;
+/// Signature of `_minir_get_error_msg` in the .so.
+type GetErrorMsgFn = unsafe extern "C" fn() -> *const c_char;
+/// Signature of `_minir_free_allocs` in the .so.
+type FreeAllocsFn = unsafe extern "C" fn();
+/// Signature of `R_init_<pkgname>(DllInfo*)` package init function.
+type PkgInitFn = unsafe extern "C" fn(*mut u8);
+
+/// Registered .Call method from R_registerRoutines (C struct layout).
+#[repr(C)]
+struct RegisteredCall {
+    name: *const c_char,
+    fun: *const (),
+    num_args: i32,
+}
+
+/// Signature of `_minir_get_registered_calls`.
+type GetRegisteredCallsFn = unsafe extern "C" fn(out: *mut *const RegisteredCall) -> i32;
+
+// endregion
+
+// region: LoadedDll
 
 /// A loaded dynamic library and its resolved symbols.
 pub struct LoadedDll {
@@ -23,6 +61,8 @@ pub struct LoadedDll {
     lib: Library,
     /// Cached symbol addresses: function name → raw pointer.
     symbols: HashMap<String, *const ()>,
+    /// Symbols registered via R_registerRoutines during R_init_<pkg>.
+    registered_calls: HashMap<String, *const ()>,
 }
 
 // Safety: LoadedDll is only used from a single interpreter thread.
@@ -30,7 +70,8 @@ pub struct LoadedDll {
 unsafe impl Send for LoadedDll {}
 
 impl LoadedDll {
-    /// Load a shared library from the given path.
+    /// Load a shared library from the given path, then call R_init_<pkgname>
+    /// if it exists (to register routines).
     pub fn load(path: &Path) -> Result<Self, String> {
         let name = path
             .file_stem()
@@ -44,16 +85,68 @@ impl LoadedDll {
         let lib = unsafe { Library::new(path) }
             .map_err(|e| format!("dyn.load(\"{}\") failed: {e}", path.display()))?;
 
-        Ok(LoadedDll {
+        let mut dll = LoadedDll {
             path: path.to_path_buf(),
-            name,
+            name: name.clone(),
             lib,
             symbols: HashMap::new(),
-        })
+            registered_calls: HashMap::new(),
+        };
+
+        // Call R_init_<pkgname> if it exists — this triggers R_registerRoutines
+        dll.call_pkg_init(&name);
+
+        Ok(dll)
     }
 
-    /// Look up a function symbol by name. Caches the result.
+    /// Call the package init function `R_init_<name>(DllInfo*)` if present.
+    fn call_pkg_init(&mut self, pkg_name: &str) {
+        let init_name = format!("R_init_{pkg_name}");
+        if let Ok(ptr) = self.get_symbol(&init_name) {
+            unsafe {
+                let init: PkgInitFn = std::mem::transmute(ptr);
+                // Pass a null DllInfo* — our runtime ignores it
+                init(std::ptr::null_mut());
+            }
+            // After init, collect registered .Call methods
+            self.collect_registered_calls();
+        }
+    }
+
+    /// Read registered .Call methods from the .so's _minir_get_registered_calls.
+    fn collect_registered_calls(&mut self) {
+        if let Ok(ptr) = self.get_symbol("_minir_get_registered_calls") {
+            unsafe {
+                let get_calls: GetRegisteredCallsFn = std::mem::transmute(ptr);
+                let mut out: *const RegisteredCall = std::ptr::null();
+                let count = get_calls(&mut out as *mut *const RegisteredCall);
+                if !out.is_null() && count > 0 {
+                    for i in 0..count {
+                        let entry = &*out.add(i as usize);
+                        if !entry.name.is_null() && !entry.fun.is_null() {
+                            let name = CStr::from_ptr(entry.name)
+                                .to_str()
+                                .unwrap_or("")
+                                .to_string();
+                            if !name.is_empty() {
+                                self.registered_calls.insert(name, entry.fun);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Look up a function symbol by name. Checks registered routines first,
+    /// then falls back to dynamic symbol lookup. Caches the result.
     pub fn get_symbol(&mut self, name: &str) -> Result<*const (), String> {
+        // Check registered .Call methods first
+        if let Some(&ptr) = self.registered_calls.get(name) {
+            return Ok(ptr);
+        }
+
+        // Check cache
         if let Some(&ptr) = self.symbols.get(name) {
             return Ok(ptr);
         }
@@ -80,9 +173,15 @@ impl std::fmt::Debug for LoadedDll {
             .field("name", &self.name)
             .field("path", &self.path)
             .field("symbols", &self.symbols.keys().collect::<Vec<_>>())
+            .field(
+                "registered_calls",
+                &self.registered_calls.keys().collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
+
+// endregion
 
 // region: Interpreter DLL state
 
@@ -117,12 +216,13 @@ impl Interpreter {
         dlls.iter_mut().any(|dll| dll.get_symbol(name).is_ok())
     }
 
-    /// Look up a symbol across all loaded DLLs. Returns the function pointer.
-    pub(crate) fn find_native_symbol(&self, name: &str) -> Result<*const (), RError> {
+    /// Look up a symbol across all loaded DLLs. Returns the function pointer
+    /// and the index of the DLL that contains it.
+    fn find_native_symbol_with_dll(&self, name: &str) -> Result<(*const (), usize), RError> {
         let mut dlls = self.loaded_dlls.borrow_mut();
-        for dll in dlls.iter_mut().rev() {
+        for (i, dll) in dlls.iter_mut().enumerate().rev() {
             if let Ok(ptr) = dll.get_symbol(name) {
-                return Ok(ptr);
+                return Ok((ptr, i));
             }
         }
         Err(RError::new(
@@ -131,29 +231,98 @@ impl Interpreter {
         ))
     }
 
-    /// Execute a `.Call()` invocation: look up symbol, convert args, call, convert result.
+    /// Look up a symbol across all loaded DLLs. Returns the function pointer.
+    pub(crate) fn find_native_symbol(&self, name: &str) -> Result<*const (), RError> {
+        self.find_native_symbol_with_dll(name).map(|(ptr, _)| ptr)
+    }
+
+    /// Execute a `.Call()` invocation using the C trampoline for error safety.
+    ///
+    /// Flow:
+    /// 1. Convert RValue args → SEXP (using C allocator)
+    /// 2. Look up the native function symbol
+    /// 3. Look up the C trampoline `_minir_call_protected` in the same DLL
+    /// 4. Call the trampoline (which does setjmp + dispatch)
+    /// 5. If the C function called Rf_error(), the trampoline returns 1 and
+    ///    we convert the error message to an RError
+    /// 6. Convert the result SEXP → RValue
+    /// 7. Free all C-side allocations via `_minir_free_allocs`
+    /// 8. Free Rust-side input SEXPs
     pub(crate) fn dot_call(&self, symbol_name: &str, args: &[RValue]) -> Result<RValue, RError> {
-        let fn_ptr = self.find_native_symbol(symbol_name)?;
+        let (fn_ptr, dll_idx) = self.find_native_symbol_with_dll(symbol_name)?;
 
         // Convert RValue args to SEXPs (allocated with C allocator)
         let sexp_args: Vec<Sexp> = args.iter().map(convert::rvalue_to_sexp).collect();
 
-        // Call the native function with the right number of args.
-        // .Call functions always take and return SEXP.
-        let result_sexp = unsafe { call_native(fn_ptr, &sexp_args) }?;
+        // Look up the trampoline and error accessors in the same DLL
+        let mut dlls = self.loaded_dlls.borrow_mut();
+        let dll = &mut dlls[dll_idx];
+        let trampoline_ptr = dll
+            .get_symbol("_minir_call_protected")
+            .map_err(|e| RError::new(RErrorKind::Other, e))?;
+        let get_error_ptr = dll
+            .get_symbol("_minir_get_error_msg")
+            .map_err(|e| RError::new(RErrorKind::Other, e))?;
+        let cleanup_ptr = dll
+            .get_symbol("_minir_free_allocs")
+            .map_err(|e| RError::new(RErrorKind::Other, e))?;
+        drop(dlls);
 
-        // Convert result back to RValue (copies all data)
+        // Call through the C trampoline (setjmp protection + variable arg dispatch)
+        let mut result_sexp: Sexp = sexp::R_NIL_VALUE;
+        let nargs = i32::try_from(sexp_args.len()).unwrap_or(0);
+        let error_code = unsafe {
+            let trampoline: CallProtectedFn = std::mem::transmute(trampoline_ptr);
+            trampoline(
+                fn_ptr,
+                sexp_args.as_ptr(),
+                nargs,
+                &mut result_sexp as *mut Sexp,
+            )
+        };
+
+        // Check if Rf_error was called
+        if error_code != 0 {
+            let error_msg = unsafe {
+                let get_error: GetErrorMsgFn = std::mem::transmute(get_error_ptr);
+                let msg_ptr = get_error();
+                if msg_ptr.is_null() {
+                    "unknown error in native code".to_string()
+                } else {
+                    CStr::from_ptr(msg_ptr)
+                        .to_str()
+                        .unwrap_or("unknown error")
+                        .to_string()
+                }
+            };
+
+            // Clean up before returning error
+            unsafe {
+                let cleanup: FreeAllocsFn = std::mem::transmute(cleanup_ptr);
+                cleanup();
+            }
+            unsafe {
+                for s in sexp_args {
+                    sexp::free_sexp(s);
+                }
+            }
+
+            return Err(RError::new(RErrorKind::Other, error_msg));
+        }
+
+        // Convert result to RValue (copies all data)
         let result = unsafe { convert::sexp_to_rvalue(result_sexp) };
 
-        // Free C-side allocations via the .so's cleanup function.
-        // The C runtime (Rinternals.h) tracks all allocations made during the call
-        // in _minir_alloc_list. Call _minir_free_allocs to free them all.
-        // This frees both the result SEXP and any intermediate allocations.
-        self.call_cleanup_fn();
+        // Free C-side allocations (result SEXP + any intermediates)
+        unsafe {
+            let cleanup: FreeAllocsFn = std::mem::transmute(cleanup_ptr);
+            cleanup();
+        }
 
-        // Free input SEXPs that Rust allocated (these are NOT tracked by the .so's
-        // alloc list because they were allocated by Rust's sexp module, not by
-        // Rinternals.h's Rf_allocVector).
+        // Free Rust-allocated input SEXPs.
+        // These are safe to free separately because they were allocated by Rust's
+        // sexp module (using calloc, same allocator as C), and are NOT tracked
+        // in the .so's alloc list. No double-free risk.
         unsafe {
             for s in sexp_args {
                 sexp::free_sexp(s);
@@ -162,92 +331,6 @@ impl Interpreter {
 
         Ok(result)
     }
-
-    /// Call _minir_free_allocs in the most recently loaded DLL (if available).
-    fn call_cleanup_fn(&self) {
-        type CleanupFn = unsafe extern "C" fn();
-        let mut dlls = self.loaded_dlls.borrow_mut();
-        for dll in dlls.iter_mut().rev() {
-            if let Ok(ptr) = dll.get_symbol("_minir_free_allocs") {
-                unsafe {
-                    let cleanup: CleanupFn = std::mem::transmute(ptr);
-                    cleanup();
-                }
-                return;
-            }
-        }
-    }
-}
-
-// endregion
-
-// region: Native call dispatch
-
-/// Type aliases for .Call function signatures (up to 16 args).
-type NativeFn0 = unsafe extern "C" fn() -> Sexp;
-type NativeFn1 = unsafe extern "C" fn(Sexp) -> Sexp;
-type NativeFn2 = unsafe extern "C" fn(Sexp, Sexp) -> Sexp;
-type NativeFn3 = unsafe extern "C" fn(Sexp, Sexp, Sexp) -> Sexp;
-type NativeFn4 = unsafe extern "C" fn(Sexp, Sexp, Sexp, Sexp) -> Sexp;
-type NativeFn5 = unsafe extern "C" fn(Sexp, Sexp, Sexp, Sexp, Sexp) -> Sexp;
-type NativeFn6 = unsafe extern "C" fn(Sexp, Sexp, Sexp, Sexp, Sexp, Sexp) -> Sexp;
-type NativeFn7 = unsafe extern "C" fn(Sexp, Sexp, Sexp, Sexp, Sexp, Sexp, Sexp) -> Sexp;
-type NativeFn8 = unsafe extern "C" fn(Sexp, Sexp, Sexp, Sexp, Sexp, Sexp, Sexp, Sexp) -> Sexp;
-
-/// Call a native function pointer with the given SEXP arguments.
-///
-/// # Safety
-/// `fn_ptr` must point to a valid C function with the correct number of SEXP args.
-unsafe fn call_native(fn_ptr: *const (), args: &[Sexp]) -> Result<Sexp, RError> {
-    let result = match args.len() {
-        0 => {
-            let f: NativeFn0 = std::mem::transmute(fn_ptr);
-            f()
-        }
-        1 => {
-            let f: NativeFn1 = std::mem::transmute(fn_ptr);
-            f(args[0])
-        }
-        2 => {
-            let f: NativeFn2 = std::mem::transmute(fn_ptr);
-            f(args[0], args[1])
-        }
-        3 => {
-            let f: NativeFn3 = std::mem::transmute(fn_ptr);
-            f(args[0], args[1], args[2])
-        }
-        4 => {
-            let f: NativeFn4 = std::mem::transmute(fn_ptr);
-            f(args[0], args[1], args[2], args[3])
-        }
-        5 => {
-            let f: NativeFn5 = std::mem::transmute(fn_ptr);
-            f(args[0], args[1], args[2], args[3], args[4])
-        }
-        6 => {
-            let f: NativeFn6 = std::mem::transmute(fn_ptr);
-            f(args[0], args[1], args[2], args[3], args[4], args[5])
-        }
-        7 => {
-            let f: NativeFn7 = std::mem::transmute(fn_ptr);
-            f(
-                args[0], args[1], args[2], args[3], args[4], args[5], args[6],
-            )
-        }
-        8 => {
-            let f: NativeFn8 = std::mem::transmute(fn_ptr);
-            f(
-                args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-            )
-        }
-        n => {
-            return Err(RError::new(
-                RErrorKind::Other,
-                format!(".Call with {n} arguments is not supported (max 8)"),
-            ));
-        }
-    };
-    Ok(result)
 }
 
 // endregion
