@@ -127,14 +127,15 @@ rfd = { version = "0.15", optional = true, default-features = false, features = 
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 resvg = { version = "0.45", optional = true }
 tiny-skia = { version = "0.11", optional = true }
+libloading = { version = "0.8", optional = true }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "parquet"]
+full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "parquet", "native"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "svg-device"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "svg-device", "native"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -144,7 +145,7 @@ minimal = []
 # Fast — core + the most-used features, skipping heavy compile-time deps.
 # Adds random, datetime, io, compression on top of minimal.
 # Usage: cargo build --no-default-features --features fast
-fast = ["random", "datetime", "io", "compression", "diagnostics", "signal", "terminal-size", "fast-format"]
+fast = ["random", "datetime", "io", "compression", "diagnostics", "signal", "terminal-size", "fast-format", "native"]
 
 tracing-output = ["dep:tracing-subscriber"]
 repl = ["dep:reedline", "dep:nu-ansi-term", "dep:crossterm"]
@@ -179,3 +180,4 @@ plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "de
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]
+native = ["dep:libloading"]

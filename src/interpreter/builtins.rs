@@ -18,6 +18,8 @@ pub mod io;
 #[cfg(feature = "json")]
 mod json;
 pub mod math;
+#[cfg(feature = "native")]
+mod native_code;
 #[cfg(feature = "tls")]
 mod net;
 #[cfg(feature = "parquet")]

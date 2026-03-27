@@ -15,6 +15,7 @@ stub_builtin!("install.packages");
 
 // region: C-level interface stubs
 
+#[cfg(not(feature = "native"))]
 /// .Call — stub for C-level function calls. Returns NULL with a warning.
 /// Many CRAN packages use .Call for compiled code we can't execute.
 ///
@@ -940,25 +941,30 @@ fn builtin_ext_soft_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<
 
 // endregion
 
-// region: Dynamic loading stubs (C/Fortran shared libs — can't actually load)
+// region: Dynamic loading stubs (C/Fortran shared libs — only when native feature is off)
 
+#[cfg(not(feature = "native"))]
 stub_builtin!(
     "dyn.load",
     1,
     "dyn.load() not available — miniR cannot load compiled shared libraries"
 );
+#[cfg(not(feature = "native"))]
 stub_builtin!("dyn.unload", 1, "dyn.unload() not available");
+#[cfg(not(feature = "native"))]
 stub_builtin!(
     "library.dynam",
     1,
     "library.dynam() not available — miniR cannot load compiled code"
 );
+#[cfg(not(feature = "native"))]
 stub_builtin!(
     "library.dynam.unload",
     1,
     "library.dynam.unload() not available"
 );
 
+#[cfg(not(feature = "native"))]
 /// is.loaded — check if a C symbol is loaded (always FALSE).
 /// @namespace base
 #[builtin(name = "is.loaded", min_args = 1)]
@@ -966,6 +972,7 @@ fn builtin_is_loaded(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
+#[cfg(not(feature = "native"))]
 /// getNativeSymbolInfo — get info about a loaded symbol (always errors).
 /// @namespace base
 #[builtin(name = "getNativeSymbolInfo", min_args = 1)]

@@ -3408,6 +3408,7 @@ dependencies = [
  "jiff",
  "krilla",
  "krilla-svg",
+ "libloading",
  "libm",
  "linkme",
  "log",
