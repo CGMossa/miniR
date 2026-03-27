@@ -2065,6 +2065,28 @@ fn builtin_deparse(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Character(vec![Some(s)].into())))
 }
 
+/// Single-string deparse (R 4.0+). Collapses multi-line deparse output.
+///
+/// @param expr any R value or language object
+/// @param collapse character: separator for joining lines (default " ")
+/// @return character scalar
+#[builtin(name = "deparse1", min_args = 1)]
+fn builtin_deparse1(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let collapse = named
+        .iter()
+        .find(|(n, _)| n == "collapse")
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| " ".to_string());
+
+    let s = match args.first() {
+        Some(RValue::Language(expr)) => deparse_expr(expr),
+        Some(v) => format!("{v}"),
+        None => "NULL".to_string(),
+    };
+    let collapsed = s.lines().collect::<Vec<_>>().join(&collapse);
+    Ok(RValue::vec(Vector::Character(vec![Some(collapsed)].into())))
+}
+
 /// Convert integer Unicode code points to a UTF-8 string.
 ///
 /// @param x integer vector of Unicode code points

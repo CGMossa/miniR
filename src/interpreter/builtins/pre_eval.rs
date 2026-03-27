@@ -1081,6 +1081,34 @@ fn pre_eval_missing(
     Ok(RValue::vec(Vector::Logical(vec![Some(is_missing)].into())))
 }
 
+/// Construct a pairlist of unevaluated arguments.
+///
+/// Unlike list(), alist() does not evaluate its arguments. Missing
+/// arguments (e.g. `alist(x = )`) produce empty symbol names, matching
+/// R's convention for function formals.
+///
+/// @param ... unevaluated arguments
+/// @return a list of language objects
+#[pre_eval_builtin(name = "alist")]
+fn pre_eval_alist(
+    args: &[Arg],
+    _env: &Environment,
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let entries: Vec<(Option<String>, RValue)> = args
+        .iter()
+        .map(|arg| {
+            let name = arg.name.clone();
+            let value = match &arg.value {
+                Some(expr) => RValue::Language(Language::new(expr.clone())),
+                None => RValue::Language(Language::new(Expr::Symbol(String::new()))),
+            };
+            (name, value)
+        })
+        .collect();
+    Ok(RValue::List(RList::new(entries)))
+}
+
 /// Return an unevaluated expression (language object).
 ///
 /// @param expr any R expression (not evaluated)

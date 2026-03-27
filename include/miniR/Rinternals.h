@@ -113,6 +113,9 @@ static inline int R_IsNA(double x) {
 extern SEXP R_NilValue;
 extern SEXP R_NaString;
 extern SEXP R_BlankString;
+extern SEXP R_GlobalEnv;
+extern SEXP R_BaseEnv;
+extern SEXP R_UnboundValue;
 extern SEXP R_NamesSymbol;
 extern SEXP R_DimSymbol;
 extern SEXP R_DimNamesSymbol;

@@ -280,6 +280,7 @@ pub fn compile_package(
         build
             .pic(true)
             .warnings(false)
+            .cargo_metadata(false) // suppress cargo:rerun-if-env-changed output
             .target(&target)
             .host(&target)
             .opt_level(2)
@@ -351,11 +352,18 @@ pub fn compile_package(
     // Use the C++ compiler as linker if any C++ files were compiled.
     let linker_build = if has_cpp {
         let mut b = cc::Build::new();
-        b.cpp(true).target(&target).host(&target).opt_level(2);
+        b.cpp(true)
+            .cargo_metadata(false)
+            .target(&target)
+            .host(&target)
+            .opt_level(2);
         b
     } else {
         let mut b = cc::Build::new();
-        b.target(&target).host(&target).opt_level(2);
+        b.cargo_metadata(false)
+            .target(&target)
+            .host(&target)
+            .opt_level(2);
         b
     };
     let linker = linker_build

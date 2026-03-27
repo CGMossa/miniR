@@ -42,9 +42,12 @@ static struct SEXPREC _nil_rec   = { NILSXP,  0, 0, 0, NULL, NULL };
 static struct SEXPREC _na_str    = { CHARSXP, 0, 0, 2, (void*)"NA", NULL };
 static struct SEXPREC _blank_str = { CHARSXP, 0, 0, 0, (void*)"",  NULL };
 
-SEXP R_NilValue   = &_nil_rec;
-SEXP R_NaString   = &_na_str;
+SEXP R_NilValue    = &_nil_rec;
+SEXP R_NaString    = &_na_str;
 SEXP R_BlankString = &_blank_str;
+SEXP R_GlobalEnv   = &_nil_rec;  /* stub — C code rarely needs the actual global env */
+SEXP R_BaseEnv     = &_nil_rec;
+SEXP R_UnboundValue = &_nil_rec;
 
 /* Well-known symbol SEXPs */
 static struct SEXPREC _sym_names    = { SYMSXP, 0, 0, 5, (void*)"names",    NULL };
@@ -512,6 +515,26 @@ void Rf_error(const char *fmt, ...) {
 }
 
 void Rf_warning(const char *fmt, ...) {
+    va_list ap;
+    char buf[4096];
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "Warning: %s\n", buf);
+}
+
+void Rf_errorcall(SEXP call, const char *fmt, ...) {
+    (void)call;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(_error_msg, sizeof(_error_msg), fmt, ap);
+    va_end(ap);
+    _has_error = 1;
+    longjmp(_error_jmp, 1);
+}
+
+void Rf_warningcall(SEXP call, const char *fmt, ...) {
+    (void)call;
     va_list ap;
     char buf[4096];
     va_start(ap, fmt);

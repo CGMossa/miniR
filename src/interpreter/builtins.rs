@@ -2974,6 +2974,25 @@ fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(args[0].clone())
 }
 
+/// Get the class attribute of an object (S3 compat alias for class()).
+/// @param x any R value
+/// @return class attribute or NULL
+/// @namespace base
+#[builtin(name = "oldClass", min_args = 1)]
+fn builtin_old_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(rv)) => match rv.get_attr("class") {
+            Some(cls) => Ok(cls.clone()),
+            None => Ok(RValue::Null),
+        },
+        Some(RValue::List(l)) => match l.get_attr("class") {
+            Some(cls) => Ok(cls.clone()),
+            None => Ok(RValue::Null),
+        },
+        _ => Ok(RValue::Null),
+    }
+}
+
 /// Vectorized conditional: for each element of test, select the corresponding
 /// element from yes (when TRUE) or no (when FALSE). yes and no are recycled
 /// to the length of test.
