@@ -244,6 +244,12 @@ impl Interpreter {
             self.source_r_directory(&r_dir, &namespace_env, collate)?;
         }
 
+        // Load native code if useDynLib directives are present
+        #[cfg(feature = "native")]
+        if !namespace.use_dyn_libs.is_empty() {
+            self.load_package_native_code(pkg_name, pkg_dir, &namespace.use_dyn_libs)?;
+        }
+
         // Build exports environment
         let exports_env = Environment::new_child(&base_env);
         exports_env.set_name(format!("package:{}", pkg_name));

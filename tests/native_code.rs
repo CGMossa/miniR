@@ -595,3 +595,78 @@ stopifnot(.Call("from_b") == 2L)
 }
 
 // endregion
+
+// region: useDynLib auto-compile via library()
+
+#[test]
+fn library_loads_native_code_via_usedynlib() {
+    // Create a fake package directory with DESCRIPTION, NAMESPACE, and src/
+    let tmp = temp_dir::TempDir::new().expect("create temp dir");
+    let lib_dir = tmp.path().join("library");
+    let pkg_dir = lib_dir.join("testNative");
+    let src_dir = pkg_dir.join("src");
+    let r_dir = pkg_dir.join("R");
+    std::fs::create_dir_all(&src_dir).expect("create src dir");
+    std::fs::create_dir_all(&r_dir).expect("create R dir");
+
+    // DESCRIPTION
+    std::fs::write(
+        pkg_dir.join("DESCRIPTION"),
+        "Package: testNative\nVersion: 0.1\nTitle: Test\n",
+    )
+    .expect("write DESCRIPTION");
+
+    // NAMESPACE with useDynLib
+    std::fs::write(
+        pkg_dir.join("NAMESPACE"),
+        "useDynLib(testNative)\nexport(double_vec)\n",
+    )
+    .expect("write NAMESPACE");
+
+    // R wrapper function
+    std::fs::write(
+        r_dir.join("main.R"),
+        r#"double_vec <- function(x) .Call("c_double_vec", x)"#,
+    )
+    .expect("write main.R");
+
+    // C source
+    std::fs::write(
+        src_dir.join("native.c"),
+        r#"
+#include <Rinternals.h>
+
+SEXP c_double_vec(SEXP x) {
+    int n = LENGTH(x);
+    SEXP result = PROTECT(Rf_allocVector(REALSXP, n));
+    double *px = REAL(x);
+    double *pr = REAL(result);
+    for (int i = 0; i < n; i++) pr[i] = px[i] * 2.0;
+    UNPROTECT(1);
+    return result;
+}
+"#,
+    )
+    .expect("write native.c");
+
+    let mut s = Session::new();
+    // Set R_LIBS to our temp library so library() can find the package
+    s.eval_source(&format!(
+        "Sys.setenv(R_LIBS = \"{}\")",
+        lib_dir.display()
+    ));
+    s.eval_source(".libPaths()");
+
+    // library() should: parse NAMESPACE → see useDynLib → compile src/ → load .so
+    s.eval_source("library(testNative)");
+
+    // The R wrapper should now work via .Call to the compiled C function
+    s.eval_source(
+        r#"
+result <- double_vec(c(1, 2, 3))
+stopifnot(identical(result, c(2, 4, 6)))
+"#,
+    );
+}
+
+// endregion

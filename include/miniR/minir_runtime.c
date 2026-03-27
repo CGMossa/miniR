@@ -11,12 +11,18 @@
  * Global state
  * ════════════════════════════════════════════════════════════════════════════ */
 
-#define MINIR_MAX_ALLOCS  65536
 #define MINIR_MAX_PROTECT 10000
 #define MINIR_MAX_REGISTERED_CALLS 1024
 
-static SEXP  _alloc_list[MINIR_MAX_ALLOCS];
-static int   _alloc_count = 0;
+/* Allocation tracking — dynamic linked list instead of fixed array.
+ * No hard limit on allocations per .Call invocation. */
+typedef struct _alloc_node {
+    SEXP s;
+    struct _alloc_node *next;
+} _alloc_node;
+
+static _alloc_node *_alloc_head = NULL;
+
 static SEXP  _protect_stack[MINIR_MAX_PROTECT];
 static int   _protect_count = 0;
 
@@ -62,8 +68,11 @@ DllInfo *_minir_current_dll_info = NULL;
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void _track(SEXP s) {
-    if (_alloc_count < MINIR_MAX_ALLOCS) {
-        _alloc_list[_alloc_count++] = s;
+    _alloc_node *node = (_alloc_node*)malloc(sizeof(_alloc_node));
+    if (node) {
+        node->s = s;
+        node->next = _alloc_head;
+        _alloc_head = node;
     }
 }
 
@@ -564,22 +573,31 @@ int _minir_has_error_flag(void) {
  * ════════════════════════════════════════════════════════════════════════════ */
 
 void _minir_free_allocs(void) {
+    _alloc_node *node = _alloc_head;
+
     /* First pass: free data buffers */
-    for (int i = 0; i < _alloc_count; i++) {
-        SEXP s = _alloc_list[i];
+    while (node) {
+        SEXP s = node->s;
         if (s && s != R_NilValue && s->data) {
             free(s->data);
             s->data = NULL;
         }
+        node = node->next;
     }
-    /* Second pass: free SEXPREC structs */
-    for (int i = 0; i < _alloc_count; i++) {
-        SEXP s = _alloc_list[i];
+
+    /* Second pass: free SEXPREC structs and list nodes */
+    node = _alloc_head;
+    while (node) {
+        _alloc_node *next = node->next;
+        SEXP s = node->s;
         if (s && s != R_NilValue) {
             free(s);
         }
+        free(node);
+        node = next;
     }
-    _alloc_count = 0;
+
+    _alloc_head = NULL;
     _protect_count = 0;
     _has_error = 0;
     _error_msg[0] = '\0';

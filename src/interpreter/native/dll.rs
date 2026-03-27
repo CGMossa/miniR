@@ -331,6 +331,128 @@ impl Interpreter {
 
         Ok(result)
     }
+
+    /// Find miniR's `include/` directory containing Rinternals.h.
+    ///
+    /// Search order:
+    /// 1. `MINIR_INCLUDE` environment variable
+    /// 2. `<exe_dir>/../include` (installed layout)
+    /// 3. `<working_dir>/include` (development layout)
+    pub(crate) fn find_include_dir(&self) -> Option<std::path::PathBuf> {
+        // Check env var first
+        if let Some(dir) = self.get_env_var("MINIR_INCLUDE") {
+            let p = std::path::PathBuf::from(dir);
+            if p.join("miniR").join("Rinternals.h").is_file() {
+                return Some(p);
+            }
+        }
+
+        // Check relative to executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let p = exe_dir.join("../include");
+                if p.join("miniR").join("Rinternals.h").is_file() {
+                    return Some(p);
+                }
+            }
+        }
+
+        // Check working directory (development layout)
+        let wd = self.get_working_dir();
+        let p = wd.join("include");
+        if p.join("miniR").join("Rinternals.h").is_file() {
+            return Some(p);
+        }
+
+        // Check CARGO_MANIFEST_DIR for test/dev builds
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let p = manifest.join("include");
+        if p.join("miniR").join("Rinternals.h").is_file() {
+            return Some(p);
+        }
+
+        None
+    }
+
+    /// Load native code for a package based on its useDynLib directives.
+    ///
+    /// For each useDynLib directive in the NAMESPACE:
+    /// 1. Look for a pre-compiled .so/.dylib in `<pkg_dir>/libs/`
+    /// 2. If not found, compile `<pkg_dir>/src/*.c` on demand
+    /// 3. Load the shared library via dyn_load
+    pub(crate) fn load_package_native_code(
+        &self,
+        pkg_name: &str,
+        pkg_dir: &std::path::Path,
+        dyn_libs: &[crate::interpreter::packages::namespace::DynLibDirective],
+    ) -> Result<(), RError> {
+        if dyn_libs.is_empty() {
+            return Ok(());
+        }
+
+        let ext = if cfg!(target_os = "macos") {
+            "dylib"
+        } else {
+            "so"
+        };
+
+        for directive in dyn_libs {
+            let lib_name = &directive.library;
+
+            // 1. Check for pre-compiled library in libs/
+            let precompiled = pkg_dir.join("libs").join(format!("{lib_name}.{ext}"));
+            if precompiled.is_file() {
+                self.dyn_load(&precompiled)?;
+                continue;
+            }
+
+            // 2. Compile from src/ on demand
+            let src_dir = pkg_dir.join("src");
+            if !src_dir.is_dir() {
+                tracing::warn!(
+                    "useDynLib({lib_name}): no precompiled library and no src/ directory in {}",
+                    pkg_dir.display()
+                );
+                continue;
+            }
+
+            let include_dir = self.find_include_dir().ok_or_else(|| {
+                RError::other(format!(
+                    "cannot compile native code for '{pkg_name}': \
+                     miniR include directory not found (set MINIR_INCLUDE env var)"
+                ))
+            })?;
+
+            // Compile into a temporary output directory under the package
+            let output_dir = pkg_dir.join("libs");
+            if std::fs::create_dir_all(&output_dir).is_err() {
+                // If we can't write to pkg_dir/libs, use temp dir
+                let output_dir = self.temp_dir.path().join(format!("native-{pkg_name}"));
+                std::fs::create_dir_all(&output_dir)
+                    .map_err(|e| RError::other(format!("cannot create output directory: {e}")))?;
+                let lib_path =
+                    super::compile::compile_package(&src_dir, lib_name, &output_dir, &include_dir)
+                        .map_err(|e| {
+                            RError::other(format!(
+                                "compilation of native code for '{pkg_name}' failed: {e}"
+                            ))
+                        })?;
+                self.dyn_load(&lib_path)?;
+                continue;
+            }
+
+            let lib_path =
+                super::compile::compile_package(&src_dir, lib_name, &output_dir, &include_dir)
+                    .map_err(|e| {
+                        RError::other(format!(
+                            "compilation of native code for '{pkg_name}' failed: {e}"
+                        ))
+                    })?;
+            self.dyn_load(&lib_path)?;
+        }
+
+        Ok(())
+    }
 }
 
 // endregion
