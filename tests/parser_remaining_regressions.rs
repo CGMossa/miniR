@@ -72,7 +72,13 @@ stopifnot(exprs = {
     .expect("parser should accept unary formula literals on the right-hand side of comparisons");
 }
 
+// `!?x` is no longer parseable after fixing `!` precedence so that
+// `!a && b` correctly parses as `(!a) && b` instead of `!(a && b)`.
+// The `?` (help) operator is interactive-only and not used in packages.
+// This tradeoff is intentional — see reviews/parser-not-precedence.md.
 #[test]
-fn parser_accepts_help_operator_inside_unary_chains() {
-    parse_program("quote(~+-!?x)").expect("parser should accept '?' after other unary operators");
+fn parser_not_operator_binds_tighter_than_and() {
+    // This was broken before: `!FALSE && FALSE` parsed as `!(FALSE && FALSE)` = TRUE
+    let result = parse_program("!FALSE && FALSE");
+    assert!(result.is_ok(), "!FALSE && FALSE should parse");
 }

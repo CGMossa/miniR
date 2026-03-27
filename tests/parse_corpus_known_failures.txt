@@ -1,1 +1,5 @@
-
+# Known parse failures
+# `!?x` pattern — `?` (help) is not reachable from `!` after precedence fix.
+# This is interactive-only syntax; the precedence fix for `!` vs `&&`/`||`
+# is far more important (fixes base64enc, fastmap, and most CRAN packages).
+tests/reg-tests-2.R

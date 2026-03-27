@@ -1743,6 +1743,16 @@ fn builtin_class_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
     }
 }
 
+/// Set the old-style (S3) class attribute — alias for class<-.
+/// @param x object
+/// @param value class names or NULL
+/// @return modified object
+/// @namespace base
+#[builtin(name = "oldClass<-", min_args = 2)]
+fn builtin_old_class_set(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    builtin_class_set(args, named)
+}
+
 /// Get the internal type of an object.
 ///
 /// Returns the low-level type name (e.g., "double", "integer", "character",

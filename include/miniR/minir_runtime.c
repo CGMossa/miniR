@@ -617,6 +617,31 @@ void R_forceSymbols(DllInfo *info, Rboolean value) {
     (void)info; (void)value;
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ * Cross-package callable function registry
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+#define MAX_CCALLABLE 256
+static struct { const char *pkg; const char *name; DL_FUNC fptr; } _ccallable[MAX_CCALLABLE];
+static int _ccallable_count = 0;
+
+void R_RegisterCCallable(const char *package, const char *name, DL_FUNC fptr) {
+    if (_ccallable_count < MAX_CCALLABLE) {
+        _ccallable[_ccallable_count].pkg = package;
+        _ccallable[_ccallable_count].name = name;
+        _ccallable[_ccallable_count].fptr = fptr;
+        _ccallable_count++;
+    }
+}
+
+DL_FUNC R_GetCCallable(const char *package, const char *name) {
+    for (int i = 0; i < _ccallable_count; i++) {
+        if (strcmp(_ccallable[i].pkg, package) == 0 && strcmp(_ccallable[i].name, name) == 0)
+            return _ccallable[i].fptr;
+    }
+    return NULL;
+}
+
 int _minir_get_registered_calls(_minir_registered_call **out) {
     *out = _registered_calls;
     return _registered_call_count;

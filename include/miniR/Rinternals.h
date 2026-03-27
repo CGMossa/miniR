@@ -277,6 +277,10 @@ void R_forceSymbols(DllInfo *info, Rboolean value);
 /* DllInfo accessor — packages get this from R_init_<pkgname>(DllInfo *info) */
 extern DllInfo *_minir_current_dll_info;
 
+/* Cross-package C function sharing */
+void R_RegisterCCallable(const char *package, const char *name, DL_FUNC fptr);
+DL_FUNC R_GetCCallable(const char *package, const char *name);
+
 /* ── Protected call trampoline (called by Rust) ── */
 
 typedef SEXP (*_minir_dotcall_fn)();
