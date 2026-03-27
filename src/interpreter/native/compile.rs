@@ -31,25 +31,62 @@ impl Makevars {
     }
 
     /// Parse Makevars content from a string.
+    ///
+    /// Handles Make variable references `$(VAR)` by expanding known R variables
+    /// and stripping unknown ones. Skips Make conditionals and build targets.
     pub fn parse_str(content: &str) -> Self {
         let mut vars = HashMap::new();
         let mut continued_key: Option<String> = None;
         let mut continued_val = String::new();
+        let mut in_conditional = 0i32; // nesting depth of ifeq/ifdef
 
         for line in content.lines() {
             let line = line.trim();
 
             // Skip comments and empty lines
             if line.starts_with('#') || line.is_empty() {
-                // But check if we're in a continuation
                 if continued_key.is_some() {
-                    // Comment breaks continuation
                     if let Some(key) = continued_key.take() {
                         vars.insert(key, continued_val.trim().to_string());
                         continued_val.clear();
                     }
                 }
                 continue;
+            }
+
+            // Handle Make conditionals — skip content inside them
+            if line.starts_with("ifeq")
+                || line.starts_with("ifdef")
+                || line.starts_with("ifneq")
+                || line.starts_with("ifndef")
+            {
+                in_conditional += 1;
+                continue;
+            }
+            if line.starts_with("endif") {
+                in_conditional = (in_conditional - 1).max(0);
+                continue;
+            }
+            if line == "else" || line.starts_with("else ") {
+                continue;
+            }
+            if in_conditional > 0 {
+                continue;
+            }
+
+            // Skip Make targets (lines with `:` before any `=`)
+            if let Some(colon_pos) = line.find(':') {
+                if let Some(eq_pos) = line.find('=') {
+                    // `:=` is an assignment, not a target
+                    if colon_pos + 1 != eq_pos
+                        && colon_pos < eq_pos
+                        && !line[..colon_pos].contains('$')
+                    {
+                        continue; // target: dependency
+                    }
+                } else {
+                    continue; // target with no assignment
+                }
             }
 
             // Handle line continuation
@@ -102,7 +139,13 @@ impl Makevars {
             vars.insert(key, continued_val.trim().to_string());
         }
 
-        Makevars { vars }
+        // Expand $(VAR) references in all values
+        let expanded: HashMap<String, String> = vars
+            .into_iter()
+            .map(|(k, v)| (k, expand_make_vars(&v)))
+            .collect();
+
+        Makevars { vars: expanded }
     }
 
     /// Get PKG_CFLAGS (additional C compiler flags).
@@ -170,6 +213,62 @@ fn parse_assignment(line: &str) -> Option<(&str, AssignOp, &str)> {
 fn is_valid_makevars_key(s: &str) -> bool {
     s.chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+}
+
+/// Expand Make variable references `$(VAR)` with known R values.
+/// Unknown variables are stripped (removed from the string).
+fn expand_make_vars(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'(') {
+            chars.next(); // consume '('
+            let mut var_name = String::new();
+            for c in chars.by_ref() {
+                if c == ')' {
+                    break;
+                }
+                var_name.push(c);
+            }
+            // Expand known variables, strip unknown
+            match var_name.as_str() {
+                "C_VISIBILITY" | "CXX_VISIBILITY" => {
+                    result.push_str("-fvisibility=hidden");
+                }
+                "F_VISIBILITY" | "FPICFLAGS" | "CPICFLAGS" => {
+                    // Fortran/PIC flags — skip (handled by cc crate)
+                }
+                "SHLIB_OPENMP_CFLAGS" | "SHLIB_OPENMP_CXXFLAGS" => {
+                    // OpenMP — skip for now
+                }
+                "BLAS_LIBS" | "LAPACK_LIBS" | "FLIBS" => {
+                    // System math libraries — skip
+                }
+                // Build system variables — skip entirely
+                "CC" | "CXX" | "AR" | "RANLIB" | "MAKE" | "RM" | "SHLIB" | "STATLIB"
+                | "OBJECTS" | "LIBR" | "SHLIB_EXT" | "SHLIB_LINK" | "SHLIB_LIBADD"
+                | "SHLIB_CXXLD" | "SHLIB_CXXLDFLAGS" | "SHLIB_FFLAGS" | "CFLAGS" | "CPPFLAGS"
+                | "LDFLAGS" | "SAFE_FFLAGS" | "R_ARCH" | "R_ARCH_BIN" | "R_HOME" | "R_CC"
+                | "R_CXX" | "R_CONFIGURE_FLAGS" | "CONFIGURE_ARGS" | "ALL_CFLAGS"
+                | "ALL_CPPFLAGS" | "UNAME" | "OS" | "WIN" | "CYGWIN" | "CC_TARGET"
+                | "CLANG_CHECK" => {}
+                _ => {
+                    // Unknown variable — strip it
+                    tracing::debug!("Makevars: stripping unknown variable $({})", var_name);
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    // Clean up double spaces from stripped variables
+    let mut clean = result.replace("  ", " ");
+    while clean.contains("  ") {
+        clean = clean.replace("  ", " ");
+    }
+    clean.trim().to_string()
 }
 
 /// Strip trailing backslash continuation. Returns (line_without_backslash, has_continuation).

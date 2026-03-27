@@ -8,6 +8,7 @@
 #ifndef MINIR_R_H
 #define MINIR_R_H
 
+#include <limits.h>
 #include "Rinternals.h"
 
 /* R_ext/Boolean.h equivalent */

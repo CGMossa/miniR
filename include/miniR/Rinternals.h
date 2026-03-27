@@ -116,6 +116,8 @@ extern SEXP R_BlankString;
 extern SEXP R_GlobalEnv;
 extern SEXP R_BaseEnv;
 extern SEXP R_UnboundValue;
+extern SEXP R_EmptyEnv;
+extern SEXP R_MissingArg;
 extern SEXP R_NamesSymbol;
 extern SEXP R_DimSymbol;
 extern SEXP R_DimNamesSymbol;
@@ -186,8 +188,12 @@ SEXP Rf_ScalarString(SEXP x);
 
 /* Length */
 R_len_t Rf_length(SEXP x);
+R_xlen_t Rf_xlength(SEXP x);
 SEXP Rf_lengthgets(SEXP x, R_len_t n);
+SEXP Rf_xlengthgets(SEXP x, R_xlen_t n);
 #define lengthgets Rf_lengthgets
+#define xlength Rf_xlength
+#define xlengthgets Rf_xlengthgets
 
 /* Strings */
 SEXP Rf_mkChar(const char *str);
@@ -196,6 +202,27 @@ SEXP Rf_mkCharCE(const char *str, cetype_t encoding);
 cetype_t Rf_getCharCE(SEXP x);
 Rboolean Rf_StringBlank(SEXP x);
 SEXP Rf_mkString(const char *str);
+SEXP Rf_mkCharLenCE(const char *str, int len, cetype_t encoding);
+const char *Rf_translateChar(SEXP x);
+#define mkCharLenCE Rf_mkCharLenCE
+#define translateChar Rf_translateChar
+
+/* RNG */
+void GetRNGstate(void);
+void PutRNGstate(void);
+double unif_rand(void);
+
+/* Attribute shortcuts */
+SEXP Rf_classgets(SEXP x, SEXP klass);
+SEXP Rf_namesgets(SEXP x, SEXP names);
+SEXP Rf_dimgets(SEXP x, SEXP dim);
+#define classgets Rf_classgets
+#define namesgets Rf_namesgets
+#define dimgets Rf_dimgets
+
+/* MARK_NOT_MUTABLE — no-op in miniR */
+void MARK_NOT_MUTABLE(SEXP x);
+SEXP PRENV(SEXP x);
 
 /* Symbols */
 SEXP Rf_install(const char *name);
@@ -229,6 +256,10 @@ SEXP Rf_coerceVector(SEXP x, SEXPTYPE type);
 
 /* Duplication */
 SEXP Rf_duplicate(SEXP x);
+
+/* Error/warning with call (defined in csrc/native_trampoline.c) */
+void Rf_errorcall(SEXP call, const char *fmt, ...) __attribute__((noreturn));
+void Rf_warningcall(SEXP call, const char *fmt, ...);
 
 /* Error handling */
 void Rf_error(const char *fmt, ...) __attribute__((noreturn));
@@ -399,6 +430,76 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define Rf_PrintValue(x)  ((void)(x))
 #define PrintValue        Rf_PrintValue
 #define eval              Rf_eval
+#define warningcall       Rf_warningcall
+#define errorcall         Rf_errorcall
+
+/* Type checking aliases */
+Rboolean Rf_isVectorAtomic(SEXP x);
+Rboolean Rf_isVectorList(SEXP x);
+Rboolean Rf_isMatrix(SEXP x);
+Rboolean Rf_isNumeric(SEXP x);
+Rboolean Rf_isFunction(SEXP x);
+Rboolean Rf_isEnvironment(SEXP x);
+#define isVectorAtomic Rf_isVectorAtomic
+#define isVectorList   Rf_isVectorList
+#define isMatrix       Rf_isMatrix
+#define isNumeric      Rf_isNumeric
+#define isFunction     Rf_isFunction
+#define isEnvironment  Rf_isEnvironment
+
+/* PROTECT_INDEX — indexed protection for reprotecting */
+typedef int PROTECT_INDEX;
+void R_ProtectWithIndex(SEXP s, PROTECT_INDEX *pi);
+void R_Reprotect(SEXP s, PROTECT_INDEX i);
+#define PROTECT_WITH_INDEX(x, i) R_ProtectWithIndex(x, i)
+#define REPROTECT(x, i)         R_Reprotect(x, i)
+
+/* Deep R internal stubs — needed by rlang/cli but not fully functional */
+SEXP Rf_findVar(SEXP sym, SEXP env);
+SEXP Rf_findVarInFrame3(SEXP env, SEXP sym, int inherits_flag);
+SEXP PREXPR(SEXP x);
+#define findVar Rf_findVar
+#define findVarInFrame3 Rf_findVarInFrame3
+
+/* R_ExecWithCleanup — execute with cleanup handler */
+SEXP R_ExecWithCleanup(SEXP (*fun)(void *), void *data,
+                       void (*cleanup)(void *), void *cleandata);
+void *R_ExternalPtrAddrFn(SEXP s);
+
+/* Pairlist navigation */
+#define CADR(x)  CAR(CDR(x))
+#define CADDR(x) CAR(CDR(CDR(x)))
+#define CADDDR(x) CAR(CDR(CDR(CDR(x))))
+
+/* Symbol name access */
+#define PRINTNAME(x) (x)  /* In miniR, symbols store name as CHARSXP-like data */
+
+/* Language object constructors */
+SEXP Rf_lang1(SEXP s);
+SEXP Rf_lang2(SEXP s, SEXP t);
+SEXP Rf_lang3(SEXP s, SEXP t, SEXP u);
+SEXP Rf_lang4(SEXP s, SEXP t, SEXP u, SEXP v);
+#define lang1 Rf_lang1
+#define lang2 Rf_lang2
+#define lang3 Rf_lang3
+#define lang4 Rf_lang4
+
+/* Rf_nchar — string length */
+int Rf_nchar(SEXP x, int type, Rboolean allowNA, Rboolean keepNA, const char *msg_name);
+#define nchar Rf_nchar
+
+/* S_alloc — zeroed transient allocation */
+char *S_alloc(long nelem, int eltsize);
+
+/* Rf_type2char — SEXPTYPE to string */
+const char *Rf_type2char(SEXPTYPE type);
+#define type2char Rf_type2char
+
+/* R_finite — finiteness check (function version of R_FINITE macro) */
+int R_finite(double x);
+#ifndef R_FINITE
+#define R_FINITE(x) R_finite(x)
+#endif
 
 /* Memory allocation macros (also in R_ext/RS.h) */
 #ifndef R_Calloc

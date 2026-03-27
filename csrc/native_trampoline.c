@@ -19,6 +19,10 @@
 #include <string.h>
 #include <stdint.h>
 
+/* Forward-declare SEXP for function signatures */
+struct SEXPREC;
+typedef struct SEXPREC *SEXP;
+
 /* ── Shared state for the setjmp/longjmp pair ── */
 
 static jmp_buf _error_jmp;
@@ -38,7 +42,7 @@ void Rf_error(const char *fmt, ...) {
     longjmp(_error_jmp, 1);
 }
 
-void Rf_errorcall(void *call, const char *fmt, ...) {
+void Rf_errorcall(SEXP call, const char *fmt, ...) {
     (void)call;
     va_list ap;
     va_start(ap, fmt);
@@ -57,7 +61,7 @@ void Rf_warning(const char *fmt, ...) {
     fprintf(stderr, "Warning: %s\n", buf);
 }
 
-void Rf_warningcall(void *call, const char *fmt, ...) {
+void Rf_warningcall(SEXP call, const char *fmt, ...) {
     (void)call;
     Rf_warning(fmt);
 }
@@ -80,7 +84,6 @@ void REprintf(const char *fmt, ...) {
 
 /* ── Protected call trampoline ── */
 
-typedef void *SEXP;
 typedef SEXP (*_minir_dotcall_fn)();
 
 int _minir_call_protected(_minir_dotcall_fn fn, SEXP *args, int nargs, SEXP *result) {

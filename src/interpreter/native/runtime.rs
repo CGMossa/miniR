@@ -197,6 +197,8 @@ pub fn init_globals() {
         R_GlobalEnv = R_NilValue;
         R_BaseEnv = R_NilValue;
         R_UnboundValue = R_NilValue;
+        R_EmptyEnv = R_NilValue;
+        R_MissingArg = R_NilValue;
 
         // Symbol sentinels
         SYM_NAMES.data = NAMES_STR.as_ptr() as *mut u8;
@@ -1150,6 +1152,276 @@ pub extern "C" fn Rf_eval(_expr: Sexp, _env: Sexp) -> Sexp {
 // R_Serialize stub
 #[no_mangle]
 pub extern "C" fn R_Serialize(_s: Sexp, _stream: *mut c_void) {}
+
+// Rf_xlength — long vector length (same as Rf_length for non-long vecs)
+#[no_mangle]
+pub extern "C" fn Rf_xlength(x: Sexp) -> isize {
+    Rf_length(x) as isize
+}
+
+// Rf_xlengthgets — resize using long length
+#[no_mangle]
+pub extern "C" fn Rf_xlengthgets(x: Sexp, new_len: isize) -> Sexp {
+    Rf_lengthgets(x, new_len as c_int)
+}
+
+// Rf_mkCharLenCE — create CHARSXP with length and encoding
+#[no_mangle]
+pub extern "C" fn Rf_mkCharLenCE(str_ptr: *const c_char, len: c_int, _encoding: c_int) -> Sexp {
+    Rf_mkCharLen(str_ptr, len)
+}
+
+// Rf_translateChar — identity (miniR is UTF-8)
+#[no_mangle]
+pub extern "C" fn Rf_translateChar(x: Sexp) -> *const c_char {
+    if x.is_null() {
+        return c"".as_ptr();
+    }
+    unsafe { (*x).data as *const c_char }
+}
+
+// classgets — set class attribute (alias for Rf_setAttrib with R_ClassSymbol)
+#[no_mangle]
+pub extern "C" fn Rf_classgets(x: Sexp, klass: Sexp) -> Sexp {
+    Rf_setAttrib(x, unsafe { R_ClassSymbol }, klass);
+    x
+}
+
+// namesgets — set names attribute
+#[no_mangle]
+pub extern "C" fn Rf_namesgets(x: Sexp, names: Sexp) -> Sexp {
+    Rf_setAttrib(x, unsafe { R_NamesSymbol }, names);
+    x
+}
+
+// dimgets — set dim attribute
+#[no_mangle]
+pub extern "C" fn Rf_dimgets(x: Sexp, dim: Sexp) -> Sexp {
+    Rf_setAttrib(x, unsafe { R_DimSymbol }, dim);
+    x
+}
+
+// GetRNGstate / PutRNGstate — no-ops (RNG state is in Rust)
+#[no_mangle]
+pub extern "C" fn GetRNGstate() {}
+#[no_mangle]
+pub extern "C" fn PutRNGstate() {}
+
+// unif_rand — stub RNG function (returns 0.5)
+#[no_mangle]
+pub extern "C" fn unif_rand() -> f64 {
+    0.5 // stub — proper implementation needs callback to Rust RNG
+}
+
+// R_EmptyEnv — stub (points to NilValue)
+#[no_mangle]
+pub static mut R_EmptyEnv: Sexp = ptr::null_mut();
+
+#[no_mangle]
+pub static mut R_MissingArg: Sexp = ptr::null_mut();
+
+// MARK_NOT_MUTABLE — no-op in miniR
+#[no_mangle]
+pub extern "C" fn MARK_NOT_MUTABLE(_x: Sexp) {}
+
+// PRENV — promise environment (stub)
+#[no_mangle]
+pub extern "C" fn PRENV(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// PREXPR — promise expression (stub)
+#[no_mangle]
+pub extern "C" fn PREXPR(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// Type checking
+#[no_mangle]
+pub extern "C" fn Rf_isVectorAtomic(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    let t = unsafe { (*x).stype };
+    matches!(
+        t,
+        sexp::REALSXP | sexp::INTSXP | sexp::LGLSXP | sexp::STRSXP | sexp::RAWSXP | sexp::CPLXSXP
+    ) as c_int
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_isVectorList(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    (unsafe { (*x).stype } == sexp::VECSXP) as c_int
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_isMatrix(x: Sexp) -> c_int {
+    let dim = Rf_getAttrib(x, unsafe { R_DimSymbol });
+    (!dim.is_null() && unsafe { (*dim).stype } == sexp::INTSXP && unsafe { (*dim).length } == 2)
+        as c_int
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_isNumeric(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    let t = unsafe { (*x).stype };
+    matches!(t, sexp::REALSXP | sexp::INTSXP) as c_int
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_isFunction(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    let t = unsafe { (*x).stype };
+    matches!(t, 3 | 7 | 8) as c_int // CLOSXP | SPECIALSXP | BUILTINSXP
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_isEnvironment(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    (unsafe { (*x).stype } == 4) as c_int // ENVSXP
+}
+
+// PROTECT_INDEX support
+#[no_mangle]
+pub extern "C" fn R_ProtectWithIndex(s: Sexp, pi: *mut c_int) {
+    Rf_protect(s);
+    STATE.with(|state| {
+        let st = state.borrow();
+        if !pi.is_null() {
+            unsafe {
+                *pi = (st.protect_stack.len() - 1) as c_int;
+            }
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn R_Reprotect(s: Sexp, i: c_int) {
+    STATE.with(|state| {
+        let mut st = state.borrow_mut();
+        let idx = i as usize;
+        if idx < st.protect_stack.len() {
+            st.protect_stack[idx] = s;
+        }
+    });
+}
+
+// Rf_findVar — variable lookup (stub returns R_UnboundValue)
+#[no_mangle]
+pub extern "C" fn Rf_findVar(_sym: Sexp, _env: Sexp) -> Sexp {
+    unsafe { R_UnboundValue }
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_findVarInFrame3(_env: Sexp, _sym: Sexp, _inherits: c_int) -> Sexp {
+    unsafe { R_UnboundValue }
+}
+
+// R_ExecWithCleanup — execute function with cleanup
+#[no_mangle]
+pub extern "C" fn R_ExecWithCleanup(
+    fun: Option<unsafe extern "C" fn(*mut c_void) -> Sexp>,
+    data: *mut c_void,
+    cleanup: Option<unsafe extern "C" fn(*mut c_void)>,
+    cleandata: *mut c_void,
+) -> Sexp {
+    let result = match fun {
+        Some(f) => unsafe { f(data) },
+        None => unsafe { R_NilValue },
+    };
+    if let Some(c) = cleanup {
+        unsafe {
+            c(cleandata);
+        }
+    }
+    result
+}
+
+// R_ExternalPtrAddrFn — same as R_ExternalPtrAddr but returns fn ptr
+#[no_mangle]
+pub extern "C" fn R_ExternalPtrAddrFn(s: Sexp) -> *mut c_void {
+    R_ExternalPtrAddr(s)
+}
+
+// Rf_lang1..4 — construct language call objects
+#[no_mangle]
+pub extern "C" fn Rf_lang1(s: Sexp) -> Sexp {
+    Rf_lcons(s, unsafe { R_NilValue })
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lang2(s: Sexp, t: Sexp) -> Sexp {
+    Rf_lcons(s, Rf_cons(t, unsafe { R_NilValue }))
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lang3(s: Sexp, t: Sexp, u: Sexp) -> Sexp {
+    Rf_lcons(s, Rf_cons(t, Rf_cons(u, unsafe { R_NilValue })))
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lang4(s: Sexp, t: Sexp, u: Sexp, v: Sexp) -> Sexp {
+    Rf_lcons(s, Rf_cons(t, Rf_cons(u, Rf_cons(v, unsafe { R_NilValue }))))
+}
+
+// S_alloc — same as R_alloc but zeroed (already zeroed by calloc)
+#[no_mangle]
+pub extern "C" fn S_alloc(nelem: isize, eltsize: c_int) -> *mut c_char {
+    R_alloc(nelem as usize, eltsize)
+}
+
+// Rf_type2char — type name as string
+#[no_mangle]
+pub extern "C" fn Rf_type2char(stype: c_int) -> *const c_char {
+    match stype as u8 {
+        sexp::NILSXP => c"NULL".as_ptr(),
+        sexp::LGLSXP => c"logical".as_ptr(),
+        sexp::INTSXP => c"integer".as_ptr(),
+        sexp::REALSXP => c"double".as_ptr(),
+        sexp::CPLXSXP => c"complex".as_ptr(),
+        sexp::STRSXP => c"character".as_ptr(),
+        sexp::VECSXP => c"list".as_ptr(),
+        sexp::RAWSXP => c"raw".as_ptr(),
+        _ => c"unknown".as_ptr(),
+    }
+}
+
+// R_FINITE — exported as function for packages that don't include Arith.h
+#[no_mangle]
+pub extern "C" fn R_finite(x: f64) -> c_int {
+    x.is_finite() as c_int
+}
+
+// Rf_nchar — string length
+#[no_mangle]
+pub extern "C" fn Rf_nchar(
+    x: Sexp,
+    _ntype: c_int,
+    _allow_na: c_int,
+    _keep_na: c_int,
+    _msg_name: *const c_char,
+) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    unsafe {
+        if (*x).stype == sexp::CHARSXP && !(*x).data.is_null() {
+            let s = CStr::from_ptr((*x).data as *const c_char);
+            s.to_bytes().len() as c_int
+        } else {
+            0
+        }
+    }
+}
 
 // endregion
 
