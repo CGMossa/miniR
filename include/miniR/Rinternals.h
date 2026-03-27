@@ -281,6 +281,47 @@ extern DllInfo *_minir_current_dll_info;
 void R_RegisterCCallable(const char *package, const char *name, DL_FUNC fptr);
 DL_FUNC R_GetCCallable(const char *package, const char *name);
 
+/* ── Serialization stubs (for packages like digest that need them) ── */
+
+typedef void *R_pstream_data_t;
+typedef enum { R_pstream_any_format = 0, R_pstream_ascii_format = 1, R_pstream_binary_format = 2, R_pstream_xdr_format = 3 } R_pstream_format_t;
+typedef struct R_outpstream_st *R_outpstream_t;
+
+struct R_outpstream_st {
+    R_pstream_data_t data;
+    R_pstream_format_t type;
+    int version;
+    void (*OutChar)(R_outpstream_t, int);
+    void (*OutBytes)(R_outpstream_t, const void *, int);
+    SEXP (*OutPersistHookFunc)(SEXP, SEXP);
+    SEXP OutPersistHookData;
+};
+
+/* Stubs — serialization from C is not supported in miniR */
+static inline void R_InitOutPStream(R_outpstream_t s, R_pstream_data_t data,
+    R_pstream_format_t type, int version,
+    void (*outchar)(R_outpstream_t, int),
+    void (*outbytes)(R_outpstream_t, const void *, int),
+    SEXP (*hook)(SEXP, SEXP), SEXP hookdata) {
+    if (s) { s->data = data; s->type = type; s->version = version;
+             s->OutChar = outchar; s->OutBytes = outbytes;
+             s->OutPersistHookFunc = hook; s->OutPersistHookData = hookdata; }
+}
+
+static inline void R_Serialize(SEXP s, R_outpstream_t stream) {
+    (void)s; (void)stream;
+    /* No-op — serialization from C not supported. Packages that call this
+       (e.g. digest's spooky hash) will get empty output. */
+}
+
+/* Rf_eval stub — evaluate an R expression from C.
+   This is a deep R internal. In miniR, it's a no-op that returns R_NilValue.
+   Packages that critically depend on Rf_eval from C won't work fully. */
+SEXP Rf_eval(SEXP expr, SEXP env);
+
+/* Rf_lcons — language node constructor */
+SEXP Rf_lcons(SEXP car, SEXP cdr);
+
 /* ── Protected call trampoline (called by Rust) ── */
 
 typedef SEXP (*_minir_dotcall_fn)();
@@ -355,6 +396,17 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define translateCharUTF8        Rf_translateCharUTF8
 #define Rf_PrintValue(x)  ((void)(x))
 #define PrintValue        Rf_PrintValue
+#define eval              Rf_eval
+
+/* Memory allocation macros (also in R_ext/RS.h) */
+#ifndef R_Calloc
+#define R_Calloc(n, t)     ((t*)calloc((size_t)(n), sizeof(t)))
+#define R_Free(p)          (free((void*)(p)), (p) = NULL)
+#define R_Realloc(p, n, t) ((t*)realloc((void*)(p), (size_t)(n) * sizeof(t)))
+#define Calloc(n, t)       R_Calloc(n, t)
+#define Free(p)            R_Free(p)
+#define Realloc(p, n, t)   R_Realloc(p, n, t)
+#endif
 
 #ifdef __cplusplus
 }

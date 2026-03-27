@@ -323,6 +323,13 @@ SEXP Rf_cons(SEXP car, SEXP cdr) {
     return s;
 }
 
+/* Rf_eval stub — returns R_NilValue. Packages that need eval from C
+ * (e.g. digest's spooky hash, backports' dots) won't get results. */
+SEXP Rf_eval(SEXP expr, SEXP env) {
+    (void)expr; (void)env;
+    return R_NilValue;
+}
+
 SEXP Rf_lcons(SEXP car, SEXP cdr) {
     SEXP s = Rf_cons(car, cdr);
     if (s != R_NilValue) s->type = LANGSXP;
