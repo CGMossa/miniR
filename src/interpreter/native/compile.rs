@@ -238,7 +238,7 @@ pub fn compile_package(
     let makevars = Makevars::parse(&pkg_src_dir.join("Makevars"));
 
     // Find C and C++ source files
-    let mut src_files = find_sources(pkg_src_dir, &makevars)?;
+    let src_files = find_sources(pkg_src_dir, &makevars)?;
     if src_files.is_empty() {
         return Err(format!(
             "no C/C++ source files found in {}",
@@ -246,16 +246,9 @@ pub fn compile_package(
         ));
     }
 
-    // Add minir_runtime.c — provides the C API implementations
-    let runtime_c = include_dir.join("miniR").join("minir_runtime.c");
-    if runtime_c.is_file() {
-        src_files.push(runtime_c);
-    } else {
-        return Err(format!(
-            "minir_runtime.c not found at {}",
-            runtime_c.display()
-        ));
-    }
+    // Runtime is now in the binary (Rust extern "C" + C trampoline via build.rs).
+    // Package .so files resolve API symbols at load time.
+    // No minir_runtime.c needed.
 
     // Use cc::Build for compilation — it handles compiler detection,
     // platform flags, cross-compilation, ccache/sccache, etc.

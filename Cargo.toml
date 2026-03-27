@@ -130,6 +130,9 @@ tiny-skia = { version = "0.11", optional = true }
 libloading = { version = "0.8", optional = true }
 cc = { version = "1", optional = true }
 
+[build-dependencies]
+cc = "1"
+
 [features]
 # Full build — everything enabled. This is what CI tests.
 full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "parquet", "native"]

@@ -376,6 +376,10 @@ impl Interpreter {
 
     pub fn new() -> Self {
         info!("creating new R interpreter");
+        // Initialize the native runtime globals (R_NilValue, symbols, etc.)
+        #[cfg(feature = "native")]
+        native::runtime::init_globals();
+
         let base_env = Environment::new_global();
         base_env.set_name("base".to_string());
         builtins::register_builtins(&base_env);

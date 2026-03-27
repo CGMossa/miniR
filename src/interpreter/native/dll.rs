@@ -22,30 +22,8 @@ use crate::interpreter::Interpreter;
 
 // region: C trampoline types
 
-/// Signature of `_minir_call_protected` in the .so.
-type CallProtectedFn = unsafe extern "C" fn(
-    fn_ptr: *const (),
-    args: *const Sexp,
-    nargs: i32,
-    result: *mut Sexp,
-) -> i32;
-/// Signature of `_minir_get_error_msg` in the .so.
-type GetErrorMsgFn = unsafe extern "C" fn() -> *const c_char;
-/// Signature of `_minir_free_allocs` in the .so.
-type FreeAllocsFn = unsafe extern "C" fn();
 /// Signature of `R_init_<pkgname>(DllInfo*)` package init function.
 type PkgInitFn = unsafe extern "C" fn(*mut u8);
-
-/// Registered .Call method from R_registerRoutines (C struct layout).
-#[repr(C)]
-struct RegisteredCall {
-    name: *const c_char,
-    fun: *const (),
-    num_args: i32,
-}
-
-/// Signature of `_minir_get_registered_calls`.
-type GetRegisteredCallsFn = unsafe extern "C" fn(out: *mut *const RegisteredCall) -> i32;
 
 // endregion
 
@@ -113,28 +91,16 @@ impl LoadedDll {
         }
     }
 
-    /// Read registered .Call methods from the .so's _minir_get_registered_calls.
+    /// Read registered .Call methods from the Rust runtime's registry.
     fn collect_registered_calls(&mut self) {
-        if let Ok(ptr) = self.get_symbol("_minir_get_registered_calls") {
-            unsafe {
-                let get_calls: GetRegisteredCallsFn = std::mem::transmute(ptr);
-                let mut out: *const RegisteredCall = std::ptr::null();
-                let count = get_calls(&mut out as *mut *const RegisteredCall);
-                if !out.is_null() && count > 0 {
-                    for i in 0..count {
-                        let entry = &*out.add(i as usize);
-                        if !entry.name.is_null() && !entry.fun.is_null() {
-                            let name = CStr::from_ptr(entry.name)
-                                .to_str()
-                                .unwrap_or("")
-                                .to_string();
-                            if !name.is_empty() {
-                                self.registered_calls.insert(name, entry.fun);
-                            }
-                        }
-                    }
-                }
-            }
+        // R_registerRoutines (called by R_init_<pkg>) stores registrations
+        // in the Rust runtime's shared registry.
+        for (name, ptr) in super::runtime::REGISTERED_CALLS
+            .lock()
+            .expect("lock registered calls")
+            .iter()
+        {
+            self.registered_calls.insert(name.clone(), ptr.0);
         }
     }
 
@@ -249,31 +215,27 @@ impl Interpreter {
     /// 7. Free all C-side allocations via `_minir_free_allocs`
     /// 8. Free Rust-side input SEXPs
     pub(crate) fn dot_call(&self, symbol_name: &str, args: &[RValue]) -> Result<RValue, RError> {
-        let (fn_ptr, dll_idx) = self.find_native_symbol_with_dll(symbol_name)?;
+        let fn_ptr = self.find_native_symbol(symbol_name)?;
 
         // Convert RValue args to SEXPs (allocated with C allocator)
         let sexp_args: Vec<Sexp> = args.iter().map(convert::rvalue_to_sexp).collect();
 
-        // Look up the trampoline and error accessors in the same DLL
-        let mut dlls = self.loaded_dlls.borrow_mut();
-        let dll = &mut dlls[dll_idx];
-        let trampoline_ptr = dll
-            .get_symbol("_minir_call_protected")
-            .map_err(|e| RError::new(RErrorKind::Other, e))?;
-        let get_error_ptr = dll
-            .get_symbol("_minir_get_error_msg")
-            .map_err(|e| RError::new(RErrorKind::Other, e))?;
-        let cleanup_ptr = dll
-            .get_symbol("_minir_free_allocs")
-            .map_err(|e| RError::new(RErrorKind::Other, e))?;
-        drop(dlls);
+        // The trampoline and error accessors are now in the binary
+        // (compiled from csrc/native_trampoline.c via build.rs).
+        extern "C" {
+            fn _minir_call_protected(
+                fn_ptr: *const (),
+                args: *const Sexp,
+                nargs: i32,
+                result: *mut Sexp,
+            ) -> i32;
+            fn _minir_get_error_msg() -> *const c_char;
+        }
 
-        // Call through the C trampoline (setjmp protection + variable arg dispatch)
         let mut result_sexp: Sexp = sexp::R_NIL_VALUE;
         let nargs = i32::try_from(sexp_args.len()).unwrap_or(0);
         let error_code = unsafe {
-            let trampoline: CallProtectedFn = std::mem::transmute(trampoline_ptr);
-            trampoline(
+            _minir_call_protected(
                 fn_ptr,
                 sexp_args.as_ptr(),
                 nargs,
@@ -284,8 +246,7 @@ impl Interpreter {
         // Check if Rf_error was called
         if error_code != 0 {
             let error_msg = unsafe {
-                let get_error: GetErrorMsgFn = std::mem::transmute(get_error_ptr);
-                let msg_ptr = get_error();
+                let msg_ptr = _minir_get_error_msg();
                 if msg_ptr.is_null() {
                     "unknown error in native code".to_string()
                 } else {
@@ -297,10 +258,7 @@ impl Interpreter {
             };
 
             // Clean up before returning error
-            unsafe {
-                let cleanup: FreeAllocsFn = std::mem::transmute(cleanup_ptr);
-                cleanup();
-            }
+            super::runtime::free_allocs();
             unsafe {
                 for s in sexp_args {
                     sexp::free_sexp(s);
@@ -313,11 +271,8 @@ impl Interpreter {
         // Convert result to RValue (copies all data)
         let result = unsafe { convert::sexp_to_rvalue(result_sexp) };
 
-        // Free C-side allocations (result SEXP + any intermediates)
-        unsafe {
-            let cleanup: FreeAllocsFn = std::mem::transmute(cleanup_ptr);
-            cleanup();
-        }
+        // Free runtime allocations (result SEXP + any intermediates)
+        super::runtime::free_allocs();
 
         // Free Rust-allocated input SEXPs. External pointers (wrapped as
         // lists with .sexp_ptr attr) pass the raw SEXP directly — skip freeing those.
