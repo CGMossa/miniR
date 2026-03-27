@@ -62,7 +62,7 @@ pub struct LoadedDll {
     /// Cached symbol addresses: function name → raw pointer.
     symbols: HashMap<String, *const ()>,
     /// Symbols registered via R_registerRoutines during R_init_<pkg>.
-    registered_calls: HashMap<String, *const ()>,
+    pub registered_calls: HashMap<String, *const ()>,
 }
 
 // Safety: LoadedDll is only used from a single interpreter thread.

@@ -2958,6 +2958,22 @@ fn collect_list_elements_recursive(list: &RList, out: &mut Vec<RValue>) {
 // invisible() is implemented as an interpreter_builtin in interp.rs
 // so it can set the interpreter's visibility flag.
 
+/// Return its argument unchanged. Forces evaluation of a promise.
+/// @param x any R value
+/// @return x, unchanged
+#[builtin(name = "force", min_args = 1)]
+fn builtin_force(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args[0].clone())
+}
+
+/// Return its argument unchanged (identity function).
+/// @param x any R value
+/// @return x, unchanged
+#[builtin(name = "identity", min_args = 1)]
+fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args[0].clone())
+}
+
 /// Vectorized conditional: for each element of test, select the corresponding
 /// element from yes (when TRUE) or no (when FALSE). yes and no are recycled
 /// to the length of test.
