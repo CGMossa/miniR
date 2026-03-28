@@ -1551,6 +1551,77 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
 }
 
 // Additional RNG stubs
+// Rf_shallow_duplicate — shallow copy (same as duplicate for our purposes)
+#[no_mangle]
+pub extern "C" fn Rf_shallow_duplicate(x: Sexp) -> Sexp {
+    Rf_duplicate(x)
+}
+
+// R_NewEnv — create a new environment
+#[no_mangle]
+pub extern "C" fn R_NewEnv(parent: Sexp, _hash: c_int, _size: c_int) -> Sexp {
+    // Stub — returns a list that acts as a pseudo-env
+    // Real implementation would need interpreter callback
+    let _ = parent;
+    Rf_allocVector(sexp::VECSXP as c_int, 0)
+}
+
+// Rf_defineVar — define a variable in an environment
+#[no_mangle]
+pub extern "C" fn Rf_defineVar(_sym: Sexp, _val: Sexp, _env: Sexp) {
+    // No-op stub — would need interpreter callback
+}
+
+// BODY / CLOENV — closure internals
+#[no_mangle]
+pub extern "C" fn BODY(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+#[no_mangle]
+pub extern "C" fn CLOENV(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+#[no_mangle]
+pub extern "C" fn FORMALS(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// Rf_findVarInFrame — variable lookup (stub)
+#[no_mangle]
+pub extern "C" fn Rf_findVarInFrame(env: Sexp, sym: Sexp) -> Sexp {
+    Rf_findVarInFrame3(env, sym, 1)
+}
+
+// Rf_GetOption1 — get option value (stub)
+#[no_mangle]
+pub extern "C" fn Rf_GetOption1(_tag: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// S_realloc — reallocate and zero-fill new portion
+#[no_mangle]
+pub extern "C" fn S_realloc(
+    ptr: *mut c_char,
+    new_size: isize,
+    old_size: isize,
+    elt_size: c_int,
+) -> *mut c_char {
+    extern "C" {
+        fn realloc(ptr: *mut u8, size: usize) -> *mut u8;
+    }
+    let new_bytes = new_size as usize * elt_size as usize;
+    let old_bytes = old_size as usize * elt_size as usize;
+    unsafe {
+        let new_ptr = realloc(ptr as *mut u8, new_bytes);
+        if !new_ptr.is_null() && new_bytes > old_bytes {
+            ptr::write_bytes(new_ptr.add(old_bytes), 0, new_bytes - old_bytes);
+        }
+        new_ptr as *mut c_char
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn norm_rand() -> f64 {
     0.0

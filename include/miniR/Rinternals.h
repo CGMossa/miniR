@@ -21,6 +21,11 @@
 #include <setjmp.h>
 #include <math.h>
 
+/* R_INLINE — used by package headers */
+#ifndef R_INLINE
+#define R_INLINE static inline
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -158,6 +163,24 @@ extern SEXP R_DotsSymbol;
 #define INTEGER_ELT(x, i) (INTEGER(x)[i])
 #define LOGICAL_ELT(x, i) (LOGICAL(x)[i])
 
+/* Data pointer access */
+#define DATAPTR_OR_NULL(x) ((x)->data)
+#define DATAPTR(x)         ((x)->data)
+
+/* Region-based element access (ALTREP compat) */
+static inline int INTEGER_GET_REGION(SEXP x, int i, int n, int *buf) {
+    int len = LENGTH(x);
+    int actual = (i + n > len) ? len - i : n;
+    if (actual > 0) memcpy(buf, INTEGER(x) + i, (size_t)actual * sizeof(int));
+    return actual;
+}
+static inline int REAL_GET_REGION(SEXP x, int i, int n, double *buf) {
+    int len = LENGTH(x);
+    int actual = (i + n > len) ? len - i : n;
+    if (actual > 0) memcpy(buf, REAL(x) + i, (size_t)actual * sizeof(double));
+    return actual;
+}
+
 #define R_CHAR(x)    ((const char*)((x)->data))
 #define CHAR(x)      R_CHAR(x)
 
@@ -222,6 +245,10 @@ SEXP Rf_mkCharLenCE(const char *str, int len, cetype_t encoding);
 const char *Rf_translateChar(SEXP x);
 #define mkCharLenCE Rf_mkCharLenCE
 #define translateChar Rf_translateChar
+
+/* Transient memory allocation */
+char *S_alloc(long nelem, int eltsize);
+char *S_realloc(char *ptr, long new_size, long old_size, int eltsize);
 
 /* RNG */
 void GetRNGstate(void);
@@ -292,6 +319,31 @@ int Rf_ncols(SEXP x);
 /* Misc */
 void R_CheckUserInterrupt(void);
 SEXP R_do_slot(SEXP obj, SEXP name);
+
+/* Shallow copy */
+SEXP Rf_shallow_duplicate(SEXP x);
+#define shallow_duplicate Rf_shallow_duplicate
+#define lazy_duplicate Rf_shallow_duplicate
+
+/* Environment creation */
+SEXP R_NewEnv(SEXP parent, int hash, int size);
+void Rf_defineVar(SEXP sym, SEXP val, SEXP env);
+#define defineVar Rf_defineVar
+
+/* Closure internals (stubs) */
+SEXP BODY(SEXP x);
+SEXP CLOENV(SEXP x);
+SEXP FORMALS(SEXP x);
+
+/* Variable lookup (stubs — return R_UnboundValue) */
+SEXP Rf_findVar(SEXP sym, SEXP env);
+SEXP Rf_findVarInFrame(SEXP env, SEXP sym);
+SEXP Rf_findVarInFrame3(SEXP env, SEXP sym, int inherits_flag);
+SEXP Rf_GetOption1(SEXP tag);
+#define findVar Rf_findVar
+#define findVarInFrame Rf_findVarInFrame
+#define findVarInFrame3 Rf_findVarInFrame3
+#define GetOption1 Rf_GetOption1
 
 /* Eval variants */
 SEXP R_tryEval(SEXP expr, SEXP env, int *errorOccurred);
@@ -471,8 +523,7 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define asLogical       Rf_asLogical
 #define coerceVector    Rf_coerceVector
 #define duplicate       Rf_duplicate
-#define Rf_lazy_duplicate Rf_duplicate
-#define lazy_duplicate  Rf_duplicate
+#define Rf_lazy_duplicate Rf_shallow_duplicate
 #define error           Rf_error
 #define warning         Rf_warning
 #define nrows           Rf_nrows
