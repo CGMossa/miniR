@@ -150,6 +150,17 @@ pub static mut R_RowNamesSymbol: Sexp = ptr::null_mut();
 #[no_mangle]
 pub static mut R_LevelsSymbol: Sexp = ptr::null_mut();
 
+static mut SYM_DOTS: SexpRec = SexpRec {
+    stype: sexp::SYMSXP,
+    flags: 0,
+    padding: 0,
+    length: 3,
+    data: ptr::null_mut(),
+    attrib: ptr::null_mut(),
+};
+#[no_mangle]
+pub static mut R_DotsSymbol: Sexp = ptr::null_mut();
+
 #[no_mangle]
 pub static mut _minir_current_dll_info: *mut c_void = ptr::null_mut();
 
@@ -165,6 +176,7 @@ pub fn init_globals() {
         static CLASS_STR: &[u8] = b"class\0";
         static ROWNAMES_STR: &[u8] = b"row.names\0";
         static LEVELS_STR: &[u8] = b"levels\0";
+        static DOTS_STR: &[u8] = b"...\0";
 
         R_NilValue = &raw mut NIL_REC;
 
@@ -224,6 +236,10 @@ pub fn init_globals() {
         SYM_LEVELS.data = LEVELS_STR.as_ptr() as *mut u8;
         SYM_LEVELS.attrib = R_NilValue;
         R_LevelsSymbol = &raw mut SYM_LEVELS;
+
+        SYM_DOTS.data = DOTS_STR.as_ptr() as *mut u8;
+        SYM_DOTS.attrib = R_NilValue;
+        R_DotsSymbol = &raw mut SYM_DOTS;
     }
 }
 
@@ -233,6 +249,7 @@ pub fn init_globals() {
 
 extern "C" {
     fn calloc(count: usize, size: usize) -> *mut u8;
+    fn realloc(ptr: *mut u8, size: usize) -> *mut u8;
     fn free(ptr: *mut u8);
 }
 
@@ -406,6 +423,7 @@ pub extern "C" fn Rf_install(name: *const c_char) -> Sexp {
             "class" => return R_ClassSymbol,
             "row.names" => return R_RowNamesSymbol,
             "levels" => return R_LevelsSymbol,
+            "..." => return R_DotsSymbol,
             _ => {}
         }
     }
@@ -1421,6 +1439,115 @@ pub extern "C" fn Rf_nchar(
             0
         }
     }
+}
+
+// R_tryEval — evaluate with error flag (stub delegates to Rf_eval)
+#[no_mangle]
+pub extern "C" fn R_tryEval(expr: Sexp, env: Sexp, error_occurred: *mut c_int) -> Sexp {
+    let result = Rf_eval(expr, env);
+    if !error_occurred.is_null() {
+        unsafe {
+            *error_occurred = 0;
+        }
+    }
+    result
+}
+
+// R_tryEvalSilent — same as R_tryEval (no error printing)
+#[no_mangle]
+pub extern "C" fn R_tryEvalSilent(expr: Sexp, env: Sexp, error_occurred: *mut c_int) -> Sexp {
+    R_tryEval(expr, env, error_occurred)
+}
+
+// R_ToplevelExec — execute function, return 1 (TRUE) on success
+#[no_mangle]
+pub extern "C" fn R_ToplevelExec(
+    fun: Option<unsafe extern "C" fn(*mut c_void)>,
+    data: *mut c_void,
+) -> c_int {
+    if let Some(f) = fun {
+        unsafe {
+            f(data);
+        }
+    }
+    1 // TRUE — success
+}
+
+// Rf_mkNamed — allocate a named VECSXP/list
+#[no_mangle]
+pub extern "C" fn Rf_mkNamed(stype: c_int, names: *const *const c_char) -> Sexp {
+    // Count names (null-terminated array, terminated by "" entry)
+    let mut n: usize = 0;
+    if !names.is_null() {
+        unsafe {
+            loop {
+                let name_ptr = *names.add(n);
+                if name_ptr.is_null() || *name_ptr == 0 {
+                    break;
+                }
+                n += 1;
+            }
+        }
+    }
+
+    let vec = Rf_protect(Rf_allocVector(stype, n as isize));
+    let names_vec = Rf_protect(Rf_allocVector(sexp::STRSXP as c_int, n as isize));
+    for i in 0..n {
+        unsafe {
+            let name_ptr = *names.add(i);
+            let ch = Rf_mkChar(name_ptr);
+            let elts = (*names_vec).data as *mut Sexp;
+            *elts.add(i) = ch;
+        }
+    }
+    Rf_setAttrib(vec, unsafe { R_NamesSymbol }, names_vec);
+    Rf_unprotect(2);
+    vec
+}
+
+// Rf_isLanguage — check if LANGSXP
+#[no_mangle]
+pub extern "C" fn Rf_isLanguage(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    (unsafe { (*x).stype } == 6) as c_int // LANGSXP
+}
+
+// R_ExpandFileName — return filename unchanged (no tilde expansion)
+#[no_mangle]
+pub extern "C" fn R_ExpandFileName(fn_ptr: *const c_char) -> *const c_char {
+    fn_ptr
+}
+
+// R_chk_calloc — checked calloc (delegates to system calloc)
+#[no_mangle]
+pub extern "C" fn R_chk_calloc(nelem: usize, elsize: usize) -> *mut c_void {
+    unsafe { calloc(nelem, elsize) as *mut c_void }
+}
+
+// R_chk_realloc — checked realloc (delegates to system realloc)
+#[no_mangle]
+pub extern "C" fn R_chk_realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
+    unsafe { realloc(ptr as *mut u8, size) as *mut c_void }
+}
+
+// R_chk_free — checked free (delegates to system free)
+#[no_mangle]
+pub extern "C" fn R_chk_free(ptr: *mut c_void) {
+    unsafe {
+        free(ptr as *mut u8);
+    }
+}
+
+// R_removeVarFromFrame — no-op (variable removal not supported from C)
+#[no_mangle]
+pub extern "C" fn R_removeVarFromFrame(_sym: Sexp, _env: Sexp) {}
+
+// Rf_allocS4Object — stub: allocate a NILSXP
+#[no_mangle]
+pub extern "C" fn Rf_allocS4Object() -> Sexp {
+    Rf_allocVector(sexp::NILSXP as c_int, 0)
 }
 
 // endregion

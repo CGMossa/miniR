@@ -124,6 +124,7 @@ extern SEXP R_DimNamesSymbol;
 extern SEXP R_ClassSymbol;
 extern SEXP R_RowNamesSymbol;
 extern SEXP R_LevelsSymbol;
+extern SEXP R_DotsSymbol;
 
 /* ── Accessor macros ── */
 
@@ -141,6 +142,21 @@ extern SEXP R_LevelsSymbol;
 #define VECTOR_ELT(x, i)   (((SEXP*)((x)->data))[i])
 #define SET_STRING_ELT(x, i, v)  (((SEXP*)((x)->data))[i] = (v))
 #define SET_VECTOR_ELT(x, i, v)  (((SEXP*)((x)->data))[i] = (v))
+
+/* Read-only data pointers (R 4.0+) */
+#define STRING_PTR_RO(x)  ((const SEXP*)((x)->data))
+#define INTEGER_RO(x)     ((const int*)((x)->data))
+#define REAL_RO(x)        ((const double*)((x)->data))
+#define LOGICAL_RO(x)     ((const int*)((x)->data))
+#define RAW_RO(x)         ((const Rbyte*)((x)->data))
+#define COMPLEX_RO(x)     ((const Rcomplex*)((x)->data))
+#define DATAPTR_RO(x)     ((const void*)((x)->data))
+#define RAW_POINTER(x)    RAW(x)
+
+/* REAL_ELT / INTEGER_ELT — single-element accessors */
+#define REAL_ELT(x, i)    (REAL(x)[i])
+#define INTEGER_ELT(x, i) (INTEGER(x)[i])
+#define LOGICAL_ELT(x, i) (LOGICAL(x)[i])
 
 #define R_CHAR(x)    ((const char*)((x)->data))
 #define CHAR(x)      R_CHAR(x)
@@ -276,6 +292,44 @@ int Rf_ncols(SEXP x);
 /* Misc */
 void R_CheckUserInterrupt(void);
 SEXP R_do_slot(SEXP obj, SEXP name);
+
+/* Eval variants */
+SEXP R_tryEval(SEXP expr, SEXP env, int *errorOccurred);
+SEXP R_tryEvalSilent(SEXP expr, SEXP env, int *errorOccurred);
+int R_ToplevelExec(void (*fun)(void *), void *data);
+
+/* Named list constructor */
+SEXP Rf_mkNamed(SEXPTYPE type, const char **names);
+#define mkNamed Rf_mkNamed
+
+/* Type checking additions */
+Rboolean Rf_isLanguage(SEXP x);
+#define isLanguage Rf_isLanguage
+
+/* File path expansion */
+const char *R_ExpandFileName(const char *fn);
+
+/* Memory */
+void *R_chk_calloc(size_t nelem, size_t elsize);
+void *R_chk_realloc(void *ptr, size_t size);
+void R_chk_free(void *ptr);
+
+/* Removal from env frame */
+void R_removeVarFromFrame(SEXP sym, SEXP env);
+
+/* Type name for R_NativePrimitiveArgType */
+typedef int R_NativePrimitiveArgType;
+
+/* CDDR macro */
+#define CDDR(x) CDR(CDR(x))
+
+/* Growable vectors */
+#define IS_GROWABLE(x) 0
+#define SET_GROWABLE_BIT(x) ((void)0)
+
+/* S4 allocation stub */
+SEXP Rf_allocS4Object(void);
+#define allocS4Object Rf_allocS4Object
 
 /* ── R_RegisterRoutines ── */
 

@@ -9,6 +9,8 @@
 #define MINIR_R_H
 
 #include <limits.h>
+#include <float.h>
+#include <stdint.h>
 #include "Rinternals.h"
 
 /* R_ext/Boolean.h equivalent */
