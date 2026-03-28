@@ -211,6 +211,13 @@ pub fn init_globals() {
         R_UnboundValue = R_NilValue;
         R_EmptyEnv = R_NilValue;
         R_MissingArg = R_NilValue;
+        R_NamespaceRegistry = R_NilValue;
+        R_Srcref = R_NilValue;
+        R_BraceSymbol = R_NilValue;
+        R_BracketSymbol = R_NilValue;
+        R_Bracket2Symbol = R_NilValue;
+        R_DoubleColonSymbol = R_NilValue;
+        R_TripleColonSymbol = R_NilValue;
 
         // Symbol sentinels
         SYM_NAMES.data = NAMES_STR.as_ptr() as *mut u8;
@@ -1550,7 +1557,179 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
     Rf_allocVector(sexp::NILSXP as c_int, 0)
 }
 
-// Additional RNG stubs
+// rlang stubs
+#[no_mangle]
+pub extern "C" fn R_CheckStack2(_extra: c_int) {}
+#[no_mangle]
+pub extern "C" fn R_MakeActiveBinding(_sym: Sexp, _fun: Sexp, _env: Sexp) {}
+#[no_mangle]
+pub extern "C" fn R_MakeExternalPtrFn(p: *const (), tag: Sexp, prot: Sexp) -> Sexp {
+    R_MakeExternalPtr(p as *mut c_void, tag, prot)
+}
+#[no_mangle]
+pub extern "C" fn Rf_allocSExp(stype: c_int) -> Sexp {
+    Rf_allocVector(stype, 0)
+}
+#[no_mangle]
+pub extern "C" fn Rf_any_duplicated(_x: Sexp, _from_last: c_int) -> isize {
+    0
+}
+#[no_mangle]
+pub extern "C" fn Rf_countContexts(_type: c_int, _subtype: c_int) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_PromiseExpr(_p: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_ClosureFormals(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_ClosureBody(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_ClosureEnv(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_compute_identical(_x: Sexp, _y: Sexp, _flags: c_int) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_envHasNoSpecialSymbols(_env: Sexp) -> c_int {
+    1
+}
+#[no_mangle]
+pub extern "C" fn R_OrderVector1(
+    _indx: *mut c_int,
+    _n: c_int,
+    _x: Sexp,
+    _nalast: c_int,
+    _decreasing: c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn SET_PRENV(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_PRCODE(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_PRVALUE(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn PRCODE(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn PRVALUE(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// Active bindings
+#[no_mangle]
+pub extern "C" fn R_BindingIsActive(_sym: Sexp, _env: Sexp) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_ActiveBindingFunction(_sym: Sexp, _env: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn Rf_onintr() {}
+
+// Symbol constants
+#[no_mangle]
+pub static mut R_BraceSymbol: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_BracketSymbol: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_Bracket2Symbol: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_DoubleColonSymbol: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_TripleColonSymbol: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_Interactive: c_int = 0;
+
+// Rf_type2str — SEXPTYPE to CHARSXP
+#[no_mangle]
+pub extern "C" fn Rf_type2str(stype: c_int) -> Sexp {
+    Rf_mkChar(Rf_type2char(stype))
+}
+
+// Weak references
+#[no_mangle]
+pub extern "C" fn R_MakeWeakRef(key: Sexp, val: Sexp, _fin: Sexp, _onexit: c_int) -> Sexp {
+    Rf_cons(key, Rf_cons(val, unsafe { R_NilValue }))
+}
+#[no_mangle]
+pub extern "C" fn R_MakeWeakRefC(key: Sexp, val: Sexp, _fin: *const (), onexit: c_int) -> Sexp {
+    R_MakeWeakRef(key, val, unsafe { R_NilValue }, onexit)
+}
+#[no_mangle]
+pub extern "C" fn R_WeakRefKey(_w: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_WeakRefValue(_w: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn Rf_duplicated(_x: Sexp, _from_last: c_int) -> Sexp {
+    Rf_allocVector(sexp::LGLSXP as c_int, 0)
+}
+#[no_mangle]
+pub extern "C" fn Rf_any_duplicated3(_x: Sexp, _incomp: Sexp, _from_last: c_int) -> isize {
+    0
+}
+#[no_mangle]
+pub extern "C" fn Rf_reEnc(
+    x: *const c_char,
+    _ce_in: c_int,
+    _ce_out: c_int,
+    _subst: c_int,
+) -> *const c_char {
+    x
+}
+#[no_mangle]
+pub extern "C" fn Rf_ucstoutf8(buf: *mut c_char, _wc: u32) -> *const c_char {
+    buf as *const c_char
+}
+#[no_mangle]
+pub extern "C" fn SET_BODY(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_FORMALS(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_CLOENV(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub static mut R_NamespaceRegistry: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_Srcref: Sexp = ptr::null_mut();
+#[no_mangle]
+pub extern "C" fn R_EnvironmentIsLocked(_env: Sexp) -> c_int {
+    0
+}
+
+// Rf_installChar — install symbol from CHARSXP
+#[no_mangle]
+pub extern "C" fn Rf_installChar(x: Sexp) -> Sexp {
+    if x.is_null() {
+        return unsafe { R_NilValue };
+    }
+    let name = unsafe { sexp::char_data(x) };
+    Rf_install(name.as_ptr() as *const c_char)
+}
+// Rf_ScalarRaw — scalar raw vector
+#[no_mangle]
+pub extern "C" fn Rf_ScalarRaw(x: u8) -> Sexp {
+    let s = Rf_allocVector(sexp::RAWSXP as c_int, 1);
+    unsafe {
+        *(*s).data = x;
+    }
+    s
+}
+
 // Rf_shallow_duplicate — shallow copy (same as duplicate for our purposes)
 #[no_mangle]
 pub extern "C" fn Rf_shallow_duplicate(x: Sexp) -> Sexp {
@@ -1585,6 +1764,107 @@ pub extern "C" fn CLOENV(_x: Sexp) -> Sexp {
 
 #[no_mangle]
 pub extern "C" fn FORMALS(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+
+// Rf_isObject — check if object has a class attribute
+#[no_mangle]
+pub extern "C" fn Rf_isObject(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    let klass = Rf_getAttrib(x, unsafe { R_ClassSymbol });
+    (!klass.is_null() && unsafe { (*klass).stype } == sexp::STRSXP) as c_int
+}
+
+// Rf_str2type — string to SEXPTYPE
+#[no_mangle]
+pub extern "C" fn Rf_str2type(s: *const c_char) -> c_int {
+    if s.is_null() {
+        return -1;
+    }
+    let name = unsafe { CStr::from_ptr(s) }.to_str().unwrap_or("");
+    match name {
+        "NULL" => sexp::NILSXP as c_int,
+        "logical" => sexp::LGLSXP as c_int,
+        "integer" => sexp::INTSXP as c_int,
+        "double" | "numeric" => sexp::REALSXP as c_int,
+        "complex" => sexp::CPLXSXP as c_int,
+        "character" => sexp::STRSXP as c_int,
+        "list" => sexp::VECSXP as c_int,
+        "raw" => sexp::RAWSXP as c_int,
+        _ => -1,
+    }
+}
+
+#[repr(C)]
+pub struct Rcomplex {
+    r: f64,
+    i: f64,
+}
+
+// Rf_ScalarComplex
+#[no_mangle]
+pub extern "C" fn Rf_ScalarComplex(c: Rcomplex) -> Sexp {
+    let s = Rf_allocVector(sexp::CPLXSXP as c_int, 1);
+    unsafe {
+        let ptr = (*s).data as *mut Rcomplex;
+        *ptr = c;
+    }
+    s
+}
+
+// Environment internals
+#[no_mangle]
+pub extern "C" fn ENCLOS(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_existsVarInFrame(_env: Sexp, _sym: Sexp) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_IsNamespaceEnv(_env: Sexp) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_lsInternal3(_env: Sexp, _all: c_int, _sorted: c_int) -> Sexp {
+    Rf_allocVector(sexp::STRSXP as c_int, 0)
+}
+#[no_mangle]
+pub extern "C" fn R_ClosureExpr(_x: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_ParentEnv(_env: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_LockBinding(_sym: Sexp, _env: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_FRAME(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_ENCLOS(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn SET_HASHTAB(_x: Sexp, _v: Sexp) {}
+#[no_mangle]
+pub extern "C" fn R_BindingIsLocked(_sym: Sexp, _env: Sexp) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_NamespaceEnvSpec(_ns: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_FindNamespace(_name: Sexp) -> Sexp {
+    unsafe { R_NilValue }
+}
+#[no_mangle]
+pub extern "C" fn R_IsPackageEnv(_env: Sexp) -> c_int {
+    0
+}
+#[no_mangle]
+pub extern "C" fn R_PackageEnvName(_env: Sexp) -> Sexp {
     unsafe { R_NilValue }
 }
 

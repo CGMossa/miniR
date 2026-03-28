@@ -20,6 +20,8 @@
 #include <stdarg.h>
 #include <setjmp.h>
 #include <math.h>
+#include <limits.h>
+#include <float.h>
 
 /* R_INLINE — used by package headers */
 #ifndef R_INLINE
@@ -334,6 +336,126 @@ void Rf_defineVar(SEXP sym, SEXP val, SEXP env);
 SEXP BODY(SEXP x);
 SEXP CLOENV(SEXP x);
 SEXP FORMALS(SEXP x);
+
+/* Attribute direct access */
+#define ATTRIB(x)       ((x)->attrib)
+#define SET_ATTRIB(x,v) ((x)->attrib = (v))
+
+/* Pairlist navigation extras */
+#define CAAR(x)   CAR(CAR(x))
+#define CDAR(x)   CDR(CAR(x))
+#define SETCADR(x,v) SETCAR(CDR(x), (v))
+#define SETCADDR(x,v) SETCAR(CDR(CDR(x)), (v))
+
+/* Type checking extras */
+Rboolean Rf_isObject(SEXP x);
+#define isObject Rf_isObject
+
+/* Type name/conversion */
+SEXPTYPE Rf_str2type(const char *s);
+#define str2type Rf_str2type
+
+/* Scalar complex constructor */
+SEXP Rf_ScalarComplex(Rcomplex c);
+#define ScalarComplex Rf_ScalarComplex
+
+/* Object comparison */
+int R_compute_identical(SEXP x, SEXP y, int flags);
+
+/* Environment internals */
+SEXP ENCLOS(SEXP x);
+#define FRAME(x) R_NilValue
+#define HASHTAB(x) R_NilValue
+int R_existsVarInFrame(SEXP env, SEXP sym);
+Rboolean R_IsNamespaceEnv(SEXP env);
+SEXP R_lsInternal3(SEXP env, Rboolean all, Rboolean sorted);
+SEXP R_ClosureExpr(SEXP x);
+SEXP R_ParentEnv(SEXP env);
+void R_LockBinding(SEXP sym, SEXP env);
+SEXP Rf_namesgets(SEXP x, SEXP names);
+void SET_FRAME(SEXP x, SEXP v);
+void SET_ENCLOS(SEXP x, SEXP v);
+void SET_HASHTAB(SEXP x, SEXP v);
+Rboolean R_BindingIsLocked(SEXP sym, SEXP env);
+SEXP R_NamespaceEnvSpec(SEXP ns);
+SEXP R_FindNamespace(SEXP name);
+Rboolean R_IsPackageEnv(SEXP env);
+SEXP R_PackageEnvName(SEXP env);
+
+/* More stubs for rlang */
+void R_CheckStack2(int extra);
+void R_MakeActiveBinding(SEXP sym, SEXP fun, SEXP env);
+SEXP R_MakeExternalPtrFn(void (*p)(void), SEXP tag, SEXP prot);
+SEXP Rf_allocSExp(SEXPTYPE type);
+R_xlen_t Rf_any_duplicated(SEXP x, Rboolean from_last);
+int Rf_countContexts(int type, int subtype);
+SEXP R_PromiseExpr(SEXP p);
+SEXP R_ClosureFormals(SEXP x);
+SEXP R_ClosureBody(SEXP x);
+SEXP R_ClosureEnv(SEXP x);
+Rboolean R_HasFnArgIdx(void);
+SEXP R_FnArgIdx(int i);
+void R_OrderVector1(int *indx, int n, SEXP x, Rboolean nalast, Rboolean decreasing);
+Rboolean R_envHasNoSpecialSymbols(SEXP env);
+void SET_PRENV(SEXP x, SEXP v);
+void SET_PRCODE(SEXP x, SEXP v);
+void SET_PRVALUE(SEXP x, SEXP v);
+SEXP PRCODE(SEXP x);
+SEXP PRVALUE(SEXP x);
+#define allocSExp Rf_allocSExp
+#define any_duplicated Rf_any_duplicated
+
+/* More stubs */
+SEXP Rf_installChar(SEXP x);
+SEXP Rf_ScalarRaw(unsigned char x);
+int R_EnvironmentIsLocked(SEXP env);
+#define LEVELS(x) 0
+#define SETLEVELS(x, v) ((void)(v))
+#define installChar Rf_installChar
+#define ScalarRaw Rf_ScalarRaw
+
+/* ALTREP — always false in miniR */
+#ifndef ALTREP
+#define ALTREP(x) 0
+#endif
+
+/* Active bindings */
+int R_BindingIsActive(SEXP sym, SEXP env);
+SEXP R_ActiveBindingFunction(SEXP sym, SEXP env);
+void Rf_onintr(void);
+#define onintr Rf_onintr
+
+/* More symbol constants */
+extern SEXP R_BraceSymbol;
+extern SEXP R_BracketSymbol;
+extern SEXP R_Bracket2Symbol;
+extern SEXP R_DoubleColonSymbol;
+extern SEXP R_TripleColonSymbol;
+extern int R_Interactive;
+
+/* Weak references */
+SEXP R_MakeWeakRef(SEXP key, SEXP val, SEXP fin, Rboolean onexit);
+SEXP R_MakeWeakRefC(SEXP key, SEXP val, void (*fin)(SEXP), Rboolean onexit);
+SEXP R_WeakRefKey(SEXP w);
+SEXP R_WeakRefValue(SEXP w);
+
+/* Duplicated detection */
+SEXP Rf_duplicated(SEXP x, Rboolean from_last);
+R_xlen_t Rf_any_duplicated3(SEXP x, SEXP incomp, Rboolean from_last);
+#define duplicated Rf_duplicated
+
+/* String encoding conversion */
+const char *Rf_reEnc(const char *x, int ce_in, int ce_out, int subst);
+const char *Rf_ucstoutf8(char *buf, unsigned int wc);
+
+/* Closure modification */
+void SET_BODY(SEXP x, SEXP v);
+void SET_FORMALS(SEXP x, SEXP v);
+void SET_CLOENV(SEXP x, SEXP v);
+
+/* Globals */
+extern SEXP R_NamespaceRegistry;
+extern SEXP R_Srcref;
 
 /* Variable lookup (stubs — return R_UnboundValue) */
 SEXP Rf_findVar(SEXP sym, SEXP env);
@@ -656,6 +778,8 @@ char *S_alloc(long nelem, int eltsize);
 /* Rf_type2char — SEXPTYPE to string */
 const char *Rf_type2char(SEXPTYPE type);
 #define type2char Rf_type2char
+SEXP Rf_type2str(SEXPTYPE type);
+#define type2str Rf_type2str
 
 /* R_finite — finiteness check (function version of R_FINITE macro) */
 int R_finite(double x);
