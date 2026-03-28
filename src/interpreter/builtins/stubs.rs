@@ -1573,6 +1573,7 @@ fn builtin_get_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, 
 /// @param nv number of right singular vectors (ignored)
 /// @return list with components d, u, v
 /// @namespace base
+#[cfg(not(feature = "linalg"))]
 #[builtin(name = "svd", min_args = 1)]
 fn builtin_svd(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Err(RError::other(

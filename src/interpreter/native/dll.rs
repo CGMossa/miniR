@@ -275,8 +275,10 @@ pub struct LoadedDll {
     lib: Library,
     /// Cached symbol addresses: function name → raw pointer.
     symbols: HashMap<String, *const ()>,
-    /// Symbols registered via R_registerRoutines during R_init_<pkg>.
+    /// .Call methods registered via R_registerRoutines during R_init_<pkg>.
     pub registered_calls: HashMap<String, *const ()>,
+    /// .C methods registered via R_registerRoutines during R_init_<pkg>.
+    pub registered_c_methods: HashMap<String, *const ()>,
 }
 
 // Safety: LoadedDll is only used from a single interpreter thread.
@@ -305,6 +307,7 @@ impl LoadedDll {
             lib,
             symbols: HashMap::new(),
             registered_calls: HashMap::new(),
+            registered_c_methods: HashMap::new(),
         };
 
         // Call R_init_<pkgname> if it exists — this triggers R_registerRoutines
@@ -327,7 +330,7 @@ impl LoadedDll {
         }
     }
 
-    /// Read registered .Call methods from the Rust runtime's registry.
+    /// Read registered .Call and .C methods from the Rust runtime's registry.
     fn collect_registered_calls(&mut self) {
         // R_registerRoutines (called by R_init_<pkg>) stores registrations
         // in the Rust runtime's shared registry.
@@ -338,9 +341,26 @@ impl LoadedDll {
         {
             self.registered_calls.insert(name.clone(), ptr.0);
         }
+        for (name, ptr) in super::runtime::REGISTERED_C_METHODS
+            .lock()
+            .expect("lock registered C methods")
+            .iter()
+        {
+            self.registered_c_methods.insert(name.clone(), ptr.0);
+        }
     }
 
-    /// Look up a function symbol by name. Checks registered routines first,
+    /// Look up a .C method symbol by name. Checks registered .C methods first,
+    /// then falls back to dynamic symbol lookup.
+    pub fn get_c_symbol(&mut self, name: &str) -> Result<*const (), String> {
+        if let Some(&ptr) = self.registered_c_methods.get(name) {
+            return Ok(ptr);
+        }
+        // Fall back to dlsym — many packages don't register .C methods
+        self.get_symbol(name)
+    }
+
+    /// Look up a function symbol by name. Checks registered .Call routines first,
     /// then falls back to dynamic symbol lookup. Caches the result.
     pub fn get_symbol(&mut self, name: &str) -> Result<*const (), String> {
         // Check registered .Call methods first
@@ -378,6 +398,10 @@ impl std::fmt::Debug for LoadedDll {
             .field(
                 "registered_calls",
                 &self.registered_calls.keys().collect::<Vec<_>>(),
+            )
+            .field(
+                "registered_c_methods",
+                &self.registered_c_methods.keys().collect::<Vec<_>>(),
             )
             .finish()
     }
@@ -450,6 +474,20 @@ impl Interpreter {
     /// Look up a symbol across all loaded DLLs. Returns the function pointer.
     pub(crate) fn find_native_symbol(&self, name: &str) -> Result<*const (), RError> {
         self.find_native_symbol_with_dll(name).map(|(ptr, _)| ptr)
+    }
+
+    /// Look up a .C symbol across all loaded DLLs — checks registered .C methods first.
+    fn find_c_symbol(&self, name: &str) -> Result<*const (), RError> {
+        let mut dlls = self.loaded_dlls.borrow_mut();
+        for dll in dlls.iter_mut().rev() {
+            if let Ok(ptr) = dll.get_c_symbol(name) {
+                return Ok(ptr);
+            }
+        }
+        Err(RError::new(
+            RErrorKind::Other,
+            format!("symbol '{name}' not found in any loaded DLL"),
+        ))
     }
 
     /// Execute a `.Call()` invocation using the C trampoline for error safety.
@@ -578,7 +616,7 @@ impl Interpreter {
         args: &[RValue],
         arg_names: &[Option<String>],
     ) -> Result<RValue, RError> {
-        let fn_ptr = self.find_native_symbol(symbol_name)?;
+        let fn_ptr = self.find_c_symbol(symbol_name)?;
 
         // Convert each arg to a C-compatible buffer and collect void* pointers.
         // Each CBuffer owns the memory; we read it back after the call.

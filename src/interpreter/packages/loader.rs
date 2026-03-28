@@ -282,7 +282,13 @@ impl Interpreter {
                         if reg.contains("registration") {
                             let dlls = self.loaded_dlls.borrow();
                             for dll in dlls.iter() {
+                                // Bind .Call registered methods
                                 for name in dll.registered_calls.keys() {
+                                    let r_name = format!("{fixes_prefix}{name}");
+                                    bind_native_symbol(&namespace_env, &r_name, name, pkg_name);
+                                }
+                                // Bind .C registered methods
+                                for name in dll.registered_c_methods.keys() {
                                     let r_name = format!("{fixes_prefix}{name}");
                                     bind_native_symbol(&namespace_env, &r_name, name, pkg_name);
                                 }
@@ -298,6 +304,9 @@ impl Interpreter {
                     let dlls = self.loaded_dlls.borrow();
                     for dll in dlls.iter() {
                         for name in dll.registered_calls.keys() {
+                            bind_native_symbol(&namespace_env, name, name, pkg_name);
+                        }
+                        for name in dll.registered_c_methods.keys() {
                             bind_native_symbol(&namespace_env, name, name, pkg_name);
                         }
                     }

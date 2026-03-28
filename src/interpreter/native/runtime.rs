@@ -1024,18 +1024,49 @@ pub struct RCallMethodDef {
 pub struct SendPtr(pub *const ());
 unsafe impl Send for SendPtr {}
 
-/// Registered methods — shared across all packages in this runtime.
+/// Registered .Call methods — shared across all packages in this runtime.
 pub static REGISTERED_CALLS: std::sync::Mutex<Vec<(String, SendPtr)>> =
     std::sync::Mutex::new(Vec::new());
+
+/// Registered .C methods — shared across all packages in this runtime.
+pub static REGISTERED_C_METHODS: std::sync::Mutex<Vec<(String, SendPtr)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// R_CMethodDef has the same layout as R_CallMethodDef (name, fun, numArgs).
+type RCMethodDef = RCallMethodDef;
 
 #[no_mangle]
 pub extern "C" fn R_registerRoutines(
     _info: *mut c_void,
-    _c_methods: *const c_void,
+    c_methods: *const RCMethodDef,
     call_methods: *const RCallMethodDef,
     _fortran_methods: *const c_void,
     _external_methods: *const c_void,
 ) -> c_int {
+    // Register .C methods
+    if !c_methods.is_null() {
+        let mut reg = REGISTERED_C_METHODS
+            .lock()
+            .expect("lock registered C methods");
+        unsafe {
+            let mut i = 0;
+            loop {
+                let entry = &*c_methods.add(i);
+                if entry.name.is_null() {
+                    break;
+                }
+                let name = CStr::from_ptr(entry.name)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                if !name.is_empty() {
+                    reg.push((name, SendPtr(entry.fun)));
+                }
+                i += 1;
+            }
+        }
+    }
+    // Register .Call methods
     if !call_methods.is_null() {
         let mut reg = REGISTERED_CALLS.lock().expect("lock registered calls");
         unsafe {
@@ -1070,9 +1101,25 @@ pub fn find_registered_call(name: &str) -> Option<*const ()> {
     reg.iter().find(|(n, _)| n == name).map(|(_, ptr)| ptr.0)
 }
 
+/// Look up a registered .C method by name. Returns the function pointer or null.
+pub fn find_registered_c_method(name: &str) -> Option<*const ()> {
+    let reg = REGISTERED_C_METHODS
+        .lock()
+        .expect("lock registered C methods");
+    reg.iter().find(|(n, _)| n == name).map(|(_, ptr)| ptr.0)
+}
+
 /// Get all registered .Call method names.
 pub fn registered_call_names() -> Vec<String> {
     let reg = REGISTERED_CALLS.lock().expect("lock registered calls");
+    reg.iter().map(|(n, _)| n.clone()).collect()
+}
+
+/// Get all registered .C method names.
+pub fn registered_c_method_names() -> Vec<String> {
+    let reg = REGISTERED_C_METHODS
+        .lock()
+        .expect("lock registered C methods");
     reg.iter().map(|(n, _)| n.clone()).collect()
 }
 
