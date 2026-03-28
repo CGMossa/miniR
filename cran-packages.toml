@@ -1,0 +1,2095 @@
+# CRAN Package Registry for miniR
+# Generated from cran/ corpus — 272 packages analyzed
+#
+# Status summary (packages with native code):
+#   41 packages load successfully
+#   5 packages compile but don't load (R-level issues)
+#   ~30 blocked by rlang dependency
+#   ~15 need Fortran/LAPACK
+#   ~10 need system libraries (libssl, libcurl, etc.)
+#   ~5 need Rcpp C++ bridge
+#   ~10 need bundled library multi-stage build (now partially supported)
+#
+# Key fields:
+#   native_code    — ["c", "cpp", "fortran"] source types
+#   uses_dynlib    — NAMESPACE has useDynLib directive
+#   bundled_library — Makevars builds a static .a before linking
+#   needs_system_library — requires external system libraries
+#   uses_rcpp      — includes Rcpp.h (C++ R bridge)
+#   has_configure  — has a configure script (autoconf)
+#   provides_headers — inst/include/ with headers for LinkingTo
+#   compiles       — native code compiles with miniR
+#   loads          — library() succeeds in miniR
+#   blocker        — what prevents loading
+
+[packages.abind]
+version = "1.4-8"
+native_code = []
+loads = true  # pure R package
+imports = "methods, utils"
+depends = "R (>= 1.5.0)"
+
+[packages.arrow]
+version = "23.0.1.1"
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "assertthat, bit64 (>= 0.9-7), glue, methods, purrr, R6, rlang"
+depends = "R (>= 4.1)"
+linking_to = "cpp11 (>= 0.4.2)"
+
+[packages.askpass]
+version = "1.2.1"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+loads = true
+imports = "sys (>= 2.1)"
+
+[packages.assertthat]
+version = "0.2.1"
+native_code = []
+loads = true  # pure R package
+imports = "tools"
+
+[packages.backports]
+version = "1.5.0"
+native_code = ["c"]
+source_files = { c = 4, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.0.0)"
+
+[packages.base]
+version = ""
+native_code = []
+loads = true  # pure R package
+
+[packages.base64enc]
+version = "0.1-6"
+native_code = ["c"]
+source_files = { c = 4, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 2.9.0)"
+
+[packages.BH]
+version = "1.90.0-1"
+native_code = []
+provides_headers = true
+loads = true  # pure R package
+
+[packages.bit]
+version = "4.6.0"
+native_code = ["c"]
+source_files = { c = 9, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.4.0)"
+
+[packages.bit64]
+version = "4.6.0-1"
+native_code = ["c"]
+source_files = { c = 7, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "graphics, methods, stats, utils"
+depends = "R (>= 3.4.0), bit (>= 4.0.0)"
+
+[packages.blob]
+version = "1.3.0"
+native_code = []
+loads = true  # pure R package
+imports = "methods, rlang, vctrs (>= 0.2.1)"
+
+[packages.boot]
+version = "1.3-32"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.0.0), graphics, stats"
+
+[packages.brew]
+version = "1.0-10"
+native_code = []
+loads = true  # pure R package
+
+[packages.brio]
+version = "1.1.5"
+native_code = ["c"]
+source_files = { c = 9, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.6)"
+
+[packages.broom]
+version = "1.0.12"
+native_code = []
+loads = true  # pure R package
+imports = "backports, cli, dplyr (>= 1.0.0), generics (>= 0.0.2), glue,"
+depends = "R (>= 4.1)"
+
+[packages.bslib]
+version = "0.10.0"
+native_code = []
+loads = true  # pure R package
+imports = "base64enc, cachem, fastmap (>= 1.1.1), grDevices, htmltools"
+depends = "R (>= 2.10)"
+
+[packages.cachem]
+version = "1.1.0"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "rlang, fastmap (>= 1.2.0)"
+
+[packages.callr]
+version = "3.7.6"
+native_code = []
+loads = true  # pure R package
+imports = "processx (>= 3.6.1), R6, utils"
+depends = "R (>= 3.4)"
+
+[packages.car]
+version = "3.1-5"
+native_code = []
+loads = true  # pure R package
+imports = "abind, Formula, MASS, mgcv, nnet, pbkrtest (>= 0.4-4),"
+depends = "R (>= 3.5.0), carData (>= 3.0-0)"
+
+[packages.carData]
+version = "3.0-6"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.5.0)"
+
+[packages.cellranger]
+version = "1.1.0"
+native_code = []
+loads = true  # pure R package
+imports = "rematch, tibble"
+depends = "R (>= 3.0.0)"
+
+[packages.checkmate]
+version = "2.3.4"
+native_code = ["c"]
+source_files = { c = 13, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+compiles = true
+loads = true
+imports = "backports (>= 1.1.0), utils"
+depends = "R (>= 3.0.0)"
+
+[packages.class]
+version = "7.3-23"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "MASS"
+depends = "R (>= 3.0.0), stats, utils"
+
+[packages.classInt]
+version = "0.4-11"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "grDevices, stats, graphics, e1071, class, KernSmooth"
+depends = "R (>= 2.2)"
+
+[packages.cli]
+version = "3.6.5"
+native_code = ["c"]
+source_files = { c = 26, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+compiles = true
+loads = true
+imports = "utils"
+depends = "R (>= 3.4)"
+
+[packages.clipr]
+version = "0.8.0"
+native_code = []
+loads = true  # pure R package
+imports = "utils"
+
+[packages.cluster]
+version = "2.1.8.2"
+native_code = ["c"]
+source_files = { c = 10, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+imports = "graphics, grDevices, stats, utils"
+depends = "R (>= 3.5.0)"
+
+[packages.codetools]
+version = "0.2-20"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.1)"
+
+[packages.colorspace]
+version = "2.1-2"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "graphics, grDevices, stats"
+depends = "R (>= 3.0.0), methods"
+
+[packages.commonmark]
+version = "2.0.0"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+compiles = true
+loads = true
+
+[packages.compiler]
+version = ""
+native_code = []
+loads = true  # pure R package
+
+[packages.conflicted]
+version = "1.2.0"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.4.0), memoise, rlang (>= 1.0.0)"
+depends = "R (>= 3.2)"
+
+[packages.corrplot]
+version = "0.95"
+native_code = []
+loads = true  # pure R package
+
+[packages.covr]
+version = "3.6.5"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "digest, stats, utils, jsonlite, rex, httr, cli, withr (>="
+depends = "R (>= 3.1.0), methods"
+
+[packages.cowplot]
+version = "1.2.0"
+native_code = []
+loads = true  # pure R package
+imports = "ggplot2 (>= 3.5.2), grid, gtable, grDevices, methods, rlang,"
+depends = "R (>= 3.5.0)"
+
+[packages.cpp11]
+version = "0.5.3"
+native_code = []
+provides_headers = true
+loads = true  # pure R package
+depends = "R (>= 4.0.0)"
+
+[packages.crayon]
+version = "1.5.3"
+native_code = []
+loads = true  # pure R package
+imports = "grDevices, methods, utils"
+
+[packages.credentials]
+version = "2.0.3"
+native_code = []
+loads = true  # pure R package
+imports = "openssl (>= 1.3), sys (>= 2.1), curl, jsonlite, askpass"
+
+[packages.crosstalk]
+version = "1.2.2"
+native_code = []
+loads = true  # pure R package
+imports = "htmltools (>= 0.3.6), jsonlite, lazyeval, R6"
+
+[packages.curl]
+version = "7.0.0"
+native_code = ["c"]
+source_files = { c = 25, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+depends = "R (>= 3.0.0)"
+
+[packages.data.table]
+version = "1.18.2.1"
+native_code = ["c"]
+source_files = { c = 47, cpp = 0, fortran = 0 }
+uses_dynlib = true
+has_configure = true
+provides_headers = true
+loads = false
+blocker = "segfault"
+imports = "methods"
+depends = "R (>= 3.4.0)"
+
+[packages.datasets]
+version = ""
+native_code = []
+loads = true  # pure R package
+
+[packages.DBI]
+version = "1.3.0"
+native_code = []
+loads = true  # pure R package
+depends = "methods, R (>= 3.0.0)"
+
+[packages.dbplyr]
+version = "2.5.2"
+native_code = []
+loads = true  # pure R package
+imports = "blob (>= 1.2.0), cli (>= 3.6.1), DBI (>= 1.1.3), dplyr (>="
+depends = "R (>= 3.6)"
+
+[packages.Deriv]
+version = "4.2.0"
+native_code = []
+loads = true  # pure R package
+imports = "methods"
+
+[packages.desc]
+version = "1.4.3"
+native_code = []
+loads = true  # pure R package
+imports = "cli, R6, utils"
+depends = "R (>= 3.4)"
+
+[packages.devtools]
+version = "2.4.6"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.6.5), desc (>= 1.4.3), ellipsis (>= 0.3.2), fs (>="
+depends = "R (>= 4.1), usethis (>= 3.2.1)"
+
+[packages.diffobj]
+version = "0.3.6"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "crayon (>= 1.3.2), tools, methods, utils, stats"
+depends = "R (>= 3.1.0)"
+
+[packages.digest]
+version = "0.6.39"
+native_code = ["c"]
+source_files = { c = 15, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+provides_headers = true
+compiles = true
+loads = true
+imports = "utils"
+depends = "R (>= 3.3.0)"
+
+[packages.distributional]
+version = "0.6.0"
+native_code = []
+loads = true  # pure R package
+imports = "vctrs (>= 0.3.0), rlang (>= 0.4.5), generics, stats, numDeriv,"
+depends = "R (>= 4.0.0)"
+
+[packages.doBy]
+version = "4.7.1"
+native_code = []
+loads = true  # pure R package
+imports = "boot, broom, cowplot, Deriv, dplyr, forecast, ggplot2, MASS,"
+depends = "R (>= 4.2.0), methods"
+
+[packages.downlit]
+version = "0.4.5"
+native_code = []
+loads = true  # pure R package
+imports = "brio, desc, digest, evaluate, fansi, memoise, rlang, vctrs,"
+depends = "R (>= 4.0.0)"
+
+[packages.dplyr]
+version = "1.2.0"
+uses_dynlib = true
+imports = "cli (>= 3.6.2), generics, glue (>= 1.3.2), lifecycle (>="
+depends = "R (>= 4.1.0)"
+
+[packages.DT]
+version = "0.34.0"
+native_code = []
+loads = true  # pure R package
+imports = "crosstalk, htmltools (>= 0.3.6), htmlwidgets (>= 1.3),"
+
+[packages.dtplyr]
+version = "1.3.3"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.4.0), data.table (>= 1.13.0), dplyr (>= 1.1.0),"
+depends = "R (>= 4.0)"
+
+[packages.e1071]
+version = "1.7-17"
+native_code = ["c"]
+source_files = { c = 5, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics, grDevices, class, stats, methods, utils, proxy"
+
+[packages.ellipsis]
+version = "0.3.2"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "rlang (>= 0.3.0)"
+depends = "R (>= 3.2)"
+
+[packages.evaluate]
+version = "1.0.5"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.6.0)"
+
+[packages.fansi]
+version = "1.0.7"
+native_code = ["c"]
+source_files = { c = 19, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "grDevices, utils"
+depends = "R (>= 3.1.0)"
+
+[packages.farver]
+version = "2.1.2"
+uses_dynlib = true
+
+[packages.fastmap]
+version = "1.2.0"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+
+[packages.fontawesome]
+version = "0.5.3"
+native_code = []
+loads = true  # pure R package
+imports = "rlang (>= 1.0.6), htmltools (>= 0.5.1.1)"
+depends = "R (>= 3.3.0)"
+
+[packages.forcats]
+version = "1.0.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.4.0), glue, lifecycle, magrittr, rlang (>= 1.0.0),"
+depends = "R (>= 4.1)"
+
+[packages.foreach]
+version = "1.5.2"
+native_code = []
+loads = true  # pure R package
+imports = "codetools, utils, iterators"
+depends = "R (>= 2.5.0)"
+
+[packages.forecast]
+version = "9.0.1"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+uses_rcpp = true
+imports = "colorspace, fracdiff, generics (>= 0.1.2), ggplot2 (>= 3.4.0),"
+depends = "R (>= 4.1.0)"
+linking_to = "Rcpp (>= 0.12.4), RcppArmadillo (>= 0.2.35)"
+
+[packages.foreign]
+version = "0.8-91"
+native_code = ["c"]
+source_files = { c = 14, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+imports = "methods, utils, stats"
+depends = "R (>= 4.0.0)"
+
+[packages.Formula]
+version = "1.2-5"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.0.0), stats"
+
+[packages.fracdiff]
+version = "1.5-3"
+native_code = ["c"]
+source_files = { c = 7, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "stats"
+
+[packages.fs]
+version = "1.6.7"
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+imports = "methods"
+depends = "R (>= 4.1)"
+
+[packages.future]
+version = "1.69.0"
+native_code = []
+loads = true  # pure R package
+imports = "digest, globals (>= 0.18.0), listenv (>= 0.8.0), parallel,"
+depends = "R (>= 3.2.0)"
+
+[packages.future.apply]
+version = "1.20.2"
+native_code = []
+loads = true  # pure R package
+imports = "globals, parallel, utils"
+depends = "R (>= 3.2.0), future (>= 1.49.0)"
+
+[packages.gargle]
+version = "1.6.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.0.1), fs (>= 1.3.1), glue (>= 1.3.0), httr (>="
+depends = "R (>= 4.1)"
+
+[packages.generics]
+version = "0.1.4"
+native_code = []
+loads = true  # pure R package
+imports = "methods"
+depends = "R (>= 3.6)"
+
+[packages.gert]
+version = "2.3.1"
+native_code = ["c"]
+source_files = { c = 16, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "askpass, credentials (>= 1.2.1), openssl (>= 2.0.3),"
+
+[packages.ggplot2]
+version = "4.0.2"
+native_code = []
+loads = true  # pure R package
+imports = "cli, grDevices, grid, gtable (>= 0.3.6), isoband, lifecycle (>"
+depends = "R (>= 4.1)"
+
+[packages.ggpubr]
+version = "0.6.3"
+native_code = []
+loads = true  # pure R package
+imports = "ggrepel (>= 0.9.2), grid, ggsci, stats, utils, tidyr (>="
+depends = "R (>= 4.1.0), ggplot2 (>= 3.5.2)"
+
+[packages.ggrepel]
+version = "0.9.7"
+uses_dynlib = true
+imports = "grid, Rcpp, rlang (>= 1.1.6), S7, scales (>= 1.4.0), withr (>="
+depends = "R (>= 4.5.0), ggplot2 (>= 3.5.2)"
+linking_to = "Rcpp"
+
+[packages.ggsci]
+version = "4.2.0"
+native_code = []
+loads = true  # pure R package
+imports = "ggplot2 (>= 2.0.0), grDevices, rlang, scales"
+depends = "R (>= 3.5.0)"
+
+[packages.ggsignif]
+version = "0.6.4"
+native_code = []
+loads = true  # pure R package
+imports = "ggplot2 (>= 3.3.5)"
+
+[packages.gh]
+version = "1.5.0"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.0.1), gitcreds, glue, httr2 (>= 1.0.6), ini,"
+depends = "R (>= 4.1)"
+
+[packages.gitcreds]
+version = "0.1.2"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.4)"
+
+[packages.globals]
+version = "0.19.0"
+native_code = []
+loads = true  # pure R package
+imports = "codetools"
+depends = "R (>= 3.1.2)"
+
+[packages.glue]
+version = "1.8.0"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "methods"
+depends = "R (>= 3.6)"
+
+[packages.googledrive]
+version = "2.1.2"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.0.0), gargle (>= 1.6.0), glue (>= 1.4.2), httr,"
+depends = "R (>= 4.1)"
+
+[packages.googlesheets4]
+version = "1.1.2"
+native_code = []
+loads = true  # pure R package
+imports = "cellranger, cli (>= 3.0.0), curl, gargle (>= 1.6.0), glue (>="
+depends = "R (>= 3.6)"
+
+[packages.graphics]
+version = ""
+native_code = ["c"]
+source_files = { c = 8, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.grDevices]
+version = ""
+native_code = ["c"]
+source_files = { c = 18, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.grid]
+version = "0.7-4"
+native_code = ["c"]
+source_files = { c = 10, cpp = 0, fortran = 0 }
+loads = true
+depends = "R (>= 1.6.0)"
+
+[packages.gridExtra]
+version = "2.3"
+native_code = []
+loads = true  # pure R package
+imports = "gtable, grid, grDevices, graphics, utils"
+
+[packages.gtable]
+version = "0.3.6"
+native_code = []
+loads = true  # pure R package
+imports = "cli, glue, grid, lifecycle, rlang (>= 1.1.0), stats"
+depends = "R (>= 4.0)"
+
+[packages.gtools]
+version = "3.9.5"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "methods, stats, utils"
+
+[packages.haven]
+version = "2.5.5"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+has_configure = true
+imports = "cli (>= 3.0.0), forcats (>= 0.2.0), hms, lifecycle, methods,"
+depends = "R (>= 3.6)"
+linking_to = "cpp11"
+
+[packages.here]
+version = "1.0.2"
+native_code = []
+loads = true  # pure R package
+imports = "rprojroot (>= 2.1.0)"
+
+[packages.highr]
+version = "0.12"
+native_code = []
+loads = true  # pure R package
+imports = "xfun (>= 0.18)"
+depends = "R (>= 3.3.0)"
+
+[packages.Hmisc]
+version = "5.2-5"
+native_code = ["c"]
+source_files = { c = 6, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "methods, ggplot2, cluster, rpart, nnet, foreign, gtable, grid,"
+depends = "R (>= 4.2.0)"
+
+[packages.hms]
+version = "1.1.4"
+native_code = []
+loads = true  # pure R package
+imports = "cli, lifecycle, methods, pkgconfig, rlang (>= 1.0.2), vctrs"
+
+[packages.htmlTable]
+version = "2.4.3"
+native_code = []
+loads = true  # pure R package
+imports = "stringr, knitr (>= 1.6), magrittr (>= 1.5), methods,"
+depends = "R (>= 4.1)"
+
+[packages.htmltools]
+version = "0.5.9"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "base64enc, digest, fastmap (>= 1.1.0), grDevices, rlang (>="
+depends = "R (>= 2.14.1)"
+
+[packages.htmlwidgets]
+version = "1.6.4"
+native_code = []
+loads = true  # pure R package
+imports = "grDevices, htmltools (>= 0.5.7), jsonlite (>= 0.9.16), knitr"
+
+[packages.httpuv]
+version = "1.6.16"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+uses_rcpp = true
+has_configure = true
+imports = "later (>= 0.8.0), promises, R6, Rcpp (>= 1.0.7), utils"
+depends = "R (>= 2.15.1)"
+linking_to = "later, Rcpp"
+
+[packages.httr]
+version = "1.4.8"
+native_code = []
+loads = true  # pure R package
+imports = "curl (>= 5.1.0), jsonlite, mime, openssl (>= 0.8), R6"
+depends = "R (>= 3.6)"
+
+[packages.httr2]
+version = "1.2.2"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.0.0), curl (>= 6.4.0), glue, lifecycle, magrittr,"
+depends = "R (>= 4.1)"
+
+[packages.ids]
+version = "1.0.1"
+native_code = []
+loads = true  # pure R package
+imports = "openssl, uuid"
+
+[packages.igraph]
+version = "2.2.2"
+native_code = ["c"]
+source_files = { c = 4, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "cli, graphics, grDevices, lifecycle, magrittr, Matrix,"
+depends = "methods, R (>= 3.5.0)"
+linking_to = "cpp11 (>= 0.5.0)"
+
+[packages.ini]
+version = "0.3.1"
+native_code = []
+loads = true  # pure R package
+
+[packages.inline]
+version = "0.3.21"
+native_code = []
+loads = true  # pure R package
+imports = "methods"
+
+[packages.isoband]
+version = "0.3.0"
+uses_dynlib = true
+imports = "cli, grid, rlang, utils"
+linking_to = "cpp11"
+
+[packages.iterators]
+version = "1.0.14"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.5.0), utils"
+
+[packages.janitor]
+version = "2.2.1"
+native_code = []
+loads = true  # pure R package
+imports = "dplyr (>= 1.0.0), hms, lifecycle, lubridate, magrittr, purrr,"
+depends = "R (>= 3.1.2)"
+
+[packages.jquerylib]
+version = "0.1.4"
+native_code = []
+loads = true  # pure R package
+imports = "htmltools"
+
+[packages.jsonlite]
+version = "2.0.0"
+native_code = ["c"]
+source_files = { c = 20, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+compiles = true
+loads = true
+depends = "methods"
+
+[packages.KernSmooth]
+version = "2.23-26"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+depends = "R (>= 2.5.0), stats"
+
+[packages.knitr]
+version = "1.51"
+native_code = []
+loads = true  # pure R package
+imports = "evaluate (>= 0.15), highr (>= 0.11), methods, tools, xfun (>="
+depends = "R (>= 3.6.0)"
+
+[packages.labeling]
+version = "0.4.3"
+native_code = []
+loads = true  # pure R package
+imports = "stats, graphics"
+
+[packages.later]
+version = "1.4.8"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+uses_rcpp = true
+has_configure = true
+provides_headers = true
+imports = "Rcpp (>= 1.0.10), rlang"
+depends = "R (>= 3.5)"
+linking_to = "Rcpp"
+
+[packages.lattice]
+version = "0.22-9"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "grid, grDevices, graphics, stats, utils"
+depends = "R (>= 4.0.0)"
+
+[packages.lazyeval]
+version = "0.2.2"
+native_code = ["c"]
+source_files = { c = 6, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.1.0)"
+
+[packages.lifecycle]
+version = "1.0.5"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.4.0), rlang (>= 1.1.0)"
+depends = "R (>= 3.6)"
+
+[packages.listenv]
+version = "0.10.1"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.1.2)"
+
+[packages.lmtest]
+version = "0.9-40"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics"
+depends = "R (>= 3.0.0), stats, zoo"
+
+[packages.loo]
+version = "2.9.0"
+native_code = []
+loads = true  # pure R package
+imports = "checkmate, matrixStats (>= 0.52), parallel, posterior (>="
+depends = "R (>= 3.1.2)"
+
+[packages.lubridate]
+version = "1.9.5"
+native_code = ["c"]
+source_files = { c = 5, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "generics, timechange (>= 0.4.0)"
+depends = "methods, R (>= 3.2)"
+
+[packages.magrittr]
+version = "2.0.4"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = false
+blocker = "segfault in .onLoad"
+depends = "R (>= 3.4.0)"
+
+[packages.MASS]
+version = "7.3-65"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "methods"
+depends = "R (>= 4.4.0), grDevices, graphics, stats, utils"
+
+[packages.Matrix]
+version = "1.7-4"
+native_code = ["c"]
+source_files = { c = 28, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+provides_headers = true
+imports = "grDevices, graphics, grid, lattice, stats, utils"
+depends = "R (>= 4.4), methods"
+
+[packages.MatrixModels]
+version = "0.5-4"
+native_code = []
+uses_dynlib = true
+loads = true  # pure R package
+imports = "stats, methods, Matrix (>= 1.6-0), Matrix(< 1.8-0)"
+depends = "R (>= 3.6.0)"
+
+[packages.matrixStats]
+version = "1.5.0"
+native_code = ["c"]
+source_files = { c = 36, cpp = 0, fortran = 0 }
+uses_dynlib = true
+depends = "R (>= 3.4.0)"
+
+[packages.memoise]
+version = "2.0.1"
+native_code = []
+loads = true  # pure R package
+imports = "rlang (>= 0.4.10), cachem"
+
+[packages.methods]
+version = ""
+native_code = ["c"]
+source_files = { c = 7, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.mgcv]
+version = "1.9-4"
+native_code = ["c"]
+source_files = { c = 17, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+imports = "methods, stats, graphics, Matrix, splines, utils"
+depends = "R (>= 4.4.0), nlme (>= 3.1-64)"
+
+[packages.microbenchmark]
+version = "1.5.0"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "graphics, stats"
+depends = "R (>= 3.2.0)"
+
+[packages.mime]
+version = "0.13"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "tools"
+
+[packages.miniUI]
+version = "0.1.2"
+native_code = []
+loads = true  # pure R package
+imports = "shiny (>= 0.13), htmltools (>= 0.3), utils"
+
+[packages.minqa]
+version = "1.2.8"
+uses_dynlib = true
+imports = "Rcpp (>= 0.9.10)"
+linking_to = "Rcpp"
+
+[packages.modelr]
+version = "0.1.11"
+native_code = []
+loads = true  # pure R package
+imports = "broom, magrittr, purrr (>= 0.2.2), rlang (>= 1.0.6), tibble,"
+depends = "R (>= 3.2)"
+
+[packages.mvtnorm]
+version = "1.3-3"
+native_code = ["c"]
+source_files = { c = 5, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+provides_headers = true
+imports = "stats"
+depends = "R(>= 3.5.0)"
+
+[packages.nlme]
+version = "3.1-168"
+native_code = ["c"]
+source_files = { c = 9, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics, stats, utils, lattice"
+depends = "R (>= 3.6.0)"
+
+[packages.nloptr]
+version = "2.2.1"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+provides_headers = true
+
+[packages.nnet]
+version = "7.3-20"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.0.0), stats, utils"
+
+[packages.numDeriv]
+version = "2016.8-1.1"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.11.1)"
+
+[packages.openssl]
+version = "2.3.5"
+native_code = ["c"]
+source_files = { c = 26, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "askpass"
+
+[packages.openxlsx]
+version = "4.2.8.1"
+uses_dynlib = true
+imports = "grDevices, methods, Rcpp, stats, stringi, utils, zip"
+depends = "R (>= 3.3.0)"
+linking_to = "Rcpp"
+
+[packages.otel]
+version = "0.2.0"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.6.0)"
+
+[packages.parallel]
+version = ""
+native_code = ["c"]
+source_files = { c = 4, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.parallelly]
+version = "1.46.1"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "parallel, tools, utils"
+
+[packages.patchwork]
+version = "1.3.2"
+native_code = []
+loads = true  # pure R package
+imports = "ggplot2 (>= 3.0.0), gtable (>= 0.3.6), grid, stats, grDevices,"
+
+[packages.pbkrtest]
+version = "0.5.5"
+native_code = []
+loads = true  # pure R package
+imports = "broom, dplyr, MASS, methods, numDeriv, Matrix (>= 1.2.3), doBy"
+depends = "R (>= 4.2.0), lme4 (>= 1.1.31)"
+
+[packages.pillar]
+version = "1.11.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 2.3.0), glue, lifecycle, rlang (>= 1.0.2), utf8 (>="
+
+[packages.pkgbuild]
+version = "1.4.8"
+native_code = []
+loads = true  # pure R package
+imports = "callr (>= 3.2.0), cli (>= 3.4.0), desc, processx, R6"
+depends = "R (>= 3.5)"
+
+[packages.pkgconfig]
+version = "2.0.3"
+native_code = []
+loads = true  # pure R package
+imports = "utils"
+
+[packages.pkgdown]
+version = "2.2.0"
+native_code = []
+loads = true  # pure R package
+imports = "bslib (>= 0.5.1), callr (>= 3.7.3), cli (>= 3.6.1), desc (>="
+depends = "R (>= 4.1)"
+
+[packages.pkgload]
+version = "1.5.0"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.3.0), desc, fs, glue, lifecycle, methods, pkgbuild,"
+depends = "R (>= 3.4.0)"
+
+[packages.plotly]
+version = "4.12.0"
+native_code = []
+loads = true  # pure R package
+imports = "tools, scales, httr (>= 1.3.0), jsonlite (>= 1.6), magrittr,"
+depends = "R (>= 3.5.0), ggplot2 (>= 3.0.0)"
+
+[packages.plumber]
+version = "1.3.3"
+native_code = []
+loads = true  # pure R package
+imports = "crayon, httpuv (>= 1.5.5), jsonlite (>= 0.9.16), lifecycle (>="
+depends = "R (>= 3.0.0)"
+
+[packages.plyr]
+version = "1.8.9"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "Rcpp (>= 0.11.0)"
+depends = "R (>= 3.1.0)"
+linking_to = "Rcpp"
+
+[packages.png]
+version = "0.1-8"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+depends = "R (>= 2.9.0)"
+
+[packages.polynom]
+version = "1.4-1"
+native_code = []
+loads = true  # pure R package
+imports = "stats, graphics"
+
+[packages.posterior]
+version = "1.6.1"
+native_code = []
+loads = true  # pure R package
+imports = "methods, abind, checkmate, rlang (>= 1.0.6), stats, tibble (>="
+depends = "R (>= 3.2.0)"
+
+[packages.praise]
+version = "1.0.0"
+native_code = []
+loads = true  # pure R package
+
+[packages.prettyunits]
+version = "1.2.0"
+native_code = []
+loads = true  # pure R package
+depends = "R(>= 2.10)"
+
+[packages.processx]
+version = "3.8.6"
+native_code = ["c"]
+source_files = { c = 9, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+imports = "ps (>= 1.2.0), R6, utils"
+depends = "R (>= 3.4.0)"
+
+[packages.profvis]
+version = "0.4.0"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "htmlwidgets (>= 0.3.2), rlang (>= 1.1.0), vctrs"
+depends = "R (>= 4.0)"
+
+[packages.progress]
+version = "1.2.3"
+native_code = []
+provides_headers = true
+loads = true  # pure R package
+imports = "crayon, hms, prettyunits, R6"
+depends = "R (>= 3.6)"
+
+[packages.promises]
+version = "1.5.0"
+native_code = []
+loads = true  # pure R package
+imports = "fastmap (>= 1.1.0), later, lifecycle, magrittr (>= 1.5), otel"
+depends = "R (>= 4.1.0)"
+
+[packages.proxy]
+version = "0.4-29"
+native_code = ["c"]
+source_files = { c = 5, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "stats, utils"
+depends = "R (>= 3.4.0)"
+
+[packages.ps]
+version = "1.9.1"
+native_code = ["c"]
+source_files = { c = 17, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "utils"
+depends = "R (>= 3.4)"
+
+[packages.purrr]
+version = "1.2.1"
+native_code = ["c"]
+source_files = { c = 11, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "cli (>= 3.6.1), lifecycle (>= 1.0.3), magrittr (>= 1.5.0),"
+depends = "R (>= 4.1)"
+linking_to = "cli"
+
+[packages.quadprog]
+version = "1.5-8"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+depends = "R (>= 3.1.0)"
+
+[packages.quantmod]
+version = "0.4.28"
+native_code = []
+loads = true  # pure R package
+imports = "curl, jsonlite(>= 1.1)"
+depends = "R (>= 3.2.0), xts(>= 0.9-0), zoo, TTR(>= 0.2), methods"
+
+[packages.quantreg]
+version = "6.1"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "methods, graphics, Matrix, MatrixModels, survival, MASS"
+depends = "R (>= 3.5), stats, SparseM"
+
+[packages.quarto]
+version = "1.5.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli, fs, htmltools, jsonlite, later, lifecycle, processx,"
+depends = "R (>= 4.1.0)"
+
+[packages.QuickJSR]
+version = "1.9.0"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+
+[packages.R.methodsS3]
+version = "1.8.2"
+native_code = []
+loads = true  # pure R package
+imports = "utils"
+depends = "R (>= 2.13.0)"
+
+[packages.R.utils]
+version = "2.13.0"
+native_code = []
+loads = true  # pure R package
+imports = "methods, utils, tools, R.methodsS3"
+depends = "R (>= 2.14.0), R.oo"
+
+[packages.R6]
+version = "2.6.1"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.6)"
+
+[packages.ragg]
+version = "1.5.1"
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "systemfonts (>= 1.0.3), textshaping (>= 0.3.0)"
+linking_to = "systemfonts, textshaping"
+
+[packages.rappdirs]
+version = "0.3.4"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 4.1)"
+
+[packages.rcmdcheck]
+version = "1.4.0"
+native_code = []
+loads = true  # pure R package
+imports = "callr (>= 3.1.1.9000), cli (>= 3.0.0), curl, desc (>= 1.2.0),"
+
+[packages.RColorBrewer]
+version = "1.1-3"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.0.0)"
+
+[packages.Rcpp]
+version = "1.1.1"
+uses_dynlib = true
+provides_headers = true
+imports = "methods, utils"
+depends = "R (>= 3.5.0)"
+
+[packages.RcppEigen]
+version = "0.3.4.0.2"
+uses_dynlib = true
+provides_headers = true
+imports = "Rcpp (>= 0.11.0), stats, utils"
+depends = "R (>= 3.6.0)"
+linking_to = "Rcpp"
+
+[packages.RcppParallel]
+version = "5.1.11-2"
+needs_system_library = true
+has_configure = true
+provides_headers = true
+loads = true
+depends = "R (>= 3.0.2)"
+
+[packages.RcppTOML]
+version = "0.2.3"
+uses_dynlib = true
+provides_headers = true
+imports = "Rcpp (>= 1.0.8)"
+depends = "R (>= 3.3.0)"
+linking_to = "Rcpp"
+
+[packages.readr]
+version = "2.2.0"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "cli, clipr, crayon, glue, hms (>= 0.4.1), lifecycle, methods,"
+depends = "R (>= 4.1)"
+linking_to = "cpp11, tzdb (>= 0.1.1)"
+
+[packages.readxl]
+version = "1.4.5"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+imports = "cellranger, tibble (>= 2.0.1), utils"
+depends = "R (>= 3.6)"
+linking_to = "cpp11 (>= 0.4.0), progress"
+
+[packages.rematch]
+version = "2.0.0"
+native_code = []
+loads = true  # pure R package
+
+[packages.rematch2]
+version = "2.1.2"
+native_code = []
+loads = true  # pure R package
+imports = "tibble"
+
+[packages.remotes]
+version = "2.5.0"
+native_code = []
+loads = true  # pure R package
+imports = "methods, stats, tools, utils"
+depends = "R (>= 3.0.0)"
+
+[packages.renv]
+version = "1.1.8"
+native_code = []
+loads = true  # pure R package
+imports = "utils"
+
+[packages.reprex]
+version = "2.1.1"
+native_code = []
+loads = true  # pure R package
+imports = "callr (>= 3.6.0), cli (>= 3.2.0), clipr (>= 0.4.0), fs, glue,"
+depends = "R (>= 3.6)"
+
+[packages.reshape2]
+version = "1.4.5"
+uses_dynlib = true
+imports = "plyr (>= 1.8.1), Rcpp, stringr"
+depends = "R (>= 3.1)"
+linking_to = "Rcpp"
+
+[packages.reticulate]
+version = "1.45.0"
+uses_dynlib = true
+imports = "Matrix, Rcpp (>= 1.0.7), RcppTOML, graphics, here, jsonlite,"
+depends = "R (>= 3.5)"
+linking_to = "Rcpp"
+
+[packages.rex]
+version = "1.2.1"
+native_code = []
+loads = true  # pure R package
+imports = "lazyeval"
+
+[packages.rjson]
+version = "0.2.23"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+loads = true
+depends = "R (>= 4.0.0)"
+
+[packages.rlang]
+version = "1.1.7"
+native_code = ["c"]
+source_files = { c = 67, cpp = 0, fortran = 0 }  # 4 top-level + 63 in rlang/ subdir
+uses_dynlib = true
+compiles = true
+loads = false
+blocker = "R sourcing too slow (25K lines)"
+imports = "utils"
+depends = "R (>= 4.0.0)"
+
+[packages.rmarkdown]
+version = "2.30"
+native_code = []
+loads = true  # pure R package
+imports = "bslib (>= 0.2.5.1), evaluate (>= 0.13), fontawesome (>="
+depends = "R (>= 3.0)"
+
+[packages.roxygen2]
+version = "7.3.3"
+uses_dynlib = true
+imports = "brew, cli (>= 3.3.0), commonmark, desc (>= 1.2.0), knitr,"
+depends = "R (>= 3.6)"
+linking_to = "cpp11"
+
+[packages.rpart]
+version = "4.1.24"
+native_code = ["c"]
+source_files = { c = 31, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 2.15.0), graphics, stats, grDevices"
+
+[packages.rprojroot]
+version = "2.1.1"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 3.0.0)"
+
+[packages.RSQLite]
+version = "2.4.6"
+native_code = ["c"]
+source_files = { c = 7, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+imports = "bit64, blob (>= 1.2.0), DBI (>= 1.2.0), memoise, methods,"
+depends = "R (>= 3.1.0)"
+linking_to = "cpp11 (>= 0.4.0)"
+
+[packages.rstan]
+version = "2.32.7"
+uses_dynlib = true
+bundled_library = true
+provides_headers = true
+imports = "methods, stats4, inline (>= 0.3.19), gridExtra (>= 2.3), Rcpp"
+depends = "R (>= 3.4.0), StanHeaders (>= 2.32.0)"
+linking_to = "Rcpp (>= 1.0.7), RcppEigen (>= 0.3.4.0.0), BH (>= 1.75.0-0),"
+
+[packages.rstatix]
+version = "0.7.3"
+native_code = []
+loads = true  # pure R package
+imports = "stats, utils, tidyr (>= 1.0.0), purrr, broom (>= 0.7.4), rlang"
+depends = "R (>= 3.3.0)"
+
+[packages.rstudioapi]
+version = "0.18.0"
+native_code = []
+loads = true  # pure R package
+
+[packages.rversions]
+version = "3.0.0"
+native_code = []
+loads = true  # pure R package
+imports = "curl"
+
+[packages.rvest]
+version = "1.0.5"
+native_code = []
+loads = true  # pure R package
+imports = "cli, glue, httr (>= 0.5), lifecycle (>= 1.0.3), magrittr,"
+depends = "R (>= 4.1)"
+
+[packages.s2]
+version = "1.1.9"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+uses_rcpp = true
+has_configure = true
+imports = "Rcpp, wk (>= 0.6.0)"
+depends = "R (>= 3.0.0)"
+linking_to = "Rcpp, wk"
+
+[packages.S7]
+version = "0.2.1"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "utils"
+depends = "R (>= 3.5.0)"
+
+[packages.sandwich]
+version = "3.1-1"
+native_code = []
+loads = true  # pure R package
+imports = "stats, utils, zoo"
+depends = "R (>= 3.0.0)"
+
+[packages.sass]
+version = "0.4.10"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+imports = "fs (>= 1.2.4), rlang (>= 0.4.10), htmltools (>= 0.5.1), R6,"
+
+[packages.scales]
+version = "1.4.0"
+native_code = []
+loads = true  # pure R package
+imports = "cli, farver (>= 2.0.3), glue, labeling, lifecycle, R6,"
+depends = "R (>= 4.1)"
+
+[packages.selectr]
+version = "0.5-1"
+native_code = []
+loads = true  # pure R package
+imports = "methods, stringr, R6"
+depends = "R (>= 3.0)"
+
+[packages.sessioninfo]
+version = "1.2.3"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.1.0), tools, utils"
+depends = "R (>= 3.4)"
+
+[packages.sf]
+version = "1.1-0"
+uses_dynlib = true
+has_configure = true
+provides_headers = true
+imports = "classInt (>= 0.4-1), DBI (>= 0.8), graphics, grDevices, grid,"
+depends = "methods, R (>= 3.3.0)"
+linking_to = "Rcpp"
+
+[packages.shiny]
+version = "1.13.0"
+native_code = []
+loads = true  # pure R package
+imports = "bslib (>= 0.6.0), cachem (>= 1.1.0), cli, commonmark (>="
+depends = "methods, R (>= 3.1.2)"
+
+[packages.snakecase]
+version = "0.11.1"
+native_code = []
+loads = true  # pure R package
+imports = "stringr, stringi"
+depends = "R (>= 3.2)"
+
+[packages.sodium]
+version = "1.4.0"
+native_code = ["c"]
+source_files = { c = 12, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+
+[packages.sourcetools]
+version = "0.1.7-1"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+compiles = true
+loads = true
+depends = "R (>= 3.0.2)"
+
+[packages.sp]
+version = "2.2-1"
+native_code = ["c"]
+source_files = { c = 8, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = false
+blocker = "stopifnot failure"
+imports = "utils, stats, graphics, grDevices, lattice, grid"
+depends = "R (>= 3.5.0), methods"
+
+[packages.SparseM]
+version = "1.84-2"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics, stats, utils"
+depends = "R (>= 2.15), methods"
+
+[packages.spatial]
+version = "7.3-18"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 3.0.0), graphics, stats, utils"
+
+[packages.splines]
+version = "2.0-7"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+loads = true
+
+[packages.StanHeaders]
+version = "2.32.10"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+provides_headers = true
+imports = "RcppParallel (>= 5.1.4)"
+depends = "R (>= 3.4.0)"
+linking_to = "RcppEigen (>= 0.3.4.0.0), RcppParallel (>= 5.1.4)"
+
+[packages.stats]
+version = ""
+native_code = ["c"]
+source_files = { c = 56, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.stats4]
+version = ""
+native_code = []
+loads = true  # pure R package
+
+[packages.stringi]
+version = "1.8.7"
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+imports = "tools, utils, stats"
+depends = "R (>= 3.4)"
+
+[packages.stringr]
+version = "1.6.0"
+native_code = []
+loads = true  # pure R package
+imports = "cli, glue (>= 1.6.1), lifecycle (>= 1.0.3), magrittr, rlang"
+depends = "R (>= 4.1.0)"
+
+[packages.survival]
+version = "3.8-6"
+native_code = ["c"]
+source_files = { c = 67, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics, Matrix, methods, splines, stats, utils"
+depends = "R (>= 3.5.0)"
+
+[packages.svglite]
+version = "2.2.2"
+uses_dynlib = true
+needs_system_library = true
+imports = "base64enc, cli, lifecycle, rlang (>= 1.1.0), systemfonts (>="
+depends = "R (>= 4.1)"
+linking_to = "cpp11, systemfonts, textshaping"
+
+[packages.swagger]
+version = "5.17.14.1"
+native_code = []
+loads = true  # pure R package
+
+[packages.sys]
+version = "3.4.3"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+
+[packages.systemfonts]
+version = "1.3.2"
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+provides_headers = true
+imports = "base64enc, grid, jsonlite, lifecycle, tools, utils"
+depends = "R (>= 3.2.0)"
+linking_to = "cpp11 (>= 0.2.1)"
+
+[packages.tcltk]
+version = ""
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+
+[packages.tensorA]
+version = "0.36.2.1"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+depends = "R (>= 2.2.0), stats"
+
+[packages.terra]
+version = "1.8-93"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+uses_rcpp = true
+has_configure = true
+imports = "Rcpp (>= 1.0-10)"
+depends = "R (>= 3.5.0), methods"
+linking_to = "Rcpp"
+
+[packages.testthat]
+version = "3.3.2"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+imports = "brio (>= 1.1.5), callr (>= 3.7.6), cli (>= 3.6.5), desc (>="
+depends = "R (>= 4.1.0)"
+
+[packages.textshaping]
+version = "1.0.5"
+uses_dynlib = true
+has_configure = true
+provides_headers = true
+imports = "lifecycle, stats, stringi, systemfonts (>= 1.3.0), utils"
+depends = "R (>= 3.2.0)"
+linking_to = "cpp11 (>= 0.2.1), systemfonts (>= 1.0.0)"
+
+[packages.tibble]
+version = "3.3.1"
+native_code = ["c"]
+source_files = { c = 4, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "cli, lifecycle (>= 1.0.0), magrittr, methods, pillar (>="
+depends = "R (>= 3.4.0)"
+
+[packages.tidyr]
+version = "1.3.2"
+uses_dynlib = true
+imports = "cli (>= 3.4.1), dplyr (>= 1.1.0), glue, lifecycle (>= 1.0.3),"
+depends = "R (>= 4.1.0)"
+linking_to = "cpp11 (>= 0.4.0)"
+
+[packages.tidyselect]
+version = "1.2.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.3.0), glue (>= 1.3.0), lifecycle (>= 1.0.3), rlang"
+depends = "R (>= 3.4)"
+
+[packages.tidyverse]
+version = "2.0.0"
+native_code = []
+loads = true  # pure R package
+imports = "broom (>= 1.0.3), conflicted (>= 1.2.0), cli (>= 3.6.0),"
+depends = "R (>= 3.3)"
+
+[packages.timechange]
+version = "0.4.0"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+depends = "R (>= 3.3)"
+linking_to = "cpp11 (>= 0.2.7)"
+
+[packages.timeDate]
+version = "4052.112"
+native_code = []
+loads = true  # pure R package
+imports = "graphics, utils, stats"
+depends = "R (>= 3.6.0), methods"
+
+[packages.tinytex]
+version = "0.58"
+native_code = []
+loads = true  # pure R package
+imports = "xfun (>= 0.48)"
+
+[packages.tools]
+version = ""
+native_code = ["c"]
+source_files = { c = 13, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.tseries]
+version = "0.10-60"
+native_code = ["c"]
+source_files = { c = 8, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "graphics, stats, utils, quadprog, zoo, quantmod (>= 0.4-9),"
+depends = "R (>= 3.4.0)"
+
+[packages.TTR]
+version = "0.24.4"
+native_code = ["c"]
+source_files = { c = 9, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "xts (>= 0.10-0), zoo, curl"
+linking_to = "xts"
+
+[packages.tzdb]
+version = "0.5.0"
+uses_dynlib = true
+needs_system_library = true
+provides_headers = true
+depends = "R (>= 4.0.0)"
+linking_to = "cpp11 (>= 0.5.2)"
+
+[packages.units]
+version = "1.0-0"
+uses_dynlib = true
+has_configure = true
+imports = "Rcpp"
+depends = "R (>= 3.5.0)"
+linking_to = "Rcpp (>= 0.12.10)"
+
+[packages.urca]
+version = "1.3-4"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "nlme, graphics, stats"
+depends = "R (>= 2.0.0), methods"
+
+[packages.urlchecker]
+version = "1.0.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli, curl, tools, xml2"
+depends = "R (>= 3.3)"
+
+[packages.usethis]
+version = "3.2.1"
+native_code = []
+loads = true  # pure R package
+imports = "cli (>= 3.0.1), clipr (>= 0.3.0), crayon, curl (>= 2.7), desc"
+depends = "R (>= 4.1)"
+
+[packages.utf8]
+version = "1.2.6"
+native_code = ["c"]
+source_files = { c = 14, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+compiles = true
+loads = true
+depends = "R (>= 2.10)"
+
+[packages.utils]
+version = ""
+native_code = ["c"]
+source_files = { c = 7, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+
+[packages.uuid]
+version = "1.2-2"
+native_code = ["c"]
+source_files = { c = 15, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+has_configure = true
+provides_headers = true
+depends = "R (>= 2.9.0)"
+
+[packages.V8]
+version = "8.0.1"
+uses_dynlib = true
+has_configure = true
+imports = "Rcpp (>= 0.12.12), jsonlite (>= 1.0), curl (>= 1.0), utils"
+linking_to = "Rcpp"
+
+[packages.vctrs]
+version = "0.7.1"
+native_code = ["c"]
+source_files = { c = 80, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+imports = "cli (>= 3.4.0), glue, lifecycle (>= 1.0.3), rlang (>= 1.1.7)"
+depends = "R (>= 4.0.0)"
+
+[packages.viridis]
+version = "0.6.5"
+native_code = []
+loads = true  # pure R package
+imports = "ggplot2 (>= 1.0.1), gridExtra"
+depends = "R (>= 2.10), viridisLite (>= 0.4.0)"
+
+[packages.viridisLite]
+version = "0.4.3"
+native_code = []
+loads = true  # pure R package
+depends = "R (>= 2.10)"
+
+[packages.vroom]
+version = "1.7.0"
+native_code = ["c", "cpp"]
+source_files = { c = 1, cpp = 25, fortran = 0 }
+uses_dynlib = true
+imports = "bit64, cli (>= 3.2.0), crayon, glue, hms, lifecycle (>="
+depends = "R (>= 4.1)"
+linking_to = "cpp11 (>= 0.2.0), progress (>= 1.2.3), tzdb (>= 0.1.1)"
+
+[packages.waldo]
+version = "0.6.2"
+native_code = []
+loads = true  # pure R package
+imports = "cli, diffobj (>= 0.3.4), glue, methods, rlang (>= 1.1.0)"
+depends = "R (>= 4.0)"
+
+[packages.webutils]
+version = "1.2.2"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+imports = "curl (>= 2.5), jsonlite"
+
+[packages.whisker]
+version = "0.4.1"
+native_code = []
+loads = true  # pure R package
+
+[packages.withr]
+version = "3.0.2"
+native_code = []
+loads = true  # pure R package
+imports = "graphics, grDevices"
+depends = "R (>= 3.6.0)"
+
+[packages.wk]
+version = "0.9.5"
+native_code = ["c"]
+source_files = { c = 27, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+provides_headers = true
+depends = "R (>= 2.10)"
+
+[packages.writexl]
+version = "1.5.4"
+native_code = ["c"]
+source_files = { c = 1, cpp = 0, fortran = 0 }
+uses_dynlib = true
+bundled_library = true
+needs_system_library = true
+compiles = true
+loads = true
+
+[packages.xfun]
+version = "0.56"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+imports = "grDevices, stats, tools"
+depends = "R (>= 3.2.0)"
+
+[packages.xml2]
+version = "1.5.2"
+native_code = ["c"]
+source_files = { c = 2, cpp = 0, fortran = 0 }
+uses_dynlib = true
+has_configure = true
+provides_headers = true
+imports = "cli, methods, rlang (>= 1.1.0)"
+depends = "R (>= 3.6.0)"
+
+[packages.xtable]
+version = "1.8-8"
+native_code = []
+loads = true  # pure R package
+imports = "stats, utils, methods"
+depends = "R (>= 2.10.0)"
+
+[packages.xts]
+version = "0.14.2"
+native_code = ["c"]
+source_files = { c = 26, cpp = 0, fortran = 0 }
+uses_dynlib = true
+needs_system_library = true
+provides_headers = true
+compiles = true
+loads = true
+imports = "methods"
+depends = "R (>= 3.6.0), zoo (>= 1.7-12)"
+linking_to = "zoo"
+
+[packages.yaml]
+version = "2.3.12"
+native_code = ["c"]
+source_files = { c = 12, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+
+[packages.zip]
+version = "2.3.3"
+native_code = ["c"]
+source_files = { c = 6, cpp = 0, fortran = 0 }
+uses_dynlib = true
+compiles = true
+loads = true
+
+[packages.zoo]
+version = "1.8-15"
+native_code = ["c"]
+source_files = { c = 3, cpp = 0, fortran = 0 }
+uses_dynlib = true
+provides_headers = true
+compiles = true
+loads = true
+imports = "utils, graphics, grDevices, lattice (>= 0.20-27)"
+depends = "R (>= 3.1.0), stats"
+
