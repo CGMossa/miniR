@@ -213,6 +213,24 @@ pub(super) fn eval_index(
             }
             _ => Err(IndexingError::InvalidIndexType.into()),
         },
+        RValue::Environment(target_env) => {
+            // env["key"] — look up variable(s) in the environment, return as a named list
+            match &idx_val {
+                RValue::Vector(idx_vec) => {
+                    if let Vector::Character(names) = &idx_vec.inner {
+                        let mut result = Vec::new();
+                        for name in names.iter().flatten() {
+                            let val = target_env.get(name).unwrap_or(RValue::Null);
+                            result.push((Some(name.clone()), val));
+                        }
+                        return Ok(RValue::List(RList::new(result)));
+                    }
+                    Err(IndexingError::InvalidIndexType.into())
+                }
+                RValue::Null => Ok(RValue::List(RList::new(Vec::new()))),
+                _ => Err(IndexingError::InvalidIndexType.into()),
+            }
+        }
         _ => Err(IndexingError::NotSubsettable.into()),
     }
 }

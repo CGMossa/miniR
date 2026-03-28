@@ -715,15 +715,12 @@ export(search)# --> \"conflict message\"
     }
 
     #[test]
-    fn unknown_directive_error() {
-        let input = "frobnicate(foo)\n";
-        let err = PackageNamespace::parse(input).unwrap_err();
-        match err {
-            NamespaceError::UnknownDirective { directive, .. } => {
-                assert_eq!(directive, "frobnicate");
-            }
-            _ => panic!("expected UnknownDirective error"),
-        }
+    fn unknown_directive_is_ignored() {
+        // Unknown directives are now warnings (not errors) so packages
+        // with new/uncommon directives can still load.
+        let input = "frobnicate(foo)\nexport(bar)\n";
+        let ns = PackageNamespace::parse(input).expect("should parse with unknown directive");
+        assert_eq!(ns.exports, vec!["bar"]);
     }
 
     #[test]

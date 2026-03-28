@@ -88,6 +88,11 @@ fn track(s: Sexp) {
 
 // region: sentinel globals
 
+// Safety: These globals are initialized once by `init_globals()` and never
+// written again. Multiple reader threads are safe. The `static mut` is used
+// because `#[no_mangle]` extern statics must be `static mut` for C ABI compat.
+// The `unsafe` blocks in init_globals are the only writes.
+
 static mut NIL_REC: SexpRec = SexpRec {
     stype: sexp::NILSXP,
     flags: 0,
@@ -1205,7 +1210,12 @@ pub extern "C" fn Rf_eval(_expr: Sexp, _env: Sexp) -> Sexp {
 
 // R_Serialize stub
 #[no_mangle]
-pub extern "C" fn R_Serialize(_s: Sexp, _stream: *mut c_void) {}
+pub extern "C" fn R_Serialize(_s: Sexp, _stream: *mut c_void) {
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        b"Warning: R_Serialize() is a stub in miniR -- serialization from C not supported\n",
+    );
+}
 
 // Rf_xlength — long vector length (same as Rf_length for non-long vecs)
 #[no_mangle]
@@ -1261,10 +1271,21 @@ pub extern "C" fn GetRNGstate() {}
 #[no_mangle]
 pub extern "C" fn PutRNGstate() {}
 
-// unif_rand — stub RNG function (returns 0.5)
+// unif_rand — thread-local xorshift64 RNG
 #[no_mangle]
 pub extern "C" fn unif_rand() -> f64 {
-    0.5 // stub — proper implementation needs callback to Rust RNG
+    use std::cell::RefCell;
+    thread_local! {
+        static RNG: RefCell<u64> = const { RefCell::new(0x12345678) };
+    }
+    RNG.with(|rng| {
+        let mut state = rng.borrow_mut();
+        // xorshift64
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        (*state as f64) / (u64::MAX as f64)
+    })
 }
 
 // R_EmptyEnv — stub (points to NilValue)
@@ -1649,8 +1670,64 @@ pub extern "C" fn R_ClosureEnv(_x: Sexp) -> Sexp {
     unsafe { R_NilValue }
 }
 #[no_mangle]
-pub extern "C" fn R_compute_identical(_x: Sexp, _y: Sexp, _flags: c_int) -> c_int {
-    0
+pub extern "C" fn R_compute_identical(x: Sexp, y: Sexp, _flags: c_int) -> c_int {
+    if x == y {
+        return 1;
+    }
+    if x.is_null() || y.is_null() {
+        return 0;
+    }
+    unsafe {
+        if (*x).stype != (*y).stype {
+            return 0;
+        }
+        if (*x).length != (*y).length {
+            return 0;
+        }
+        let len = (*x).length as usize;
+        if len == 0 {
+            return 1;
+        }
+        // Compare data bytes directly for numeric/logical/raw/complex types
+        let elem_size = match (*x).stype {
+            sexp::REALSXP => 8,
+            sexp::INTSXP => 4,
+            sexp::LGLSXP => 4,
+            sexp::RAWSXP => 1,
+            sexp::CPLXSXP => 16,
+            _ => 0,
+        };
+        if elem_size > 0 && !(*x).data.is_null() && !(*y).data.is_null() {
+            let bytes = len * elem_size;
+            return (std::ptr::eq((*x).data, (*y).data)
+                || std::slice::from_raw_parts((*x).data, bytes)
+                    == std::slice::from_raw_parts((*y).data, bytes)) as c_int;
+        }
+        // For STRSXP/VECSXP, compare element by element
+        if (*x).stype == sexp::STRSXP || (*x).stype == sexp::VECSXP {
+            let ex = (*x).data as *const Sexp;
+            let ey = (*y).data as *const Sexp;
+            for i in 0..len {
+                if R_compute_identical(*ex.add(i), *ey.add(i), _flags) == 0 {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+        // CHARSXP: compare string data
+        if (*x).stype == sexp::CHARSXP {
+            if (*x).data.is_null() && (*y).data.is_null() {
+                return 1;
+            }
+            if (*x).data.is_null() || (*y).data.is_null() {
+                return 0;
+            }
+            let sx = CStr::from_ptr((*x).data as *const c_char);
+            let sy = CStr::from_ptr((*y).data as *const c_char);
+            return (sx == sy) as c_int;
+        }
+        0
+    }
 }
 #[no_mangle]
 pub extern "C" fn R_envHasNoSpecialSymbols(_env: Sexp) -> c_int {
@@ -1969,13 +2046,18 @@ pub extern "C" fn S_realloc(
     }
 }
 
+// norm_rand — Box-Muller transform using unif_rand()
 #[no_mangle]
 pub extern "C" fn norm_rand() -> f64 {
-    0.0
+    let u1 = unif_rand();
+    let u2 = unif_rand();
+    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
 }
+
+// exp_rand — exponential deviate using unif_rand()
 #[no_mangle]
 pub extern "C" fn exp_rand() -> f64 {
-    1.0
+    -unif_rand().ln()
 }
 
 // R_ParseVector stub
@@ -2013,6 +2095,10 @@ pub extern "C" fn nmmin(
     _fncount: *mut c_int,
     _maxit: c_int,
 ) {
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        b"Warning: nmmin() is a stub in miniR -- results will be incorrect\n",
+    );
 }
 
 #[no_mangle]
@@ -2033,6 +2119,10 @@ pub extern "C" fn vmmin(
     _grcount: *mut c_int,
     _fail: *mut c_int,
 ) {
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        b"Warning: vmmin() is a stub in miniR -- results will be incorrect\n",
+    );
 }
 
 // endregion
