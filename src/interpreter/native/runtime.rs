@@ -248,6 +248,7 @@ pub fn init_globals() {
         R_NamespaceRegistry = R_NilValue;
         R_Srcref = R_NilValue;
         R_BaseNamespace = R_NilValue;
+        R_NameSymbol = R_NilValue;
         R_BraceSymbol = R_NilValue;
         R_BracketSymbol = R_NilValue;
         R_Bracket2Symbol = R_NilValue;
@@ -1674,6 +1675,43 @@ pub extern "C" fn R_rsort(x: *mut f64, n: c_int) {
     let slice = unsafe { std::slice::from_raw_parts_mut(x, n as usize) };
     slice.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 }
+
+// revsort — sort x descending, carrying along index
+#[no_mangle]
+pub extern "C" fn revsort(x: *mut f64, index: *mut c_int, n: c_int) {
+    if x.is_null() || n <= 0 {
+        return;
+    }
+    let xs = unsafe { std::slice::from_raw_parts_mut(x, n as usize) };
+    let mut is = if index.is_null() {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts_mut(index, n as usize) })
+    };
+    // Create index pairs and sort descending by value
+    let mut pairs: Vec<(f64, i32)> = xs
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (v, is.as_ref().map_or(i as i32, |idx| idx[i])))
+        .collect();
+    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    for (i, (v, idx)) in pairs.into_iter().enumerate() {
+        xs[i] = v;
+        if let Some(ref mut is) = is {
+            is[i] = idx;
+        }
+    }
+}
+
+// Rf_installTrChar — install symbol from translated CHARSXP (same as installChar in UTF-8)
+#[no_mangle]
+pub extern "C" fn Rf_installTrChar(x: Sexp) -> Sexp {
+    Rf_installChar(x)
+}
+
+// R_NameSymbol
+#[no_mangle]
+pub static mut R_NameSymbol: Sexp = ptr::null_mut();
 
 // Rf_allocArray — allocate array with dimensions
 #[no_mangle]

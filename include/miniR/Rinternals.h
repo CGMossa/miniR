@@ -412,6 +412,8 @@ int R_EnvironmentIsLocked(SEXP env);
 #define LEVELS(x) 0
 #define SETLEVELS(x, v) ((void)(v))
 #define installChar Rf_installChar
+SEXP Rf_installTrChar(SEXP x);
+#define installTrChar Rf_installTrChar
 #define ScalarRaw Rf_ScalarRaw
 
 /* ALTREP — always false in miniR */
@@ -474,6 +476,12 @@ SEXP R_do_MAKE_CLASS(const char *name);
 /* Array allocation */
 SEXP Rf_allocArray(SEXPTYPE type, SEXP dims);
 #define allocArray Rf_allocArray
+
+/* revsort — sort x and associated index in decreasing order */
+void revsort(double *x, int *index, int n);
+
+/* R_NameSymbol — symbol for "name" (not "names"!) */
+extern SEXP R_NameSymbol;
 
 /* Variable lookup (stubs — return R_UnboundValue) */
 SEXP Rf_findVar(SEXP sym, SEXP env);
