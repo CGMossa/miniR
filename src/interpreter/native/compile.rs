@@ -486,6 +486,8 @@ pub fn compile_package(
     // Platform-specific flags
     if cfg!(target_os = "macos") {
         cmd.arg("-undefined").arg("dynamic_lookup");
+        // Link against Accelerate framework for real BLAS/LAPACK
+        cmd.arg("-framework").arg("Accelerate");
     }
 
     // C++ runtime linking
