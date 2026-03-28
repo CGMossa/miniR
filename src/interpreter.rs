@@ -21,7 +21,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
@@ -898,14 +898,21 @@ impl Interpreter {
                 condition,
                 then_body,
                 else_body,
-            } => self.eval_if(condition, then_body, else_body.as_deref(), env),
+            } => {
+                trace!("eval if");
+                self.eval_if(condition, then_body, else_body.as_deref(), env)
+            }
 
             Expr::For { var, iter, body } => {
+                trace!(var = var.as_str(), "eval for");
                 let iter_val = self.eval_in(iter, env)?;
                 self.eval_for(var, &iter_val, body, env)
             }
 
-            Expr::While { condition, body } => self.eval_while(condition, body, env),
+            Expr::While { condition, body } => {
+                trace!("eval while");
+                self.eval_while(condition, body, env)
+            }
 
             Expr::Repeat { body } => self.eval_repeat(body, env),
 

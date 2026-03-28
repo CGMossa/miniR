@@ -2,6 +2,8 @@
 //! or fail explicitly. Also includes lightweight implementations of commonly
 //! needed functions that don't warrant their own module.
 
+use tracing::debug;
+
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
 use minir_macros::{builtin, interpreter_builtin, stub_builtin};
@@ -15,7 +17,6 @@ stub_builtin!("install.packages");
 
 // region: C-level interface stubs
 
-#[cfg(not(feature = "native"))]
 /// .Call — stub for C-level function calls. Returns NULL with a warning.
 /// Many CRAN packages use .Call for compiled code we can't execute.
 ///
@@ -29,6 +30,11 @@ fn builtin_dot_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
         .unwrap_or_else(|| "<native>".to_string());
+    debug!(
+        symbol = name.as_str(),
+        nargs = args.len().saturating_sub(1),
+        "native .Call"
+    );
     Err(RError::new(
         RErrorKind::Other,
         format!(".Call(\"{name}\") is not available — miniR cannot call compiled C/C++ code"),
@@ -301,70 +307,6 @@ fn interp_as_namespace(
     // Fall back to base env for builtin namespaces (base, utils, stats, etc.)
     let env = context.with_interpreter(|interp| interp.base_env());
     Ok(RValue::Environment(env))
-}
-
-/// getFromNamespace — look up a name in a package namespace.
-///
-/// @param x character: the name to look up
-/// @param ns character or namespace environment
-/// @return the value of the name in the namespace
-/// @namespace utils
-#[interpreter_builtin(name = "getFromNamespace", min_args = 2)]
-fn interp_get_from_namespace(
-    args: &[RValue],
-    _named: &[(String, RValue)],
-    context: &BuiltinContext,
-) -> Result<RValue, RError> {
-    let name = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| {
-            RError::new(
-                RErrorKind::Argument,
-                "getFromNamespace: 'x' must be a character string".to_string(),
-            )
-        })?;
-
-    // Get namespace env — either from a string name or directly as environment
-    let ns_env = match args.get(1) {
-        Some(RValue::Environment(env)) => env.clone(),
-        Some(val) => {
-            let ns_name = val
-                .as_vector()
-                .and_then(|v| v.as_character_scalar())
-                .ok_or_else(|| {
-                    RError::new(
-                        RErrorKind::Argument,
-                        "getFromNamespace: 'ns' must be a string or namespace".to_string(),
-                    )
-                })?;
-            // Look up the namespace
-            let loaded = context.with_interpreter(|interp| {
-                interp
-                    .loaded_namespaces
-                    .borrow()
-                    .get(&ns_name)
-                    .map(|ns| ns.namespace_env.clone())
-            });
-            match loaded {
-                Some(env) => env,
-                None => context.with_interpreter(|interp| interp.load_namespace(&ns_name))?,
-            }
-        }
-        None => {
-            return Err(RError::new(
-                RErrorKind::Argument,
-                "getFromNamespace: 'ns' argument is missing".to_string(),
-            ))
-        }
-    };
-
-    ns_env.get(&name).ok_or_else(|| {
-        RError::new(
-            RErrorKind::Other,
-            format!("object '{name}' not found in namespace"),
-        )
-    })
 }
 
 /// Get the name of a namespace environment.
@@ -1005,30 +947,44 @@ fn builtin_ext_soft_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<
 
 // endregion
 
-// region: Dynamic loading stubs (C/Fortran shared libs — only when native feature is off)
+// region: Dynamic loading stubs (C/Fortran shared libs — can't actually load)
 
-#[cfg(not(feature = "native"))]
-stub_builtin!(
-    "dyn.load",
-    1,
-    "dyn.load() not available — miniR cannot load compiled shared libraries"
-);
-#[cfg(not(feature = "native"))]
-stub_builtin!("dyn.unload", 1, "dyn.unload() not available");
-#[cfg(not(feature = "native"))]
+/// dyn.load — stub for dynamic loading of shared libraries.
+/// @namespace base
+#[builtin(name = "dyn.load", min_args = 1)]
+fn builtin_dyn_load(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let path = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    debug!(path = path.as_str(), "dyn.load");
+    Err(RError::other(
+        "dyn.load() not available — miniR cannot load compiled shared libraries",
+    ))
+}
+
+/// dyn.unload — stub for unloading shared libraries.
+/// @namespace base
+#[builtin(name = "dyn.unload", min_args = 1)]
+fn builtin_dyn_unload(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    debug!(name = name.as_str(), "dyn.unload");
+    Err(RError::other("dyn.unload() not available"))
+}
 stub_builtin!(
     "library.dynam",
     1,
     "library.dynam() not available — miniR cannot load compiled code"
 );
-#[cfg(not(feature = "native"))]
 stub_builtin!(
     "library.dynam.unload",
     1,
     "library.dynam.unload() not available"
 );
 
-#[cfg(not(feature = "native"))]
 /// is.loaded — check if a C symbol is loaded (always FALSE).
 /// @namespace base
 #[builtin(name = "is.loaded", min_args = 1)]
@@ -1036,7 +992,6 @@ fn builtin_is_loaded(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
-#[cfg(not(feature = "native"))]
 /// getNativeSymbolInfo — get info about a loaded symbol (always errors).
 /// @namespace base
 #[builtin(name = "getNativeSymbolInfo", min_args = 1)]
@@ -1459,40 +1414,3 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
-/// setHook — set a hook on a package event (no-op in miniR).
-/// @param hookName the hook name
-/// @param value the hook function
-/// @param action character: "append", "prepend", "replace"
-/// @return invisible NULL
-/// @namespace base
-#[builtin(name = "setHook")]
-fn builtin_set_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
-}
-
-/// packageEvent — create a package event name string.
-/// @param pkgname character: package name
-/// @param event character: event type
-/// @return character string
-/// @namespace base
-#[builtin(name = "packageEvent", min_args = 1)]
-fn builtin_package_event(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let pkg = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_default();
-    let event = args
-        .get(1)
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .unwrap_or_else(|| "onLoad".to_string());
-    Ok(RValue::vec(Vector::Character(
-        vec![Some(format!("{event}:{pkg}"))].into(),
-    )))
-}
-
-/// getHook — get a hook (returns NULL, no hooks in miniR).
-/// @namespace base
-#[builtin(name = "getHook", min_args = 1)]
-fn builtin_get_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
-}

@@ -62,6 +62,7 @@ pub(super) fn eval_call(
     args: &[Arg],
     env: &Environment,
 ) -> Result<RValue, RFlow> {
+    trace!(func = %expr_name(func), nargs = args.len(), "calling function");
     let function = resolve_callable_for_call(interp, func, env)?;
     let call_expr = Expr::Call {
         func: Box::new(func.clone()),
@@ -577,6 +578,15 @@ fn store_promise_exprs_from_args(params: &[Param], raw_args: &[Arg], call_env: &
             }
             pos_idx += 1;
         }
+    }
+}
+
+/// Extract a short display name from a call-position expression for tracing.
+fn expr_name(expr: &Expr) -> &str {
+    match expr {
+        Expr::Symbol(name) => name.as_str(),
+        Expr::NsGet { name, .. } | Expr::NsGetInt { name, .. } => name.as_str(),
+        _ => "<expr>",
     }
 }
 
