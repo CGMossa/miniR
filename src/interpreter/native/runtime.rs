@@ -1444,10 +1444,28 @@ pub extern "C" fn R_Reprotect(s: Sexp, i: c_int) {
 
 // Rf_findVar — look up a variable via interpreter callback
 #[no_mangle]
-pub extern "C" fn Rf_findVar(sym: Sexp, _env: Sexp) -> Sexp {
+pub extern "C" fn Rf_findVar(sym: Sexp, env: Sexp) -> Sexp {
     if sym.is_null() {
         return unsafe { R_UnboundValue };
     }
+
+    // If env is a C-level ENVSXP, search its bindings pairlist
+    if !env.is_null() && unsafe { (*env).stype } == 4 {
+        let mut node = unsafe { (*env).attrib };
+        while !node.is_null() && unsafe { (*node).stype } == sexp::LISTSXP {
+            let pd = unsafe { (*node).data as *const sexp::PairlistData };
+            if !pd.is_null() && sym_eq(unsafe { (*pd).tag }, sym) {
+                return unsafe { (*pd).car };
+            }
+            node = if pd.is_null() {
+                ptr::null_mut()
+            } else {
+                unsafe { (*pd).cdr }
+            };
+        }
+        return unsafe { R_UnboundValue };
+    }
+
     // Extract variable name from the symbol SEXP
     let name = unsafe { sexp::char_data(sym) };
     if name.is_empty() {
@@ -2140,21 +2158,46 @@ pub extern "C" fn Rf_shallow_duplicate(x: Sexp) -> Sexp {
     Rf_duplicate(x)
 }
 
-// R_NewEnv — create a new environment
+// R_NewEnv — create a C-level environment (ENVSXP).
+// Uses the SEXP attrib field to store bindings as a pairlist chain.
 #[no_mangle]
 pub extern "C" fn R_NewEnv(parent: Sexp, _hash: c_int, _size: c_int) -> Sexp {
-    // Stub — returns a list that acts as a pseudo-env
-    // Real implementation would need interpreter callback
-    let _ = parent;
-    Rf_allocVector(sexp::VECSXP as c_int, 0)
+    unsafe {
+        let s = calloc(1, std::mem::size_of::<SexpRec>()) as Sexp;
+        if s.is_null() {
+            return R_NilValue;
+        }
+        (*s).stype = 4; // ENVSXP
+        (*s).flags = 1; // persistent (survives _minir_free_allocs)
+        (*s).data = parent as *mut u8; // parent env stored in data
+        (*s).attrib = R_NilValue; // bindings pairlist
+        track(s);
+        s
+    }
 }
 
 // Rf_defineVar — define a variable via interpreter callback
 #[no_mangle]
-pub extern "C" fn Rf_defineVar(sym: Sexp, val: Sexp, _env: Sexp) {
+pub extern "C" fn Rf_defineVar(sym: Sexp, val: Sexp, env: Sexp) {
     if sym.is_null() {
         return;
     }
+
+    // If env is a C-level ENVSXP, store binding in its attrib pairlist
+    if !env.is_null() && unsafe { (*env).stype } == 4 {
+        // ENVSXP — add (sym, val) to the bindings pairlist
+        let node = Rf_cons(val, unsafe { (*env).attrib });
+        unsafe {
+            let pd = (*node).data as *mut sexp::PairlistData;
+            if !pd.is_null() {
+                (*pd).tag = sym;
+            }
+            (*env).attrib = node;
+        }
+        return;
+    }
+
+    // Otherwise use the interpreter callback
     let name = unsafe { sexp::char_data(sym) };
     if name.is_empty() {
         return;
