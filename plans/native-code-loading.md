@@ -145,123 +145,9 @@ include/miniR/R.h                     # Top-level include
 5. Write `include/miniR/Rinternals.h` header
 6. Implement `dyn.load()` via libloading (`dll.rs`)
 7. Implement `.Call()` dispatch — find symbol, convert args, call, convert result
-8. Implement Makevars parser + cc-based compilation (`compile.rs`)
+8. Implement `cc`-based compilation (`compile.rs`) — find system C compiler, compile src/*.c against our headers
 9. Wire into package loader — `useDynLib` triggers compile + load
 10. Test with a simple C package (e.g. a custom one, then backports or bit)
-
-## Compilation Pipeline (compile.rs)
-
-When a package has `src/*.c` files, we need to compile them into a shared
-library. R uses `R CMD SHLIB` which reads `Makevars` and calls the system
-compiler. We replicate this with the `cc` crate.
-
-### Makevars Parsing
-
-`src/Makevars` (and `src/Makevars.win` on Windows) is a Makefile fragment.
-Common variables:
-
-| Variable | Purpose | Example |
-|---|---|---|
-| `PKG_CFLAGS` | C compiler flags | `-DHAVE_FOO -std=c11` |
-| `PKG_CPPFLAGS` | Preprocessor flags (include paths) | `-I../inst/include` |
-| `PKG_CXXFLAGS` | C++ compiler flags | `-std=c++17` |
-| `PKG_LIBS` | Linker flags | `-lz -lpthread` |
-| `OBJECTS` | Explicit object file list (overrides default) | `foo.o bar.o` |
-| `CXX_STD` | C++ standard | `CXX11`, `CXX14`, `CXX17` |
-
-Makevars can also have conditional logic (`ifeq`, shell commands, etc.)
-but the vast majority of packages use only simple variable assignments.
-
-### Parser Design
-
-Don't try to run Make. Instead, parse Makevars as a simple key=value file:
-
-```rust
-struct Makevars {
-    pkg_cflags: Vec<String>,
-    pkg_cppflags: Vec<String>,
-    pkg_cxxflags: Vec<String>,
-    pkg_libs: Vec<String>,
-    objects: Option<Vec<String>>,  // None = auto-discover from src/*.c
-    cxx_std: Option<String>,
-}
-
-impl Makevars {
-    fn parse(path: &Path) -> Self {
-        // Read line by line
-        // Handle VAR = value, VAR += value
-        // Expand $(PKG_...) references between variables
-        // Ignore ifeq/endif blocks (too complex for v1)
-        // Ignore shell commands $(...) (too complex for v1)
-    }
-}
-```
-
-### Compilation Steps
-
-```rust
-fn compile_package_native(pkg_dir: &Path) -> Result<PathBuf, Error> {
-    let src_dir = pkg_dir.join("src");
-    let makevars = Makevars::parse(&src_dir.join("Makevars"));
-
-    let mut build = cc::Build::new();
-
-    // Add miniR headers
-    build.include(minir_include_dir());
-
-    // Add package-level includes
-    build.include(&src_dir);
-    build.include(&pkg_dir.join("inst/include"));
-
-    // Apply Makevars flags
-    for flag in &makevars.pkg_cflags {
-        build.flag(flag);
-    }
-    for flag in &makevars.pkg_cppflags {
-        build.flag(flag);
-    }
-
-    // Find source files
-    let sources = match &makevars.objects {
-        Some(objs) => objs.iter()
-            .map(|o| src_dir.join(o.replace(".o", ".c")))
-            .collect(),
-        None => glob_sources(&src_dir),  // all .c and .cpp files
-    };
-
-    for src in &sources {
-        build.file(src);
-    }
-
-    // Compile to shared library
-    build.shared_flag(true);
-    build.cargo_warnings(false);
-
-    // Output path: pkg_dir/libs/pkg.so
-    let out_dir = pkg_dir.join("libs");
-    std::fs::create_dir_all(&out_dir)?;
-    let lib_name = pkg_dir.file_name().unwrap().to_str().unwrap();
-    let lib_path = out_dir.join(format!("{lib_name}.so")); // .dylib on macOS
-
-    build.compile(lib_name);
-
-    Ok(lib_path)
-}
-```
-
-### configure Scripts
-
-Some packages have `configure` scripts (autoconf) that generate `Makevars`
-from `Makevars.in`. For v1, skip these — only support packages with
-static `Makevars`. Packages needing `configure` would need manual
-pre-configuration.
-
-### System Libraries
-
-`PKG_LIBS = -lz -lpng -lcurl` requires system libraries to be installed.
-We don't manage this — the user needs `brew install zlib libpng curl` etc.
-We should surface clear error messages when linking fails due to missing
-system deps.
 
 ## What We Can Skip
 
@@ -270,8 +156,6 @@ system deps.
 - `.External()` / `.External2()` — rare
 - R_RegisterRoutines — nice to have but not blocking
 - Complex GC (mark-and-sweep) — use simple refcount + protect stack initially
-- `configure` scripts — too complex for v1, require autoconf
-- Makevars with shell commands / conditionals — parse simple assignments only
 
 ## Testing Strategy
 
