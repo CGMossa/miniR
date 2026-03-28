@@ -1523,6 +1523,41 @@ pub extern "C" fn Rf_nchar(
     }
 }
 
+// Rf_isSymbol
+#[no_mangle]
+pub extern "C" fn Rf_isSymbol(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    (unsafe { (*x).stype } == sexp::SYMSXP) as c_int
+}
+
+// Rf_lang5/6
+#[no_mangle]
+pub extern "C" fn Rf_lang5(s: Sexp, t: Sexp, u: Sexp, v: Sexp, w: Sexp) -> Sexp {
+    Rf_lcons(
+        s,
+        Rf_cons(t, Rf_cons(u, Rf_cons(v, Rf_cons(w, unsafe { R_NilValue })))),
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lang6(s: Sexp, t: Sexp, u: Sexp, v: Sexp, w: Sexp, x: Sexp) -> Sexp {
+    Rf_lcons(
+        s,
+        Rf_cons(
+            t,
+            Rf_cons(u, Rf_cons(v, Rf_cons(w, Rf_cons(x, unsafe { R_NilValue })))),
+        ),
+    )
+}
+
+// Rf_findFun — find a function (stub — delegates to Rf_findVar)
+#[no_mangle]
+pub extern "C" fn Rf_findFun(sym: Sexp, env: Sexp) -> Sexp {
+    Rf_findVar(sym, env)
+}
+
 // R_tryEval — evaluate with error flag (stub delegates to Rf_eval)
 #[no_mangle]
 pub extern "C" fn R_tryEval(expr: Sexp, env: Sexp, error_occurred: *mut c_int) -> Sexp {

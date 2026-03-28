@@ -224,10 +224,17 @@ fn expand_make_vars(s: &str) -> String {
     while let Some(ch) = chars.next() {
         if ch == '$' && chars.peek() == Some(&'(') {
             chars.next(); // consume '('
+                          // Collect the variable name/expression, respecting nested parens
             let mut var_name = String::new();
+            let mut depth = 1;
             for c in chars.by_ref() {
-                if c == ')' {
-                    break;
+                if c == '(' {
+                    depth += 1;
+                } else if c == ')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
                 }
                 var_name.push(c);
             }

@@ -479,6 +479,8 @@ SEXP Rf_mkNamed(SEXPTYPE type, const char **names);
 /* Type checking additions */
 Rboolean Rf_isLanguage(SEXP x);
 #define isLanguage Rf_isLanguage
+Rboolean Rf_isSymbol(SEXP x);
+#define isSymbol Rf_isSymbol
 
 /* File path expansion */
 const char *R_ExpandFileName(const char *fn);
@@ -767,6 +769,21 @@ SEXP Rf_lang4(SEXP s, SEXP t, SEXP u, SEXP v);
 #define lang2 Rf_lang2
 #define lang3 Rf_lang3
 #define lang4 Rf_lang4
+SEXP Rf_lang5(SEXP s, SEXP t, SEXP u, SEXP v, SEXP w);
+SEXP Rf_lang6(SEXP s, SEXP t, SEXP u, SEXP v, SEXP w, SEXP x);
+#define lang5 Rf_lang5
+#define lang6 Rf_lang6
+
+/* findFun — find a function in an environment */
+SEXP Rf_findFun(SEXP sym, SEXP env);
+#define findFun Rf_findFun
+
+/* LCONS — alias for Rf_lcons */
+#define LCONS(a, b) Rf_lcons((a), (b))
+#define Rf_list4(a,b,c,d) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), R_NilValue))))
+#define list4 Rf_list4
+#define R_IsNaN(x) isnan(x)
+#define reEnc Rf_reEnc
 
 /* Rf_nchar — string length */
 int Rf_nchar(SEXP x, int type, Rboolean allowNA, Rboolean keepNA, const char *msg_name);
