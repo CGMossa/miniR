@@ -865,6 +865,14 @@ void R_isort(int *x, int n);
 void R_rsort(double *x, int n);
 void iPsort(int *x, int n, int k);
 void rPsort(double *x, int n, int k);
+void rsort_with_index(double *x, int *index, int n);
+void R_qsort_I(double *v, int *I, int lo, int hi);
+void R_qsort_int_I(int *v, int *I, int lo, int hi);
+void R_qsort(double *v, int lo, int hi);
+void R_qsort_int(int *v, int lo, int hi);
+
+/* R color without alpha */
+#define R_RGB(r,g,b) R_RGBA(r,g,b,255)
 Rboolean Rf_isPrimitive(SEXP x);
 #define isPrimitive Rf_isPrimitive
 

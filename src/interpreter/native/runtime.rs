@@ -1731,6 +1731,45 @@ pub extern "C" fn Rf_installTrChar(x: Sexp) -> Sexp {
 #[no_mangle]
 pub static mut R_NameSymbol: Sexp = ptr::null_mut();
 
+// rsort_with_index
+#[no_mangle]
+pub extern "C" fn rsort_with_index(x: *mut f64, index: *mut c_int, n: c_int) {
+    revsort(x, index, n);
+}
+
+// R_qsort_I — indexed sort ascending
+#[no_mangle]
+pub extern "C" fn R_qsort_I(v: *mut f64, ii: *mut c_int, lo: c_int, hi: c_int) {
+    if v.is_null() || lo >= hi {
+        return;
+    }
+    let n = (hi - lo + 1) as usize;
+    let offset = lo.max(1) as usize - 1;
+    let vs = unsafe { std::slice::from_raw_parts_mut(v.add(offset), n) };
+    vs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+}
+
+#[no_mangle]
+pub extern "C" fn R_qsort_int_I(v: *mut c_int, _ii: *mut c_int, lo: c_int, hi: c_int) {
+    if v.is_null() || lo >= hi {
+        return;
+    }
+    let n = (hi - lo + 1) as usize;
+    let offset = lo.max(1) as usize - 1;
+    let vs = unsafe { std::slice::from_raw_parts_mut(v.add(offset), n) };
+    vs.sort_unstable();
+}
+
+// R_qsort / R_qsort_int
+#[no_mangle]
+pub extern "C" fn R_qsort(v: *mut f64, lo: c_int, hi: c_int) {
+    R_qsort_I(v, ptr::null_mut(), lo, hi);
+}
+#[no_mangle]
+pub extern "C" fn R_qsort_int(v: *mut c_int, lo: c_int, hi: c_int) {
+    R_qsort_int_I(v, ptr::null_mut(), lo, hi);
+}
+
 // Rf_dimnamesgets
 #[no_mangle]
 pub extern "C" fn Rf_dimnamesgets(x: Sexp, val: Sexp) -> Sexp {
