@@ -110,11 +110,13 @@ static inline double _R_NaReal_fn(void) {
 #define NA_LOGICAL  NA_INTEGER
 #define R_NaInt     NA_INTEGER
 
+#ifndef R_IsNA
 static inline int R_IsNA(double x) {
     union { double d; uint64_t u; } val;
     val.d = x;
     return val.u == 0x7FF00000000007A2ULL;
 }
+#endif
 #define ISNA(x)  R_IsNA(x)
 #define ISNAN(x) (isnan(x))
 
