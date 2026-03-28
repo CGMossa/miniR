@@ -498,33 +498,21 @@ pub fn compile_package(
     }
 
     // Add PKG_LIBS (linker flags) — skip local -L/-l for bundled static libs
-    // since we compile all sources directly into the .so
+    // since we compile all sources directly into the .so.
+    // If PKG_LIBS references a local -L path, ALL -l flags from PKG_LIBS are
+    // likely bundled and should be skipped.
     let libs = makevars.pkg_libs();
     if !libs.is_empty() {
-        for flag in shell_split(libs) {
-            // Skip -L flags pointing to local dirs (bundled library build dirs)
-            if flag.starts_with("-L") {
-                let dir = flag.strip_prefix("-L").unwrap_or("");
-                let path = std::path::Path::new(dir);
-                // Keep system library paths, skip relative/local paths
-                if path.is_relative() {
-                    continue;
-                }
+        let flags = shell_split(libs);
+        let has_local_lib = flags
+            .iter()
+            .any(|f| f.starts_with("-L") && !f.starts_with("-L/"));
+        for flag in &flags {
+            if flag.starts_with("-L") && !flag.starts_with("-L/") {
+                continue; // skip local -L paths
             }
-            // Skip -l flags for bundled static libraries
-            if flag.starts_with("-l") {
-                let lib = flag.strip_prefix("-l").unwrap_or("");
-                if lib.starts_with("stat") || lib.starts_with("c") && lib.len() < 10 {
-                    // Heuristic: skip -lstatyajl, -lcutf8lite, -lcctz, etc.
-                    // but keep system libs like -lz, -lpthread
-                    if makevars
-                        .vars
-                        .values()
-                        .any(|v| v.contains(&format!("lib{lib}.a")))
-                    {
-                        continue;
-                    }
-                }
+            if has_local_lib && flag.starts_with("-l") {
+                continue; // skip all -l when using local lib paths
             }
             cmd.arg(flag);
         }
