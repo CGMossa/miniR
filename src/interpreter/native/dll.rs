@@ -91,6 +91,178 @@ type PkgInitFn = unsafe extern "C" fn(*mut u8);
 
 // endregion
 
+// region: CBuffer — C-compatible buffers for .C() calling convention
+
+/// A C-compatible buffer for passing data to .C() functions.
+///
+/// .C() passes raw pointers to C functions:
+/// - Double → `*mut f64`
+/// - Integer → `*mut i32` (converted from miniR's i64)
+/// - Logical → `*mut i32` (TRUE=1, FALSE=0, NA=NA_INTEGER)
+/// - Character → `*mut *mut c_char` (array of null-terminated C strings)
+/// - Raw → `*mut u8`
+///
+/// After the call, the C function may have modified the buffers in place.
+/// `to_rvalue()` reads back the (possibly modified) data.
+enum CBuffer {
+    Double {
+        data: Vec<f64>,
+    },
+    Integer {
+        data: Vec<i32>,
+    },
+    Logical {
+        data: Vec<i32>,
+    },
+    Character {
+        /// Pointers to null-terminated C strings (owned by `_owned_strings`).
+        ptrs: Vec<*mut c_char>,
+        /// Backing storage for the C strings — kept alive for the call duration.
+        /// Not read directly; exists to prevent deallocation while `ptrs` are live.
+        _owned_strings: Vec<std::ffi::CString>,
+    },
+    Raw {
+        data: Vec<u8>,
+    },
+}
+
+impl CBuffer {
+    /// Convert an RValue to a C-compatible buffer.
+    fn from_rvalue(val: &RValue) -> Result<Self, String> {
+        match val {
+            RValue::Vector(rv) => match &rv.inner {
+                Vector::Double(d) => {
+                    let data: Vec<f64> = d.iter_opt().map(|v| v.unwrap_or(sexp::NA_REAL)).collect();
+                    Ok(CBuffer::Double { data })
+                }
+                Vector::Integer(int) => {
+                    let data: Vec<i32> = int
+                        .iter_opt()
+                        .map(|v| match v {
+                            Some(i) => i32::try_from(i).unwrap_or(sexp::NA_INTEGER),
+                            None => sexp::NA_INTEGER,
+                        })
+                        .collect();
+                    Ok(CBuffer::Integer { data })
+                }
+                Vector::Logical(l) => {
+                    let data: Vec<i32> = (0..l.len())
+                        .map(|i| match l[i] {
+                            Some(true) => 1i32,
+                            Some(false) => 0i32,
+                            None => sexp::NA_LOGICAL,
+                        })
+                        .collect();
+                    Ok(CBuffer::Logical { data })
+                }
+                Vector::Character(c) => {
+                    let mut owned_strings = Vec::with_capacity(c.len());
+                    let mut ptrs = Vec::with_capacity(c.len());
+                    for i in 0..c.len() {
+                        let cstr = match &c[i] {
+                            Some(s) => std::ffi::CString::new(s.as_str()).unwrap_or_else(|_| {
+                                std::ffi::CString::new("").expect("empty CString")
+                            }),
+                            None => std::ffi::CString::new("NA").expect("NA CString"),
+                        };
+                        owned_strings.push(cstr);
+                    }
+                    // Build pointer array after all CStrings are in the Vec
+                    // (so they don't move).
+                    for cstr in &owned_strings {
+                        ptrs.push(cstr.as_ptr() as *mut c_char);
+                    }
+                    Ok(CBuffer::Character {
+                        ptrs,
+                        _owned_strings: owned_strings,
+                    })
+                }
+                Vector::Raw(r) => Ok(CBuffer::Raw { data: r.clone() }),
+                Vector::Complex(_) => Err(
+                    "complex vectors are not supported by .C() — use .Call() instead".to_string(),
+                ),
+            },
+            RValue::Null => {
+                // NULL is valid in .C — pass as empty double buffer
+                Ok(CBuffer::Double { data: Vec::new() })
+            }
+            _ => Err(format!(
+                "unsupported argument type for .C(): {}",
+                val.type_name()
+            )),
+        }
+    }
+
+    /// Get a void pointer to the buffer data.
+    fn as_void_ptr(&mut self) -> *mut u8 {
+        match self {
+            CBuffer::Double { data } => data.as_mut_ptr() as *mut u8,
+            CBuffer::Integer { data } => data.as_mut_ptr() as *mut u8,
+            CBuffer::Logical { data } => data.as_mut_ptr() as *mut u8,
+            CBuffer::Character { ptrs, .. } => ptrs.as_mut_ptr() as *mut u8,
+            CBuffer::Raw { data } => data.as_mut_ptr(),
+        }
+    }
+
+    /// Convert the (possibly modified) buffer back to an RValue.
+    fn to_rvalue(&self) -> RValue {
+        match self {
+            CBuffer::Double { data } => {
+                let vals: Vec<Option<f64>> = data
+                    .iter()
+                    .map(|&v| if sexp::is_na_real(v) { None } else { Some(v) })
+                    .collect();
+                RValue::vec(Vector::Double(vals.into()))
+            }
+            CBuffer::Integer { data } => {
+                let vals: Vec<Option<i64>> = data
+                    .iter()
+                    .map(|&v| {
+                        if v == sexp::NA_INTEGER {
+                            None
+                        } else {
+                            Some(i64::from(v))
+                        }
+                    })
+                    .collect();
+                RValue::vec(Vector::Integer(vals.into()))
+            }
+            CBuffer::Logical { data } => {
+                let vals: Vec<Option<bool>> = data
+                    .iter()
+                    .map(|&v| {
+                        if v == sexp::NA_LOGICAL {
+                            None
+                        } else {
+                            Some(v != 0)
+                        }
+                    })
+                    .collect();
+                RValue::vec(Vector::Logical(vals.into()))
+            }
+            CBuffer::Character { ptrs, .. } => {
+                let vals: Vec<Option<String>> = ptrs
+                    .iter()
+                    .map(|&p| {
+                        if p.is_null() {
+                            None
+                        } else {
+                            // Safety: the C function may have modified the string
+                            // but we still own the buffer. Read it back.
+                            let cstr = unsafe { CStr::from_ptr(p) };
+                            Some(cstr.to_str().unwrap_or("").to_string())
+                        }
+                    })
+                    .collect();
+                RValue::vec(Vector::Character(vals.into()))
+            }
+            CBuffer::Raw { data } => RValue::vec(Vector::Raw(data.clone())),
+        }
+    }
+}
+
+// endregion
+
 // region: LoadedDll
 
 /// A loaded dynamic library and its resolved symbols.
@@ -271,7 +443,7 @@ impl Interpreter {
         }
         Err(RError::new(
             RErrorKind::Other,
-            format!(".Call symbol '{name}' not found in any loaded DLL"),
+            format!("symbol '{name}' not found in any loaded DLL"),
         ))
     }
 
@@ -385,6 +557,91 @@ impl Interpreter {
         }
 
         Ok(result)
+    }
+
+    /// Execute a `.C()` invocation using the C trampoline for error safety.
+    ///
+    /// `.C()` is simpler than `.Call()` — it passes pointers to raw data
+    /// buffers directly to C functions. The C function receives `double*`,
+    /// `int*`, `char**`, etc. and modifies them in place. After the call,
+    /// the modified buffers are read back into R values.
+    ///
+    /// Flow:
+    /// 1. Convert each RValue arg to a C-compatible buffer
+    /// 2. Look up the native function symbol
+    /// 3. Call the trampoline with void* pointers
+    /// 4. Read back modified buffers into R values
+    /// 5. Return a named list of the (possibly modified) arguments
+    pub(crate) fn dot_c(
+        &self,
+        symbol_name: &str,
+        args: &[RValue],
+        arg_names: &[Option<String>],
+    ) -> Result<RValue, RError> {
+        let fn_ptr = self.find_native_symbol(symbol_name)?;
+
+        // Convert each arg to a C-compatible buffer and collect void* pointers.
+        // Each CBuffer owns the memory; we read it back after the call.
+        let mut buffers: Vec<CBuffer> = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            buffers.push(CBuffer::from_rvalue(arg).map_err(|e| {
+                RError::new(RErrorKind::Argument, format!(".C: argument {}: {e}", i + 1))
+            })?);
+        }
+
+        let mut ptrs: Vec<*mut u8> = buffers.iter_mut().map(|b| b.as_void_ptr()).collect();
+
+        // Set interpreter callbacks so C code can call back for Rf_findVar, etc.
+        CURRENT_INTERP.with(|cell| cell.set(self as *const Interpreter));
+        super::runtime::set_callbacks(super::runtime::InterpreterCallbacks {
+            find_var: Some(callback_find_var),
+            define_var: Some(callback_define_var),
+            eval_expr: Some(callback_eval_expr),
+            parse_text: Some(callback_parse_text),
+        });
+
+        extern "C" {
+            fn _minir_dotC_call_protected(fn_ptr: *const (), args: *mut *mut u8, nargs: i32)
+                -> i32;
+            fn _minir_get_error_msg() -> *const c_char;
+        }
+
+        let nargs = i32::try_from(ptrs.len()).unwrap_or(0);
+        let error_code = unsafe { _minir_dotC_call_protected(fn_ptr, ptrs.as_mut_ptr(), nargs) };
+
+        if error_code != 0 {
+            let error_msg = unsafe {
+                let msg_ptr = _minir_get_error_msg();
+                if msg_ptr.is_null() {
+                    "unknown error in native code".to_string()
+                } else {
+                    CStr::from_ptr(msg_ptr)
+                        .to_str()
+                        .unwrap_or("unknown error")
+                        .to_string()
+                }
+            };
+
+            super::runtime::clear_callbacks();
+            CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+            super::runtime::free_allocs();
+
+            return Err(RError::new(RErrorKind::Other, error_msg));
+        }
+
+        // Read back modified buffers into R values
+        let mut result_values: Vec<(Option<String>, RValue)> = Vec::with_capacity(buffers.len());
+        for (i, buf) in buffers.iter().enumerate() {
+            let name = arg_names.get(i).and_then(|n| n.clone());
+            result_values.push((name, buf.to_rvalue()));
+        }
+
+        // Clear interpreter callbacks
+        super::runtime::clear_callbacks();
+        CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+        super::runtime::free_allocs();
+
+        Ok(RValue::List(RList::new(result_values)))
     }
 
     /// Find miniR's `include/` directory containing Rinternals.h.

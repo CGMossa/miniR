@@ -142,5 +142,64 @@ int _minir_call_protected(_minir_dotcall_fn fn, SEXP *args, int nargs, SEXP *res
     return 0;
 }
 
+/* ── Protected .C call trampoline ── */
+/* .C functions take void* pointers and return void. */
+
+typedef void (*_minir_dotC_fn)();
+
+int _minir_dotC_call_protected(_minir_dotC_fn fn, void **args, int nargs) {
+    _has_error = 0;
+    _error_msg[0] = '\0';
+
+    if (setjmp(_error_jmp) != 0) {
+        return 1;
+    }
+
+    typedef void (*C0)(void);
+    typedef void (*C1)(void*);
+    typedef void (*C2)(void*,void*);
+    typedef void (*C3)(void*,void*,void*);
+    typedef void (*C4)(void*,void*,void*,void*);
+    typedef void (*C5)(void*,void*,void*,void*,void*);
+    typedef void (*C6)(void*,void*,void*,void*,void*,void*);
+    typedef void (*C7)(void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C8)(void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C9)(void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C10)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C11)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C12)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C13)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C14)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C15)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+    typedef void (*C16)(void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*,void*);
+
+    #define B(i) args[i]
+    switch (nargs) {
+        case 0:  ((C0)fn)(); break;
+        case 1:  ((C1)fn)(B(0)); break;
+        case 2:  ((C2)fn)(B(0),B(1)); break;
+        case 3:  ((C3)fn)(B(0),B(1),B(2)); break;
+        case 4:  ((C4)fn)(B(0),B(1),B(2),B(3)); break;
+        case 5:  ((C5)fn)(B(0),B(1),B(2),B(3),B(4)); break;
+        case 6:  ((C6)fn)(B(0),B(1),B(2),B(3),B(4),B(5)); break;
+        case 7:  ((C7)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6)); break;
+        case 8:  ((C8)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7)); break;
+        case 9:  ((C9)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8)); break;
+        case 10: ((C10)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9)); break;
+        case 11: ((C11)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10)); break;
+        case 12: ((C12)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11)); break;
+        case 13: ((C13)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12)); break;
+        case 14: ((C14)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13)); break;
+        case 15: ((C15)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13),B(14)); break;
+        case 16: ((C16)fn)(B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13),B(14),B(15)); break;
+        default:
+            snprintf(_error_msg, sizeof(_error_msg), ".C with %d arguments not supported (max 16)", nargs);
+            _has_error = 1;
+            return 1;
+    }
+    #undef B
+    return 0;
+}
+
 const char *_minir_get_error_msg(void) { return _error_msg; }
 int _minir_has_error_flag(void) { return _has_error; }

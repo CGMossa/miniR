@@ -43,6 +43,30 @@ fn builtin_dot_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     ))
 }
 
+#[cfg(not(feature = "native"))]
+/// .C — stub for .C calling convention. Not available without native feature.
+///
+/// @param .NAME external function reference
+/// @param ... arguments passed to C
+/// @return error
+/// @namespace base
+#[builtin(name = ".C")]
+fn builtin_dot_c(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "<native>".to_string());
+    debug!(
+        symbol = name.as_str(),
+        nargs = args.len().saturating_sub(1),
+        "native .C"
+    );
+    Err(RError::new(
+        RErrorKind::Other,
+        format!(".C(\"{name}\") is not available — miniR cannot call compiled C/C++ code"),
+    ))
+}
+
 /// .Internal — stub for R internal functions.
 ///
 /// @param call the internal function call

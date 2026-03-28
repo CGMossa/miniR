@@ -72,6 +72,86 @@ fn builtin_dot_call(
 
 // endregion
 
+// region: .C
+
+/// .C — invoke a compiled C function via the .C calling convention.
+///
+/// The first argument is the function name (character string or NativeSymbolInfo).
+/// Remaining arguments are R vectors whose raw data is passed directly to the
+/// C function as pointers (`double*`, `int*`, `char**`, etc.). The C function
+/// modifies the data in place, and the modified vectors are returned as a named list.
+///
+/// @param .NAME character string or native symbol reference naming the C function
+/// @param ... R vectors passed by pointer to the native function
+/// @return named list of the (possibly modified) arguments
+/// @namespace base
+#[interpreter_builtin(name = ".C")]
+fn builtin_dot_c(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    ctx: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if args.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            ".C requires at least one argument (the function name)".to_string(),
+        ));
+    }
+
+    // First arg is the symbol name — either a character string or a
+    // NativeSymbolInfo list (created by useDynLib in NAMESPACE).
+    let symbol_name = match &args[0] {
+        RValue::Vector(rv) => rv.as_character_scalar().ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                ".C: first argument must be a character string or native symbol reference"
+                    .to_string(),
+            )
+        })?,
+        RValue::List(list) => {
+            // NativeSymbolInfo-like list — extract $name
+            list.values
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("name"))
+                .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        ".C: native symbol reference must have a $name field".to_string(),
+                    )
+                })?
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                ".C: first argument must be a character string or native symbol reference"
+                    .to_string(),
+            ))
+        }
+    };
+
+    // Remaining positional args + named args are passed to the native function.
+    let native_args = &args[1..];
+
+    // Collect argument names. Positional args from index 1+ are unnamed;
+    // named args carry their names.
+    let mut all_args: Vec<RValue> = native_args.to_vec();
+    let mut arg_names: Vec<Option<String>> = vec![None; native_args.len()];
+
+    for (name, val) in named {
+        // Skip the PACKAGE argument — it's a hint for DLL lookup, not a data arg.
+        if name == "PACKAGE" {
+            continue;
+        }
+        arg_names.push(Some(name.clone()));
+        all_args.push(val.clone());
+    }
+
+    ctx.interpreter().dot_c(&symbol_name, &all_args, &arg_names)
+}
+
+// endregion
+
 // region: dyn.load / dyn.unload
 
 /// dyn.load — load a shared library (.so/.dylib).
