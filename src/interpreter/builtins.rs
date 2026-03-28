@@ -2984,6 +2984,28 @@ fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(args[0].clone())
 }
 
+/// Create a pairlist from named arguments.
+///
+/// In miniR, pairlists are represented as named lists since we don't
+/// have a separate pairlist type. This is sufficient for most R code.
+///
+/// @param ... named arguments
+/// @return a named list (acting as pairlist)
+/// @namespace base
+#[builtin(name = "pairlist")]
+fn builtin_pairlist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let mut entries: Vec<(Option<String>, RValue)> = Vec::new();
+    // Positional args
+    for arg in args {
+        entries.push((None, arg.clone()));
+    }
+    // Named args
+    for (name, val) in named {
+        entries.push((Some(name.clone()), val.clone()));
+    }
+    Ok(RValue::List(RList::new(entries)))
+}
+
 /// Modify a list by replacing/adding/removing elements from another list.
 ///
 /// For each named element in `val`:

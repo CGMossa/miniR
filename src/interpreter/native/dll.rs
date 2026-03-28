@@ -232,9 +232,8 @@ impl Interpreter {
         let name = dll.name.clone();
         self.loaded_dlls.borrow_mut().push(dll);
 
-        // Clear callbacks after load
-        super::runtime::clear_callbacks();
-        CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+        // DON'T clear callbacks — .onLoad may call .Call which needs them.
+        // Callbacks are cleared after .Call returns in dot_call().
 
         Ok(name)
     }
