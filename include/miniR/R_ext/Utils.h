@@ -4,11 +4,6 @@
 
 #include "../Rinternals.h"
 
-/* R_CheckUserInterrupt — already in Rinternals.h */
-/* R_rsort, R_isort, etc. — sorting utilities, stub as no-ops */
-
-static inline void R_isort(int *x, int n) { (void)x; (void)n; }
-static inline void R_rsort(double *x, int n) { (void)x; (void)n; }
-static inline void R_csort(Rcomplex *x, int n) { (void)x; (void)n; }
+/* R_isort, R_rsort declared in Rinternals.h and implemented in the Rust runtime */
 
 #endif

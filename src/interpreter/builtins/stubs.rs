@@ -2,6 +2,7 @@
 //! or fail explicitly. Also includes lightweight implementations of commonly
 //! needed functions that don't warrant their own module.
 
+#[cfg(not(feature = "native"))]
 use tracing::debug;
 
 use crate::interpreter::value::*;
@@ -17,6 +18,7 @@ stub_builtin!("install.packages");
 
 // region: C-level interface stubs
 
+#[cfg(not(feature = "native"))]
 /// .Call — stub for C-level function calls. Returns NULL with a warning.
 /// Many CRAN packages use .Call for compiled code we can't execute.
 ///
@@ -947,8 +949,9 @@ fn builtin_ext_soft_version(_args: &[RValue], _: &[(String, RValue)]) -> Result<
 
 // endregion
 
-// region: Dynamic loading stubs (C/Fortran shared libs — can't actually load)
+// region: Dynamic loading stubs (only when native feature is off)
 
+#[cfg(not(feature = "native"))]
 /// dyn.load — stub for dynamic loading of shared libraries.
 /// @namespace base
 #[builtin(name = "dyn.load", min_args = 1)]
@@ -963,6 +966,7 @@ fn builtin_dyn_load(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     ))
 }
 
+#[cfg(not(feature = "native"))]
 /// dyn.unload — stub for unloading shared libraries.
 /// @namespace base
 #[builtin(name = "dyn.unload", min_args = 1)]
@@ -974,17 +978,20 @@ fn builtin_dyn_unload(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     debug!(name = name.as_str(), "dyn.unload");
     Err(RError::other("dyn.unload() not available"))
 }
+#[cfg(not(feature = "native"))]
 stub_builtin!(
     "library.dynam",
     1,
     "library.dynam() not available — miniR cannot load compiled code"
 );
+#[cfg(not(feature = "native"))]
 stub_builtin!(
     "library.dynam.unload",
     1,
     "library.dynam.unload() not available"
 );
 
+#[cfg(not(feature = "native"))]
 /// is.loaded — check if a C symbol is loaded (always FALSE).
 /// @namespace base
 #[builtin(name = "is.loaded", min_args = 1)]
@@ -992,6 +999,7 @@ fn builtin_is_loaded(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
+#[cfg(not(feature = "native"))]
 /// getNativeSymbolInfo — get info about a loaded symbol (always errors).
 /// @namespace base
 #[builtin(name = "getNativeSymbolInfo", min_args = 1)]
@@ -1414,3 +1422,34 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
+
+/// setHook — no-op in miniR.
+/// @namespace base
+#[builtin(name = "setHook")]
+fn builtin_set_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// packageEvent — create a package event name string.
+/// @namespace base
+#[builtin(name = "packageEvent", min_args = 1)]
+fn builtin_package_event(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pkg = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let event = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "onLoad".to_string());
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(format!("{event}:{pkg}"))].into(),
+    )))
+}
+
+/// getHook — returns NULL (no hooks in miniR).
+/// @namespace base
+#[builtin(name = "getHook", min_args = 1)]
+fn builtin_get_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}

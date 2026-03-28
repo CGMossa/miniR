@@ -243,6 +243,63 @@ impl Interpreter {
         // Populate imports into the namespace env
         self.populate_imports(&namespace, &namespace_env)?;
 
+        // Load native code BEFORE sourcing R files — R code may reference
+        // native symbols (e.g. .Call(C_func, ...)) that need to be bound first.
+        #[cfg(feature = "native")]
+        if !namespace.use_dyn_libs.is_empty() {
+            debug!(pkg = pkg_name, "loading native code");
+            self.load_package_native_code(pkg_name, pkg_dir, &namespace.use_dyn_libs)?;
+
+            // Bind native symbol names into the namespace environment
+            for directive in &namespace.use_dyn_libs {
+                let fixes_prefix = directive
+                    .registrations
+                    .iter()
+                    .find(|r| r.contains(".fixes"))
+                    .and_then(|r| {
+                        r.split('=')
+                            .nth(1)
+                            .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+                    })
+                    .unwrap_or_default();
+
+                let mut bound_any = false;
+                for reg in &directive.registrations {
+                    let sym_name = reg.trim();
+                    if sym_name.is_empty() {
+                        continue;
+                    }
+                    if sym_name.contains('=') && !sym_name.starts_with('.') {
+                        continue;
+                    }
+                    if sym_name.starts_with('.') {
+                        if reg.contains("registration") {
+                            let dlls = self.loaded_dlls.borrow();
+                            for dll in dlls.iter() {
+                                for name in dll.registered_calls.keys() {
+                                    let r_name = format!("{fixes_prefix}{name}");
+                                    bind_native_symbol(&namespace_env, &r_name, name, pkg_name);
+                                }
+                            }
+                            bound_any = true;
+                        }
+                        continue;
+                    }
+                    bind_native_symbol(&namespace_env, sym_name, sym_name, pkg_name);
+                    bound_any = true;
+                }
+                if !bound_any {
+                    let dlls = self.loaded_dlls.borrow();
+                    for dll in dlls.iter() {
+                        for name in dll.registered_calls.keys() {
+                            bind_native_symbol(&namespace_env, name, name, pkg_name);
+                        }
+                    }
+                }
+            }
+            debug!(pkg = pkg_name, "native code loaded");
+        }
+
         // Source all R files from the R/ directory, respecting Collate order
         let r_dir = pkg_dir.join("R");
         if r_dir.is_dir() {
@@ -416,19 +473,12 @@ impl Interpreter {
         };
 
         debug!(count = r_files.len(), "sourcing R files");
-        let mut errors = Vec::new();
         for r_file in &r_files {
             trace!(file = %r_file.display(), "sourcing R file");
             if let Err(e) = self.source_file_into(r_file, env) {
-                errors.push(format!("{}: {}", r_file.display(), e));
+                // Warn but continue — some files may reference unavailable packages
+                tracing::warn!(file = %r_file.display(), error = %e, "error sourcing R file");
             }
-        }
-
-        if !errors.is_empty() {
-            return Err(RError::other(format!(
-                "errors sourcing R files:\n  {}",
-                errors.join("\n  ")
-            )));
         }
 
         Ok(())
@@ -681,6 +731,27 @@ fn parse_collate_field(collate: &str) -> Vec<String> {
     }
 
     names
+}
+
+/// Create a NativeSymbolInfo-like binding in a namespace environment.
+#[cfg(feature = "native")]
+fn bind_native_symbol(
+    env: &crate::interpreter::environment::Environment,
+    r_name: &str,
+    c_name: &str,
+    pkg_name: &str,
+) {
+    let info = RValue::List(crate::interpreter::value::RList::new(vec![
+        (
+            Some("name".to_string()),
+            RValue::vec(Vector::Character(vec![Some(c_name.to_string())].into())),
+        ),
+        (
+            Some("package".to_string()),
+            RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into())),
+        ),
+    ]));
+    env.set(r_name.to_string(), info);
 }
 
 /// Check if a package name refers to a "base" package that's always available.
