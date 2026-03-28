@@ -1534,3 +1534,51 @@ fn builtin_package_event(args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 fn builtin_get_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Ok(RValue::Null)
 }
+
+// endregion
+
+// region: Linear algebra stubs
+
+/// Singular Value Decomposition.
+///
+/// MASS needs this for `ginv()`. Not yet implemented — returns an error
+/// directing the user to the missing functionality.
+///
+/// @param x a numeric matrix
+/// @param nu number of left singular vectors (ignored)
+/// @param nv number of right singular vectors (ignored)
+/// @return list with components d, u, v
+/// @namespace base
+#[builtin(name = "svd", min_args = 1)]
+fn builtin_svd(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Err(RError::other(
+        "svd() is not yet implemented in miniR. \
+         Singular value decomposition requires a linear algebra backend (e.g. nalgebra). \
+         This will be available when the 'linalg' feature is implemented.",
+    ))
+}
+
+// endregion
+
+// region: Compatibility shims
+
+/// Convert to R boolean — used by grDevices and other internal code.
+///
+/// This is equivalent to `as.logical(x)[[1]]` — coerces to a scalar logical.
+///
+/// @param x object to coerce
+/// @return logical scalar
+/// @namespace base
+#[builtin(name = "asRboolean", min_args = 1)]
+fn builtin_as_r_boolean(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    match args.first() {
+        Some(RValue::Vector(v)) => {
+            let logicals = v.to_logicals();
+            Ok(RValue::vec(Vector::Logical(
+                vec![logicals.first().copied().flatten()].into(),
+            )))
+        }
+        Some(RValue::Null) => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
+        _ => Ok(RValue::vec(Vector::Logical(vec![None].into()))),
+    }
+}
