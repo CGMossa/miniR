@@ -48,6 +48,42 @@ fn callback_define_var(name: &str, val: RValue) {
     });
 }
 
+fn callback_eval_expr(expr: &RValue) -> Result<RValue, crate::interpreter::value::RError> {
+    use crate::interpreter::value::RError;
+    CURRENT_INTERP.with(|cell| {
+        let interp = cell.get();
+        if interp.is_null() {
+            return Err(RError::other(
+                "no interpreter available for Rf_eval".to_string(),
+            ));
+        }
+        let interp = unsafe { &*interp };
+        // If it's a language object (parsed expression), evaluate it
+        if let RValue::Language(ref lang) = expr {
+            return interp
+                .eval_in(lang, &interp.global_env)
+                .map_err(RError::from);
+        }
+        // If it's a symbol name (character), look it up
+        if let Some(name) = expr.as_vector().and_then(|v| v.as_character_scalar()) {
+            return interp
+                .global_env
+                .get(&name)
+                .ok_or_else(|| RError::other(format!("object '{name}' not found")));
+        }
+        // Return the value as-is
+        Ok(expr.clone())
+    })
+}
+
+fn callback_parse_text(text: &str) -> Result<RValue, crate::interpreter::value::RError> {
+    use crate::interpreter::value::{Language, RError};
+    // Parse the R source text into an AST
+    let ast = crate::parser::parse_program(text)
+        .map_err(|e| RError::other(format!("parse error: {e}")))?;
+    Ok(RValue::Language(Language::new(ast)))
+}
+
 // region: C trampoline types
 
 /// Signature of `R_init_<pkgname>(DllInfo*)` package init function.
@@ -182,9 +218,24 @@ impl std::fmt::Debug for LoadedDll {
 impl Interpreter {
     /// Load a shared library and register it. Returns the DLL name.
     pub(crate) fn dyn_load(&self, path: &Path) -> Result<String, RError> {
+        // Set interpreter callbacks before loading — R_init_<pkg> may call
+        // Rf_eval, R_ParseVector, etc. during initialization.
+        CURRENT_INTERP.with(|cell| cell.set(self as *const Interpreter));
+        super::runtime::set_callbacks(super::runtime::InterpreterCallbacks {
+            find_var: Some(callback_find_var),
+            define_var: Some(callback_define_var),
+            eval_expr: Some(callback_eval_expr),
+            parse_text: Some(callback_parse_text),
+        });
+
         let dll = LoadedDll::load(path).map_err(|e| RError::new(RErrorKind::Other, e))?;
         let name = dll.name.clone();
         self.loaded_dlls.borrow_mut().push(dll);
+
+        // Clear callbacks after load
+        super::runtime::clear_callbacks();
+        CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+
         Ok(name)
     }
 
@@ -253,6 +304,8 @@ impl Interpreter {
         super::runtime::set_callbacks(super::runtime::InterpreterCallbacks {
             find_var: Some(callback_find_var),
             define_var: Some(callback_define_var),
+            eval_expr: Some(callback_eval_expr),
+            parse_text: Some(callback_parse_text),
         });
 
         // The trampoline and error accessors are now in the binary

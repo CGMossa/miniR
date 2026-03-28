@@ -27,16 +27,16 @@ struct AllocNode {
     next: *mut AllocNode,
 }
 
+/// Result type for interpreter callbacks.
+type CbResult = Result<crate::interpreter::value::RValue, crate::interpreter::value::RError>;
+
 /// Callback function pointers set by the Rust interpreter before each .Call.
-/// These allow C API functions (Rf_findVar, Rf_eval, etc.) to call back into
-/// the interpreter for operations that need R-level state.
 #[derive(Default)]
 pub struct InterpreterCallbacks {
-    /// Look up a variable by name in an environment. Returns the SEXP value
-    /// or R_UnboundValue if not found.
     pub find_var: Option<fn(&str) -> Option<crate::interpreter::value::RValue>>,
-    /// Define a variable in the global environment.
     pub define_var: Option<fn(&str, crate::interpreter::value::RValue)>,
+    pub eval_expr: Option<fn(&crate::interpreter::value::RValue) -> CbResult>,
+    pub parse_text: Option<fn(&str) -> CbResult>,
 }
 
 /// Thread-local allocation state for the current .Call invocation.
@@ -51,7 +51,7 @@ thread_local! {
     static STATE: std::cell::RefCell<RuntimeState> = std::cell::RefCell::new(RuntimeState {
         alloc_head: ptr::null_mut(),
         protect_stack: Vec::with_capacity(128),
-        callbacks: InterpreterCallbacks { find_var: None, define_var: None },
+        callbacks: InterpreterCallbacks::default(),
     });
 }
 
@@ -1011,7 +1011,6 @@ pub extern "C" fn R_RegisterCFinalizerEx(_s: Sexp, _fun: *const c_void, _onexit:
 // region: R_RegisterRoutines
 
 #[repr(C)]
-#[repr(C)]
 pub struct RCallMethodDef {
     name: *const c_char,
     fun: *const (),
@@ -1203,10 +1202,60 @@ pub extern "C" fn Rf_ncols(x: Sexp) -> c_int {
     1
 }
 
-// Rf_eval stub — returns R_NilValue
+// Rf_eval — evaluate an R expression via interpreter callback.
+// Handles common patterns: symbol lookup (r_sym("name")) and parsed expressions.
 #[no_mangle]
-pub extern "C" fn Rf_eval(_expr: Sexp, _env: Sexp) -> Sexp {
-    unsafe { R_NilValue }
+pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
+    if expr.is_null() {
+        return unsafe { R_NilValue };
+    }
+
+    // Convert SEXP to RValue for the callback
+    let rval = unsafe { super::convert::sexp_to_rvalue(expr) };
+
+    // Try the eval callback
+    let result = STATE.with(|state| {
+        let st = state.borrow();
+
+        // For symbol lookups (most common case in init functions):
+        // r_eval(r_sym("function"), base_env) → look up "function" by name
+        if let Some(find) = st.callbacks.find_var {
+            if let crate::interpreter::value::RValue::Vector(ref rv) = rval {
+                if let crate::interpreter::value::Vector::Character(ref c) = rv.inner {
+                    if c.len() == 1 {
+                        if let Some(Some(name)) = c.first() {
+                            return find(name).map(Ok);
+                        }
+                    }
+                }
+            }
+            // SYMSXP: the name is in the data field
+            unsafe {
+                if (*expr).stype == sexp::SYMSXP && !(*expr).data.is_null() {
+                    let name = sexp::char_data(expr);
+                    if !name.is_empty() {
+                        return find(name).map(Ok);
+                    }
+                }
+            }
+        }
+
+        // For general expressions, use the eval callback
+        if let Some(eval_fn) = st.callbacks.eval_expr {
+            return Some(eval_fn(&rval));
+        }
+
+        None
+    });
+
+    match result {
+        Some(Ok(val)) => {
+            let s = super::convert::rvalue_to_sexp(&val);
+            track(s);
+            s
+        }
+        _ => unsafe { R_NilValue },
+    }
 }
 
 // R_Serialize stub
@@ -2197,20 +2246,84 @@ pub extern "C" fn exp_rand() -> f64 {
     -unif_rand().ln()
 }
 
-// R_ParseVector stub
+// R_ParseVector — parse R source text via interpreter callback.
 #[no_mangle]
 pub extern "C" fn R_ParseVector(
-    _text: Sexp,
+    text: Sexp,
     _n: c_int,
     parse_status: *mut c_int,
     _srcfile: Sexp,
 ) -> Sexp {
-    if !parse_status.is_null() {
+    // Extract the text string from the SEXP
+    let src = if text.is_null() {
+        String::new()
+    } else {
         unsafe {
-            *parse_status = 1;
-        } // PARSE_OK
+            if (*text).stype == sexp::STRSXP && (*text).length > 0 {
+                let elt = *((*text).data as *const Sexp);
+                if !elt.is_null() {
+                    sexp::char_data(elt).to_string()
+                } else {
+                    String::new()
+                }
+            } else if (*text).stype == sexp::CHARSXP {
+                sexp::char_data(text).to_string()
+            } else {
+                String::new()
+            }
+        }
+    };
+
+    if src.is_empty() {
+        if !parse_status.is_null() {
+            unsafe {
+                *parse_status = 1;
+            } // PARSE_OK
+        }
+        return unsafe { R_NilValue };
     }
-    unsafe { R_NilValue }
+
+    // Try the parse callback
+    let result = STATE.with(|state| {
+        let st = state.borrow();
+        st.callbacks.parse_text.map(|parse_fn| parse_fn(&src))
+    });
+
+    match result {
+        Some(Ok(val)) => {
+            if !parse_status.is_null() {
+                unsafe {
+                    *parse_status = 1;
+                } // PARSE_OK
+            }
+            // Wrap in a length-1 VECSXP — r_parse() extracts element 0
+            let expr_sexp = super::convert::rvalue_to_sexp(&val);
+            track(expr_sexp);
+            let list = Rf_allocVector(sexp::VECSXP as c_int, 1);
+            unsafe {
+                let elts = (*list).data as *mut Sexp;
+                *elts = expr_sexp;
+            }
+            list
+        }
+        Some(Err(_)) => {
+            if !parse_status.is_null() {
+                unsafe {
+                    *parse_status = 3;
+                } // PARSE_ERROR
+            }
+            unsafe { R_NilValue }
+        }
+        None => {
+            // No callback — return NilValue but mark as OK
+            if !parse_status.is_null() {
+                unsafe {
+                    *parse_status = 1;
+                }
+            }
+            unsafe { R_NilValue }
+        }
+    }
 }
 
 // Fortran optimization stubs (called by MASS, nnet, class, etc.)
