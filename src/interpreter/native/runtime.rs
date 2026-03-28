@@ -1011,6 +1011,7 @@ pub extern "C" fn R_RegisterCFinalizerEx(_s: Sexp, _fun: *const c_void, _onexit:
 // region: R_RegisterRoutines
 
 #[repr(C)]
+#[repr(C)]
 pub struct RCallMethodDef {
     name: *const c_char,
     fun: *const (),

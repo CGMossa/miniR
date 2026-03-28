@@ -88,6 +88,7 @@ fn builtin_dyn_load(
     _named: &[(String, RValue)],
     ctx: &BuiltinContext,
 ) -> Result<RValue, RError> {
+    tracing::debug!("dyn.load called");
     let path = args[0]
         .as_vector()
         .and_then(|v| v.as_character_scalar())
