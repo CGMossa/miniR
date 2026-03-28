@@ -128,10 +128,10 @@ image = { version = "0.25", optional = true, default-features = false, features 
 resvg = { version = "0.45", optional = true }
 tiny-skia = { version = "0.11", optional = true }
 libloading = { version = "0.8", optional = true }
-cc = { version = "1", optional = true }
+cc = { version = "1", optional = true, features = ["parallel"] }
 
 [build-dependencies]
-cc = "1"
+cc = { version = "1", features = ["parallel"] }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
