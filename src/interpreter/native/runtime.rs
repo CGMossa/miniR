@@ -252,6 +252,7 @@ pub fn init_globals() {
         R_BraceSymbol = R_NilValue;
         R_BracketSymbol = R_NilValue;
         R_Bracket2Symbol = R_NilValue;
+        R_DollarSymbol = R_NilValue;
         R_DoubleColonSymbol = R_NilValue;
         R_TripleColonSymbol = R_NilValue;
 
@@ -1679,10 +1680,11 @@ pub extern "C" fn Rf_nthcdr(mut s: Sexp, n: c_int) -> Sexp {
 #[no_mangle]
 pub extern "C" fn R_FlushConsole() {}
 
-// R_do_slot_assign — slot assignment stub
+// R_do_slot_assign -- slot assignment stub (returns obj for chaining)
 #[no_mangle]
-pub extern "C" fn R_do_slot_assign(obj: Sexp, name: Sexp, val: Sexp) {
+pub extern "C" fn R_do_slot_assign(obj: Sexp, name: Sexp, val: Sexp) -> Sexp {
     Rf_setAttrib(obj, name, val);
+    obj
 }
 
 // Rf_allocList — allocate a pairlist of n nodes
@@ -2438,6 +2440,8 @@ pub static mut R_BracketSymbol: Sexp = ptr::null_mut();
 #[no_mangle]
 pub static mut R_Bracket2Symbol: Sexp = ptr::null_mut();
 #[no_mangle]
+pub static mut R_DollarSymbol: Sexp = ptr::null_mut();
+#[no_mangle]
 pub static mut R_DoubleColonSymbol: Sexp = ptr::null_mut();
 #[no_mangle]
 pub static mut R_TripleColonSymbol: Sexp = ptr::null_mut();
@@ -2875,6 +2879,560 @@ pub extern "C" fn vmmin(
         &mut std::io::stderr(),
         b"Warning: vmmin() is a stub in miniR -- results will be incorrect\n",
     );
+}
+
+// region: External pointer setters
+
+#[no_mangle]
+pub extern "C" fn R_SetExternalPtrTag(s: Sexp, _tag: Sexp) {
+    // No-op stub — miniR external pointers don't store tag/prot in the SEXP
+    let _ = s;
+}
+
+#[no_mangle]
+pub extern "C" fn R_SetExternalPtrProtected(s: Sexp, _prot: Sexp) {
+    let _ = s;
+}
+
+// endregion
+
+// region: S4 object creation
+
+#[no_mangle]
+pub extern "C" fn R_do_new_object(_class_def: Sexp) -> Sexp {
+    // Stub -- allocate an empty S4-like object (VECSXP with class attribute)
+    Rf_allocVector(sexp::VECSXP as c_int, 0)
+}
+
+#[no_mangle]
+pub extern "C" fn R_getClassDef(_what: *const c_char) -> Sexp {
+    // Stub -- return R_NilValue (class not found)
+    unsafe { R_NilValue }
+}
+
+// endregion
+
+// region: Rmath distribution function stubs
+// These all return NaN (or do nothing) — they exist so Rcpp and packages that
+// declare distribution wrappers can compile and link. The functions are not
+// yet implemented; calling them at runtime produces NaN results.
+
+macro_rules! stub_dist_3 {
+    ($name:ident) => {
+        #[no_mangle]
+        pub extern "C" fn $name(_a: f64, _b: f64, _c: f64) -> f64 {
+            f64::NAN
+        }
+    };
+}
+
+macro_rules! stub_dist_4 {
+    ($name:ident) => {
+        #[no_mangle]
+        pub extern "C" fn $name(_a: f64, _b: f64, _c: f64, _d: c_int) -> f64 {
+            f64::NAN
+        }
+    };
+}
+
+macro_rules! stub_dist_5 {
+    ($name:ident) => {
+        #[no_mangle]
+        pub extern "C" fn $name(_a: f64, _b: f64, _c: f64, _d: c_int, _e: c_int) -> f64 {
+            f64::NAN
+        }
+    };
+}
+
+macro_rules! stub_dist_2 {
+    ($name:ident) => {
+        #[no_mangle]
+        pub extern "C" fn $name(_a: f64, _b: f64) -> f64 {
+            f64::NAN
+        }
+    };
+}
+
+macro_rules! stub_dist_1 {
+    ($name:ident) => {
+        #[no_mangle]
+        pub extern "C" fn $name(_a: f64) -> f64 {
+            f64::NAN
+        }
+    };
+}
+
+// Rounding and truncation
+#[no_mangle]
+pub extern "C" fn Rf_fround(x: f64, digits: f64) -> f64 {
+    let m = 10.0_f64.powf(digits);
+    (x * m).round() / m
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_ftrunc(x: f64) -> f64 {
+    x.trunc()
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_fprec(x: f64, _digits: f64) -> f64 {
+    x // stub
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_sign(x: f64) -> f64 {
+    if x > 0.0 {
+        1.0
+    } else if x < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+// Gamma and related functions
+extern "C" {
+    fn tgamma(x: f64) -> f64;
+    fn lgamma(x: f64) -> f64;
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_gammafn(x: f64) -> f64 {
+    unsafe { tgamma(x) }
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lgammafn(x: f64) -> f64 {
+    unsafe { lgamma(x) }
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_lgammafn_sign(x: f64, sgn: *mut c_int) -> f64 {
+    if !sgn.is_null() {
+        unsafe {
+            *sgn = if x >= 0.0 { 1 } else { -1 };
+        }
+    }
+    unsafe { lgamma(x) }
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_digamma(x: f64) -> f64 {
+    // Digamma approximation using the asymptotic series
+    let mut x = x;
+    let mut result = 0.0;
+    // Shift x to large value for series accuracy
+    while x < 6.0 {
+        result -= 1.0 / x;
+        x += 1.0;
+    }
+    result += x.ln() - 0.5 / x;
+    let x2 = 1.0 / (x * x);
+    result -= x2 * (1.0 / 12.0 - x2 * (1.0 / 120.0 - x2 * (1.0 / 252.0 - x2 * (1.0 / 240.0))));
+    result
+}
+
+stub_dist_1!(Rf_trigamma);
+stub_dist_1!(Rf_tetragamma);
+stub_dist_1!(Rf_pentagamma);
+stub_dist_2!(Rf_psigamma);
+stub_dist_2!(Rf_beta);
+stub_dist_2!(Rf_lbeta);
+stub_dist_2!(Rf_choose);
+stub_dist_2!(Rf_lchoose);
+stub_dist_1!(Rf_log1pmx);
+stub_dist_1!(Rf_lgamma1p);
+stub_dist_2!(Rf_logspace_add);
+stub_dist_2!(Rf_logspace_sub);
+
+#[no_mangle]
+pub extern "C" fn log1pexp(x: f64) -> f64 {
+    if x <= -37.0 {
+        x.exp()
+    } else if x <= 18.0 {
+        (1.0 + x.exp()).ln()
+    } else {
+        x + (-x).exp()
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_dpsifn(
+    _x: f64,
+    _n: c_int,
+    _kode: c_int,
+    _m: c_int,
+    ans: *mut f64,
+    nz: *mut c_int,
+    ierr: *mut c_int,
+) {
+    if !ans.is_null() {
+        unsafe {
+            *ans = f64::NAN;
+        }
+    }
+    if !nz.is_null() {
+        unsafe {
+            *nz = 0;
+        }
+    }
+    if !ierr.is_null() {
+        unsafe {
+            *ierr = 0;
+        }
+    }
+}
+
+// Normal distribution
+stub_dist_4!(Rf_dnorm4);
+stub_dist_5!(Rf_pnorm5);
+stub_dist_5!(Rf_qnorm5);
+stub_dist_2!(Rf_rnorm);
+
+#[no_mangle]
+pub extern "C" fn Rf_pnorm_both(_x: f64, cum: *mut f64, ccum: *mut f64, _lt: c_int, _lg: c_int) {
+    if !cum.is_null() {
+        unsafe {
+            *cum = f64::NAN;
+        }
+    }
+    if !ccum.is_null() {
+        unsafe {
+            *ccum = f64::NAN;
+        }
+    }
+}
+
+// Uniform distribution
+stub_dist_4!(Rf_dunif);
+stub_dist_5!(Rf_punif);
+stub_dist_5!(Rf_qunif);
+stub_dist_2!(Rf_runif);
+
+// Gamma distribution
+stub_dist_4!(Rf_dgamma);
+stub_dist_5!(Rf_pgamma);
+stub_dist_5!(Rf_qgamma);
+stub_dist_2!(Rf_rgamma);
+
+// Beta distribution
+stub_dist_4!(Rf_dbeta);
+stub_dist_5!(Rf_pbeta);
+stub_dist_5!(Rf_qbeta);
+stub_dist_2!(Rf_rbeta);
+
+// Lognormal distribution
+stub_dist_4!(Rf_dlnorm);
+stub_dist_5!(Rf_plnorm);
+stub_dist_5!(Rf_qlnorm);
+stub_dist_2!(Rf_rlnorm);
+
+// Chi-squared distribution
+stub_dist_3!(Rf_dchisq);
+
+#[no_mangle]
+pub extern "C" fn Rf_pchisq(_x: f64, _df: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qchisq(_p: f64, _df: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rchisq);
+
+// Non-central chi-squared
+#[no_mangle]
+pub extern "C" fn Rf_dnchisq(_x: f64, _df: f64, _ncp: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_pnchisq(_x: f64, _df: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qnchisq(_p: f64, _df: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_2!(Rf_rnchisq);
+
+// F distribution
+stub_dist_4!(Rf_df);
+stub_dist_5!(Rf_pf);
+stub_dist_5!(Rf_qf);
+stub_dist_2!(Rf_rf);
+
+// Student t distribution
+stub_dist_3!(Rf_dt);
+#[no_mangle]
+pub extern "C" fn Rf_pt(_x: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qt(_p: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rt);
+
+// Binomial distribution
+stub_dist_4!(Rf_dbinom);
+stub_dist_5!(Rf_pbinom);
+stub_dist_5!(Rf_qbinom);
+stub_dist_2!(Rf_rbinom);
+
+#[no_mangle]
+pub extern "C" fn rmultinom(_n: c_int, _prob: *mut f64, _k: c_int, _rn: *mut c_int) {
+    // stub
+}
+
+// Cauchy distribution
+stub_dist_4!(Rf_dcauchy);
+stub_dist_5!(Rf_pcauchy);
+stub_dist_5!(Rf_qcauchy);
+stub_dist_2!(Rf_rcauchy);
+
+// Exponential distribution
+stub_dist_3!(Rf_dexp);
+#[no_mangle]
+pub extern "C" fn Rf_pexp(_x: f64, _sl: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qexp(_p: f64, _sl: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rexp);
+
+// Geometric distribution
+stub_dist_3!(Rf_dgeom);
+#[no_mangle]
+pub extern "C" fn Rf_pgeom(_x: f64, _p: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qgeom(_p: f64, _pb: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rgeom);
+
+// Hypergeometric distribution
+#[no_mangle]
+pub extern "C" fn Rf_dhyper(_x: f64, _r: f64, _b: f64, _n: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_phyper(_x: f64, _r: f64, _b: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qhyper(_p: f64, _r: f64, _b: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_3!(Rf_rhyper);
+
+// Negative binomial distribution
+stub_dist_4!(Rf_dnbinom);
+stub_dist_5!(Rf_pnbinom);
+stub_dist_5!(Rf_qnbinom);
+stub_dist_2!(Rf_rnbinom);
+stub_dist_4!(Rf_dnbinom_mu);
+stub_dist_5!(Rf_pnbinom_mu);
+stub_dist_5!(Rf_qnbinom_mu);
+
+// Poisson distribution
+stub_dist_3!(Rf_dpois);
+#[no_mangle]
+pub extern "C" fn Rf_ppois(_x: f64, _lb: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qpois(_p: f64, _lb: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rpois);
+
+// Weibull distribution
+stub_dist_4!(Rf_dweibull);
+stub_dist_5!(Rf_pweibull);
+stub_dist_5!(Rf_qweibull);
+stub_dist_2!(Rf_rweibull);
+
+// Logistic distribution
+stub_dist_4!(Rf_dlogis);
+stub_dist_5!(Rf_plogis);
+stub_dist_5!(Rf_qlogis);
+stub_dist_2!(Rf_rlogis);
+
+// Non-central beta
+#[no_mangle]
+pub extern "C" fn Rf_dnbeta(_x: f64, _a: f64, _b: f64, _ncp: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_pnbeta(_x: f64, _a: f64, _b: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qnbeta(_p: f64, _a: f64, _b: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+
+// Non-central F
+#[no_mangle]
+pub extern "C" fn Rf_dnf(_x: f64, _df1: f64, _df2: f64, _ncp: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_pnf(_x: f64, _df1: f64, _df2: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qnf(_p: f64, _df1: f64, _df2: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+
+// Non-central t
+#[no_mangle]
+pub extern "C" fn Rf_dnt(_x: f64, _df: f64, _ncp: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_pnt(_x: f64, _df: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qnt(_p: f64, _df: f64, _ncp: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+
+// Studentized range
+#[no_mangle]
+pub extern "C" fn Rf_ptukey(_q: f64, _rr: f64, _cc: f64, _df: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qtukey(_p: f64, _rr: f64, _cc: f64, _df: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+
+// Wilcoxon rank sum
+stub_dist_4!(Rf_dwilcox);
+stub_dist_5!(Rf_pwilcox);
+stub_dist_5!(Rf_qwilcox);
+stub_dist_2!(Rf_rwilcox);
+
+// Wilcoxon signed rank
+stub_dist_3!(Rf_dsignrank);
+#[no_mangle]
+pub extern "C" fn Rf_psignrank(_x: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_qsignrank(_x: f64, _n: f64, _lt: c_int, _lg: c_int) -> f64 {
+    f64::NAN
+}
+stub_dist_1!(Rf_rsignrank);
+
+// Bessel functions
+stub_dist_3!(Rf_bessel_i);
+stub_dist_2!(Rf_bessel_j);
+stub_dist_3!(Rf_bessel_k);
+stub_dist_2!(Rf_bessel_y);
+
+#[no_mangle]
+pub extern "C" fn Rf_bessel_i_ex(_x: f64, _al: f64, _ex: f64, bi: *mut f64) -> f64 {
+    if !bi.is_null() {
+        unsafe {
+            *bi = f64::NAN;
+        }
+    }
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_bessel_j_ex(_x: f64, _al: f64, bj: *mut f64) -> f64 {
+    if !bj.is_null() {
+        unsafe {
+            *bj = f64::NAN;
+        }
+    }
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_bessel_k_ex(_x: f64, _al: f64, _ex: f64, bk: *mut f64) -> f64 {
+    if !bk.is_null() {
+        unsafe {
+            *bk = f64::NAN;
+        }
+    }
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn Rf_bessel_y_ex(_x: f64, _al: f64, by: *mut f64) -> f64 {
+    if !by.is_null() {
+        unsafe {
+            *by = f64::NAN;
+        }
+    }
+    f64::NAN
+}
+
+#[no_mangle]
+pub extern "C" fn Rf_hypot(a: f64, b: f64) -> f64 {
+    a.hypot(b)
+}
+
+// endregion
+
+// Rf_isS4 — check if object is S4
+#[no_mangle]
+pub extern "C" fn Rf_isS4(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    // OBJSXP = 25
+    let stype = unsafe { (*x).stype };
+    if stype == 25 {
+        return 1;
+    }
+    Rf_inherits(x, c"refClass".as_ptr())
+}
+
+// R_has_slot — check if S4 object has a named slot
+#[no_mangle]
+pub extern "C" fn R_has_slot(obj: Sexp, name: Sexp) -> c_int {
+    if obj.is_null() || name.is_null() {
+        return 0;
+    }
+    let attr = Rf_getAttrib(obj, name);
+    (!attr.is_null() && attr != unsafe { R_NilValue }) as c_int
+}
+
+// R_MakeUnwindCont — create unwind continuation token (stub)
+#[no_mangle]
+pub extern "C" fn R_MakeUnwindCont() -> Sexp {
+    // Return a simple VECSXP as a token — miniR does not use longjmp unwind
+    Rf_allocVector(sexp::VECSXP as c_int, 0)
+}
+
+// R_ContinueUnwind — continue an unwind (stub — no-op)
+#[no_mangle]
+pub extern "C" fn R_ContinueUnwind(_cont: Sexp) {
+    // In miniR, unwind protection is a no-op
+}
+
+// R_UnwindProtect — execute with unwind protection (stub)
+#[no_mangle]
+pub extern "C" fn R_UnwindProtect(
+    fun: Option<extern "C" fn(*mut c_void) -> Sexp>,
+    data: *mut c_void,
+    _cleanfun: Option<extern "C" fn(*mut c_void, c_int)>,
+    _cleandata: *mut c_void,
+    _cont: Sexp,
+) -> Sexp {
+    // Just call the function directly — no unwind protection in miniR
+    match fun {
+        Some(f) => f(data),
+        None => unsafe { R_NilValue },
+    }
 }
 
 // endregion

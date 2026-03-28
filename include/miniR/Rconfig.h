@@ -32,6 +32,9 @@
 #define HAVE_UNISTD_H     1
 #define HAVE_STDINT_H     1
 #define HAVE_INTTYPES_H   1
+#define HAVE_EXPM1        1
+#define HAVE_LOG1P        1
+#define HAVE_HYPOT        1
 
 #ifdef _WIN32
 #  undef HAVE_ALLOCA_H

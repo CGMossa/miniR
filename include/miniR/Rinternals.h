@@ -63,14 +63,20 @@ typedef unsigned int SEXPTYPE;
 
 /* ── Rboolean ── */
 
+#ifndef Rboolean_is_defined
+#define Rboolean_is_defined
 typedef enum { FALSE = 0, TRUE = 1 } Rboolean;
+#endif
 
 /* ── Basic types ── */
 
 typedef int R_len_t;
 typedef ptrdiff_t R_xlen_t;
 typedef unsigned char Rbyte;
+#ifndef Rcomplex_is_defined
+#define Rcomplex_is_defined
 typedef struct { double r; double i; } Rcomplex;
+#endif
 
 /* ── SEXPREC structure ── */
 
@@ -140,29 +146,36 @@ extern SEXP R_DotsSymbol;
 
 /* ── Accessor macros ── */
 
-#define TYPEOF(x)    ((SEXPTYPE)((x)->type))
-#define LENGTH(x)    ((x)->length)
-#define XLENGTH(x)   ((R_xlen_t)((x)->length))
+#define TYPEOF(x)    ((SEXPTYPE)((SEXP)(x))->type)
+#define LENGTH(x)    ((SEXP)(x))->length
+#define XLENGTH(x)   ((R_xlen_t)((SEXP)(x))->length)
 
-#define REAL(x)      ((double*)((x)->data))
-#define INTEGER(x)   ((int*)((x)->data))
-#define LOGICAL(x)   ((int*)((x)->data))
-#define RAW(x)       ((Rbyte*)((x)->data))
-#define COMPLEX(x)   ((Rcomplex*)((x)->data))
+#define REAL(x)      ((double*)((SEXP)(x))->data)
+#define INTEGER(x)   ((int*)((SEXP)(x))->data)
+#define LOGICAL(x)   ((int*)((SEXP)(x))->data)
+#define RAW(x)       ((Rbyte*)((SEXP)(x))->data)
+#define COMPLEX(x)   ((Rcomplex*)((SEXP)(x))->data)
 
-#define STRING_ELT(x, i)   (((SEXP*)((x)->data))[i])
-#define VECTOR_ELT(x, i)   (((SEXP*)((x)->data))[i])
-#define SET_STRING_ELT(x, i, v)  (((SEXP*)((x)->data))[i] = (v))
-#define SET_VECTOR_ELT(x, i, v)  (((SEXP*)((x)->data))[i] = (v))
+/* C++ note: these use ((SEXP)(x)) to support implicit conversion from
+   wrapper types like Rcpp::Shield<SEXP> that have operator SEXP(). */
+#define STRING_ELT(x, i)   (((SEXP*)((SEXP)(x))->data)[i])
+#define VECTOR_ELT(x, i)   (((SEXP*)((SEXP)(x))->data)[i])
+#define SET_STRING_ELT(x, i, v)  (((SEXP*)((SEXP)(x))->data)[i] = (v))
+#define SET_VECTOR_ELT(x, i, v)  (((SEXP*)((SEXP)(x))->data)[i] = (v))
+
+/* Data pointers for STRSXP/VECSXP — mutable and read-only */
+#define STRING_PTR(x)     ((SEXP*)((SEXP)(x))->data)
+#define VECTOR_PTR(x)     ((SEXP*)((SEXP)(x))->data)
 
 /* Read-only data pointers (R 4.0+) */
-#define STRING_PTR_RO(x)  ((const SEXP*)((x)->data))
-#define INTEGER_RO(x)     ((const int*)((x)->data))
-#define REAL_RO(x)        ((const double*)((x)->data))
-#define LOGICAL_RO(x)     ((const int*)((x)->data))
-#define RAW_RO(x)         ((const Rbyte*)((x)->data))
-#define COMPLEX_RO(x)     ((const Rcomplex*)((x)->data))
-#define DATAPTR_RO(x)     ((const void*)((x)->data))
+#define STRING_PTR_RO(x)  ((const SEXP*)((SEXP)(x))->data)
+#define VECTOR_PTR_RO(x)  ((const SEXP*)((SEXP)(x))->data)
+#define INTEGER_RO(x)     ((const int*)((SEXP)(x))->data)
+#define REAL_RO(x)        ((const double*)((SEXP)(x))->data)
+#define LOGICAL_RO(x)     ((const int*)((SEXP)(x))->data)
+#define RAW_RO(x)         ((const Rbyte*)((SEXP)(x))->data)
+#define COMPLEX_RO(x)     ((const Rcomplex*)((SEXP)(x))->data)
+#define DATAPTR_RO(x)     ((const void*)((SEXP)(x))->data)
 #define RAW_POINTER(x)    RAW(x)
 
 /* REAL_ELT / INTEGER_ELT — single-element accessors */
@@ -171,8 +184,8 @@ extern SEXP R_DotsSymbol;
 #define LOGICAL_ELT(x, i) (LOGICAL(x)[i])
 
 /* Data pointer access */
-#define DATAPTR_OR_NULL(x) ((x)->data)
-#define DATAPTR(x)         ((x)->data)
+#define DATAPTR_OR_NULL(x) (((SEXP)(x))->data)
+#define DATAPTR(x)         (((SEXP)(x))->data)
 
 /* Region-based element access (ALTREP compat) */
 static inline int INTEGER_GET_REGION(SEXP x, int i, int n, int *buf) {
@@ -188,17 +201,17 @@ static inline int REAL_GET_REGION(SEXP x, int i, int n, double *buf) {
     return actual;
 }
 
-#define R_CHAR(x)    ((const char*)((x)->data))
+#define R_CHAR(x)    ((const char*)((SEXP)(x))->data)
 #define CHAR(x)      R_CHAR(x)
 
 /* SETLENGTH — resize a vector (only shrinking is safe without realloc) */
-#define SETLENGTH(x, n) ((x)->length = (int32_t)(n))
+#define SETLENGTH(x, n) (((SEXP)(x))->length = (int32_t)(n))
 #define SET_TRUELENGTH(x, n) ((void)(n))
 
 /* Pairlist accessors (LISTSXP / LANGSXP) */
-#define CAR(x)   (((minir_pairlist_data*)((x)->data))->car)
-#define CDR(x)   (((minir_pairlist_data*)((x)->data))->cdr)
-#define TAG(x)   (((minir_pairlist_data*)((x)->data))->tag)
+#define CAR(x)   (((minir_pairlist_data*)((SEXP)(x))->data)->car)
+#define CDR(x)   (((minir_pairlist_data*)((SEXP)(x))->data)->cdr)
+#define TAG(x)   (((minir_pairlist_data*)((SEXP)(x))->data)->tag)
 #define SETCAR(x, v)  (CAR(x) = (v))
 #define SETCDR(x, v)  (CDR(x) = (v))
 #define SET_TAG(x, v) (TAG(x) = (v))
@@ -218,6 +231,8 @@ SEXP R_ExternalPtrTag(SEXP s);
 SEXP R_ExternalPtrProtected(SEXP s);
 void R_ClearExternalPtr(SEXP s);
 void R_SetExternalPtrAddr(SEXP s, void *p);
+void R_SetExternalPtrTag(SEXP s, SEXP tag);
+void R_SetExternalPtrProtected(SEXP s, SEXP prot);
 void R_RegisterCFinalizer(SEXP s, void (*fun)(SEXP));
 void R_RegisterCFinalizerEx(SEXP s, void (*fun)(SEXP), Rboolean onexit);
 
@@ -237,9 +252,11 @@ R_len_t Rf_length(SEXP x);
 R_xlen_t Rf_xlength(SEXP x);
 SEXP Rf_lengthgets(SEXP x, R_len_t n);
 SEXP Rf_xlengthgets(SEXP x, R_xlen_t n);
+#ifndef R_NO_REMAP
 #define lengthgets Rf_lengthgets
 #define xlength Rf_xlength
 #define xlengthgets Rf_xlengthgets
+#endif
 
 /* Strings */
 SEXP Rf_mkChar(const char *str);
@@ -261,6 +278,8 @@ char *S_realloc(char *ptr, long new_size, long old_size, int eltsize);
 void GetRNGstate(void);
 void PutRNGstate(void);
 double unif_rand(void);
+double norm_rand(void);
+double exp_rand(void);
 
 /* Attribute shortcuts */
 SEXP Rf_classgets(SEXP x, SEXP klass);
@@ -329,13 +348,17 @@ SEXP R_do_slot(SEXP obj, SEXP name);
 
 /* Shallow copy */
 SEXP Rf_shallow_duplicate(SEXP x);
+#ifndef R_NO_REMAP
 #define shallow_duplicate Rf_shallow_duplicate
 #define lazy_duplicate Rf_shallow_duplicate
+#endif
 
 /* Environment creation */
 SEXP R_NewEnv(SEXP parent, int hash, int size);
 void Rf_defineVar(SEXP sym, SEXP val, SEXP env);
+#ifndef R_NO_REMAP
 #define defineVar Rf_defineVar
+#endif
 
 /* Closure internals (stubs) */
 SEXP BODY(SEXP x);
@@ -343,8 +366,8 @@ SEXP CLOENV(SEXP x);
 SEXP FORMALS(SEXP x);
 
 /* Attribute direct access */
-#define ATTRIB(x)       ((x)->attrib)
-#define SET_ATTRIB(x,v) ((x)->attrib = (v))
+#define ATTRIB(x)       (((SEXP)(x))->attrib)
+#define SET_ATTRIB(x,v) (((SEXP)(x))->attrib = (v))
 
 /* Pairlist navigation extras */
 #define CAAR(x)   CAR(CAR(x))
@@ -354,15 +377,21 @@ SEXP FORMALS(SEXP x);
 
 /* Type checking extras */
 Rboolean Rf_isObject(SEXP x);
+#ifndef R_NO_REMAP
 #define isObject Rf_isObject
+#endif
 
 /* Type name/conversion */
 SEXPTYPE Rf_str2type(const char *s);
+#ifndef R_NO_REMAP
 #define str2type Rf_str2type
+#endif
 
 /* Scalar complex constructor */
 SEXP Rf_ScalarComplex(Rcomplex c);
+#ifndef R_NO_REMAP
 #define ScalarComplex Rf_ScalarComplex
+#endif
 
 /* Object comparison */
 int R_compute_identical(SEXP x, SEXP y, int flags);
@@ -407,8 +436,10 @@ void SET_PRCODE(SEXP x, SEXP v);
 void SET_PRVALUE(SEXP x, SEXP v);
 SEXP PRCODE(SEXP x);
 SEXP PRVALUE(SEXP x);
+#ifndef R_NO_REMAP
 #define allocSExp Rf_allocSExp
 #define any_duplicated Rf_any_duplicated
+#endif
 
 /* More stubs */
 SEXP Rf_installChar(SEXP x);
@@ -416,10 +447,14 @@ SEXP Rf_ScalarRaw(unsigned char x);
 int R_EnvironmentIsLocked(SEXP env);
 #define LEVELS(x) 0
 #define SETLEVELS(x, v) ((void)(v))
+#ifndef R_NO_REMAP
 #define installChar Rf_installChar
+#endif
 SEXP Rf_installTrChar(SEXP x);
+#ifndef R_NO_REMAP
 #define installTrChar Rf_installTrChar
 #define ScalarRaw Rf_ScalarRaw
+#endif
 
 /* ALTREP — always false in miniR */
 #ifndef ALTREP
@@ -430,12 +465,15 @@ SEXP Rf_installTrChar(SEXP x);
 int R_BindingIsActive(SEXP sym, SEXP env);
 SEXP R_ActiveBindingFunction(SEXP sym, SEXP env);
 void Rf_onintr(void);
+#ifndef R_NO_REMAP
 #define onintr Rf_onintr
+#endif
 
 /* More symbol constants */
 extern SEXP R_BraceSymbol;
 extern SEXP R_BracketSymbol;
 extern SEXP R_Bracket2Symbol;
+extern SEXP R_DollarSymbol;
 extern SEXP R_DoubleColonSymbol;
 extern SEXP R_TripleColonSymbol;
 extern int R_Interactive;
@@ -449,7 +487,9 @@ SEXP R_WeakRefValue(SEXP w);
 /* Duplicated detection */
 SEXP Rf_duplicated(SEXP x, Rboolean from_last);
 R_xlen_t Rf_any_duplicated3(SEXP x, SEXP incomp, Rboolean from_last);
+#ifndef R_NO_REMAP
 #define duplicated Rf_duplicated
+#endif
 
 /* String encoding conversion */
 const char *Rf_reEnc(const char *x, int ce_in, int ce_out, int subst);
@@ -468,11 +508,14 @@ extern SEXP R_BaseNamespace;
 /* S4 slot access */
 #define GET_SLOT(x, name) Rf_getAttrib((x), (name))
 #define SET_SLOT(x, name, val) Rf_setAttrib((x), (name), (val))
+int R_has_slot(SEXP obj, SEXP name);
 
 /* S4 class construction */
 #define MAKE_CLASS(name) R_do_MAKE_CLASS(name)
 SEXP R_do_MAKE_CLASS(const char *name);
-#define NEW_OBJECT(cls) Rf_allocS4Object()
+SEXP R_do_new_object(SEXP class_def);
+SEXP R_getClassDef(const char *what);
+#define NEW_OBJECT(cls) R_do_new_object(cls)
 
 /* Dimension access */
 #define GET_DIM(x) Rf_getAttrib((x), R_DimSymbol)
@@ -480,7 +523,9 @@ SEXP R_do_MAKE_CLASS(const char *name);
 
 /* Array allocation */
 SEXP Rf_allocArray(SEXPTYPE type, SEXP dims);
+#ifndef R_NO_REMAP
 #define allocArray Rf_allocArray
+#endif
 
 /* Memcpy/Memzero — R memory macros */
 #ifndef Memcpy
@@ -501,6 +546,7 @@ SEXP Rf_dimnamesgets(SEXP x, SEXP val);
 
 /* revsort — sort x and associated index in decreasing order */
 void revsort(double *x, int *index, int n);
+#define Rf_revsort revsort
 
 /* R_NameSymbol — symbol for "name" (not "names"!) */
 extern SEXP R_NameSymbol;
@@ -510,10 +556,12 @@ SEXP Rf_findVar(SEXP sym, SEXP env);
 SEXP Rf_findVarInFrame(SEXP env, SEXP sym);
 SEXP Rf_findVarInFrame3(SEXP env, SEXP sym, int inherits_flag);
 SEXP Rf_GetOption1(SEXP tag);
+#ifndef R_NO_REMAP
 #define findVar Rf_findVar
 #define findVarInFrame Rf_findVarInFrame
 #define findVarInFrame3 Rf_findVarInFrame3
 #define GetOption1 Rf_GetOption1
+#endif
 
 /* Eval variants */
 SEXP R_tryEval(SEXP expr, SEXP env, int *errorOccurred);
@@ -522,13 +570,17 @@ int R_ToplevelExec(void (*fun)(void *), void *data);
 
 /* Named list constructor */
 SEXP Rf_mkNamed(SEXPTYPE type, const char **names);
+#ifndef R_NO_REMAP
 #define mkNamed Rf_mkNamed
+#endif
 
 /* Type checking additions */
 Rboolean Rf_isLanguage(SEXP x);
-#define isLanguage Rf_isLanguage
 Rboolean Rf_isSymbol(SEXP x);
+#ifndef R_NO_REMAP
+#define isLanguage Rf_isLanguage
 #define isSymbol Rf_isSymbol
+#endif
 
 /* File path expansion */
 const char *R_ExpandFileName(const char *fn);
@@ -553,7 +605,9 @@ typedef int R_NativePrimitiveArgType;
 
 /* S4 allocation stub */
 SEXP Rf_allocS4Object(void);
+#ifndef R_NO_REMAP
 #define allocS4Object Rf_allocS4Object
+#endif
 
 /* ── R_RegisterRoutines ── */
 
@@ -571,8 +625,17 @@ typedef struct {
     int numArgs;
 } R_CMethodDef;
 
-typedef void *R_FortranMethodDef;
-typedef void *R_ExternalMethodDef;
+typedef struct {
+    const char *name;
+    DL_FUNC fun;
+    int numArgs;
+} R_FortranMethodDef;
+
+typedef struct {
+    const char *name;
+    DL_FUNC fun;
+    int numArgs;
+} R_ExternalMethodDef;
 
 typedef struct _DllInfo DllInfo;
 
@@ -658,8 +721,24 @@ typedef struct {
 
 int _minir_get_registered_calls(_minir_registered_call **out);
 
-/* ── Convenience macros (GNU R compat) ── */
+/* ── Protection macros (always defined) ── */
 
+#define PROTECT(s)      Rf_protect(s)
+#define UNPROTECT(n)    Rf_unprotect(n)
+
+/* R_PreserveObject / R_ReleaseObject -- no-ops in miniR (no GC).
+   Must be real functions (not macros) for C++ ::R_PreserveObject() calls. */
+static inline void R_PreserveObject(SEXP x) { (void)x; }
+static inline void R_ReleaseObject(SEXP x)  { (void)x; }
+
+/* Rf_ aliases that are always available (not affected by R_NO_REMAP) */
+#define Rf_lazy_duplicate Rf_shallow_duplicate
+#define Rf_translateCharUTF8(x)  R_CHAR(x)
+#define Rf_PrintValue(x)  ((void)(x))
+
+/* ── Convenience macros (GNU R compat, only without R_NO_REMAP) ── */
+
+#ifndef R_NO_REMAP
 #define allocVector     Rf_allocVector
 #define allocVector3    Rf_allocVector
 #define allocMatrix     Rf_allocMatrix
@@ -667,8 +746,6 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define ScalarInteger   Rf_ScalarInteger
 #define ScalarLogical   Rf_ScalarLogical
 #define ScalarString    Rf_ScalarString
-/* Note: lowercase `length` is NOT aliased because it conflicts with the
-   struct field `s->length`. Use LENGTH() macro or Rf_length() function. */
 #define mkChar          Rf_mkChar
 #define mkCharLen       Rf_mkCharLen
 #define mkCharCE        Rf_mkCharCE
@@ -677,10 +754,6 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define mkString        Rf_mkString
 #define install         Rf_install
 #define protect         Rf_protect
-#define PROTECT(s)      Rf_protect(s)
-#define UNPROTECT(n)    Rf_unprotect(n)
-#define R_PreserveObject(x) ((void)(x))
-#define R_ReleaseObject(x)  ((void)(x))
 #define isNull          Rf_isNull
 #define isReal          Rf_isReal
 #define isInteger       Rf_isInteger
@@ -695,18 +768,16 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define asLogical       Rf_asLogical
 #define coerceVector    Rf_coerceVector
 #define duplicate       Rf_duplicate
-#define Rf_lazy_duplicate Rf_shallow_duplicate
 #define error           Rf_error
 #define warning         Rf_warning
 #define nrows           Rf_nrows
 #define ncols           Rf_ncols
 #define cons            Rf_cons
 #define lcons           Rf_lcons
-#define Rf_translateCharUTF8(x)  R_CHAR(x)
-#define translateCharUTF8        Rf_translateCharUTF8
-#define Rf_PrintValue(x)  ((void)(x))
-#define PrintValue        Rf_PrintValue
-#define eval              Rf_eval
+#define translateCharUTF8  Rf_translateCharUTF8
+#define PrintValue      Rf_PrintValue
+#define eval            Rf_eval
+#endif /* R_NO_REMAP */
 
 /* Arith constants (also in R_ext/Arith.h) */
 #ifndef R_PosInf
@@ -720,9 +791,11 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define Rf_list1(a)       Rf_cons((a), R_NilValue)
 #define Rf_list2(a,b)     Rf_cons((a), Rf_cons((b), R_NilValue))
 #define Rf_list3(a,b,c)   Rf_cons((a), Rf_cons((b), Rf_cons((c), R_NilValue)))
+#ifndef R_NO_REMAP
 #define list1 Rf_list1
 #define list2 Rf_list2
 #define list3 Rf_list3
+#endif
 
 /* length() alias — can't use #define because it conflicts with s->length.
    Use a static inline function instead. */
@@ -752,7 +825,9 @@ static inline SEXP Rf_asChar(SEXP x) {
     if (TYPEOF(x) == STRSXP && LENGTH(x) > 0) return STRING_ELT(x, 0);
     return R_NaString;
 }
+#ifndef R_NO_REMAP
 #define asChar Rf_asChar
+#endif
 
 /* vmaxget / vmaxset — memory stack checkpoints (no-ops in miniR) */
 #ifndef MINIR_VMAXGET_DEFINED
@@ -767,8 +842,10 @@ static inline void vmaxset(void *p) { (void)p; }
 #define NO_REFERENCES(x) 0
 #define NAMED(x) 2
 #define SET_NAMED(x, v) ((void)(v))
+#ifndef R_NO_REMAP
 #define warningcall       Rf_warningcall
 #define errorcall         Rf_errorcall
+#endif
 
 /* Type checking aliases */
 Rboolean Rf_isVectorAtomic(SEXP x);
@@ -777,12 +854,14 @@ Rboolean Rf_isMatrix(SEXP x);
 Rboolean Rf_isNumeric(SEXP x);
 Rboolean Rf_isFunction(SEXP x);
 Rboolean Rf_isEnvironment(SEXP x);
+#ifndef R_NO_REMAP
 #define isVectorAtomic Rf_isVectorAtomic
 #define isVectorList   Rf_isVectorList
 #define isMatrix       Rf_isMatrix
 #define isNumeric      Rf_isNumeric
 #define isFunction     Rf_isFunction
 #define isEnvironment  Rf_isEnvironment
+#endif
 
 /* PROTECT_INDEX — indexed protection for reprotecting */
 typedef int PROTECT_INDEX;
@@ -795,12 +874,21 @@ void R_Reprotect(SEXP s, PROTECT_INDEX i);
 SEXP Rf_findVar(SEXP sym, SEXP env);
 SEXP Rf_findVarInFrame3(SEXP env, SEXP sym, int inherits_flag);
 SEXP PREXPR(SEXP x);
+#ifndef R_NO_REMAP
 #define findVar Rf_findVar
 #define findVarInFrame3 Rf_findVarInFrame3
+#endif
 
 /* R_ExecWithCleanup — execute with cleanup handler */
 SEXP R_ExecWithCleanup(SEXP (*fun)(void *), void *data,
                        void (*cleanup)(void *), void *cleandata);
+
+/* Unwind protection (R 3.5+) — stubs for Rcpp compatibility */
+SEXP R_MakeUnwindCont(void);
+void R_ContinueUnwind(SEXP cont);
+SEXP R_UnwindProtect(SEXP (*fun)(void *data), void *data,
+                     void (*cleanfun)(void *data, Rboolean jump),
+                     void *cleandata, SEXP cont);
 void *R_ExternalPtrAddrFn(SEXP s);
 
 /* Pairlist navigation */
@@ -816,35 +904,47 @@ SEXP Rf_lang1(SEXP s);
 SEXP Rf_lang2(SEXP s, SEXP t);
 SEXP Rf_lang3(SEXP s, SEXP t, SEXP u);
 SEXP Rf_lang4(SEXP s, SEXP t, SEXP u, SEXP v);
+#ifndef R_NO_REMAP
 #define lang1 Rf_lang1
 #define lang2 Rf_lang2
 #define lang3 Rf_lang3
 #define lang4 Rf_lang4
+#endif
 SEXP Rf_lang5(SEXP s, SEXP t, SEXP u, SEXP v, SEXP w);
 SEXP Rf_lang6(SEXP s, SEXP t, SEXP u, SEXP v, SEXP w, SEXP x);
+#ifndef R_NO_REMAP
 #define lang5 Rf_lang5
 #define lang6 Rf_lang6
+#endif
 
-/* findFun — find a function in an environment */
+/* findFun -- find a function in an environment */
 SEXP Rf_findFun(SEXP sym, SEXP env);
+#ifndef R_NO_REMAP
 #define findFun Rf_findFun
+#endif
 
-/* LCONS — alias for Rf_lcons */
+/* LCONS -- alias for Rf_lcons */
 #define LCONS(a, b) Rf_lcons((a), (b))
 #define Rf_list4(a,b,c,d) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), R_NilValue))))
-#define list4 Rf_list4
 #define R_IsNaN(x) isnan(x)
+#ifndef R_NO_REMAP
+#define list4 Rf_list4
 #define reEnc Rf_reEnc
-
-/* More type predicates */
 #define isFactor(x)   Rf_inherits((x), "factor")
 #define isNewList(x)  (TYPEOF(x) == VECSXP)
+#endif
+
+/* More type predicates */
 Rboolean Rf_isFrame(SEXP x);
+#ifndef R_NO_REMAP
 #define isFrame Rf_isFrame
+#endif
 
 /* Attribute copying */
 void Rf_copyMostAttrib(SEXP from, SEXP to);
+#ifndef R_NO_REMAP
 #define copyMostAttrib Rf_copyMostAttrib
+#endif
 #define SHALLOW_DUPLICATE_ATTRIB(from, to) Rf_copyMostAttrib((from), (to))
 #define DUPLICATE_ATTRIB(from, to) Rf_copyMostAttrib((from), (to))
 
@@ -860,7 +960,9 @@ void Rf_copyMostAttrib(SEXP from, SEXP to);
 
 /* Pairlist traversal */
 SEXP Rf_nthcdr(SEXP s, int n);
+#ifndef R_NO_REMAP
 #define nthcdr Rf_nthcdr
+#endif
 
 /* Sorting */
 void R_isort(int *x, int n);
@@ -896,15 +998,20 @@ void optif9(int nr, int n, double *x, void (*fcn)(), void (*d1fcn)(),
 /* CAD*R — pairlist navigation */
 #define CAD4R(x) CAR(CDR(CDR(CDR(CDR(x)))))
 Rboolean Rf_isPrimitive(SEXP x);
+#ifndef R_NO_REMAP
 #define isPrimitive Rf_isPrimitive
+#endif
 
 /* More type checks */
+Rboolean Rf_isS4(SEXP x);
+#ifndef R_NO_REMAP
 #define isOrdered(x)   Rf_inherits((x), "ordered")
-#define isS4(x)        (TYPEOF(x) == OBJSXP || Rf_inherits((x), "refClass"))
+#define isS4(x)        Rf_isS4(x)
 #define isList(x)      (TYPEOF(x) == LISTSXP || TYPEOF(x) == NILSXP)
 #define isPairList(x)  (TYPEOF(x) == LISTSXP)
 #define isComplex(x)   (TYPEOF(x) == CPLXSXP)
 #define isArray(x)     (Rf_getAttrib((x), R_DimSymbol) != R_NilValue)
+#endif
 
 /* Sorted hints (ALTREP) */
 #define UNKNOWN_SORTEDNESS   INT_MIN
@@ -921,35 +1028,45 @@ Rboolean Rf_isPrimitive(SEXP x);
 #define XTRUELENGTH(x)  0
 
 /* Slot assignment */
-void R_do_slot_assign(SEXP obj, SEXP name, SEXP val);
+SEXP R_do_slot_assign(SEXP obj, SEXP name, SEXP val);
 
 /* Console flush — no-op */
 void R_FlushConsole(void);
 
 /* allocList — allocate pairlist */
 SEXP Rf_allocList(int n);
+#ifndef R_NO_REMAP
 #define allocList Rf_allocList
+#endif
 
-/* Rf_match — match values */
+/* Rf_match -- match values */
 SEXP Rf_match(SEXP table, SEXP x, int nomatch);
+#ifndef R_NO_REMAP
 #define match Rf_match
+#endif
 
 /* Factor conversion */
 SEXP Rf_asCharacterFactor(SEXP x);
+#ifndef R_NO_REMAP
 #define asCharacterFactor Rf_asCharacterFactor
+#endif
 
-/* Rf_nchar — string length */
+/* Rf_nchar -- string length */
 int Rf_nchar(SEXP x, int type, Rboolean allowNA, Rboolean keepNA, const char *msg_name);
+#ifndef R_NO_REMAP
 #define nchar Rf_nchar
+#endif
 
-/* S_alloc — zeroed transient allocation */
+/* S_alloc -- zeroed transient allocation */
 char *S_alloc(long nelem, int eltsize);
 
-/* Rf_type2char — SEXPTYPE to string */
+/* Rf_type2char -- SEXPTYPE to string */
 const char *Rf_type2char(SEXPTYPE type);
-#define type2char Rf_type2char
 SEXP Rf_type2str(SEXPTYPE type);
+#ifndef R_NO_REMAP
+#define type2char Rf_type2char
 #define type2str Rf_type2str
+#endif
 
 /* R_finite — finiteness check (function version of R_FINITE macro) */
 int R_finite(double x);
@@ -969,6 +1086,10 @@ int R_finite(double x);
 
 #ifdef __cplusplus
 }
+
+/* R_isnancpp — C++ isnan wrapper (defined in R_ext/Arith.h in GNU R) */
+inline int R_isnancpp(double x) { return isnan(x); }
+
 #endif
 
 #endif /* MINIR_RINTERNALS_H */
