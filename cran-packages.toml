@@ -21,6 +21,10 @@
 #   compiles       — native code compiles with miniR
 #   loads          — library() succeeds in miniR
 #   blocker        — what prevents loading
+#   r_headers      — C/C++ headers included from R
+#   r_api_functions — Rf_* functions used
+#   r_api_globals  — R_* global symbols used
+#   r_api_macros   — R API macros used (PROTECT, ALTREP, etc.)
 
 [packages.abind]
 version = "1.4-8"
@@ -37,6 +41,10 @@ has_configure = true
 imports = "assertthat, bit64 (>= 0.9-7), glue, methods, purrr, R6, rlang"
 depends = "R (>= 4.1)"
 linking_to = "cpp11 (>= 0.4.2)"
+r_headers = ["R_ext/Altrep.h", "R_ext/Riconv.h", "arrow/acero/exec_plan.h", "arrow/acero/options.h", "arrow/acero/type_fwd.h", "arrow/array.h", "arrow/array/array_base.h", "arrow/array/builder_base.h", "arrow/array/builder_binary.h", "arrow/array/builder_decimal.h", "arrow/array/builder_dict.h", "arrow/array/builder_nested.h", "arrow/array/builder_primitive.h", "arrow/array/concatenate.h", "arrow/array/data.h", "arrow/array/util.h", "arrow/buffer.h", "arrow/buffer_builder.h", "arrow/builder.h", "arrow/c/abi.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_allocVector", "Rf_classgets", "Rf_coerceVector", "Rf_duplicate", "Rf_error", "Rf_eval", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isFactor", "Rf_isNull", "Rf_isObject", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLenCE", "Rf_mkString", "Rf_setAttrib", "Rf_shallow_duplicate", "Rf_translateChar", "Rf_warning", "Rf_xlength"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_ClassSymbol", "R_DollarSymbol", "R_ExternalPtrAddr", "R_FindNamespace", "R_GlobalEnv", "R_LevelsSymbol", "R_MakeExternalPtr", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_PosInf", "R_PreserveObject", "R_RowNamesSymbol", "R_SetExternalPtrAddr", "R_UnboundValue", "R_VERSION", "R_Version", "R_XLEN_T_MAX"]
+r_api_macros = ["ALTREP", "ATTRIB", "MARK_NOT_MUTABLE", "PROTECT", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.askpass]
 version = "1.2.1"
@@ -44,6 +52,9 @@ native_code = ["c"]
 source_files = { c = 1, cpp = 0, fortran = 0 }
 loads = true
 imports = "sys (>= 2.1)"
+r_headers = ["R_ext/Rdynload.h", "Rinternals.h", "stdio.h", "stdlib.h", "unistd.h", "wincred.h", "windows.h"]
+r_api_functions = ["Rf_mkString"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.assertthat]
 version = "0.2.1"
@@ -59,6 +70,9 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.0.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_DotsSymbol", "R_NilValue", "R_UnboundValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.base]
 version = ""
@@ -73,6 +87,10 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 2.9.0)"
+r_headers = ["Rinternals.h", "Rversion.h", "stddef.h", "stdio.h", "string.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_VERSION", "R_Version"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.BH]
 version = "1.90.0-1"
@@ -88,6 +106,10 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.4.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "stdlib.h"]
+r_api_functions = ["Rf_lengthgets"]
+r_api_globals = ["R_CallMethodDef", "R_Calloc", "R_FlushConsole", "R_Free", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.bit64]
 version = "4.6.0-1"
@@ -98,6 +120,9 @@ compiles = true
 loads = true
 imports = "graphics, methods, stats, utils"
 depends = "R (>= 3.4.0), bit (>= 4.0.0)"
+r_headers = ["R.h", "R_ext/Error.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "pthread.h", "stdint.h", "stdlib.h"]
+r_api_globals = ["R_Busy", "R_CallMethodDef", "R_CheckUserInterrupt", "R_FlushConsole", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.blob]
 version = "1.3.0"
@@ -124,6 +149,10 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.6)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdio.h", "stdlib.h", "string.h", "windows.h"]
+r_api_functions = ["Rf_lengthgets", "Rf_translateChar", "Rf_xlength", "Rf_xlengthgets"]
+r_api_globals = ["R_CallMethodDef"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.broom]
 version = "1.0.12"
@@ -145,6 +174,9 @@ native_code = ["c"]
 source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "rlang, fastmap (>= 1.2.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rdefines.h", "Rinternals.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_StringBlank", "Rf_error", "Rf_length"]
+r_api_globals = ["R_CHAR", "R_CallMethodDef"]
 
 [packages.callr]
 version = "3.7.6"
@@ -183,6 +215,10 @@ compiles = true
 loads = true
 imports = "backports (>= 1.1.0), utils"
 depends = "R (>= 3.0.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "ctype.h", "float.h", "inttypes.h", "limits.h", "math.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_isFrame"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_FINITE", "R_GlobalEnv", "R_IsNaN", "R_LevelsSymbol", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_PosInf", "R_RegisterCCallable", "R_RowNamesSymbol", "R_VERSION", "R_Version"]
+r_api_macros = ["ATTRIB", "PROTECT", "UNPROTECT"]
 
 [packages.class]
 version = "7.3-23"
@@ -191,6 +227,9 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "MASS"
 depends = "R (>= 3.0.0), stats, utils"
+r_headers = ["R.h", "float.h", "math.h", "stdlib.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_Free"]
 
 [packages.classInt]
 version = "0.4-11"
@@ -199,6 +238,8 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "grDevices, stats, graphics, e1071, class, KernSmooth"
 depends = "R (>= 2.2)"
+r_headers = ["R_ext/RS.h", "R_ext/Rdynload.h", "stdlib.h"]
+r_api_globals = ["R_FortranMethodDef"]
 
 [packages.cli]
 version = "3.6.5"
@@ -210,6 +251,10 @@ compiles = true
 loads = true
 imports = "utils"
 depends = "R (>= 3.4)"
+r_headers = ["R.h", "R_ext/Altrep.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "assert.h", "bthread.h", "cli/progress.h", "errno.h", "fcntl.h", "inttypes.h", "io.h", "limits.h", "mach/clock.h", "mach/mach.h", "mach/mach_time.h", "memory.h", "pthread.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocVector", "Rf_cons", "Rf_defineVar", "Rf_error", "Rf_eval", "Rf_findVar", "Rf_findVarInFrame", "Rf_inherits", "Rf_install", "Rf_isLogical", "Rf_isNull", "Rf_lcons", "Rf_length", "Rf_lengthgets", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkCharLenCE", "Rf_mkNamed", "Rf_mkString", "Rf_xlength", "Rf_xlengthgets"]
+r_api_globals = ["R_BaseEnv", "R_CLEANCALL_SUPPORT", "R_CLI_HYPERLINK_MODE", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_EmptyEnv", "R_ExecWithCleanup", "R_ExternalPtrAddr", "R_ExternalPtrAddrFn", "R_ExternalPtrTag", "R_INLINE", "R_MakeExternalPtr", "R_MakeExternalPtrFn", "R_NO_REMAP", "R_NamesSymbol", "R_NewEnv", "R_NilValue", "R_PosInf", "R_PreserveObject"]
+r_api_macros = ["ALTREP", "MARK_NOT_MUTABLE", "PROTECT", "SET_ATTRIB", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.clipr]
 version = "0.8.0"
@@ -225,6 +270,9 @@ uses_dynlib = true
 needs_system_library = true
 imports = "graphics, grDevices, stats, utils"
 depends = "R (>= 3.5.0)"
+r_headers = ["R.h", "R_ext/Boolean.h", "R_ext/Print.h", "R_ext/Random.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "Rinternals.h", "Rmath.h", "float.h", "libintl.h", "math.h"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_CheckUserInterrupt", "R_DimSymbol", "R_NamesSymbol", "R_NativePrimitiveArgType", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.codetools]
 version = "0.2-20"
@@ -241,6 +289,9 @@ compiles = true
 loads = true
 imports = "graphics, grDevices, stats"
 depends = "R (>= 3.0.0), methods"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "Rmath.h", "ctype.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_FINITE"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.commonmark]
 version = "2.0.0"
@@ -251,6 +302,10 @@ bundled_library = true
 needs_system_library = true
 compiles = true
 loads = true
+r_headers = ["R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "assert.h", "cmark-gfm-extension_api.h", "ctype.h", "errno.h", "fcntl.h", "html.h", "inlines.h", "io.h", "limits.h", "parser.h", "references.h", "render.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h"]
+r_api_functions = ["Rf_allocVector", "Rf_asInteger", "Rf_asLogical", "Rf_error", "Rf_isInteger", "Rf_isLogical", "Rf_isString", "Rf_length", "Rf_mkChar", "Rf_mkCharCE"]
+r_api_globals = ["R_CallMethodDef"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.compiler]
 version = ""
@@ -276,6 +331,9 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "digest, stats, utils, jsonlite, rex, httr, cli, withr (>="
 depends = "R (>= 3.1.0), methods"
+r_headers = ["R.h", "R_ext/Error.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "stdint.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
+r_api_macros = ["MARK_NOT_MUTABLE"]
 
 [packages.cowplot]
 version = "1.2.0"
@@ -317,6 +375,10 @@ uses_dynlib = true
 needs_system_library = true
 has_configure = true
 depends = "R (>= 3.0.0)"
+r_headers = ["R.h", "R_ext/Connections.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconfig.h", "Rembedded.h", "Rinterface.h", "Rinternals.h", "Rversion.h", "Windows.h", "Winhttp.h", "arpa/inet.h", "byteswap.h", "curl/curl.h", "curl/easy.h", "errno.h", "fcntl.h", "libkern/OSByteOrder.h", "machine/bswap.h", "netdb.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocVector", "Rf_asChar", "Rf_asInteger", "Rf_asLogical", "Rf_asReal", "Rf_cons", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_getAttrib", "Rf_getCharCE", "Rf_inherits", "Rf_install", "Rf_isFunction", "Rf_isInteger", "Rf_isLogical", "Rf_isNumeric", "Rf_isPairList", "Rf_isString", "Rf_isVector", "Rf_lcons", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLenCE", "Rf_mkString"]
+r_api_globals = ["R_CONNECTIONS_VERSION", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ClosureFormals", "R_EOF", "R_ExpandFileName", "R_ExternalPtrAddr", "R_ExternalPtrProtected", "R_ExternalPtrTag", "R_FindNamespace", "R_GlobalEnv", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RegisterCFinalizerEx", "R_SetExternalPtrAddr", "R_SetExternalPtrProtected", "R_ToplevelExec"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.data.table]
 version = "1.18.2.1"
@@ -377,6 +439,9 @@ compiles = true
 loads = true
 imports = "crayon (>= 1.3.2), tools, methods, utils, stats"
 depends = "R (>= 3.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.digest]
 version = "0.6.39"
@@ -389,6 +454,10 @@ compiles = true
 loads = true
 imports = "utils"
 depends = "R (>= 3.3.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rconfig.h", "Rdefines.h", "Rinternals.h", "Windows.h", "assert.h", "config.h", "cstddef", "cstdint", "cstring", "immintrin.h", "intrin.h", "inttypes.h", "limits.h", "memory.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_allocVector", "Rf_asInteger", "Rf_asReal", "Rf_error", "Rf_eval", "Rf_lcons"]
+r_api_globals = ["R_Calloc", "R_ClearExternalPtr", "R_ExternalPtrAddr", "R_Free", "R_GlobalEnv", "R_InitOutPStream", "R_MakeExternalPtr", "R_NO_REMAP", "R_NilValue", "R_RegisterCCallable", "R_RegisterCFinalizerEx", "R_Serialize"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.distributional]
 version = "0.6.0"
@@ -416,6 +485,10 @@ version = "1.2.0"
 uses_dynlib = true
 imports = "cli (>= 3.6.2), generics, glue (>= 1.3.2), lifecycle (>="
 depends = "R (>= 4.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "Rversion.h", "algorithm", "vector"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_allocSExp", "Rf_allocVector", "Rf_asInteger", "Rf_charIsASCII", "Rf_classgets", "Rf_copyMostAttrib", "Rf_defineVar", "Rf_errorcall", "Rf_eval", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_getCharCE", "Rf_inherits", "Rf_install", "Rf_isFactor", "Rf_isNull", "Rf_isObject", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkString", "Rf_namesgets", "Rf_setAttrib", "Rf_shallow_duplicate", "Rf_xlength"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_DimSymbol", "R_EmptyEnv", "R_GetCCallable", "R_MakeActiveBinding", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_PreserveObject", "R_RowNamesSymbol", "R_UnboundValue", "R_VERSION", "R_Version"]
+r_api_macros = ["ALTREP", "ATTRIB", "PROTECT", "SET_ATTRIB", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.DT]
 version = "0.34.0"
@@ -436,6 +509,8 @@ native_code = ["c"]
 source_files = { c = 5, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics, grDevices, class, stats, methods, utils, proxy"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "ctype.h", "float.h", "limits.h", "locale.h", "math.h", "stdarg.h", "stdio.h", "stdlib.h", "string.h"]
+r_api_globals = ["R_CMethodDef", "R_PosInf"]
 
 [packages.ellipsis]
 version = "0.3.2"
@@ -444,6 +519,10 @@ source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "rlang (>= 0.3.0)"
 depends = "R (>= 3.2)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdbool.h", "stdio.h", "stdlib.h"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_allocVector", "Rf_asLogical", "Rf_errorcall", "Rf_eval", "Rf_length", "Rf_mkChar", "Rf_setAttrib"]
+r_api_globals = ["R_CallMethodDef", "R_DotsSymbol", "R_MissingArg", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_UnboundValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.evaluate]
 version = "1.0.5"
@@ -460,10 +539,17 @@ compiles = true
 loads = true
 imports = "grDevices, utils"
 depends = "R (>= 3.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "float.h", "stdint.h", "stdio.h", "string.h"]
+r_api_globals = ["R_BlankString", "R_CallMethodDef", "R_CheckUserInterrupt", "R_LEN_T", "R_LEN_T_MAX", "R_NaString", "R_NilValue", "R_XLEN_T", "R_XLEN_TMAX", "R_XLEN_T_MAX"]
+r_api_macros = ["ALTREP", "PROTECT", "UNPROTECT"]
 
 [packages.farver]
 version = "2.1.2"
 uses_dynlib = true
+r_headers = ["R.h", "R_ext/GraphicsEngine.h", "R_ext/Rdynload.h", "Rinternals.h", "algorithm", "cctype", "cmath", "memory", "stdlib.h", "string", "typeinfo", "unordered_map"]
+r_api_functions = ["Rf_allocMatrix", "Rf_allocVector", "Rf_errorcall", "Rf_getAttrib", "Rf_install", "Rf_isInteger", "Rf_isMatrix", "Rf_isNull", "Rf_length", "Rf_mkChar", "Rf_namesgets", "Rf_ncols", "Rf_nrows", "Rf_setAttrib"]
+r_api_globals = ["R_ALPHA", "R_BLUE", "R_CallMethodDef", "R_GREEN", "R_NO_REMAP", "R_NaInt", "R_NaReal", "R_NaString", "R_NamesSymbol", "R_NilValue", "R_RED", "R_RGB", "R_RGBA"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.fastmap]
 version = "1.2.0"
@@ -472,6 +558,10 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 compiles = true
 loads = true
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rdefines.h", "Rinternals.h", "algorithm", "array", "cassert", "climits", "cmath", "cstddef", "cstdint", "exception", "functional", "initializer_list", "iterator", "limits", "list", "memory", "ratio"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_StringBlank", "Rf_allocVector", "Rf_error", "Rf_getCharCE", "Rf_length", "Rf_mkCharCE", "Rf_setAttrib"]
+r_api_globals = ["R_CallMethodDef", "R_ClearExternalPtr", "R_ExternalPtrAddr", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RegisterCFinalizerEx"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.fontawesome]
 version = "0.5.3"
@@ -503,6 +593,10 @@ uses_rcpp = true
 imports = "colorspace, fracdiff, generics (>= 0.1.2), ggplot2 (>= 3.4.0),"
 depends = "R (>= 4.1.0)"
 linking_to = "Rcpp (>= 0.12.4), RcppArmadillo (>= 0.2.35)"
+r_headers = ["R.h", "R_ext/Applic.h", "R_ext/Arith.h", "R_ext/Error.h", "R_ext/Memory.h", "R_ext/Print.h", "Rcpp.h", "RcppArmadillo.h", "Rinternals.h", "Rmath.h", "cmath", "float.h", "math.h", "stdbool.h", "string", "string.h", "vector"]
+r_api_functions = ["Rf_ScalarReal", "Rf_allocVector", "Rf_asInteger", "Rf_asReal", "Rf_duplicate", "Rf_isNull", "Rf_mkNamed"]
+r_api_globals = ["R_CallMethodDef", "R_IsNA", "R_NilValue", "R_PosInf"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.foreign]
 version = "0.8-91"
@@ -512,6 +606,9 @@ uses_dynlib = true
 needs_system_library = true
 imports = "methods, utils, stats"
 depends = "R (>= 4.0.0)"
+r_headers = ["R.h", "R_ext/Arith.h", "R_ext/Error.h", "R_ext/Print.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconfig.h", "Rinternals.h", "Rversion.h", "ctype.h", "dbmalloc.h", "errno.h", "float.h", "libintl.h", "limits.h", "math.h", "stdarg.h", "stddef.h", "stdio.h", "stdlib.h"]
+r_api_globals = ["R_BlankString", "R_CMethodDef", "R_CallMethodDef", "R_Calloc", "R_ClassSymbol", "R_ExpandFileName", "R_ExternalMethodDef", "R_FINITE", "R_Free", "R_Frees", "R_LoadStataData", "R_NaReal", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_PosInf", "R_Realloc", "R_RowNamesSymbol", "R_SaveStataData", "R_VERSION"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.Formula]
 version = "1.2-5"
@@ -525,6 +622,8 @@ native_code = ["c"]
 source_files = { c = 7, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "stats"
+r_headers = ["R.h", "R_ext/BLAS.h", "R_ext/Linpack.h", "R_ext/Rdynload.h", "Rinternals.h", "Rmath.h"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_FortranMethodDef", "R_NativePrimitiveArgType"]
 
 [packages.fs]
 version = "1.6.7"
@@ -533,6 +632,9 @@ bundled_library = true
 needs_system_library = true
 imports = "methods"
 depends = "R (>= 4.1)"
+r_headers = ["FindDirectory.h", "OS.h", "R.h", "Rinternals.h", "TargetConditionals.h", "accctrl.h", "aclapi.h", "arpa/inet.h", "as400_protos.h", "as400_types.h", "assert.h", "atomic.h", "builtins.h", "crtdbg.h", "ctype.h", "direct.h", "dirent.h", "dlfcn.h", "errno.h", "fcntl.h"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_lengthgets", "Rf_xlength"]
+r_api_globals = ["R_NO_REMAP", "R_OK", "R_PreserveObject", "R_ReleaseObject"]
 
 [packages.future]
 version = "1.69.0"
@@ -570,6 +672,10 @@ uses_dynlib = true
 needs_system_library = true
 has_configure = true
 imports = "askpass, credentials (>= 1.2.1), openssl (>= 2.0.3),"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "git2.h", "git2/sys/repository.h", "string.h", "sys/stat.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocVector", "Rf_asInteger", "Rf_asLogical", "Rf_asReal", "Rf_error", "Rf_eval", "Rf_inherits", "Rf_install", "Rf_isFunction", "Rf_isNull", "Rf_isString", "Rf_lcons", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkCharLenCE", "Rf_mkString", "Rf_setAttrib", "Rf_warningcall_immediate"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ExternalPtrAddr", "R_FindNamespace", "R_GlobalEnv", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RegisterCFinalizerEx", "R_RowNamesSymbol"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.ggplot2]
 version = "4.0.2"
@@ -591,6 +697,8 @@ uses_dynlib = true
 imports = "grid, Rcpp, rlang (>= 1.1.6), S7, scales (>= 1.4.0), withr (>="
 depends = "R (>= 4.5.0), ggplot2 (>= 3.5.2)"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "Rcpp/Benchmark/Timer.h", "cmath", "deque"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.ggsci]
 version = "4.2.0"
@@ -634,6 +742,10 @@ compiles = true
 loads = true
 imports = "methods"
 depends = "R (>= 3.6)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "stdbool.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarString", "Rf_allocVector", "Rf_error", "Rf_eval", "Rf_lengthgets", "Rf_mkCharCE", "Rf_mkCharLenCE", "Rf_xlength", "Rf_xlengthgets"]
+r_api_globals = ["R_CallMethodDef", "R_EmptyEnv", "R_NO_REMAP"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.googledrive]
 version = "2.1.2"
@@ -655,6 +767,10 @@ native_code = ["c"]
 source_files = { c = 8, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "Graphics.h", "GraphicsBase.h", "Print.h", "R.h", "R_ext/Arith.h", "R_ext/Boolean.h", "R_ext/Error.h", "R_ext/Print.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "R_ext/Visibility.h", "Rinternals.h", "Rmath.h", "config.h", "float.h", "libintl.h", "limits.h", "math.h", "stdio.h"]
+r_api_functions = ["Rf_ggptr", "Rf_setBaseDevice"]
+r_api_globals = ["R_BLUE", "R_BlankString", "R_CallMethodDef", "R_DEV__", "R_DimSymbol", "R_ExternalMethodDef", "R_FINITE", "R_FlushConsole", "R_GE_gcontext", "R_GE_lineend", "R_GE_linejoin", "R_GREEN", "R_INLINE", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_OPAQUE", "R_PosInf", "R_RED", "R_RGB"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.grDevices]
 version = ""
@@ -662,6 +778,10 @@ native_code = ["c"]
 source_files = { c = 18, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["CoreFoundation/CoreFoundation.h", "Defn.h", "Fileio.h", "Graphics.h", "GraphicsBase.h", "Internal.h", "R.h", "R_ext/Boolean.h", "R_ext/Error.h", "R_ext/GraphicsEngine.h", "R_ext/QuartzDevice.h", "R_ext/RS.h", "R_ext/Rdynload.h", "R_ext/Riconv.h", "R_ext/Visibility.h", "Rinternals.h", "Rmath.h", "Rversion.h", "cairo-ft.h", "config.h"]
+r_api_functions = ["Rf_eval_with_gd", "Rf_runcmd"]
+r_api_globals = ["R_ALPHA", "R_ARCH", "R_BLUE", "R_BaseEnv", "R_CAIRO_FN", "R_CallMethodDef", "R_Calloc", "R_CheckDeviceAvailable", "R_CheckDeviceAvailableBool", "R_ClassSymbol", "R_CreateAtVector", "R_DEV_CAIRO_H", "R_DeviceSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_ExpandFileName", "R_ExternalMethodDef", "R_FINITE", "R_FindNamespace", "R_FindSymbol"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.grid]
 version = "0.7-4"
@@ -669,6 +789,9 @@ native_code = ["c"]
 source_files = { c = 10, cpp = 0, fortran = 0 }
 loads = true
 depends = "R (>= 1.6.0)"
+r_headers = ["R_ext/GraphicsDevice.h", "R_ext/GraphicsEngine.h", "R_ext/Rdynload.h", "Rgraphics.h", "Rinternals.h", "Rmath.h", "math.h"]
+r_api_globals = ["R_CallMethodDef", "R_ExternalPtrAddr", "R_FINITE", "R_GlobalEnv", "R_MakeExternalPtr", "R_MaxDevices", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.gridExtra]
 version = "2.3"
@@ -691,6 +814,8 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "methods, stats, utils"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "errno.h", "gnuwin32.h"]
+r_api_globals = ["R_CMethodDef", "R_NativePrimitiveArgType"]
 
 [packages.haven]
 version = "2.5.5"
@@ -701,6 +826,10 @@ has_configure = true
 imports = "cli (>= 3.0.0), forcats (>= 0.2.0), hms, lifecycle, methods,"
 depends = "R (>= 3.6)"
 linking_to = "cpp11"
+r_headers = ["BaseTsd.h", "R.h", "R_ext/Visibility.h", "Rinternals.h", "cmath", "cpp11/R.hpp", "cpp11/list.hpp", "cpp11/protect.hpp", "cpp11/strings.hpp", "ctype.h", "errno.h", "fcntl.h", "float.h", "fstream", "iconv.h", "inttypes.h", "iostream", "limits.h", "map", "math.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_allocVector", "Rf_coerceVector", "Rf_copyMostAttrib", "Rf_errorcall", "Rf_getAttrib", "Rf_inherits", "Rf_length", "Rf_lengthgets", "Rf_mkCharLenCE", "Rf_translateChar", "Rf_warning"]
+r_api_globals = ["R_CHAR", "R_CallMethodDef", "R_ClassSymbol", "R_NO_REMAP", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.here]
 version = "1.0.2"
@@ -722,6 +851,10 @@ source_files = { c = 6, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "methods, ggplot2, cluster, rpart, nnet, foreign, gtable, grid,"
 depends = "R (>= 4.2.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "errno.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CallMethodDef", "R_FortranMethodDef", "R_NamesSymbol"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.hms]
 version = "1.1.4"
@@ -743,6 +876,10 @@ source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "base64enc, digest, fastmap (>= 1.1.0), grDevices, rlang (>="
 depends = "R (>= 2.14.1)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdlib.h"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_getCharCE", "Rf_lengthgets", "Rf_mkCharLenCE", "Rf_warning", "Rf_xlength", "Rf_xlengthgets"]
+r_api_globals = ["R_CallMethodDef"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.htmlwidgets]
 version = "1.6.4"
@@ -761,6 +898,10 @@ has_configure = true
 imports = "later (>= 0.8.0), promises, R6, Rcpp (>= 1.0.7), utils"
 depends = "R (>= 2.15.1)"
 linking_to = "later, Rcpp"
+r_headers = ["BaseTsd.h", "FindDirectory.h", "OS.h", "Rconfig.h", "Rcpp.h", "Rinternals.h", "TargetConditionals.h", "Windows.h", "accctrl.h", "aclapi.h", "algorithm", "arpa/inet.h", "as400_protos.h", "as400_types.h", "assert.h", "atomic.h", "builtins.h", "crtdbg.h", "cstring", "ctype.h"]
+r_api_functions = ["Rf_isNull", "Rf_isString", "Rf_length", "Rf_mkCharCE", "Rf_mkCharLenCE"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_ClearExternalPtr", "R_EmptyEnv", "R_ExternalPtrAddr", "R_MakeExternalPtr", "R_NilValue", "R_OK"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.httr]
 version = "1.4.8"
@@ -792,6 +933,10 @@ has_configure = true
 imports = "cli, graphics, grDevices, lifecycle, magrittr, Matrix,"
 depends = "methods, R (>= 3.5.0)"
 linking_to = "cpp11 (>= 0.5.0)"
+r_headers = ["R.h", "R_ext/Altrep.h", "R_ext/Visibility.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "Rversion.h", "algorithm", "assert.h", "cassert", "climits", "cmath", "complex", "complex.h", "config.h", "cpp11.hpp", "cs/cs.h", "cstdint", "cstdio", "cstdlib"]
+r_api_functions = ["Rf_", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocVector", "Rf_asInteger", "Rf_asLogical", "Rf_cons", "Rf_copyMostAttrib", "Rf_defineVar", "Rf_duplicate", "Rf_error", "Rf_eval", "Rf_findFun", "Rf_findVar", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isEnvironment", "Rf_isFunction", "Rf_isNull", "Rf_lcons", "Rf_lengthgets", "Rf_mkChar", "Rf_mkCharLenCE", "Rf_mkString", "Rf_rbinom", "Rf_rgamma"]
+r_api_globals = ["R_BaseEnv", "R_BaseNamespace", "R_CallMethodDef", "R_CheckUserInterrupt", "R_DT_CIv", "R_DT_Cexp", "R_DT_Clog", "R_DT_Cval", "R_DT_Iv", "R_DT_Log", "R_DT_exp", "R_DT_log", "R_DT_qIv", "R_DT_val", "R_D_Clog", "R_D_Cval", "R_D_LExp", "R_D_Lval", "R_D_exp", "R_D_fexp"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.ini]
 version = "0.3.1"
@@ -809,6 +954,10 @@ version = "0.3.0"
 uses_dynlib = true
 imports = "cli, grid, rlang, utils"
 linking_to = "cpp11"
+r_headers = ["R_ext/Visibility.h", "cmath", "cstddef", "iostream", "ostream", "set", "testthat.h", "unordered_map", "vector"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_install", "Rf_mkChar", "Rf_setAttrib"]
+r_api_globals = ["R_CallMethodDef", "R_NO_REMAP"]
+r_api_macros = ["PROTECT"]
 
 [packages.iterators]
 version = "1.0.14"
@@ -838,6 +987,10 @@ bundled_library = true
 compiles = true
 loads = true
 depends = "methods"
+r_headers = ["R.h", "R_ext/Connections.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rdefines.h", "Rinternals.h", "Rversion.h", "assert.h", "ctype.h", "errno.h", "float.h", "limits.h", "math.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_allocVector", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isNull", "Rf_isNumeric", "Rf_isString", "Rf_isVectorList", "Rf_length", "Rf_mkString"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_ClassSymbol", "R_DimSymbol", "R_FINITE", "R_NaN", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_PosInf"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.KernSmooth]
 version = "2.23-26"
@@ -845,6 +998,8 @@ native_code = ["c"]
 source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 depends = "R (>= 2.5.0), stats"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stddef.h"]
+r_api_globals = ["R_FortranMethodDef"]
 
 [packages.knitr]
 version = "1.51"
@@ -870,6 +1025,10 @@ provides_headers = true
 imports = "Rcpp (>= 1.0.10), rlang"
 depends = "R (>= 3.5)"
 linking_to = "Rcpp"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/eventloop.h", "R_ext/libextern.h", "Rcpp.h", "Rinternals.h", "atomic", "cstdlib", "errno.h", "functional", "memory", "poll.h", "process.h", "pthread.h", "queue", "sched.h", "signal.h", "sstream", "stdarg.h", "stdexcept"]
+r_api_functions = ["Rf_error", "Rf_install", "Rf_onintr", "Rf_warningcall_immediate"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_GlobalContext", "R_InputHandlers", "R_LATER_WINDOW_CLASS", "R_MakeWeakRef", "R_NilValue", "R_PosInf", "R_RegisterCCallable", "R_SocketWait", "R_TopLevelContext", "R_WeakRefKey"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.lattice]
 version = "0.22-9"
@@ -880,6 +1039,9 @@ compiles = true
 loads = true
 imports = "grid, grDevices, graphics, stats, utils"
 depends = "R (>= 4.0.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h"]
+r_api_globals = ["R_CallMethodDef", "R_GlobalEnv", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.lazyeval]
 version = "0.2.2"
@@ -889,6 +1051,10 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "stdbool.h"]
+r_api_functions = ["Rf_allocVector", "Rf_duplicate", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVar", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isEnvironment", "Rf_isLanguage", "Rf_isSymbol", "Rf_length", "Rf_mkString", "Rf_setAttrib", "Rf_shallow_duplicate"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DotsSymbol", "R_MissingArg", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_UnboundValue"]
+r_api_macros = ["MARK_NOT_MUTABLE", "PROTECT", "UNPROTECT"]
 
 [packages.lifecycle]
 version = "1.0.5"
@@ -910,6 +1076,8 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics"
 depends = "R (>= 3.0.0), stats, zoo"
+r_headers = ["R_ext/RS.h", "R_ext/Rdynload.h", "stdlib.h"]
+r_api_globals = ["R_FortranMethodDef"]
 
 [packages.loo]
 version = "2.9.0"
@@ -925,6 +1093,9 @@ source_files = { c = 5, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "generics, timechange (>= 0.4.0)"
 depends = "methods, R (>= 3.2)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "ctype.h", "stdbool.h", "stdio.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_DimNamesSymbol", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.magrittr]
 version = "2.0.4"
@@ -935,6 +1106,10 @@ compiles = true
 loads = false
 blocker = "segfault in .onLoad"
 depends = "R (>= 3.4.0)"
+r_headers = ["R_ext/Parse.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "stdbool.h"]
+r_api_functions = ["Rf_PrintValue", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_allocSExp", "Rf_allocVector", "Rf_cons", "Rf_defineVar", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVar", "Rf_install", "Rf_lcons", "Rf_length", "Rf_mkChar", "Rf_mkString", "Rf_shallow_duplicate"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_EmptyEnv", "R_ExecWithCleanup", "R_ExternalMethodDef", "R_NO_REMAP", "R_NewEnv", "R_NilValue", "R_ParseVector", "R_PreserveObject", "R_UnboundValue", "R_VERSION", "R_Version"]
+r_api_macros = ["MARK_NOT_MUTABLE", "PROTECT", "UNPROTECT"]
 
 [packages.MASS]
 version = "7.3-65"
@@ -943,6 +1118,9 @@ source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "methods"
 depends = "R (>= 4.4.0), grDevices, graphics, stats, utils"
+r_headers = ["R.h", "R_ext/Applic.h", "R_ext/Linpack.h", "R_ext/Utils.h", "float.h", "limits.h", "math.h", "stddef.h", "stdlib.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_CheckUserInterrupt", "R_Free"]
 
 [packages.Matrix]
 version = "1.7-4"
@@ -954,6 +1132,10 @@ needs_system_library = true
 provides_headers = true
 imports = "grDevices, graphics, grid, lattice, stats, utils"
 depends = "R (>= 4.4), methods"
+r_headers = ["GKlib.h", "R.h", "R_ext/Error.h", "R_ext/Lapack.h", "R_ext/Print.h", "R_ext/Random.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconfig.h", "Rinternals.h", "Rmath.h", "Rversion.h", "assert.h", "ctype.h", "cublas_v2.h", "cuda.h", "cuda_runtime.h", "errno.h", "execinfo.h", "fenv.h"]
+r_api_functions = ["Rf_allocVector", "Rf_asLogical", "Rf_error", "Rf_install", "Rf_isObject", "Rf_mkNamed"]
+r_api_globals = ["R_ABS", "R_ADD", "R_ADD_REAL", "R_ASSEMBLE", "R_ASSIGN", "R_ASSIGN_CONJ", "R_ASSIGN_REAL", "R_BaseEnv", "R_CLEAR", "R_CLEAR_IMAG", "R_CallMethodDef", "R_Calloc", "R_CheckStack", "R_CheckUserInterrupt", "R_ClassSymbol", "R_DEFINES_H", "R_DIV", "R_DIV_REAL", "R_DimNamesSymbol", "R_DimNames_fixup"]
+r_api_macros = ["ATTRIB", "GET_SLOT", "PROTECT", "SET_ATTRIB", "UNPROTECT"]
 
 [packages.MatrixModels]
 version = "0.5-4"
@@ -969,6 +1151,10 @@ native_code = ["c"]
 source_files = { c = 36, cpp = 0, fortran = 0 }
 uses_dynlib = true
 depends = "R (>= 3.4.0)"
+r_headers = ["R.h", "R_ext/Constants.h", "R_ext/Error.h", "R_ext/Memory.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "Rversion.h", "float.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarReal", "Rf_length", "Rf_ncols", "Rf_nrows", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_Calloc", "R_CheckUserInterrupt", "R_DimNamesSymbol", "R_DimSymbol", "R_FINITE", "R_Free", "R_INDEX_GET", "R_INDEX_OP", "R_INLINE", "R_INT_MAX", "R_INT_MAX_d", "R_INT_MIN", "R_INT_MIN_d", "R_IsNaN", "R_NaN", "R_NaReal", "R_NamesSymbol", "R_NegInf", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.memoise]
 version = "2.0.1"
@@ -982,6 +1168,10 @@ native_code = ["c"]
 source_files = { c = 7, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rdefines.h", "Rinternals.h", "config.h", "libintl.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_DotsSymbol", "R_ExecWithCleanup", "R_FALSE", "R_GetVarLocMISSING", "R_GlobalEnv", "R_M_setPrimitiveMethods", "R_MakeExternalPtrFn", "R_MethodsNamespace", "R_MissingArg", "R_NamesSymbol", "R_NilValue", "R_PackageSymbol", "R_ParentEnv", "R_PreserveObject", "R_RSMETHODS_H", "R_S_MethodsListSelect", "R_S_MethodsListSelectCleanup", "R_SrcrefSymbol"]
+r_api_macros = ["ATTRIB", "MAKE_CLASS", "NEW_OBJECT", "PROTECT", "UNPROTECT"]
 
 [packages.mgcv]
 version = "1.9-4"
@@ -991,6 +1181,10 @@ uses_dynlib = true
 needs_system_library = true
 imports = "methods, stats, graphics, Matrix, splines, utils"
 depends = "R (>= 4.4.0), nlme (>= 3.1-64)"
+r_headers = ["R.h", "R_ext/BLAS.h", "R_ext/Lapack.h", "R_ext/Rdynload.h", "Rconfig.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "dmalloc.h", "float.h", "libintl.h", "math.h", "omp.h", "stdarg.h", "stdio.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_lang"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_ExternalPtrAddr", "R_HOME", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RegisterCCallable", "R_RegisterCFinalizerEx"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.microbenchmark]
 version = "1.5.0"
@@ -1001,6 +1195,9 @@ needs_system_library = true
 has_configure = true
 imports = "graphics, stats"
 depends = "R (>= 3.2.0)"
+r_headers = ["R.h", "R_ext/Applic.h", "R_ext/Memory.h", "R_ext/Rdynload.h", "Rinternals.h", "Rmath.h", "mach/mach_time.h", "stdint.h", "stdlib.h", "time.h", "windows.h"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.mime]
 version = "0.13"
@@ -1010,6 +1207,8 @@ uses_dynlib = true
 compiles = true
 loads = true
 imports = "tools"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.miniUI]
 version = "0.1.2"
@@ -1022,6 +1221,10 @@ version = "1.2.8"
 uses_dynlib = true
 imports = "Rcpp (>= 0.9.10)"
 linking_to = "Rcpp"
+r_headers = ["R_ext/Arith.h", "R_ext/RS.h", "R_ext/Rdynload.h", "Rcpp.h", "limits"]
+r_api_functions = ["Rf_allocVector", "Rf_asReal", "Rf_error", "Rf_eval"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.modelr]
 version = "0.1.11"
@@ -1039,6 +1242,9 @@ needs_system_library = true
 provides_headers = true
 imports = "stats"
 depends = "R(>= 3.5.0)"
+r_headers = ["R.h", "R_ext/BLAS.h", "R_ext/Lapack.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconfig.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "mvtnorm.h"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_FINITE", "R_GetCCallable", "R_NativePrimitiveArgType", "R_NilValue", "R_RegisterCCallable"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.nlme]
 version = "3.1-168"
@@ -1047,6 +1253,9 @@ source_files = { c = 9, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics, stats, utils, lattice"
 depends = "R (>= 3.6.0)"
+r_headers = ["R.h", "R_ext/Applic.h", "R_ext/Linpack.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "Rinternals.h", "Rmath.h", "float.h", "math.h", "stddef.h", "stdint.h", "stdlib.h", "string.h"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_CheckUserInterrupt", "R_FINITE", "R_Free", "R_GlobalEnv", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.nloptr]
 version = "2.2.1"
@@ -1056,6 +1265,10 @@ uses_dynlib = true
 needs_system_library = true
 has_configure = true
 provides_headers = true
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "nlopt.h", "stdlib.h"]
+r_api_functions = ["Rf_coerceVector"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_NamesSymbol", "R_NilValue", "R_RegisterCCallable"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.nnet]
 version = "7.3-20"
@@ -1065,6 +1278,9 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.0.0), stats, utils"
+r_headers = ["R.h", "R_ext/Applic.h", "Rversion.h", "math.h", "stdlib.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_Free"]
 
 [packages.numDeriv]
 version = "2016.8-1.1"
@@ -1080,6 +1296,10 @@ uses_dynlib = true
 needs_system_library = true
 has_configure = true
 imports = "askpass"
+r_headers = ["R_ext/Rdynload.h", "Rinternals.h", "arpa/inet.h", "errno.h", "fcntl.h", "netdb.h", "netinet/in.h", "openssl/bio.h", "openssl/bn.h", "openssl/buffer.h", "openssl/crypto.h", "openssl/dsa.h", "openssl/ec.h", "openssl/err.h", "openssl/evp.h", "openssl/hmac.h", "openssl/opensslconf.h", "openssl/opensslv.h", "openssl/pem.h", "openssl/pkcs12.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarString", "Rf_allocVector", "Rf_asChar", "Rf_asInteger", "Rf_asLogical", "Rf_error", "Rf_errorcall", "Rf_inherits", "Rf_isFunction", "Rf_isNull", "Rf_isString", "Rf_lcons", "Rf_length", "Rf_mkChar", "Rf_mkCharLen", "Rf_mkCharLenCE", "Rf_mkNamed", "Rf_mkString", "Rf_setAttrib"]
+r_api_globals = ["R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ExternalPtrAddr", "R_GlobalEnv", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RAND_bytes", "R_RegisterCFinalizerEx", "R_SetExternalPtrProtected", "R_ToplevelExec"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.openxlsx]
 version = "4.2.8.1"
@@ -1087,6 +1307,9 @@ uses_dynlib = true
 imports = "grDevices, methods, Rcpp, stats, stringi, utils, zip"
 depends = "R (>= 3.3.0)"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "fstream", "iostream", "sstream"]
+r_api_functions = ["Rf_isNull", "Rf_mkCharCE"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.otel]
 version = "0.2.0"
@@ -1100,6 +1323,9 @@ native_code = ["c"]
 source_files = { c = 4, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "R_ext/eventloop.h", "Rinterface.h", "Rinternals.h", "errno.h", "fcntl.h", "libintl.h", "sched.h", "signal.h", "stdint.h", "stdlib.h", "string.h", "sys/select.h", "sys/wait.h", "windows.h"]
+r_api_globals = ["R_CallMethodDef", "R_Interactive", "R_NilValue", "R_PARALLEL_H", "R_ProcessEvents", "R_SelectEx"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.parallelly]
 version = "1.46.1"
@@ -1109,6 +1335,9 @@ uses_dynlib = true
 compiles = true
 loads = true
 imports = "parallel, tools, utils"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "netinet/in.h", "stdio.h", "stdlib.h", "sys/socket.h", "unistd.h", "winsock2.h"]
+r_api_globals = ["R_CallMethodDef", "R_INT_MAX", "R_InitOutPStream", "R_NilValue", "R_Serialize"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.patchwork]
 version = "1.3.2"
@@ -1178,6 +1407,9 @@ uses_dynlib = true
 imports = "Rcpp (>= 0.11.0)"
 depends = "R (>= 3.1.0)"
 linking_to = "Rcpp"
+r_headers = ["R.h", "Rcpp.h", "Rdefines.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.png]
 version = "0.1-8"
@@ -1186,6 +1418,10 @@ source_files = { c = 3, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
 depends = "R (>= 2.9.0)"
+r_headers = ["R_ext/GraphicsEngine.h", "Rinternals.h", "png.h", "stdio.h", "string.h"]
+r_api_functions = ["Rf_error", "Rf_getAttrib", "Rf_warning"]
+r_api_globals = ["R_ALPHA", "R_BLUE", "R_ClassSymbol", "R_DimSymbol", "R_GREEN", "R_NamesSymbol", "R_NilValue", "R_RED", "R_RGB", "R_RGBA"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.polynom]
 version = "1.4-1"
@@ -1219,6 +1455,10 @@ uses_dynlib = true
 provides_headers = true
 imports = "ps (>= 1.2.0), R6, utils"
 depends = "R (>= 3.4.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Riconv.h", "Rdefines.h", "Rinternals.h", "Rversion.h", "byteswap.h", "errno.h", "fcntl.h", "io.h", "libkern/OSByteOrder.h", "limits.h", "poll.h", "process.h", "processx/unix-sockets.c", "pthread.h", "signal.h", "stdarg.h", "stdbool.h", "stdio.h"]
+r_api_functions = ["Rf_allocVector", "Rf_cons", "Rf_error", "Rf_eval", "Rf_findVar", "Rf_install", "Rf_isString", "Rf_lcons", "Rf_mkCharCE"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ExecWithCleanup", "R_ExternalPtrAddr", "R_ExternalPtrAddrFn", "R_ExternalPtrTag", "R_MakeExternalPtr", "R_MakeExternalPtrFn", "R_MakeWeakRefC", "R_NO_REMAP", "R_NilValue", "R_PROCESSX_PTY_NAME_LEN", "R_PROCESSX_SUPERVISOR_UTILS_H", "R_PROCESSX_SUPERVISOR_WINDOWS_H", "R_PROCESSX_UNIX_H", "R_PROCESSX_WIN_H", "R_PreserveObject"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.profvis]
 version = "0.4.0"
@@ -1227,6 +1467,9 @@ source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "htmlwidgets (>= 0.3.2), rlang (>= 1.1.0), vctrs"
 depends = "R (>= 4.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "sys/time.h", "windows.h"]
+r_api_functions = ["Rf_asReal", "Rf_error", "Rf_length"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_NilValue"]
 
 [packages.progress]
 version = "1.2.3"
@@ -1252,6 +1495,9 @@ compiles = true
 loads = true
 imports = "stats, utils"
 depends = "R (>= 3.4.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "Rmath.h"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_ExternalMethodDef", "R_FINITE", "R_GlobalEnv", "R_MissingArg", "R_NaN", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.ps]
 version = "1.9.1"
@@ -1262,6 +1508,10 @@ needs_system_library = true
 has_configure = true
 imports = "utils"
 depends = "R (>= 3.4)"
+r_headers = ["CoreFoundation/CoreFoundation.h", "IOKit/IOBSD.h", "IOKit/IOKitLib.h", "IOKit/ps/IOPSKeys.h", "IOKit/ps/IOPowerSources.h", "IOKit/storage/IOBlockStorageDriver.h", "IOKit/storage/IOMedia.h", "PowrProf.h", "Psapi.h", "R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "Rversion.h", "WinIoCtl.h", "Wincrypt.h", "Winsvc.h", "arpa/inet.h", "assert.h", "ctype.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocSExp", "Rf_allocVector", "Rf_cons", "Rf_duplicate", "Rf_error", "Rf_eval", "Rf_findFun", "Rf_findVar", "Rf_install", "Rf_isNull", "Rf_lcons", "Rf_length", "Rf_lengthgets", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkCharLenCE", "Rf_mkNamed", "Rf_mkString", "Rf_setAttrib", "Rf_xlength"]
+r_api_globals = ["R_BaseEnv", "R_CLEANCALL_SUPPORT", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_EmptyEnv", "R_ExecWithCleanup", "R_ExternalPtrAddr", "R_ExternalPtrAddrFn", "R_ExternalPtrTag", "R_GlobalEnv", "R_INLINE", "R_MakeExternalPtr", "R_MakeExternalPtrFn", "R_NO_REMAP", "R_NamesSymbol", "R_NewEnv", "R_NilValue", "R_PS_COMMON_H", "R_PS_DEBUG"]
+r_api_macros = ["PROTECT", "SET_ATTRIB", "UNPROTECT"]
 
 [packages.purrr]
 version = "1.2.1"
@@ -1271,6 +1521,10 @@ uses_dynlib = true
 imports = "cli (>= 3.6.1), lifecycle (>= 1.0.3), magrittr (>= 1.5.0),"
 depends = "R (>= 4.1)"
 linking_to = "cli"
+r_headers = ["R.h", "R_ext/Parse.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "cli/progress.h", "stdbool.h", "stdio.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarComplex", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarRaw", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocSExp", "Rf_allocVector", "Rf_asChar", "Rf_asLogical", "Rf_coerceVector", "Rf_cons", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVar", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_install", "Rf_installChar", "Rf_isNull", "Rf_isObject", "Rf_isVector", "Rf_lcons", "Rf_length", "Rf_match", "Rf_mkChar", "Rf_mkString", "Rf_setAttrib", "Rf_warningcall"]
+r_api_globals = ["R_BaseEnv", "R_CLEANCALL_SUPPORT", "R_CallMethodDef", "R_CheckUserInterrupt", "R_DotsSymbol", "R_ExecWithCleanup", "R_ExternalPtrAddr", "R_ExternalPtrAddrFn", "R_ExternalPtrTag", "R_GetCCallable", "R_GlobalEnv", "R_IsNA", "R_MakeExternalPtr", "R_MakeExternalPtrFn", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_ParseVector", "R_PreserveObject", "R_ReleaseObject"]
+r_api_macros = ["PROTECT", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.quadprog]
 version = "1.5-8"
@@ -1278,6 +1532,8 @@ native_code = ["c"]
 source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 depends = "R (>= 3.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h"]
+r_api_globals = ["R_FortranMethodDef", "R_NativePrimitiveArgType"]
 
 [packages.quantmod]
 version = "0.4.28"
@@ -1293,6 +1549,8 @@ source_files = { c = 3, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "methods, graphics, Matrix, MatrixModels, survival, MASS"
 depends = "R (>= 3.5), stats, SparseM"
+r_headers = ["R.h", "R_ext/RS.h", "R_ext/Rdynload.h", "Rmath.h", "math.h", "stdio.h", "stdlib.h", "sys/types.h", "time.h"]
+r_api_globals = ["R_CMethodDef", "R_FortranMethodDef"]
 
 [packages.quarto]
 version = "1.5.1"
@@ -1307,6 +1565,9 @@ native_code = ["c"]
 source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 bundled_library = true
+r_headers = ["R_ext/Visibility.h", "Rinternals.h", "assert.h", "conio.h", "cpp11.hpp", "cpp11/declarations.hpp", "crt_externs.h", "ctype.h", "direct.h", "dirent.h", "dlfcn.h", "errno.h", "fcntl.h", "fenv.h", "grp.h", "intrin.h", "inttypes.h", "io.h", "limits.h", "mach-o/dyld.h"]
+r_api_functions = ["Rf_isInteger", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.R.methodsS3]
 version = "1.8.2"
@@ -1335,6 +1596,10 @@ needs_system_library = true
 has_configure = true
 imports = "systemfonts (>= 1.0.3), textshaping (>= 0.3.0)"
 linking_to = "systemfonts, textshaping"
+r_headers = ["R_ext/GraphicsEngine.h", "R_ext/Print.h", "R_ext/Rdynload.h", "Rinternals.h", "Rversion.h", "arpa/inet.h", "cassert", "cfloat", "cmath", "cstddef", "cstdint", "cstdio", "cstdlib", "cstring", "exception", "ft2build.h", "io.h", "jpeglib.h", "limits", "memory"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_allocVector", "Rf_error", "Rf_eval", "Rf_isNull", "Rf_mkString", "Rf_setAttrib", "Rf_warning"]
+r_api_globals = ["R_ALPHA", "R_BLUE", "R_COLOR", "R_CallMethodDef", "R_CheckDeviceAvailable", "R_DimSymbol", "R_GE_alphaMask", "R_GE_capability_clippingPaths", "R_GE_capability_compositing", "R_GE_capability_glyphs", "R_GE_capability_masks", "R_GE_capability_paths", "R_GE_capability_patterns", "R_GE_capability_transformations", "R_GE_checkVersionOrDie", "R_GE_clipPathFillRule", "R_GE_compositeAdd", "R_GE_compositeAtop", "R_GE_compositeClear", "R_GE_compositeColorBurn"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.rappdirs]
 version = "0.3.4"
@@ -1344,6 +1609,8 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 4.1)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "shlobj.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.rcmdcheck]
 version = "1.4.0"
@@ -1363,6 +1630,10 @@ uses_dynlib = true
 provides_headers = true
 imports = "methods, utils"
 depends = "R (>= 3.5.0)"
+r_headers = ["R_ext/Boolean.h", "R_ext/Rdynload.h", "Rcpp.h", "Rcpp/barrier.h", "Rcpp/exceptions.h", "Rcpp/protection/Shield.h", "Rcpp/r/compat.h", "Rinternals.h", "algorithm", "cstring", "cxxabi.h", "errno.h", "fstream", "map", "ostream", "set", "sstream", "string", "sys/stat.h", "sys/types.h"]
+r_api_functions = ["Rf_PrintValue", "Rf_ScalarLogical", "Rf_allocVector", "Rf_asChar", "Rf_defineVar", "Rf_error", "Rf_eval", "Rf_findVarInFrame", "Rf_inherits", "Rf_install", "Rf_isNull", "Rf_length", "Rf_mkChar", "Rf_mkString", "Rf_onintr", "Rf_setAttrib", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_ExternalMethodDef", "R_ExternalPtrAddr", "R_GetCCallable", "R_GlobalEnv", "R_HOME", "R_NamesSymbol", "R_NilValue", "R_OK", "R_PreserveObject", "R_RegisterCCallable", "R_ReleaseObject", "R_VERSION", "R_Version"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.RcppEigen]
 version = "0.3.4.0.2"
@@ -1371,6 +1642,8 @@ provides_headers = true
 imports = "Rcpp (>= 0.11.0), stats, utils"
 depends = "R (>= 3.6.0)"
 linking_to = "Rcpp"
+r_headers = ["R_ext/Lapack.h", "Rcpp.h", "RcppEigen.h"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.RcppParallel]
 version = "5.1.11-2"
@@ -1379,6 +1652,9 @@ has_configure = true
 provides_headers = true
 loads = true
 depends = "R (>= 3.0.2)"
+r_headers = ["AvailabilityMacros.h", "CL/cl.h", "OpenCL/opencl.h", "R.h", "R_ext/Rdynload.h", "RcppParallel.h", "RcppParallel/Common.h", "RcppParallel/TBB.h", "Rinternals.h", "Windows.h", "advisor-annotate.h", "algorithm", "android/api-level.h", "android/log.h", "array", "assert.h", "atomic", "cassert", "cctype", "cerrno"]
+r_api_functions = ["Rf_allocVector"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.RcppTOML]
 version = "0.2.3"
@@ -1387,6 +1663,8 @@ provides_headers = true
 imports = "Rcpp (>= 1.0.8)"
 depends = "R (>= 3.3.0)"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "Rcpp/Lightest", "toml++/toml.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.readr]
 version = "2.2.0"
@@ -1396,6 +1674,9 @@ uses_dynlib = true
 imports = "cli, clipr, crayon, glue, hms (>= 0.4.1), lifecycle, methods,"
 depends = "R (>= 4.1)"
 linking_to = "cpp11, tzdb (>= 0.1.1)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "algorithm", "array", "assert.h", "cctype", "cstdint", "cstring", "ctime", "errno.h", "fstream", "iomanip", "iterator", "locale", "map", "math.h", "memory", "ostream"]
+r_api_functions = ["Rf_GetOptionWidth", "Rf_error", "Rf_install", "Rf_isNull", "Rf_length", "Rf_lengthgets", "Rf_mkCharCE", "Rf_mkCharLenCE", "Rf_setAttrib", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_FINITE", "R_GetConnection", "R_NilValue", "R_ReadConnection", "R_WriteConnection"]
 
 [packages.readxl]
 version = "1.4.5"
@@ -1406,6 +1687,10 @@ needs_system_library = true
 imports = "cellranger, tibble (>= 2.0.1), utils"
 depends = "R (>= 3.6)"
 linking_to = "cpp11 (>= 0.4.0), progress"
+r_headers = ["BaseTsd.h", "RProgress.h", "R_ext/GraphicsDevice.h", "R_ext/GraphicsEngine.h", "R_ext/Visibility.h", "Rinternals.h", "algorithm", "cassert", "cerrno", "cmath", "cstdlib", "cstring", "errno.h", "exception", "iconv.h", "iomanip", "iterator", "limits.h", "locale.h", "map"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_ScalarReal", "Rf_errorcall", "Rf_lengthgets", "Rf_mkCharCE", "Rf_translateChar", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
+r_api_macros = ["PROTECT"]
 
 [packages.rematch]
 version = "2.0.0"
@@ -1444,6 +1729,9 @@ uses_dynlib = true
 imports = "plyr (>= 1.8.1), Rcpp, stringr"
 depends = "R (>= 3.1)"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h"]
+r_api_functions = ["Rf_allocVector", "Rf_asCharacterFactor", "Rf_coerceVector", "Rf_copyMostAttrib", "Rf_inherits", "Rf_isFactor", "Rf_isVectorAtomic", "Rf_length"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.reticulate]
 version = "1.45.0"
@@ -1451,6 +1739,10 @@ uses_dynlib = true
 imports = "Matrix, Rcpp (>= 1.0.7), RcppTOML, graphics, here, jsonlite,"
 depends = "R (>= 3.5)"
 linking_to = "Rcpp"
+r_headers = ["R.h", "R_ext/Boolean.h", "R_ext/Error.h", "R_ext/Print.h", "R_ext/eventloop.h", "Rcpp.h", "Rinternals.h", "atomic", "cstring", "dlfcn.h", "exception", "fstream", "functional", "iostream", "map", "ostream", "process.h", "pthread.h", "sched.h", "signal.h"]
+r_api_functions = ["Rf_PrintValue", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocArray", "Rf_allocVector", "Rf_asInteger", "Rf_asLogical", "Rf_cons", "Rf_defineVar", "Rf_error", "Rf_eval", "Rf_findFun", "Rf_findVar", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_install", "Rf_installChar", "Rf_isLogical", "Rf_isObject", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkString", "Rf_onintr", "Rf_setAttrib", "Rf_translateChar", "Rf_warning"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_DimSymbol", "R_DotsSymbol", "R_EmptyEnv", "R_ExternalPtrAddr", "R_InputHandlers", "R_MakeExternalPtr", "R_MissingArg", "R_NO_REMAP", "R_NaN", "R_NaString", "R_NamesSymbol", "R_NamespaceRegistry", "R_NewEnv", "R_NilValue", "R_ParseEvalString", "R_PreserveObject"]
+r_api_macros = ["ATTRIB", "PROTECT", "UNPROTECT"]
 
 [packages.rex]
 version = "1.2.1"
@@ -1464,6 +1756,10 @@ native_code = ["c"]
 source_files = { c = 2, cpp = 0, fortran = 0 }
 loads = true
 depends = "R (>= 4.0.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "iomanip", "limits", "sstream", "string"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_setAttrib", "Rf_warning"]
+r_api_globals = ["R_CMethodDef", "R_FINITE", "R_NamesSymbol", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.rlang]
 version = "1.1.7"
@@ -1475,6 +1771,10 @@ loads = false
 blocker = "R sourcing too slow (25K lines)"
 imports = "utils"
 depends = "R (>= 4.0.0)"
+r_headers = ["R_ext/GraphicsDevice.h", "R_ext/GraphicsEngine.h", "R_ext/Parse.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rembedded.h", "Rinterface.h", "Rinternals.h", "Rversion.h", "algorithm", "ctype.h", "float.h", "inttypes.h", "limits.h", "math.h", "rlang.h", "rlang.hpp", "stdbool.h", "stddef.h", "stdint.h"]
+r_api_functions = ["Rf_PrintValue", "Rf_ScalarComplex", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarRaw", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocSExp", "Rf_allocVector", "Rf_any_duplicated", "Rf_asInteger", "Rf_charIsASCII", "Rf_coerceVector", "Rf_cons", "Rf_defineVar", "Rf_duplicate", "Rf_duplicated", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVar", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_getCharCE", "Rf_inherits", "Rf_install", "Rf_installChar", "Rf_isNull", "Rf_isObject", "Rf_lcons"]
+r_api_globals = ["R_ActiveBindingFunction", "R_BaseEnv", "R_BindingIsActive", "R_BraceSymbol", "R_BracketSymbol", "R_BytecodeExpr", "R_CND_TYPE_condition", "R_CND_TYPE_error", "R_CND_TYPE_interrupt", "R_CND_TYPE_message", "R_CND_TYPE_warning", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ClosureBody", "R_ClosureEnv", "R_ClosureExpr", "R_ClosureFormals", "R_DYN_ARRAY_GROWTH_FACTOR"]
+r_api_macros = ["ALTREP", "ATTRIB", "MARK_NOT_MUTABLE", "PROTECT", "SET_ATTRIB", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.rmarkdown]
 version = "2.30"
@@ -1489,6 +1789,9 @@ uses_dynlib = true
 imports = "brew, cli (>= 3.3.0), commonmark, desc (>= 1.2.0), knitr,"
 depends = "R (>= 3.6)"
 linking_to = "cpp11"
+r_headers = ["R_ext/Visibility.h", "cpp11/R.hpp", "cpp11/integers.hpp", "cpp11/list.hpp", "cpp11/list_of.hpp", "cpp11/protect.hpp", "cpp11/strings.hpp", "fstream", "sstream", "string", "vector"]
+r_api_functions = ["Rf_translateChar"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.rpart]
 version = "4.1.24"
@@ -1498,6 +1801,9 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 2.15.0), graphics, stats, grDevices"
+r_headers = ["R.h", "Rinternals.h", "Rversion.h", "libintl.h", "math.h", "stddef.h", "stdio.h", "string.h"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_FINITE", "R_Free", "R_NamesSymbol", "R_NilValue", "R_VERSION", "R_Version"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.rprojroot]
 version = "2.1.1"
@@ -1514,6 +1820,10 @@ needs_system_library = true
 imports = "bit64, blob (>= 1.2.0), DBI (>= 1.2.0), memoise, methods,"
 depends = "R (>= 3.1.0)"
 linking_to = "cpp11 (>= 0.4.0)"
+r_headers = ["R.h", "R_ext/Visibility.h", "Rinternals.h", "Windows.h", "assert.h", "boost/algorithm/string/predicate.hpp", "boost/bind.hpp", "boost/container/stable_vector.hpp", "boost/cstdint.hpp", "boost/date_time/gregorian/gregorian.hpp", "boost/date_time/posix_time/posix_time.hpp", "boost/limits.hpp", "boost/noncopyable.hpp", "boost/predef/detail/test.h", "boost/predef/make.h", "boost/predef/os/ios.h", "boost/predef/os/windows.h", "boost/predef/platform/android.h", "boost/predef/platform/cloudabi.h", "boost/predef/platform/ios.h"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_inherits", "Rf_isInteger", "Rf_isNull", "Rf_length", "Rf_mkCharCE", "Rf_setAttrib", "Rf_warning", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_ExternalPtrAddr", "R_IsNA", "R_NilValue", "R_OK", "R_PreserveObject", "R_ReleaseObject"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.rstan]
 version = "2.32.7"
@@ -1523,6 +1833,10 @@ provides_headers = true
 imports = "methods, stats4, inline (>= 0.3.19), gridExtra (>= 2.3), Rcpp"
 depends = "R (>= 3.4.0), StanHeaders (>= 2.32.0)"
 linking_to = "Rcpp (>= 1.0.7), RcppEigen (>= 0.3.4.0.0), BH (>= 1.75.0-0),"
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "R_ext/Visibility.h", "Rcpp.h", "RcppEigen.h", "Rinternals.h", "Rversion.h", "boost/accumulators/accumulators.hpp", "boost/accumulators/statistics/mean.hpp", "boost/accumulators/statistics/stats.hpp", "boost/date_time/posix_time/posix_time_types.hpp", "boost/math/special_functions/fpclassify.hpp", "boost/random/additive_combine.hpp", "boost/random/uniform_int_distribution.hpp", "boost/random/uniform_real_distribution.hpp", "cstring", "fstream", "iomanip", "memory"]
+r_api_functions = ["Rf_allocVector"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_CheckUserInterrupt_Functor", "R_ExternalPtrAddr", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.rstatix]
 version = "0.7.3"
@@ -1560,6 +1874,10 @@ has_configure = true
 imports = "Rcpp, wk (>= 0.6.0)"
 depends = "R (>= 3.0.0)"
 linking_to = "Rcpp, wk"
+r_headers = ["R.h", "Rcpp.h", "Rinternals.h", "Rmath.h", "algorithm", "array", "atomic", "bitset", "cassert", "cfloat", "chrono", "climits", "cmath", "cstdarg", "cstddef", "cstdint", "cstdio", "cstdlib", "cstring", "endian.h"]
+r_api_functions = ["Rf_allocVector", "Rf_error", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_mkChar", "Rf_setAttrib", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_ExternalPtrAddr", "R_IsNA", "R_MakeExternalPtr", "R_NO_REMAP", "R_NilValue", "R_PosInf", "R_PreserveObject", "R_RegisterCFinalizer", "R_ReleaseObject"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.S7]
 version = "0.2.1"
@@ -1570,6 +1888,10 @@ compiles = true
 loads = true
 imports = "utils"
 depends = "R (>= 3.5.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "Rversion.h", "stdlib.h"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_allocVector", "Rf_asLogical", "Rf_classgets", "Rf_cons", "Rf_defineVar", "Rf_duplicate", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_installTrChar", "Rf_lcons", "Rf_length", "Rf_mkString", "Rf_setAttrib", "Rf_shallow_duplicate", "Rf_xlength"]
+r_api_globals = ["R_BaseEnv", "R_CallMethodDef", "R_ClassSymbol", "R_ClosureFormals", "R_DotsSymbol", "R_EmptyEnv", "R_ExternalMethodDef", "R_FALSE", "R_MissingArg", "R_NO_REMAP", "R_NameSymbol", "R_NamesSymbol", "R_NamespaceRegistry", "R_NilValue", "R_PreserveObject", "R_TRUE", "R_VERSION", "R_Version"]
+r_api_macros = ["ATTRIB", "PROTECT", "UNPROTECT"]
 
 [packages.sandwich]
 version = "3.1-1"
@@ -1586,6 +1908,10 @@ uses_dynlib = true
 bundled_library = true
 needs_system_library = true
 imports = "fs (>= 1.2.4), rlang (>= 0.4.10), htmltools (>= 0.5.1), R6,"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "algorithm", "assert.h", "cmath", "cstdint", "cstdio", "cstdlib", "cstring", "ctime", "dirent.h", "dlfcn.h", "errno.h", "iomanip", "iostream", "iterator", "map", "mutex", "numeric"]
+r_api_functions = ["Rf_getAttrib"]
+r_api_globals = ["R_CallMethodDef", "R_NamesSymbol"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.scales]
 version = "1.4.0"
@@ -1616,6 +1942,10 @@ provides_headers = true
 imports = "classInt (>= 0.4-1), DBI (>= 0.8), graphics, grDevices, grid,"
 depends = "methods, R (>= 3.3.0)"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "cpl_compressor.h", "cpl_conv.h", "cpl_port.h", "cpl_string.h", "gdal.h", "gdal_alg.h", "gdal_priv.h", "gdal_rat.h", "gdal_version.h", "geos_c.h", "iomanip", "iostream", "math.h", "memory", "ogr_api.h", "ogr_geometry.h", "ogr_recordbatch.h", "ogr_spatialref.h", "ogr_srs_api.h"]
+r_api_functions = ["Rf_asChar", "Rf_coerceVector", "Rf_duplicate", "Rf_error", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isInteger", "Rf_isMatrix", "Rf_isVectorList", "Rf_length", "Rf_ncols", "Rf_nrows", "Rf_onintr", "Rf_setAttrib", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_ExternalPtrAddr", "R_MakeExternalPtr", "R_NilValue", "R_PosInf", "R_RegisterCCallable", "R_RegisterCFinalizer", "R_SetExternalPtrAddr", "R_ToplevelExec"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.shiny]
 version = "1.13.0"
@@ -1638,6 +1968,9 @@ source_files = { c = 12, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
 has_configure = true
+r_headers = ["R_ext/Rdynload.h", "Rinternals.h", "sodium.h", "string.h"]
+r_api_functions = ["Rf_error", "Rf_mkString"]
+r_api_globals = ["R_NilValue"]
 
 [packages.sourcetools]
 version = "0.1.7-1"
@@ -1648,6 +1981,9 @@ provides_headers = true
 compiles = true
 loads = true
 depends = "R (>= 3.0.2)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "cstring", "sourcetools.h", "sourcetools/r/r.h", "sourcetools/read/read.h", "stdlib.h"]
+r_api_functions = ["Rf_allocVector", "Rf_length", "Rf_mkChar", "Rf_mkCharLen", "Rf_mkString", "Rf_setAttrib", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_RowNamesSymbol"]
 
 [packages.sp]
 version = "2.2-1"
@@ -1659,6 +1995,10 @@ loads = false
 blocker = "stopifnot failure"
 imports = "utils, stats, graphics, grDevices, lattice, grid"
 depends = "R (>= 3.5.0), methods"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "math.h", "stdio.h", "string.h"]
+r_api_functions = ["Rf_duplicate", "Rf_error", "Rf_getAttrib", "Rf_install", "Rf_isLogical", "Rf_length", "Rf_mkChar", "Rf_setAttrib"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_FINITE", "R_NO_REMAP", "R_NilValue", "R_OFFSET", "R_SP_H"]
+r_api_macros = ["GET_SLOT", "MAKE_CLASS", "NEW_OBJECT", "PROTECT", "UNPROTECT"]
 
 [packages.SparseM]
 version = "1.84-2"
@@ -1667,6 +2007,8 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics, stats, utils"
 depends = "R (>= 2.15), methods"
+r_headers = ["R.h", "R_ext/Rdynload.h", "stdint.h"]
+r_api_globals = ["R_FortranMethodDef"]
 
 [packages.spatial]
 version = "7.3-18"
@@ -1676,12 +2018,16 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 3.0.0), graphics, stats, utils"
+r_headers = ["R.h", "Rmath.h", "Rversion.h", "math.h", "stddef.h", "stdlib.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_CheckUserInterrupt", "R_Free", "R_Realloc"]
 
 [packages.splines]
 version = "2.0-7"
 native_code = ["c"]
 source_files = { c = 1, cpp = 0, fortran = 0 }
 loads = true
+r_api_globals = ["R_S_H"]
 
 [packages.StanHeaders]
 version = "2.32.10"
@@ -1694,6 +2040,8 @@ provides_headers = true
 imports = "RcppParallel (>= 5.1.4)"
 depends = "R (>= 3.4.0)"
 linking_to = "RcppEigen (>= 0.3.4.0.0), RcppParallel (>= 5.1.4)"
+r_headers = ["CL/sycl.hpp", "R.h", "RAJA/RAJA.hpp", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "Rversion.h", "algorithm", "assert.h", "cmath", "cstdio", "cstdlib", "cuda_runtime.h", "cusolverSp.h", "cusparse.h", "cvodes/cvodes_bandpre.h", "cvodes/cvodes_bbdpre.h", "cvodes/cvodes_diag.h", "cvodes/cvodes_direct.h", "cvodes/cvodes_ls.h"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.stats]
 version = ""
@@ -1701,6 +2049,10 @@ native_code = ["c"]
 source_files = { c = 56, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "R.h", "R_ext/Applic.h", "R_ext/Arith.h", "R_ext/BLAS.h", "R_ext/Boolean.h", "R_ext/Constants.h", "R_ext/Error.h", "R_ext/Lapack.h", "R_ext/Memory.h", "R_ext/Print.h", "R_ext/RS.h", "R_ext/Random.h", "R_ext/Rdynload.h", "R_ext/Utils.h", "R_ext/Visibility.h", "Rconfig.h", "Rinternals.h", "Rmath.h", "config.h"]
+r_api_functions = ["Rf_divset", "Rf_error"]
+r_api_globals = ["R_BaseEnv", "R_BraceSymbol", "R_BracketSymbol", "R_CMethodDef", "R_CallMethodDef", "R_Calloc", "R_Callocs", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClosureEnv", "R_ClosureFormals", "R_DimNamesSymbol", "R_DimSymbol", "R_ExternalMethodDef", "R_ExternalPtrAddr", "R_ExternalPtrTag", "R_FINITE", "R_FortranMethodDef", "R_Free", "R_GlobalEnv"]
+r_api_macros = ["MARK_NOT_MUTABLE", "PROTECT", "SET_ATTRIB", "UNPROTECT"]
 
 [packages.stats4]
 version = ""
@@ -1714,6 +2066,10 @@ needs_system_library = true
 has_configure = true
 imports = "tools, utils, stats"
 depends = "R (>= 3.4)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "Rversion.h", "algorithm", "array", "atomic", "boost/unordered/unordered_map.hpp", "cics.h", "cinttypes", "climits", "cmath", "complex", "condition_variable", "cstdarg", "cstddef", "cstdint", "cstdlib"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocMatrix", "Rf_allocVector", "Rf_charIsASCII", "Rf_coerceVector", "Rf_error", "Rf_eval", "Rf_getAttrib", "Rf_getCharCE", "Rf_inherits", "Rf_install", "Rf_isFactor", "Rf_isInteger", "Rf_isLogical", "Rf_isMatrix", "Rf_isNull", "Rf_isObject", "Rf_isReal", "Rf_isString", "Rf_isSymbol", "Rf_isVector", "Rf_isVectorAtomic", "Rf_isVectorList", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkCharLenCE"]
+r_api_globals = ["R_AL_AN_EN_ES_CS_ET_ON_BN_NSM_MASK", "R_AL_AN_MASK", "R_AL_EN_AN_MASK", "R_AL_MASK", "R_BaseEnv", "R_BlankString", "R_CallMethodDef", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_FINITE", "R_GetCCallable", "R_GlobalEnv", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_PreserveObject", "R_RegisterCCallable", "R_ReleaseObject", "R_VERSION"]
+r_api_macros = ["ALTREP", "PROTECT", "UNPROTECT"]
 
 [packages.stringr]
 version = "1.6.0"
@@ -1729,6 +2085,9 @@ source_files = { c = 67, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics, Matrix, methods, splines, stats, utils"
 depends = "R (>= 3.5.0)"
+r_headers = ["R_ext/Utils.h", "math.h", "stdio.h"]
+r_api_globals = ["R_CMethodDef", "R_CallMethodDef", "R_Calloc", "R_CheckUserInterrupt", "R_Free", "R_NamesSymbol", "R_VERSION", "R_Version"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.svglite]
 version = "2.2.2"
@@ -1737,6 +2096,10 @@ needs_system_library = true
 imports = "base64enc, cli, lifecycle, rlang (>= 1.1.0), systemfonts (>="
 depends = "R (>= 4.1)"
 linking_to = "cpp11, systemfonts, textshaping"
+r_headers = ["R_ext/GraphicsEngine.h", "R_ext/Visibility.h", "algorithm", "cmath", "cpp11/as.hpp", "cpp11/environment.hpp", "cpp11/external_pointer.hpp", "cpp11/function.hpp", "cpp11/list.hpp", "cpp11/protect.hpp", "cpp11/r_string.hpp", "cpp11/strings.hpp", "cstdint", "cstring", "fstream", "iomanip", "iostream", "limits", "memory", "png.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_allocVector", "Rf_eval", "Rf_getAttrib", "Rf_isNull", "Rf_length", "Rf_mkString", "Rf_ncols", "Rf_nrows", "Rf_warning"]
+r_api_globals = ["R_ALPHA", "R_BLUE", "R_CallMethodDef", "R_CheckDeviceAvailable", "R_ExpandFileName", "R_GE_alphaMask", "R_GE_capability_clippingPaths", "R_GE_capability_compositing", "R_GE_capability_glyphs", "R_GE_capability_masks", "R_GE_capability_paths", "R_GE_capability_patterns", "R_GE_capability_transformations", "R_GE_checkVersionOrDie", "R_GE_clipPathFillRule", "R_GE_compositeAdd", "R_GE_compositeAtop", "R_GE_compositeClear", "R_GE_compositeColorBurn", "R_GE_compositeColorDodge"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.swagger]
 version = "5.17.14.1"
@@ -1750,6 +2113,10 @@ source_files = { c = 2, cpp = 0, fortran = 0 }
 uses_dynlib = true
 compiles = true
 loads = true
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "errno.h", "fcntl.h", "poll.h", "signal.h", "stdlib.h", "string.h", "sys/prctl.h", "sys/stat.h", "sys/time.h", "sys/wait.h", "unistd.h", "windows.h"]
+r_api_functions = ["Rf_error", "Rf_errorcall", "Rf_isLogical", "Rf_isString", "Rf_length", "Rf_warningcall"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ExternalPtrAddr", "R_GlobalEnv", "R_MakeExternalPtr", "R_NilValue", "R_RegisterCFinalizerEx", "R_ToplevelExec"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.systemfonts]
 version = "1.3.2"
@@ -1760,6 +2127,10 @@ provides_headers = true
 imports = "base64enc, grid, jsonlite, lifecycle, tools, utils"
 depends = "R (>= 3.2.0)"
 linking_to = "cpp11 (>= 0.2.1)"
+r_headers = ["R_ext/GraphicsEngine.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "algorithm", "cctype", "cmath", "cpp11/R.hpp", "cpp11/data_frame.hpp", "cpp11/doubles.hpp", "cpp11/function.hpp", "cpp11/integers.hpp", "cpp11/list.hpp", "cpp11/list_of.hpp", "cpp11/logicals.hpp", "cpp11/matrix.hpp", "cpp11/named_arg.hpp", "cpp11/protect.hpp", "cpp11/r_bool.hpp", "cpp11/r_string.hpp", "cpp11/strings.hpp"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_allocMatrix", "Rf_allocVector", "Rf_classgets", "Rf_error", "Rf_getCharCE", "Rf_length", "Rf_mkString", "Rf_setAttrib", "Rf_xlength"]
+r_api_globals = ["R_ALPHA", "R_BLUE", "R_CallMethodDef", "R_ContinueUnwind", "R_DimSymbol", "R_GE_gcontext", "R_GREEN", "R_NaInt", "R_NaString", "R_NilValue", "R_RED", "R_RGBA", "R_RegisterCCallable"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.tcltk]
 version = ""
@@ -1774,6 +2145,8 @@ uses_dynlib = true
 compiles = true
 loads = true
 depends = "R (>= 2.2.0), stats"
+r_headers = ["R.h", "Rinternals.h"]
+r_api_globals = ["R_CMethodDef", "R_NativePrimitiveArgType"]
 
 [packages.terra]
 version = "1.8-93"
@@ -1785,6 +2158,9 @@ has_configure = true
 imports = "Rcpp (>= 1.0-10)"
 depends = "R (>= 3.5.0), methods"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "algorithm", "chrono", "cmath", "cstdarg", "cstdint", "cstdlib", "cstring", "execution", "experimental/filesystem", "filesystem", "float.h", "fstream", "functional", "gdal.h", "gdal_priv.h", "gdalpansharpen.h", "geos_c.h", "iostream", "iterator"]
+r_api_functions = ["Rf_warningcall"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_FlushConsole", "R_NilValue", "R_ToplevelExec"]
 
 [packages.testthat]
 version = "3.3.2"
@@ -1794,6 +2170,8 @@ uses_dynlib = true
 provides_headers = true
 imports = "brio (>= 1.1.5), callr (>= 3.7.6), cli (>= 3.6.5), desc (>="
 depends = "R (>= 4.1.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "exception", "stdexcept", "stdlib.h", "string", "testthat.h"]
+r_api_globals = ["R_CallMethodDef"]
 
 [packages.textshaping]
 version = "1.0.5"
@@ -1803,6 +2181,9 @@ provides_headers = true
 imports = "lifecycle, stats, stringi, systemfonts (>= 1.3.0), utils"
 depends = "R (>= 3.2.0)"
 linking_to = "cpp11 (>= 0.2.1), systemfonts (>= 1.0.0)"
+r_headers = ["R_ext/Visibility.h", "algorithm", "climits", "cmath", "cpp11/R.hpp", "cpp11/data_frame.hpp", "cpp11/declarations.hpp", "cpp11/doubles.hpp", "cpp11/integers.hpp", "cpp11/list.hpp", "cpp11/list_of.hpp", "cpp11/logicals.hpp", "cpp11/named_arg.hpp", "cpp11/r_string.hpp", "cpp11/strings.hpp", "cstdint", "fribidi.h", "ft2build.h", "functional", "hb-ft.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CallMethodDef", "R_ContinueUnwind", "R_NO_REMAP", "R_NaInt", "R_NilValue", "R_RegisterCCallable"]
 
 [packages.tibble]
 version = "3.3.1"
@@ -1811,6 +2192,10 @@ source_files = { c = 4, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "cli, lifecycle (>= 1.0.0), magrittr, methods, pillar (>="
 depends = "R (>= 3.4.0)"
+r_headers = ["R_ext/Rdynload.h", "Rinternals.h", "inttypes.h", "limits.h", "stddef.h", "stdint.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_ScalarLogical", "Rf_allocVector", "Rf_cons", "Rf_copyMostAttrib", "Rf_error", "Rf_getAttrib", "Rf_isNull", "Rf_isObject", "Rf_length", "Rf_mkChar", "Rf_setAttrib", "Rf_shallow_duplicate", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_NO_REMAP", "R_NamesSymbol", "R_NilValue", "R_RowNamesSymbol"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.tidyr]
 version = "1.3.2"
@@ -1818,6 +2203,9 @@ uses_dynlib = true
 imports = "cli (>= 3.4.1), dplyr (>= 1.1.0), glue, lifecycle (>= 1.0.3),"
 depends = "R (>= 4.1.0)"
 linking_to = "cpp11 (>= 0.4.0)"
+r_headers = ["R_ext/Visibility.h", "cstring", "vector"]
+r_api_functions = ["Rf_allocVector", "Rf_asCharacterFactor", "Rf_coerceVector", "Rf_copyMostAttrib", "Rf_inherits", "Rf_isFactor", "Rf_isNull", "Rf_isVector", "Rf_isVectorAtomic", "Rf_length"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue", "R_VERSION", "R_Version"]
 
 [packages.tidyselect]
 version = "1.2.1"
@@ -1841,6 +2229,10 @@ uses_dynlib = true
 bundled_library = true
 depends = "R (>= 3.3)"
 linking_to = "cpp11 (>= 0.2.7)"
+r_headers = ["R_ext/Visibility.h", "Rinternals.h", "atomic", "chrono", "cpp11.hpp", "cstddef", "cstdint", "ctype.h", "functional", "limits", "memory", "ostream", "stdbool.h", "stdlib.h", "string", "type_traits", "unordered_map", "utility", "vector"]
+r_api_functions = ["Rf_error", "Rf_getAttrib", "Rf_install", "Rf_isNull", "Rf_isString", "Rf_mkString", "Rf_warning"]
+r_api_globals = ["R_CallMethodDef", "R_FINITE", "R_NegInf", "R_PosInf"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.timeDate]
 version = "4052.112"
@@ -1861,6 +2253,10 @@ native_code = ["c"]
 source_files = { c = 13, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "Parse.h", "R.h", "R_ext/Print.h", "R_ext/RS.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconfig.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "config.h", "ctype.h", "errno.h", "libintl.h", "signal.h", "stdint.h", "stdio.h", "stdlib.h", "string.h"]
+r_api_functions = ["Rf_getCharCE", "Rf_mbrtowc", "Rf_strchr"]
+r_api_globals = ["R_BaseEnv", "R_CMethodDef", "R_CallMethodDef", "R_Calloc", "R_ClassSymbol", "R_DIR", "R_DefinitionSymbol", "R_DynamicFlagSymbol", "R_EOF", "R_EmptyEnv", "R_ExternalMethodDef", "R_FileExists", "R_FileSep", "R_Free", "R_MB_CUR_MAX", "R_MacroSymbol", "R_NewHashedEnv", "R_NewPreciousMSet", "R_NilValue", "R_PATH_MAX"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.tseries]
 version = "0.10-60"
@@ -1869,6 +2265,8 @@ source_files = { c = 8, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "graphics, stats, utils, quadprog, zoo, quantmod (>= 0.4-9),"
 depends = "R (>= 3.4.0)"
+r_headers = ["R.h", "R_ext/Print.h", "R_ext/Rdynload.h", "Rinternals.h", "math.h", "stdio.h"]
+r_api_globals = ["R_CMethodDef", "R_Calloc", "R_Free"]
 
 [packages.TTR]
 version = "0.24.4"
@@ -1877,6 +2275,9 @@ source_files = { c = 9, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "xts (>= 0.10-0), zoo, curl"
 linking_to = "xts"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "stdlib.h", "string.h"]
+r_api_globals = ["R_CallMethodDef", "R_GetCCallable", "R_NilValue"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.tzdb]
 version = "0.5.0"
@@ -1885,6 +2286,9 @@ needs_system_library = true
 provides_headers = true
 depends = "R (>= 4.0.0)"
 linking_to = "cpp11 (>= 0.5.2)"
+r_headers = ["R_ext/Rdynload.h", "R_ext/Visibility.h", "algorithm", "cctype", "cpp11/R.hpp", "cpp11/protect.hpp", "cpp11/strings.hpp", "cstdlib", "cstring", "cwchar", "date/tz.h", "exception", "fstream", "initguid.h", "iostream", "iterator", "knownfolders.h", "memory", "sstream", "stdbool.h"]
+r_api_functions = ["Rf_mkCharLenCE"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue", "R_RegisterCCallable"]
 
 [packages.units]
 version = "1.0-0"
@@ -1893,6 +2297,8 @@ has_configure = true
 imports = "Rcpp"
 depends = "R (>= 3.5.0)"
 linking_to = "Rcpp (>= 0.12.10)"
+r_headers = ["Rcpp.h", "RcppCommon.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.urca]
 version = "1.3-4"
@@ -1901,6 +2307,8 @@ source_files = { c = 1, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "nlme, graphics, stats"
 depends = "R (>= 2.0.0), methods"
+r_headers = ["R_ext/RS.h", "R_ext/Rdynload.h", "stdlib.h"]
+r_api_globals = ["R_FortranMethodDef"]
 
 [packages.urlchecker]
 version = "1.0.1"
@@ -1925,6 +2333,10 @@ bundled_library = true
 compiles = true
 loads = true
 depends = "R (>= 2.10)"
+r_headers = ["R_ext/Rdynload.h", "Rdefines.h", "assert.h", "check.h", "ctype.h", "errno.h", "inttypes.h", "limits.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "windows.h"]
+r_api_functions = ["Rf_error"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_DimNamesSymbol", "R_DimSymbol", "R_ExternalPtrAddr", "R_ExternalPtrTag", "R_MakeExternalPtr", "R_NamesSymbol", "R_NilValue", "R_RegisterCFinalizerEx", "R_SetExternalPtrAddr"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.utils]
 version = ""
@@ -1932,6 +2344,10 @@ native_code = ["c"]
 source_files = { c = 7, cpp = 0, fortran = 0 }
 uses_dynlib = true
 needs_system_library = true
+r_headers = ["Defn.h", "Fileio.h", "Internal.h", "Print.h", "R.h", "R_ext/GraphicsEngine.h", "R_ext/Parse.h", "R_ext/RS.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rconnections.h", "Rdynpriv.h", "Rinterface.h", "Rinternals.h", "Rmodules/RX11.h", "arpa/inet.h", "config.h", "errno.h", "float.h", "graphapp/ga.h"]
+r_api_functions = ["Rf_csduplicated", "Rf_wtransChar"]
+r_api_globals = ["R_AllocStringBuffer", "R_BaseEnv", "R_CallMethodDef", "R_Calloc", "R_CheckStack", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClearExternalPtr", "R_ClearerrConsole", "R_DimNamesSymbol", "R_DimSymbol", "R_EOF", "R_EditFiles", "R_ExpandFileName", "R_ExternalMethodDef", "R_ExternalPtrAddr", "R_FINITE", "R_FindSymbol", "R_FlushConsole", "R_Free"]
+r_api_macros = ["ATTRIB", "PROTECT", "UNPROTECT"]
 
 [packages.uuid]
 version = "1.2-2"
@@ -1942,6 +2358,10 @@ needs_system_library = true
 has_configure = true
 provides_headers = true
 depends = "R (>= 2.9.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rinternals.h", "assert.h", "ctype.h", "dirent.h", "dlfcn.h", "errno.h", "fcntl.h", "grp.h", "inttypes.h", "limits.h", "net/if.h", "net/if_dl.h", "netinet/in.h", "stdarg.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h"]
+r_api_functions = ["Rf_allocVector", "Rf_asInteger", "Rf_error", "Rf_getAttrib", "Rf_inherits", "Rf_mkString", "Rf_setAttrib"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DimSymbol", "R_GetCCallable", "R_NilValue", "R_OK", "R_RegisterCCallable", "R_UUID_H__"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.V8]
 version = "8.0.1"
@@ -1949,6 +2369,9 @@ uses_dynlib = true
 has_configure = true
 imports = "Rcpp (>= 0.12.12), jsonlite (>= 1.0), curl (>= 1.0), utils"
 linking_to = "Rcpp"
+r_headers = ["Rcpp.h", "emscripten.h", "fstream", "libplatform/libplatform.h", "unistd.h", "v8.h"]
+r_api_functions = ["Rf_warningcall_immediate"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue"]
 
 [packages.vctrs]
 version = "0.7.1"
@@ -1958,6 +2381,10 @@ uses_dynlib = true
 provides_headers = true
 imports = "cli (>= 3.4.0), glue, lifecycle (>= 1.0.3), rlang (>= 1.1.7)"
 depends = "R (>= 4.0.0)"
+r_headers = ["R_ext/GraphicsDevice.h", "R_ext/GraphicsEngine.h", "R_ext/Parse.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rembedded.h", "Rinterface.h", "Rinternals.h", "Rversion.h", "algorithm", "ctype.h", "execinfo.h", "float.h", "inttypes.h", "math.h", "rlang.h", "rlang.hpp", "stdbool.h", "stdint.h", "stdlib.h"]
+r_api_functions = ["Rf_PrintValue", "Rf_ScalarComplex", "Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarRaw", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocArray", "Rf_allocSExp", "Rf_allocVector", "Rf_asCharacterFactor", "Rf_charIsASCII", "Rf_coerceVector", "Rf_cons", "Rf_copyMostAttrib", "Rf_defineVar", "Rf_duplicate", "Rf_error", "Rf_errorcall", "Rf_eval", "Rf_findVar", "Rf_getAttrib", "Rf_getCharCE", "Rf_inherits", "Rf_install", "Rf_installChar", "Rf_isObject", "Rf_isVectorList", "Rf_lcons", "Rf_length"]
+r_api_globals = ["R_ActiveBindingFunction", "R_BaseEnv", "R_BaseNamespace", "R_BindingIsActive", "R_BraceSymbol", "R_BracketSymbol", "R_BytecodeExpr", "R_CND_TYPE_condition", "R_CND_TYPE_error", "R_CND_TYPE_interrupt", "R_CND_TYPE_message", "R_CND_TYPE_warning", "R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ClosureBody", "R_ClosureEnv", "R_ClosureExpr", "R_ClosureFormals", "R_DYN_ARRAY_GROWTH_FACTOR"]
+r_api_macros = ["ALTREP", "ATTRIB", "MARK_NOT_MUTABLE", "PROTECT", "SET_ATTRIB", "STRING_PTR_RO", "UNPROTECT"]
 
 [packages.viridis]
 version = "0.6.5"
@@ -1980,6 +2407,10 @@ uses_dynlib = true
 imports = "bit64, cli (>= 3.2.0), crayon, glue, hms, lifecycle (>="
 depends = "R (>= 4.1)"
 linking_to = "cpp11 (>= 0.2.0), progress (>= 1.2.3), tzdb (>= 0.1.1)"
+r_headers = ["R_ext/Altrep.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "algorithm", "array", "assert.h", "condition_variable", "cpp11/R.hpp", "cpp11/as.hpp", "cpp11/data_frame.hpp", "cpp11/doubles.hpp", "cpp11/external_pointer.hpp", "cpp11/function.hpp", "cpp11/integers.hpp", "cpp11/list.hpp", "cpp11/logicals.hpp", "cpp11/protect.hpp", "cpp11/raws.hpp", "cpp11/sexp.hpp"]
+r_api_functions = ["Rf_allocVector", "Rf_duplicate", "Rf_error", "Rf_eval", "Rf_findFun", "Rf_findVarInFrame", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isNull", "Rf_mkCharLenCE", "Rf_mkString", "Rf_translateChar", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_ClearExternalPtr", "R_EmptyEnv", "R_ExternalPtrAddr", "R_GetConnection", "R_MakeExternalPtr", "R_NamespaceRegistry", "R_NilValue", "R_ReadConnection", "R_RegisterCFinalizerEx", "R_VERSION", "R_Version", "R_WriteConnection"]
+r_api_macros = ["ALTREP", "ATTRIB", "MARK_NOT_MUTABLE", "PROTECT", "UNPROTECT"]
 
 [packages.waldo]
 version = "0.6.2"
@@ -1994,6 +2425,9 @@ native_code = ["c"]
 source_files = { c = 3, cpp = 0, fortran = 0 }
 uses_dynlib = true
 imports = "curl (>= 2.5), jsonlite"
+r_headers = ["R_ext/Rdynload.h", "Rinternals.h", "stdint.h", "string.h"]
+r_api_functions = ["Rf_length"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.whisker]
 version = "0.4.1"
@@ -2015,6 +2449,10 @@ uses_dynlib = true
 needs_system_library = true
 provides_headers = true
 depends = "R (>= 2.10)"
+r_headers = ["R.h", "R_ext/Altrep.h", "Rconfig.h", "Rinternals.h", "algorithm", "byteswap.h", "cassert", "cctype", "cfloat", "cinttypes", "climits", "cmath", "cstdint", "cstdint.h", "cstdlib", "cstdlib.h", "cstring", "endian.h", "intrin.h", "iostream"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_allocMatrix", "Rf_allocVector", "Rf_error", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_isMatrix", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLen", "Rf_mkNamed", "Rf_mkString", "Rf_ncols", "Rf_nrows", "Rf_setAttrib", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_CheckUserInterrupt", "R_ClassSymbol", "R_ExternalPtrAddr", "R_ExternalPtrTag", "R_NO_REMAP", "R_NaN", "R_NegInf", "R_NilValue", "R_PosInf", "R_PreserveObject", "R_ReleaseObject", "R_VERSION", "R_Version"]
+r_api_macros = ["ALTREP", "PROTECT", "UNPROTECT"]
 
 [packages.writexl]
 version = "1.5.4"
@@ -2025,6 +2463,10 @@ bundled_library = true
 needs_system_library = true
 compiles = true
 loads = true
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "ctype.h", "errno.h", "fcntl.h", "io.h", "openssl/md5.h", "stdarg.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "strings.h", "sys/cdefs.h", "sys/stat.h", "sys/types.h", "time.h", "unistd.h"]
+r_api_functions = ["Rf_asLogical", "Rf_errorcall", "Rf_getAttrib", "Rf_inherits", "Rf_isLogical", "Rf_isMatrix", "Rf_isReal", "Rf_isString", "Rf_isVectorList", "Rf_length", "Rf_mkString", "Rf_translateChar", "Rf_warning"]
+r_api_globals = ["R_COL_TYPE", "R_CallMethodDef", "R_FINITE", "R_NO_REMAP", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_PosInf"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.xfun]
 version = "0.56"
@@ -2035,6 +2477,9 @@ compiles = true
 loads = true
 imports = "grDevices, stats, tools"
 depends = "R (>= 3.2.0)"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "Rversion.h", "stdint.h", "stdlib.h"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue", "R_VERSION", "R_Version"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.xml2]
 version = "1.5.2"
@@ -2045,6 +2490,10 @@ has_configure = true
 provides_headers = true
 imports = "cli, methods, rlang (>= 1.1.0)"
 depends = "R (>= 3.6.0)"
+r_headers = ["R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "algorithm", "cstring", "fstream", "iterator", "libxml/HTMLparser.h", "libxml/HTMLtree.h", "libxml/encoding.h", "libxml/parser.h", "libxml/tree.h", "libxml/uri.h", "libxml/xmlerror.h", "libxml/xmlsave.h", "libxml/xmlschemas.h", "libxml/xmlstring.h", "libxml/xmlversion.h", "libxml/xpath.h", "libxml/xpathInternals.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_ScalarLogical", "Rf_ScalarReal", "Rf_ScalarString", "Rf_allocVector", "Rf_error", "Rf_eval", "Rf_getAttrib", "Rf_inherits", "Rf_install", "Rf_length", "Rf_mkChar", "Rf_mkCharCE", "Rf_mkCharLenCE", "Rf_mkString", "Rf_setAttrib", "Rf_warning", "Rf_xlength"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_FindNamespace", "R_GetConnection", "R_GlobalEnv", "R_NamesSymbol", "R_NilValue", "R_PosInf", "R_ReadConnection", "R_RowNamesSymbol", "R_WriteConnection"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.xtable]
 version = "1.8-8"
@@ -2065,6 +2514,10 @@ loads = true
 imports = "methods"
 depends = "R (>= 3.6.0), zoo (>= 1.7-12)"
 linking_to = "zoo"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rconfig.h", "Rdefines.h", "Rinternals.h", "Rmath.h", "stdint.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_asInteger"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_DotsSymbol", "R_ExternalMethodDef", "R_FINITE", "R_FindNamespace", "R_GetCCallable", "R_GlobalEnv", "R_NamesSymbol", "R_NilValue", "R_RegisterCCallable"]
+r_api_macros = ["ATTRIB", "PROTECT", "UNPROTECT"]
 
 [packages.yaml]
 version = "2.3.12"
@@ -2073,6 +2526,10 @@ source_files = { c = 12, cpp = 0, fortran = 0 }
 uses_dynlib = true
 compiles = true
 loads = true
+r_headers = ["assert.h", "errno.h", "limits.h", "stdarg.h", "stddef.h", "stdio.h", "stdlib.h", "string.h", "yaml.h"]
+r_api_functions = ["Rf_allocSExp"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_ClosureBody", "R_ClosureEnv", "R_ClosureFormals", "R_GlobalEnv", "R_Interactive", "R_IsNA", "R_IsNaN", "R_LevelsSymbol", "R_NaN", "R_NamesSymbol", "R_NegInf", "R_NilValue", "R_ParseVector", "R_PosInf", "R_VERSION", "R_Version"]
+r_api_macros = ["MARK_NOT_MUTABLE", "PROTECT", "UNPROTECT"]
 
 [packages.zip]
 version = "2.3.3"
@@ -2081,6 +2538,10 @@ source_files = { c = 6, cpp = 0, fortran = 0 }
 uses_dynlib = true
 compiles = true
 loads = true
+r_headers = ["R.h", "R_ext/Rdynload.h", "R_ext/Visibility.h", "Rinternals.h", "assert.h", "direct.h", "errno.h", "fcntl.h", "stdarg.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "sys/stat.h", "sys/time.h", "sys/types.h", "sys/utime.h", "time.h", "unistd.h"]
+r_api_functions = ["Rf_ScalarInteger", "Rf_lengthgets", "Rf_mkNamed"]
+r_api_globals = ["R_CallMethodDef", "R_NilValue", "R_ZIP_EADDDIR", "R_ZIP_EADDFILE", "R_ZIP_EBROKEN", "R_ZIP_EBROKENENTRY", "R_ZIP_ECREATE", "R_ZIP_ECREATEDIR", "R_ZIP_ECREATELINK", "R_ZIP_ENOENTRY", "R_ZIP_ENOMEM", "R_ZIP_EOPEN", "R_ZIP_EOPENAPPEND", "R_ZIP_EOPENWRITE", "R_ZIP_EOPENX", "R_ZIP_EOVERWRITE", "R_ZIP_ESETMTIME", "R_ZIP_ESETPERM", "R_ZIP_ESETZIPPERM", "R_ZIP_ESUCCESS"]
+r_api_macros = ["PROTECT", "UNPROTECT"]
 
 [packages.zoo]
 version = "1.8-15"
@@ -2092,4 +2553,7 @@ compiles = true
 loads = true
 imports = "utils, graphics, grDevices, lattice (>= 0.20-27)"
 depends = "R (>= 3.1.0), stats"
+r_headers = ["R.h", "R_ext/Rdynload.h", "Rdefines.h", "Rinternals.h", "zoo.h"]
+r_api_globals = ["R_CallMethodDef", "R_ClassSymbol", "R_DimNamesSymbol", "R_DimSymbol", "R_NamesSymbol", "R_NilValue", "R_RegisterCCallable"]
+r_api_macros = ["GET_SLOT", "MAKE_CLASS", "NEW_OBJECT", "PROTECT", "UNPROTECT"]
 
