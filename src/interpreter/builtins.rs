@@ -2984,6 +2984,58 @@ fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(args[0].clone())
 }
 
+/// Modify a list by replacing/adding/removing elements from another list.
+///
+/// For each named element in `val`:
+/// - If the value is NULL, remove that name from `x`
+/// - Otherwise, replace or add the element in `x`
+///
+/// @param x a list to modify
+/// @param val a list of replacements
+/// @return modified copy of x
+/// @namespace utils
+#[builtin(name = "modifyList", min_args = 2)]
+fn builtin_modify_list(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let x = match args.first() {
+        Some(RValue::List(l)) => l.clone(),
+        Some(_) => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "modifyList: first argument must be a list".to_string(),
+            ))
+        }
+        None => return Ok(RValue::Null),
+    };
+    let val = match args.get(1) {
+        Some(RValue::List(l)) => l,
+        Some(RValue::Null) => return Ok(RValue::List(x)),
+        _ => return Ok(RValue::List(x)),
+    };
+
+    let mut result = x;
+    for (name, value) in &val.values {
+        if let Some(name) = name {
+            if value.is_null() {
+                // Remove
+                result
+                    .values
+                    .retain(|(n, _)| n.as_deref() != Some(name.as_str()));
+            } else if let Some(entry) = result
+                .values
+                .iter_mut()
+                .find(|(n, _)| n.as_deref() == Some(name.as_str()))
+            {
+                // Replace
+                entry.1 = value.clone();
+            } else {
+                // Add
+                result.values.push((Some(name.clone()), value.clone()));
+            }
+        }
+    }
+    Ok(RValue::List(result))
+}
+
 /// Get the class attribute of an object (S3 compat alias for class()).
 /// @param x any R value
 /// @return class attribute or NULL

@@ -1550,6 +1550,73 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
     Rf_allocVector(sexp::NILSXP as c_int, 0)
 }
 
+// Additional RNG stubs
+#[no_mangle]
+pub extern "C" fn norm_rand() -> f64 {
+    0.0
+}
+#[no_mangle]
+pub extern "C" fn exp_rand() -> f64 {
+    1.0
+}
+
+// R_ParseVector stub
+#[no_mangle]
+pub extern "C" fn R_ParseVector(
+    _text: Sexp,
+    _n: c_int,
+    parse_status: *mut c_int,
+    _srcfile: Sexp,
+) -> Sexp {
+    if !parse_status.is_null() {
+        unsafe {
+            *parse_status = 1;
+        } // PARSE_OK
+    }
+    unsafe { R_NilValue }
+}
+
+// Fortran optimization stubs (called by MASS, nnet, class, etc.)
+#[no_mangle]
+pub extern "C" fn nmmin(
+    _n: c_int,
+    _xin: *mut f64,
+    _x: *mut f64,
+    _fmin: *mut f64,
+    _fn_ptr: *const (),
+    _fail: *mut c_int,
+    _abstol: f64,
+    _intol: f64,
+    _ex: *mut c_void,
+    _alpha: f64,
+    _beta: f64,
+    _gamma: f64,
+    _trace: c_int,
+    _fncount: *mut c_int,
+    _maxit: c_int,
+) {
+}
+
+#[no_mangle]
+pub extern "C" fn vmmin(
+    _n: c_int,
+    _x: *mut f64,
+    _fmin: *mut f64,
+    _fn_ptr: *const (),
+    _gr: *const (),
+    _maxit: c_int,
+    _trace: c_int,
+    _mask: *mut c_int,
+    _abstol: f64,
+    _reltol: f64,
+    _nreport: c_int,
+    _ex: *mut c_void,
+    _fncount: *mut c_int,
+    _grcount: *mut c_int,
+    _fail: *mut c_int,
+) {
+}
+
 // endregion
 
 // region: Cleanup
