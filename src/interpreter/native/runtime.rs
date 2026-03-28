@@ -1675,6 +1675,32 @@ pub extern "C" fn R_rsort(x: *mut f64, n: c_int) {
     slice.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 }
 
+// Rf_allocArray — allocate array with dimensions
+#[no_mangle]
+pub extern "C" fn Rf_allocArray(stype: c_int, dims: Sexp) -> Sexp {
+    // Compute total size from dims vector
+    let total = if dims.is_null() {
+        0
+    } else {
+        let n = unsafe { (*dims).length } as usize;
+        let mut product: isize = 1;
+        for i in 0..n {
+            let d = unsafe { *((*dims).data as *const i32).add(i) } as isize;
+            product *= d;
+        }
+        product
+    };
+    let result = Rf_allocVector(stype, total);
+    Rf_setAttrib(result, unsafe { R_DimSymbol }, dims);
+    result
+}
+
+// R_do_MAKE_CLASS — create an S4 class object (stub)
+#[no_mangle]
+pub extern "C" fn R_do_MAKE_CLASS(_name: *const c_char) -> Sexp {
+    Rf_allocVector(sexp::VECSXP as c_int, 0)
+}
+
 // iPsort / rPsort — partial sort (sort enough to get k-th element)
 #[no_mangle]
 pub extern "C" fn iPsort(x: *mut c_int, n: c_int, _k: c_int) {

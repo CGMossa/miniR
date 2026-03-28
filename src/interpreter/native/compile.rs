@@ -380,6 +380,10 @@ pub fn compile_package(
             .pic(true)
             .warnings(false)
             .cargo_metadata(false) // suppress cargo:rerun-if-env-changed output
+            // Suppress function pointer type errors (common in R packages with Fortran)
+            .flag_if_supported("-Wno-incompatible-function-pointer-types")
+            .flag_if_supported("-Wno-int-conversion")
+            .flag_if_supported("-Wno-error")
             .target(&target)
             .host(&target)
             .opt_level(2)

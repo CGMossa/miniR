@@ -1422,6 +1422,7 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
+stub_builtin!("conflictRules", 1);
 
 /// setHook — no-op in miniR.
 /// @namespace base

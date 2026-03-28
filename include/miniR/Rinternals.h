@@ -462,6 +462,19 @@ extern SEXP R_BaseNamespace;
 #define GET_SLOT(x, name) Rf_getAttrib((x), (name))
 #define SET_SLOT(x, name, val) Rf_setAttrib((x), (name), (val))
 
+/* S4 class construction */
+#define MAKE_CLASS(name) R_do_MAKE_CLASS(name)
+SEXP R_do_MAKE_CLASS(const char *name);
+#define NEW_OBJECT(cls) Rf_allocS4Object()
+
+/* Dimension access */
+#define GET_DIM(x) Rf_getAttrib((x), R_DimSymbol)
+#define CONS(a, b) Rf_cons((a), (b))
+
+/* Array allocation */
+SEXP Rf_allocArray(SEXPTYPE type, SEXP dims);
+#define allocArray Rf_allocArray
+
 /* Variable lookup (stubs — return R_UnboundValue) */
 SEXP Rf_findVar(SEXP sym, SEXP env);
 SEXP Rf_findVarInFrame(SEXP env, SEXP sym);

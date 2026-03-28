@@ -9,6 +9,9 @@
 #ifndef F77_CALL
 #define F77_CALL(x) x ## _
 #endif
+#ifndef F77_SUB
+#define F77_SUB(x) x ## _
+#endif
 
 /* Stub declarations for Fortran routines — actual implementation
    requires a LAPACK/BLAS library. */
