@@ -873,6 +873,26 @@ void R_qsort_int(int *v, int lo, int hi);
 
 /* R color without alpha */
 #define R_RGB(r,g,b) R_RGBA(r,g,b,255)
+
+/* R_atof — parse double from string */
+double R_atof(const char *str);
+
+/* Function pointer types for optimization routines */
+typedef void (*fcn_p)(int, double *, double *, void *);
+typedef void (*d1fcn_p)(int, double *, double *, void *);
+typedef void (*d2fcn_p)(int, double *, double *, void *);
+
+/* optif9 — nlme optimization routine (27 args) */
+void optif9(int nr, int n, double *x, void (*fcn)(), void (*d1fcn)(),
+            void (*d2fcn)(), double *st, double *typsiz, double fscale,
+            int method, int iexp, int *msg, int ndigit, int itnlim,
+            int iagflg, int iahflg, double dlt, double gradtl,
+            double stepmx, double steptl, double *xpls, double *fpls,
+            double *gpls, int *itrmcd, double *a, double *wrk,
+            int *itncnt);
+
+/* CAD*R — pairlist navigation */
+#define CAD4R(x) CAR(CDR(CDR(CDR(CDR(x)))))
 Rboolean Rf_isPrimitive(SEXP x);
 #define isPrimitive Rf_isPrimitive
 

@@ -13,9 +13,7 @@
 #define F77_SUB(x) x ## _
 #endif
 
-/* LAPACK/LINPACK routines used by R packages.
-   Implemented as stubs in the miniR runtime — they prevent compilation
-   errors but produce warnings if actually called. */
+/* LAPACK/LINPACK routines */
 void dqrdc2_(double *x, int *ldx, int *n, int *p, double *tol,
              int *k, double *qraux, int *jpvt, double *work);
 void dqrsl_(double *x, int *ldx, int *n, int *k, double *qraux,
@@ -35,9 +33,15 @@ void dpotri_(const char *uplo, int *n, double *a, int *lda, int *info);
 void dtrsm_(const char *side, const char *uplo, const char *transa,
             const char *diag, int *m, int *n, double *alpha, double *a,
             int *lda, double *b, int *ldb);
+void dtrsl_(double *t, int *ldt, int *n, double *b, int *job, int *info);
+void chol_(double *a, int *lda, int *n, double *v, int *info);
+void rs_(int *nm, int *n, double *a, double *w, int *matz,
+         double *z, double *fv1, double *fv2, int *ierr);
 
-/* Memcpy / Memzero — R memory macros */
+/* Memcpy / Memzero */
+#ifndef Memcpy
 #define Memcpy(to, from, n) memcpy((to), (from), (size_t)(n) * sizeof(*(to)))
 #define Memzero(to, n)      memset((to), 0, (size_t)(n) * sizeof(*(to)))
+#endif
 
 #endif

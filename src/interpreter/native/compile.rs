@@ -384,6 +384,8 @@ pub fn compile_package(
             .flag_if_supported("-Wno-incompatible-function-pointer-types")
             .flag_if_supported("-Wno-int-conversion")
             .flag_if_supported("-Wno-error")
+            // Fortran routine declarations: extern void F77_NAME(foo)(...) is valid
+            .flag_if_supported("-Wno-return-type")
             .target(&target)
             .host(&target)
             .opt_level(2)

@@ -1739,7 +1739,7 @@ pub extern "C" fn rsort_with_index(x: *mut f64, index: *mut c_int, n: c_int) {
 
 // R_qsort_I — indexed sort ascending
 #[no_mangle]
-pub extern "C" fn R_qsort_I(v: *mut f64, ii: *mut c_int, lo: c_int, hi: c_int) {
+pub extern "C" fn R_qsort_I(v: *mut f64, _ii: *mut c_int, lo: c_int, hi: c_int) {
     if v.is_null() || lo >= hi {
         return;
     }
@@ -1917,6 +1917,81 @@ pub extern "C" fn dsyrk_(
     _beta: *const f64,
     _c: *mut f64,
     _ldc: *const c_int,
+) {
+}
+
+// More LAPACK/LINPACK stubs
+#[no_mangle]
+pub extern "C" fn dtrsl_(
+    _t: *mut f64,
+    _ldt: *const c_int,
+    _n: *const c_int,
+    _b: *mut f64,
+    _job: *const c_int,
+    _info: *mut c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn chol_(
+    _a: *mut f64,
+    _lda: *const c_int,
+    _n: *const c_int,
+    _v: *mut f64,
+    _info: *mut c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn rs_(
+    _nm: *const c_int,
+    _n: *const c_int,
+    _a: *mut f64,
+    _w: *mut f64,
+    _matz: *const c_int,
+    _z: *mut f64,
+    _fv1: *mut f64,
+    _fv2: *mut f64,
+    _ierr: *mut c_int,
+) {
+}
+
+// R_atof — parse double
+#[no_mangle]
+pub extern "C" fn R_atof(str_ptr: *const c_char) -> f64 {
+    if str_ptr.is_null() {
+        return 0.0;
+    }
+    let s = unsafe { CStr::from_ptr(str_ptr) }.to_str().unwrap_or("0");
+    s.parse::<f64>().unwrap_or(0.0)
+}
+
+// optif9 — optimization routine stub (27 args)
+#[no_mangle]
+pub extern "C" fn optif9(
+    _nr: *const c_int,
+    _n: *const c_int,
+    _x: *mut f64,
+    _fcn: *const (),
+    _d1fcn: *const (),
+    _d2fcn: *const (),
+    _typsiz: *mut f64,
+    _fscale: *const f64,
+    _method: *const c_int,
+    _iexp: *const c_int,
+    _msg: *mut c_int,
+    _ndigit: *const c_int,
+    _itnlim: *const c_int,
+    _iagflg: *const c_int,
+    _iahflg: *const c_int,
+    _dlt: *const f64,
+    _gradtl: *const f64,
+    _stepmx: *const f64,
+    _steptl: *const f64,
+    _xpls: *mut f64,
+    _fpls: *mut f64,
+    _gpls: *mut f64,
+    _itrmcd: *mut c_int,
+    _a: *mut f64,
+    _wrk: *mut f64,
 ) {
 }
 

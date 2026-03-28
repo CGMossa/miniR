@@ -24,4 +24,15 @@
 #define R_INLINE static inline
 #endif
 
+/* Fortran name mangling — must be available from R.h */
+#ifndef F77_NAME
+#define F77_NAME(x) x ## _
+#endif
+#ifndef F77_CALL
+#define F77_CALL(x) x ## _
+#endif
+#ifndef F77_SUB
+#define F77_SUB(x) x ## _
+#endif
+
 #endif /* MINIR_R_H */
