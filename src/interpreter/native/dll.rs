@@ -20,6 +20,34 @@ use super::sexp::{self, Sexp};
 use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 
+// Thread-local interpreter reference for callbacks from C code.
+// Set before each .Call, cleared after.
+thread_local! {
+    static CURRENT_INTERP: std::cell::Cell<*const Interpreter> = const { std::cell::Cell::new(std::ptr::null()) };
+}
+
+fn callback_find_var(name: &str) -> Option<RValue> {
+    CURRENT_INTERP.with(|cell| {
+        let interp = cell.get();
+        if interp.is_null() {
+            return None;
+        }
+        let interp = unsafe { &*interp };
+        interp.global_env.get(name)
+    })
+}
+
+fn callback_define_var(name: &str, val: RValue) {
+    CURRENT_INTERP.with(|cell| {
+        let interp = cell.get();
+        if interp.is_null() {
+            return;
+        }
+        let interp = unsafe { &*interp };
+        interp.global_env.set(name.to_string(), val);
+    });
+}
+
 // region: C trampoline types
 
 /// Signature of `R_init_<pkgname>(DllInfo*)` package init function.
@@ -220,6 +248,13 @@ impl Interpreter {
         // Convert RValue args to SEXPs (allocated with C allocator)
         let sexp_args: Vec<Sexp> = args.iter().map(convert::rvalue_to_sexp).collect();
 
+        // Set interpreter callbacks so C code can call back for Rf_findVar, etc.
+        CURRENT_INTERP.with(|cell| cell.set(self as *const Interpreter));
+        super::runtime::set_callbacks(super::runtime::InterpreterCallbacks {
+            find_var: Some(callback_find_var),
+            define_var: Some(callback_define_var),
+        });
+
         // The trampoline and error accessors are now in the binary
         // (compiled from csrc/native_trampoline.c via build.rs).
         extern "C" {
@@ -258,6 +293,8 @@ impl Interpreter {
             };
 
             // Clean up before returning error
+            super::runtime::clear_callbacks();
+            CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
             super::runtime::free_allocs();
             unsafe {
                 for s in sexp_args {
@@ -270,6 +307,10 @@ impl Interpreter {
 
         // Convert result to RValue (copies all data)
         let result = unsafe { convert::sexp_to_rvalue(result_sexp) };
+
+        // Clear interpreter callbacks
+        super::runtime::clear_callbacks();
+        CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
 
         // Free runtime allocations (result SEXP + any intermediates)
         super::runtime::free_allocs();

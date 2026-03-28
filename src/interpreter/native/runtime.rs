@@ -27,17 +27,46 @@ struct AllocNode {
     next: *mut AllocNode,
 }
 
+/// Callback function pointers set by the Rust interpreter before each .Call.
+/// These allow C API functions (Rf_findVar, Rf_eval, etc.) to call back into
+/// the interpreter for operations that need R-level state.
+#[derive(Default)]
+pub struct InterpreterCallbacks {
+    /// Look up a variable by name in an environment. Returns the SEXP value
+    /// or R_UnboundValue if not found.
+    pub find_var: Option<fn(&str) -> Option<crate::interpreter::value::RValue>>,
+    /// Define a variable in the global environment.
+    pub define_var: Option<fn(&str, crate::interpreter::value::RValue)>,
+}
+
 /// Thread-local allocation state for the current .Call invocation.
 /// This is in the binary (shared by all packages), not per-.so.
 struct RuntimeState {
     alloc_head: *mut AllocNode,
     protect_stack: Vec<Sexp>,
+    callbacks: InterpreterCallbacks,
 }
 
 thread_local! {
     static STATE: std::cell::RefCell<RuntimeState> = std::cell::RefCell::new(RuntimeState {
         alloc_head: ptr::null_mut(),
         protect_stack: Vec::with_capacity(128),
+        callbacks: InterpreterCallbacks { find_var: None, define_var: None },
+    });
+}
+
+/// Set interpreter callbacks for the current .Call invocation.
+pub fn set_callbacks(callbacks: InterpreterCallbacks) {
+    STATE.with(|state| {
+        state.borrow_mut().callbacks = callbacks;
+    });
+}
+
+/// Clear interpreter callbacks after .Call returns.
+pub fn clear_callbacks() {
+    STATE.with(|state| {
+        let mut st = state.borrow_mut();
+        st.callbacks = InterpreterCallbacks::default();
     });
 }
 
@@ -1340,15 +1369,40 @@ pub extern "C" fn R_Reprotect(s: Sexp, i: c_int) {
     });
 }
 
-// Rf_findVar — variable lookup (stub returns R_UnboundValue)
+// Rf_findVar — look up a variable via interpreter callback
 #[no_mangle]
-pub extern "C" fn Rf_findVar(_sym: Sexp, _env: Sexp) -> Sexp {
-    unsafe { R_UnboundValue }
+pub extern "C" fn Rf_findVar(sym: Sexp, _env: Sexp) -> Sexp {
+    if sym.is_null() {
+        return unsafe { R_UnboundValue };
+    }
+    // Extract variable name from the symbol SEXP
+    let name = unsafe { sexp::char_data(sym) };
+    if name.is_empty() {
+        return unsafe { R_UnboundValue };
+    }
+    // Try the interpreter callback
+    let result = STATE.with(|state| {
+        let st = state.borrow();
+        if let Some(find) = st.callbacks.find_var {
+            find(name)
+        } else {
+            None
+        }
+    });
+    match result {
+        Some(val) => {
+            // Convert RValue back to SEXP for C code
+            let s = super::convert::rvalue_to_sexp(&val);
+            track(s);
+            s
+        }
+        None => unsafe { R_UnboundValue },
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn Rf_findVarInFrame3(_env: Sexp, _sym: Sexp, _inherits: c_int) -> Sexp {
-    unsafe { R_UnboundValue }
+pub extern "C" fn Rf_findVarInFrame3(env: Sexp, sym: Sexp, _inherits: c_int) -> Sexp {
+    Rf_findVar(sym, env)
 }
 
 // R_ExecWithCleanup — execute function with cleanup
@@ -1745,10 +1799,23 @@ pub extern "C" fn R_NewEnv(parent: Sexp, _hash: c_int, _size: c_int) -> Sexp {
     Rf_allocVector(sexp::VECSXP as c_int, 0)
 }
 
-// Rf_defineVar — define a variable in an environment
+// Rf_defineVar — define a variable via interpreter callback
 #[no_mangle]
-pub extern "C" fn Rf_defineVar(_sym: Sexp, _val: Sexp, _env: Sexp) {
-    // No-op stub — would need interpreter callback
+pub extern "C" fn Rf_defineVar(sym: Sexp, val: Sexp, _env: Sexp) {
+    if sym.is_null() {
+        return;
+    }
+    let name = unsafe { sexp::char_data(sym) };
+    if name.is_empty() {
+        return;
+    }
+    let rval = unsafe { super::convert::sexp_to_rvalue(val) };
+    STATE.with(|state| {
+        let st = state.borrow();
+        if let Some(define) = st.callbacks.define_var {
+            define(name, rval);
+        }
+    });
 }
 
 // BODY / CLOENV — closure internals
