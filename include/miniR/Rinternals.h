@@ -325,7 +325,7 @@ struct R_outpstream_st {
     R_pstream_format_t type;
     int version;
     void (*OutChar)(R_outpstream_t, int);
-    void (*OutBytes)(R_outpstream_t, const void *, int);
+    void (*OutBytes)(R_outpstream_t, void *, int);
     SEXP (*OutPersistHookFunc)(SEXP, SEXP);
     SEXP OutPersistHookData;
 };
@@ -334,7 +334,7 @@ struct R_outpstream_st {
 static inline void R_InitOutPStream(R_outpstream_t s, R_pstream_data_t data,
     R_pstream_format_t type, int version,
     void (*outchar)(R_outpstream_t, int),
-    void (*outbytes)(R_outpstream_t, const void *, int),
+    void (*outbytes)(R_outpstream_t, void *, int),
     SEXP (*hook)(SEXP, SEXP), SEXP hookdata) {
     if (s) { s->data = data; s->type = type; s->version = version;
              s->OutChar = outchar; s->OutBytes = outbytes;
@@ -430,6 +430,63 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define Rf_PrintValue(x)  ((void)(x))
 #define PrintValue        Rf_PrintValue
 #define eval              Rf_eval
+
+/* Arith constants (also in R_ext/Arith.h) */
+#ifndef R_PosInf
+#define R_PosInf   __builtin_inf()
+#define R_NegInf   (-__builtin_inf())
+#define R_NaN      __builtin_nan("")
+#define R_FINITE(x) __builtin_isfinite(x)
+#endif
+
+/* Rf_list1..4 — allocate pairlists */
+#define Rf_list1(a)       Rf_cons((a), R_NilValue)
+#define Rf_list2(a,b)     Rf_cons((a), Rf_cons((b), R_NilValue))
+#define Rf_list3(a,b,c)   Rf_cons((a), Rf_cons((b), Rf_cons((c), R_NilValue)))
+#define list1 Rf_list1
+#define list2 Rf_list2
+#define list3 Rf_list3
+
+/* length() alias — can't use #define because it conflicts with s->length.
+   Use a static inline function instead. */
+#ifndef R_NO_REMAP
+static inline R_len_t length(SEXP x) { return Rf_length(x); }
+#endif
+
+/* R_LEN_T_MAX — maximum vector length */
+#define R_LEN_T_MAX  INT32_MAX
+#define R_XLEN_T_MAX ((R_xlen_t)INT64_MAX)
+
+/* Scalar value accessors (R 4.0+) */
+#define INTEGER_VALUE(x) (INTEGER(x)[0])
+#define REAL_VALUE(x)    (REAL(x)[0])
+#define LOGICAL_VALUE(x) (LOGICAL(x)[0])
+#define STRING_VALUE(x)  R_CHAR(STRING_ELT((x), 0))
+
+/* Type predicates — function-style aliases */
+#define IS_RAW(x)       (TYPEOF(x) == RAWSXP)
+#define IS_LOGICAL(x)   (TYPEOF(x) == LGLSXP)
+#define IS_INTEGER(x)   (TYPEOF(x) == INTSXP)
+#define IS_NUMERIC(x)   (TYPEOF(x) == REALSXP || TYPEOF(x) == INTSXP)
+#define IS_CHARACTER(x)  (TYPEOF(x) == STRSXP)
+
+/* Rf_asChar — coerce to CHARSXP */
+static inline SEXP Rf_asChar(SEXP x) {
+    if (TYPEOF(x) == STRSXP && LENGTH(x) > 0) return STRING_ELT(x, 0);
+    return R_NaString;
+}
+#define asChar Rf_asChar
+
+/* vmaxget / vmaxset — memory stack checkpoints (no-ops in miniR) */
+static inline void *vmaxget(void) { return (void*)0; }
+static inline void vmaxset(void *p) { (void)p; }
+
+/* Reference counting — always assume referenced (conservative) */
+#define MAYBE_REFERENCED(x) 1
+#define MAYBE_SHARED(x) 1
+#define NO_REFERENCES(x) 0
+#define NAMED(x) 2
+#define SET_NAMED(x, v) ((void)(v))
 #define warningcall       Rf_warningcall
 #define errorcall         Rf_errorcall
 

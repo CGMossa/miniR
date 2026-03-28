@@ -1459,3 +1459,40 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
+/// setHook — set a hook on a package event (no-op in miniR).
+/// @param hookName the hook name
+/// @param value the hook function
+/// @param action character: "append", "prepend", "replace"
+/// @return invisible NULL
+/// @namespace base
+#[builtin(name = "setHook")]
+fn builtin_set_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
+
+/// packageEvent — create a package event name string.
+/// @param pkgname character: package name
+/// @param event character: event type
+/// @return character string
+/// @namespace base
+#[builtin(name = "packageEvent", min_args = 1)]
+fn builtin_package_event(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let pkg = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let event = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_else(|| "onLoad".to_string());
+    Ok(RValue::vec(Vector::Character(
+        vec![Some(format!("{event}:{pkg}"))].into(),
+    )))
+}
+
+/// getHook — get a hook (returns NULL, no hooks in miniR).
+/// @namespace base
+#[builtin(name = "getHook", min_args = 1)]
+fn builtin_get_hook(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}

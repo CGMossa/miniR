@@ -250,13 +250,22 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
 
         if current_name.is_some() {
             // We're inside a multi-line directive — accumulate
+            let mut in_quotes = false;
             for ch in line.chars() {
+                if ch == '"' {
+                    in_quotes = !in_quotes;
+                    current_args.push(ch);
+                    continue;
+                }
+                if in_quotes {
+                    current_args.push(ch);
+                    continue;
+                }
                 if ch == '(' {
                     paren_depth += 1;
                     current_args.push(ch);
                 } else if ch == ')' {
                     if paren_depth == 0 {
-                        // This shouldn't happen in well-formed input, but handle gracefully
                         continue;
                     }
                     paren_depth -= 1;
@@ -302,7 +311,21 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
                 paren_depth = 0;
 
                 // Process the rest of the line after the directive name
+                let mut in_quotes = false;
                 for ch in line[paren_pos..].chars() {
+                    if ch == '"' {
+                        in_quotes = !in_quotes;
+                        if paren_depth > 0 {
+                            current_args.push(ch);
+                        }
+                        continue;
+                    }
+                    if in_quotes {
+                        if paren_depth > 0 {
+                            current_args.push(ch);
+                        }
+                        continue;
+                    }
                     if ch == '(' {
                         paren_depth += 1;
                         if paren_depth > 1 {
