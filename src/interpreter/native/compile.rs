@@ -497,10 +497,35 @@ pub fn compile_package(
         }
     }
 
-    // Add PKG_LIBS (linker flags)
+    // Add PKG_LIBS (linker flags) — skip local -L/-l for bundled static libs
+    // since we compile all sources directly into the .so
     let libs = makevars.pkg_libs();
     if !libs.is_empty() {
         for flag in shell_split(libs) {
+            // Skip -L flags pointing to local dirs (bundled library build dirs)
+            if flag.starts_with("-L") {
+                let dir = flag.strip_prefix("-L").unwrap_or("");
+                let path = std::path::Path::new(dir);
+                // Keep system library paths, skip relative/local paths
+                if path.is_relative() {
+                    continue;
+                }
+            }
+            // Skip -l flags for bundled static libraries
+            if flag.starts_with("-l") {
+                let lib = flag.strip_prefix("-l").unwrap_or("");
+                if lib.starts_with("stat") || lib.starts_with("c") && lib.len() < 10 {
+                    // Heuristic: skip -lstatyajl, -lcutf8lite, -lcctz, etc.
+                    // but keep system libs like -lz, -lpthread
+                    if makevars
+                        .vars
+                        .values()
+                        .any(|v| v.contains(&format!("lib{lib}.a")))
+                    {
+                        continue;
+                    }
+                }
+            }
             cmd.arg(flag);
         }
     }
@@ -519,43 +544,85 @@ pub fn compile_package(
 
 /// Find C and C++ source files to compile.
 ///
-/// If Makevars specifies `OBJECTS`, derive source files from those .o names.
-/// Otherwise, glob `src/*.{c,cpp,cc,cxx}`.
+/// Collects sources from:
+/// 1. `OBJECTS` variable (if set) — explicit list
+/// 2. Other variables ending in `.o` — bundled library object files
+/// 3. Fallback: all `src/*.{c,cpp,cc,cxx}` files
+///
+/// For bundled libraries (jsonlite/yajl, commonmark/cmark, etc.), the Makevars
+/// defines variables like `LIBYAJL = yajl/yajl.o yajl/yajl_alloc.o ...`.
+/// We collect ALL `.o` references, resolve them to source files, and compile
+/// everything into one shared library (no static archive intermediate).
 fn find_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, String> {
-    if let Some(objects) = makevars.objects() {
-        // OBJECTS lists .o files — find corresponding source files
-        let mut sources = Vec::new();
-        for obj in shell_split(objects) {
-            let obj = obj.trim();
-            if obj.is_empty() {
-                continue;
+    // Collect all .o file references from ALL Makevars variables
+    let mut all_objects: Vec<String> = Vec::new();
+
+    for (key, value) in &makevars.vars {
+        // Skip non-object variables
+        if matches!(
+            key.as_str(),
+            "PKG_CFLAGS" | "PKG_CPPFLAGS" | "PKG_CXXFLAGS" | "PKG_LIBS" | "CXX_STD"
+        ) {
+            continue;
+        }
+        // Extract .o file references from the value
+        for token in shell_split(value) {
+            let token = token.trim().to_string();
+            if token.ends_with(".o") {
+                all_objects.push(token);
             }
+        }
+    }
+
+    if !all_objects.is_empty() {
+        // Resolve .o files to source files
+        let mut sources = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for obj in &all_objects {
             let stem = if let Some(s) = obj.strip_suffix(".o") {
                 s
             } else {
                 continue;
             };
-            // Try .c, then .cpp, .cc, .cxx
             for ext in &["c", "cpp", "cc", "cxx"] {
                 let path = src_dir.join(format!("{stem}.{ext}"));
-                if path.is_file() {
+                if path.is_file() && seen.insert(path.clone()) {
                     sources.push(path);
                     break;
                 }
             }
         }
+
+        // Also add any top-level .c/.cpp files not already included
+        // (some packages have both bundled libs AND top-level sources)
+        if let Ok(entries) = std::fs::read_dir(src_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        if matches!(ext, "c" | "cpp" | "cc" | "cxx") && seen.insert(path.clone()) {
+                            sources.push(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        sources.sort();
         Ok(sources)
     } else {
-        // Default: all C/C++ source files in src/
+        // Default: all C/C++ source files in src/ (non-recursive)
         let mut sources = Vec::new();
         let entries = std::fs::read_dir(src_dir)
             .map_err(|e| format!("cannot read {}: {e}", src_dir.display()))?;
         for entry in entries {
             let entry = entry.map_err(|e| format!("readdir error: {e}"))?;
             let path = entry.path();
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                if matches!(ext, "c" | "cpp" | "cc" | "cxx") {
-                    sources.push(path);
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                    if matches!(ext, "c" | "cpp" | "cc" | "cxx") {
+                        sources.push(path);
+                    }
                 }
             }
         }
