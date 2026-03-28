@@ -1422,6 +1422,61 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
+/// is.object — check if an object has a class attribute.
+/// @param x any R value
+/// @return logical
+/// @namespace base
+#[builtin(name = "is.object", min_args = 1)]
+fn builtin_is_object(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let has_class = match args.first() {
+        Some(RValue::Vector(rv)) => rv.get_attr("class").is_some(),
+        Some(RValue::List(l)) => l.get_attr("class").is_some(),
+        _ => false,
+    };
+    Ok(RValue::vec(Vector::Logical(vec![Some(has_class)].into())))
+}
+
+/// isS4 — check if an object is an S4 object.
+/// @param object any R value
+/// @return logical
+/// @namespace base
+#[builtin(name = "isS4", min_args = 1)]
+fn builtin_is_s4(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // miniR doesn't have real S4 objects, so always FALSE
+    Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
+}
+
+/// registerS3method — register an S3 method in a namespace.
+/// @param genname character: generic function name
+/// @param class character: class name
+/// @param method function: the method
+/// @param envir environment: where to register
+/// @namespace base
+#[interpreter_builtin(name = "registerS3method", min_args = 3)]
+fn builtin_register_s3_method(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    ctx: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let generic = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let class = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+    let method = args.get(2).cloned().unwrap_or(RValue::Null);
+
+    if !generic.is_empty() && !class.is_empty() {
+        ctx.interpreter()
+            .s3_method_registry
+            .borrow_mut()
+            .insert((generic, class), method);
+    }
+    Ok(RValue::Null)
+}
+
 /// isatty — check if a connection is a terminal.
 /// @param con integer: connection number (0=stdin, 1=stdout, 2=stderr)
 /// @return logical
