@@ -419,6 +419,13 @@ fn eval_index_double_assign(
             eval_assign(interp, op, object, obj, env)?;
             Ok(val)
         }
+        RValue::Environment(target_env) => {
+            // env[["key"]] <- value sets a variable in the environment
+            if let Some(name) = idx_val.as_vector().and_then(|v| v.as_character_scalar()) {
+                target_env.set(name, val.clone());
+            }
+            Ok(val)
+        }
         _ => eval_index_assign(interp, op, object, indices, val, env),
     }
 }

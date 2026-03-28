@@ -942,6 +942,14 @@ pub(super) fn eval_index_double(
                 ))
             })
         }
+        RValue::Environment(target_env) => {
+            // env[["key"]] — look up a variable in the environment
+            if let Some(name) = idx_val.as_vector().and_then(|v| v.as_character_scalar()) {
+                Ok(target_env.get(&name).unwrap_or(RValue::Null))
+            } else {
+                Ok(RValue::Null)
+            }
+        }
         _ => Err(IndexingError::NotSubsettable.into()),
     }
 }
