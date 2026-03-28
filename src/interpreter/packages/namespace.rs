@@ -179,7 +179,7 @@ impl PackageNamespace {
                         registrations: args[1..].to_vec(),
                     });
                 }
-                "exportClasses" => {
+                "exportClasses" | "exportClass" => {
                     ns.export_classes.extend(args);
                 }
                 "exportMethods" => {
@@ -214,10 +214,13 @@ impl PackageNamespace {
                     }
                 }
                 _ => {
-                    return Err(NamespaceError::UnknownDirective {
+                    // Unknown directives are warnings, not errors — new/uncommon
+                    // directives shouldn't block package loading.
+                    tracing::warn!(
+                        "NAMESPACE line {}: unknown directive '{}' (ignored)",
                         line_number,
-                        directive: name,
-                    });
+                        name
+                    );
                 }
             }
         }
