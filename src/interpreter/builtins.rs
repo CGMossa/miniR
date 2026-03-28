@@ -2948,6 +2948,10 @@ fn builtin_unlist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                     }
                 }
             }
+            // If all elements were NULL, return NULL (not empty vector)
+            if all_vals.is_empty() {
+                return Ok(RValue::Null);
+            }
             builtin_c(&all_vals, &[])
         }
         Some(other) => Ok(other.clone()),

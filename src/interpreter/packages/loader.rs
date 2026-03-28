@@ -513,7 +513,28 @@ impl Interpreter {
         let ast = crate::parser::parse_program(&source)
             .map_err(|e| RError::other(format!("parse error in '{}': {}", path.display(), e)))?;
 
-        self.eval_in(&ast, env).map_err(RError::from)?;
+        // Evaluate each top-level expression independently.
+        // If one expression errors (e.g. calling an undefined function at top level),
+        // continue with the remaining expressions so later definitions survive.
+        // This is critical for packages like sp where bpy.colors() fails at top level
+        // but .onLoad and other definitions in the same file must still be created.
+        use crate::parser::ast::Expr;
+        match &ast {
+            Expr::Program(exprs) => {
+                for expr in exprs {
+                    if let Err(e) = self.eval_in(expr, env) {
+                        tracing::trace!(
+                            path = %path.display(),
+                            error = %crate::interpreter::value::RError::from(e),
+                            "top-level expression error (continuing)"
+                        );
+                    }
+                }
+            }
+            other => {
+                self.eval_in(other, env).map_err(RError::from)?;
+            }
+        }
         trace!(path = %path.display(), "source_file_into done");
         Ok(())
     }
