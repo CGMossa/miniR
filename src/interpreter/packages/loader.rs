@@ -240,6 +240,12 @@ impl Interpreter {
         let namespace_env = Environment::new_child(&base_env);
         namespace_env.set_name(format!("namespace:{}", pkg_name));
 
+        // Set .packageName — R packages reference this during loading
+        namespace_env.set(
+            ".packageName".to_string(),
+            RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into())),
+        );
+
         // Populate imports into the namespace env
         self.populate_imports(&namespace, &namespace_env)?;
 
