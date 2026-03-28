@@ -46,6 +46,17 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `src/interpreter/builtins.rs` — 200+ built-in functions (unified `BuiltinDescriptor` dispatch)
 - `src/interpreter/builtins/args.rs` — `CallArgs` helper for argument decoding
 - `src/interpreter/builtins/datetime.rs` — date/time builtins (jiff crate)
+- `src/interpreter/native.rs` — native code loading module root
+- `src/interpreter/native/runtime.rs` — Rust `extern "C"` R C API (1800+ lines, Rf_allocVector, PROTECT, etc.)
+- `src/interpreter/native/sexp.rs` — SEXP type layout and C-allocator allocation
+- `src/interpreter/native/convert.rs` — RValue ↔ SEXP conversion
+- `src/interpreter/native/dll.rs` — dyn.load/dyn.unload, .Call dispatch, interpreter callbacks
+- `src/interpreter/native/compile.rs` — cc crate C/C++ compilation, Makevars parser
+- `csrc/native_trampoline.c` — setjmp/longjmp for Rf_error (compiled via build.rs)
+- `include/miniR/Rinternals.h` — C header for packages (struct defs, macros, declarations)
+- `include/miniR/R_ext/*.h` — compatibility headers (Rdynload, Altrep, Applic, etc.)
+- `cran-packages.toml` — structured registry of all 272 CRAN packages (API surface, status)
+- `scripts/audit-cran-packages.sh` — regenerate cran-packages.toml from cran/ corpus
 - `tests/` — Rust integration tests + R test scripts
 - `plans/` — dependency and design plans
 - `reviews/` — development notes on bugs and missing features
@@ -64,6 +75,19 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `<<-` creates missing bindings in global env (not base)
 - `print()` and `format()` are S3 generics — they dispatch to `print.Date`, `format.POSIXct`, etc.
 
+## Native Code Loading
+
+- Native C API is a thin shim — `extern "C"` Rust functions in the binary, NOT a C runtime compiled into each .so
+- Package .so files resolve R API symbols at load time (`-undefined dynamic_lookup` on macOS, `--export-dynamic` on Linux)
+- setjmp/longjmp for Rf_error lives in C trampoline (`csrc/native_trampoline.c`) — cannot safely cross Rust frames
+- Interpreter callbacks (thread-local fn pointers) let C code call `Rf_eval`/`Rf_findVar` back into Rust
+- External pointers (EXTPTRSXP) survive across .Call invocations via persistent flag (`flags=1`)
+- `.packageName` must be set in namespace env before sourcing R files
+- `native` feature gates the entire pipeline — without it, `.Call`/`dyn.load` return errors (for WASM)
+- Bundled libraries: Makevars `LIB*` variables list .o files in subdirs — compile all into one .so, skip local `-L`/`-l` flags
+- The `cc` crate handles compilation (with `features = ["parallel"]` for parallel builds)
+- Tracing: `MINIR_LOG=debug` (NOT `RUST_LOG`) — levels: `trace` (per-expression), `debug` (per-file), `info` (per-session)
+
 ## Known Parser Divergences from GNU R
 
 - **Newline continuation in postfix chains**: `x\n(y)` parses as a call `x(y)`, not two expressions. Same for `x\n$y` and `pkg\n::foo`. Required for CRAN compat (7014/7014 files pass). See `reviews/parser-newline-continuation.md`.
@@ -71,6 +95,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - **`?` not embeddable**: `x <- ?sin` doesn't work — `?` is only at the top level of the precedence chain. Interactive-only, low priority.
 - **Binary `?` drops RHS**: `foo ? bar` parses but the AST discards the topic. Help system not fully implemented.
 - **`~~` and `:=` are parsed but stubbed**: `~~` (plotmath) evaluates to NULL; `:=` (walrus) has no runtime semantics yet.
+- **`!` precedence**: `!a && b` parses as `(!a) && b` (correct R precedence). Tradeoff: `!?x` no longer parses (interactive help inside negation). The fix is critical — it was breaking virtually every CRAN package.
 
 ## Build Profiles
 
@@ -102,6 +127,11 @@ Four feature profiles for different development scenarios:
 - `tests/argument_matching.rs` — three-pass matching conformance
 - `./scripts/parse-test.sh <dir>` — test if all .R files in a directory parse without errors or panics
 - `just update-cran-test-packages` — clone/refresh the CRAN test packages in `cran/`
+- `cran-packages.toml` — structured registry of all CRAN packages (native code types, API surface, status)
+- `scripts/audit-cran-packages.sh` — regenerate the TOML registry from the corpus
+- **Lateral approach**: audit ALL packages at once for missing C API functions, fix in batches — don't chase one package at a time
+- Test native packages: `MINIR_INCLUDE=include ./target/release/r -e "Sys.setenv(R_LIBS='cran'); library(pkg)"`
+- Find missing C API: `cc -fsyntax-only -I include -I include/miniR -Werror=implicit-function-declaration cran/pkg/src/*.c`
 
 ## CI
 
