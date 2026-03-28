@@ -247,6 +247,7 @@ pub fn init_globals() {
         R_MissingArg = R_NilValue;
         R_NamespaceRegistry = R_NilValue;
         R_Srcref = R_NilValue;
+        R_BaseNamespace = R_NilValue;
         R_BraceSymbol = R_NilValue;
         R_BracketSymbol = R_NilValue;
         R_Bracket2Symbol = R_NilValue;
@@ -1674,6 +1675,26 @@ pub extern "C" fn R_rsort(x: *mut f64, n: c_int) {
     slice.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 }
 
+// iPsort / rPsort — partial sort (sort enough to get k-th element)
+#[no_mangle]
+pub extern "C" fn iPsort(x: *mut c_int, n: c_int, _k: c_int) {
+    R_isort(x, n); // full sort as fallback
+}
+#[no_mangle]
+pub extern "C" fn rPsort(x: *mut f64, n: c_int, _k: c_int) {
+    R_rsort(x, n);
+}
+
+// Rf_isPrimitive
+#[no_mangle]
+pub extern "C" fn Rf_isPrimitive(x: Sexp) -> c_int {
+    if x.is_null() {
+        return 0;
+    }
+    let t = unsafe { (*x).stype };
+    matches!(t, 7 | 8) as c_int // SPECIALSXP | BUILTINSXP
+}
+
 // Rf_isSymbol
 #[no_mangle]
 pub extern "C" fn Rf_isSymbol(x: Sexp) -> c_int {
@@ -2023,6 +2044,8 @@ pub extern "C" fn SET_CLOENV(_x: Sexp, _v: Sexp) {}
 pub static mut R_NamespaceRegistry: Sexp = ptr::null_mut();
 #[no_mangle]
 pub static mut R_Srcref: Sexp = ptr::null_mut();
+#[no_mangle]
+pub static mut R_BaseNamespace: Sexp = ptr::null_mut();
 #[no_mangle]
 pub extern "C" fn R_EnvironmentIsLocked(_env: Sexp) -> c_int {
     0

@@ -456,6 +456,11 @@ void SET_CLOENV(SEXP x, SEXP v);
 /* Globals */
 extern SEXP R_NamespaceRegistry;
 extern SEXP R_Srcref;
+extern SEXP R_BaseNamespace;
+
+/* S4 slot access */
+#define GET_SLOT(x, name) Rf_getAttrib((x), (name))
+#define SET_SLOT(x, name, val) Rf_setAttrib((x), (name), (val))
 
 /* Variable lookup (stubs — return R_UnboundValue) */
 SEXP Rf_findVar(SEXP sym, SEXP env);
@@ -707,8 +712,11 @@ static inline SEXP Rf_asChar(SEXP x) {
 #define asChar Rf_asChar
 
 /* vmaxget / vmaxset — memory stack checkpoints (no-ops in miniR) */
+#ifndef MINIR_VMAXGET_DEFINED
+#define MINIR_VMAXGET_DEFINED
 static inline void *vmaxget(void) { return (void*)0; }
 static inline void vmaxset(void *p) { (void)p; }
+#endif
 
 /* Reference counting — always assume referenced (conservative) */
 #define MAYBE_REFERENCED(x) 1
@@ -814,6 +822,10 @@ SEXP Rf_nthcdr(SEXP s, int n);
 /* Sorting */
 void R_isort(int *x, int n);
 void R_rsort(double *x, int n);
+void iPsort(int *x, int n, int k);
+void rPsort(double *x, int n, int k);
+Rboolean Rf_isPrimitive(SEXP x);
+#define isPrimitive Rf_isPrimitive
 
 /* More type checks */
 #define isOrdered(x)   Rf_inherits((x), "ordered")
@@ -824,6 +836,7 @@ void R_rsort(double *x, int n);
 #define isArray(x)     (Rf_getAttrib((x), R_DimSymbol) != R_NilValue)
 
 /* Sorted hints (ALTREP) */
+#define UNKNOWN_SORTEDNESS   INT_MIN
 #define KNOWN_INCR(x)        0
 #define KNOWN_DECR(x)        0
 #define STRING_IS_SORTED(x)  0
