@@ -1954,6 +1954,87 @@ pub extern "C" fn rs_(
 ) {
 }
 
+// R math stubs — distribution functions
+#[no_mangle]
+pub extern "C" fn dnorm(_x: f64, _mu: f64, _sigma: f64, _log_p: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn pnorm(_x: f64, _mu: f64, _sigma: f64, _lt: c_int, _lp: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn qnorm(_p: f64, _mu: f64, _sigma: f64, _lt: c_int, _lp: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn qchisq(_p: f64, _df: f64, _lt: c_int, _lp: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn rexp(_scale: f64) -> f64 {
+    exp_rand() * _scale
+}
+#[no_mangle]
+pub extern "C" fn rnorm(_mu: f64, _sigma: f64) -> f64 {
+    _mu + _sigma * norm_rand()
+}
+#[no_mangle]
+pub extern "C" fn runif(a: f64, b: f64) -> f64 {
+    a + (b - a) * unif_rand()
+}
+#[no_mangle]
+pub extern "C" fn rpois(_lambda: f64) -> f64 {
+    _lambda
+} // stub
+#[no_mangle]
+pub extern "C" fn rbinom(_n: f64, _p: f64) -> f64 {
+    _n * _p
+} // stub
+#[no_mangle]
+pub extern "C" fn choose(n: f64, k: f64) -> f64 {
+    if k < 0.0 || k > n {
+        return 0.0;
+    }
+    lgammafn(n + 1.0) - lgammafn(k + 1.0) - lgammafn(n - k + 1.0)
+}
+#[no_mangle]
+pub extern "C" fn lchoose(n: f64, k: f64) -> f64 {
+    choose(n, k).ln()
+}
+#[no_mangle]
+pub extern "C" fn lgammafn(x: f64) -> f64 {
+    libm::lgamma(x)
+}
+#[no_mangle]
+pub extern "C" fn gammafn(x: f64) -> f64 {
+    libm::tgamma(x)
+}
+#[no_mangle]
+pub extern "C" fn beta(a: f64, b: f64) -> f64 {
+    (lgammafn(a) + lgammafn(b) - lgammafn(a + b)).exp()
+}
+#[no_mangle]
+pub extern "C" fn lbeta(a: f64, b: f64) -> f64 {
+    lgammafn(a) + lgammafn(b) - lgammafn(a + b)
+}
+#[no_mangle]
+pub extern "C" fn dbinom(_x: f64, _n: f64, _p: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn dpois(_x: f64, _lambda: f64, _lg: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn pgamma(_x: f64, _shape: f64, _scale: f64, _lt: c_int, _lp: c_int) -> f64 {
+    f64::NAN
+}
+#[no_mangle]
+pub extern "C" fn qgamma(_p: f64, _shape: f64, _scale: f64, _lt: c_int, _lp: c_int) -> f64 {
+    f64::NAN
+}
+
 // R_atof — parse double
 #[no_mangle]
 pub extern "C" fn R_atof(str_ptr: *const c_char) -> f64 {

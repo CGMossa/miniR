@@ -63,8 +63,28 @@ static inline int imin2(int x, int y) { return (x < y) ? x : y; }
 static inline double fsign(double x, double y) { return (y >= 0) ? fabs(x) : -fabs(x); }
 
 /* Distribution function stubs — return NaN for unimplemented */
-#define dnorm(x, mu, sigma, log_p)   ((void)(x),(void)(mu),(void)(sigma),(void)(log_p),NAN)
-#define pnorm(x, mu, sigma, lt, lp)  ((void)(x),(void)(mu),(void)(sigma),(void)(lt),(void)(lp),NAN)
-#define qnorm(p, mu, sigma, lt, lp)  ((void)(p),(void)(mu),(void)(sigma),(void)(lt),(void)(lp),NAN)
+/* Distribution function stubs — return NaN for unimplemented.
+   Packages that need real stats should link against a math library. */
+double dnorm(double x, double mu, double sigma, int log_p);
+double pnorm(double x, double mu, double sigma, int lt, int lp);
+double qnorm(double p, double mu, double sigma, int lt, int lp);
+double qchisq(double p, double df, int lt, int lp);
+double rexp(double scale);
+double rnorm(double mu, double sigma);
+double runif(double a, double b);
+double rpois(double lambda);
+double rbinom(double n, double p);
+double choose(double n, double k);
+double lchoose(double n, double k);
+double lgammafn(double x);
+double gammafn(double x);
+double beta(double a, double b);
+double lbeta(double a, double b);
+double dbinom(double x, double n, double p, int lg);
+double dpois(double x, double lambda, int lg);
+double pgamma(double x, double shape, double scale, int lt, int lp);
+double qgamma(double p, double shape, double scale, int lt, int lp);
+
+/* Rboolean defined in Rinternals.h */
 
 #endif /* MINIR_RMATH_H */

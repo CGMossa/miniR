@@ -389,6 +389,18 @@ pub fn compile_package(
             .target(&target)
             .host(&target)
             .opt_level(2)
+            // Platform defines for packages that detect OS features at compile time
+            .define("HAVE_UNISTD_H", None)
+            .define("HAVE_GETTIMEOFDAY", None)
+            .define("HAVE_NANOSLEEP", None);
+        if cfg!(target_os = "macos") {
+            build.define("MB_HAVE_MACH_TIME", None);
+        } else {
+            build
+                .define("MB_HAVE_CLOCK_GETTIME", None)
+                .define("MB_CLOCKID_T", Some("CLOCK_REALTIME"));
+        }
+        build
             .out_dir(output_dir)
             .include(include_dir)
             .include(include_dir.join("miniR"))
