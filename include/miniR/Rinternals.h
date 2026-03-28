@@ -97,12 +97,15 @@ typedef struct SEXPREC *SEXP;
 
 /* ── NA values ── */
 
-static inline double R_NaReal(void) {
+/* NA_REAL — R's canonical NA for doubles (a specific NaN with payload 1954).
+   R_NaReal is both callable as R_NaReal() and usable as a value R_NaReal. */
+static inline double _R_NaReal_fn(void) {
     union { uint64_t u; double d; } na;
     na.u = 0x7FF00000000007A2ULL;
     return na.d;
 }
-#define NA_REAL     R_NaReal()
+#define NA_REAL   _R_NaReal_fn()
+#define R_NaReal  _R_NaReal_fn()
 #define NA_INTEGER  (-2147483647 - 1)
 #define NA_LOGICAL  NA_INTEGER
 #define R_NaInt     NA_INTEGER
@@ -476,6 +479,23 @@ SEXP R_do_MAKE_CLASS(const char *name);
 /* Array allocation */
 SEXP Rf_allocArray(SEXPTYPE type, SEXP dims);
 #define allocArray Rf_allocArray
+
+/* Memcpy/Memzero — R memory macros */
+#ifndef Memcpy
+#define Memcpy(to, from, n) memcpy((to), (from), (size_t)(n) * sizeof(*(to)))
+#define Memzero(to, n)      memset((to), 0, (size_t)(n) * sizeof(*(to)))
+#endif
+
+/* R color packing */
+#define R_RGBA(r,g,b,a) (((unsigned int)(r)) | ((unsigned int)(g) << 8) | ((unsigned int)(b) << 16) | ((unsigned int)(a) << 24))
+#define R_RED(col)   (((col))       & 0xFF)
+#define R_GREEN(col) (((col) >> 8)  & 0xFF)
+#define R_BLUE(col)  (((col) >> 16) & 0xFF)
+#define R_ALPHA(col) (((col) >> 24) & 0xFF)
+
+/* dimnamesgets — set dimnames attribute */
+SEXP Rf_dimnamesgets(SEXP x, SEXP val);
+#define dimnamesgets Rf_dimnamesgets
 
 /* revsort — sort x and associated index in decreasing order */
 void revsort(double *x, int *index, int n);

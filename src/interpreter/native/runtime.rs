@@ -1731,6 +1731,63 @@ pub extern "C" fn Rf_installTrChar(x: Sexp) -> Sexp {
 #[no_mangle]
 pub static mut R_NameSymbol: Sexp = ptr::null_mut();
 
+// Rf_dimnamesgets
+#[no_mangle]
+pub extern "C" fn Rf_dimnamesgets(x: Sexp, val: Sexp) -> Sexp {
+    Rf_setAttrib(x, unsafe { R_DimNamesSymbol }, val);
+    x
+}
+
+// BLAS stubs
+#[no_mangle]
+pub extern "C" fn dgemv_(
+    _trans: *const u8,
+    _m: *const c_int,
+    _n: *const c_int,
+    _alpha: *const f64,
+    _a: *const f64,
+    _lda: *const c_int,
+    _x: *const f64,
+    _incx: *const c_int,
+    _beta: *const f64,
+    _y: *mut f64,
+    _incy: *const c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn dpotrf_(
+    _uplo: *const u8,
+    _n: *const c_int,
+    _a: *mut f64,
+    _lda: *const c_int,
+    _info: *mut c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn dpotri_(
+    _uplo: *const u8,
+    _n: *const c_int,
+    _a: *mut f64,
+    _lda: *const c_int,
+    _info: *mut c_int,
+) {
+}
+#[no_mangle]
+pub extern "C" fn dtrsm_(
+    _side: *const u8,
+    _uplo: *const u8,
+    _transa: *const u8,
+    _diag: *const u8,
+    _m: *const c_int,
+    _n: *const c_int,
+    _alpha: *const f64,
+    _a: *const f64,
+    _lda: *const c_int,
+    _b: *mut f64,
+    _ldb: *const c_int,
+) {
+}
+
 // Rf_allocArray — allocate array with dimensions
 #[no_mangle]
 pub extern "C" fn Rf_allocArray(stype: c_int, dims: Sexp) -> Sexp {
@@ -1749,6 +1806,79 @@ pub extern "C" fn Rf_allocArray(stype: c_int, dims: Sexp) -> Sexp {
     let result = Rf_allocVector(stype, total);
     Rf_setAttrib(result, unsafe { R_DimSymbol }, dims);
     result
+}
+
+// Fortran LAPACK/BLAS stubs — empty implementations that prevent link errors.
+// Packages that actually USE these routines will get wrong results, but at
+// least they compile and load (non-LAPACK functionality still works).
+#[no_mangle]
+pub extern "C" fn dqrdc2_(
+    _x: *mut f64,
+    _ldx: *const c_int,
+    _n: *const c_int,
+    _p: *const c_int,
+    _tol: *const f64,
+    _k: *mut c_int,
+    _qraux: *mut f64,
+    _jpvt: *mut c_int,
+    _work: *mut f64,
+) {
+    std::io::Write::write_all(
+        &mut std::io::stderr(),
+        b"Warning: dqrdc2_ is a stub in miniR\n",
+    )
+    .ok();
+}
+
+#[no_mangle]
+pub extern "C" fn dqrsl_(
+    _x: *mut f64,
+    _ldx: *const c_int,
+    _n: *const c_int,
+    _k: *const c_int,
+    _qraux: *mut f64,
+    _y: *mut f64,
+    _qy: *mut f64,
+    _qty: *mut f64,
+    _b: *mut f64,
+    _rsd: *mut f64,
+    _xb: *mut f64,
+    _job: *const c_int,
+    _info: *mut c_int,
+) {
+}
+
+#[no_mangle]
+pub extern "C" fn dgemm_(
+    _transa: *const u8,
+    _transb: *const u8,
+    _m: *const c_int,
+    _n: *const c_int,
+    _k: *const c_int,
+    _alpha: *const f64,
+    _a: *const f64,
+    _lda: *const c_int,
+    _b: *const f64,
+    _ldb: *const c_int,
+    _beta: *const f64,
+    _c: *mut f64,
+    _ldc: *const c_int,
+) {
+}
+
+#[no_mangle]
+pub extern "C" fn dsyrk_(
+    _uplo: *const u8,
+    _trans: *const u8,
+    _n: *const c_int,
+    _k: *const c_int,
+    _alpha: *const f64,
+    _a: *const f64,
+    _lda: *const c_int,
+    _beta: *const f64,
+    _c: *mut f64,
+    _ldc: *const c_int,
+) {
 }
 
 // R_do_MAKE_CLASS — create an S4 class object (stub)
