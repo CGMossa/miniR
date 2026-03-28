@@ -1422,7 +1422,12 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
-stub_builtin!("conflictRules", 1);
+/// conflictRules — returns NULL (no conflict management in miniR).
+/// @namespace base
+#[builtin(name = "conflictRules", min_args = 1)]
+fn builtin_conflict_rules(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
+}
 
 /// setHook — no-op in miniR.
 /// @namespace base
