@@ -1422,6 +1422,26 @@ stub_builtin!(
 // endregion
 
 stub_builtin!("arity", 1);
+/// isatty — check if a connection is a terminal.
+/// @param con integer: connection number (0=stdin, 1=stdout, 2=stderr)
+/// @return logical
+/// @namespace base
+#[builtin(name = "isatty", min_args = 1)]
+fn builtin_isatty(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let con = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_integer_scalar())
+        .unwrap_or(0);
+    // stdin/stdout/stderr — check if interactive
+    let result = match con {
+        0 => std::io::IsTerminal::is_terminal(&std::io::stdin()),
+        1 => std::io::IsTerminal::is_terminal(&std::io::stdout()),
+        2 => std::io::IsTerminal::is_terminal(&std::io::stderr()),
+        _ => false,
+    };
+    Ok(RValue::vec(Vector::Logical(vec![Some(result)].into())))
+}
+
 /// conflictRules — returns NULL (no conflict management in miniR).
 /// @namespace base
 #[builtin(name = "conflictRules", min_args = 1)]
