@@ -785,6 +785,75 @@ SEXP Rf_findFun(SEXP sym, SEXP env);
 #define R_IsNaN(x) isnan(x)
 #define reEnc Rf_reEnc
 
+/* More type predicates */
+#define isFactor(x)   Rf_inherits((x), "factor")
+#define isNewList(x)  (TYPEOF(x) == VECSXP)
+Rboolean Rf_isFrame(SEXP x);
+#define isFrame Rf_isFrame
+
+/* Attribute copying */
+void Rf_copyMostAttrib(SEXP from, SEXP to);
+#define copyMostAttrib Rf_copyMostAttrib
+#define SHALLOW_DUPLICATE_ATTRIB(from, to) Rf_copyMostAttrib((from), (to))
+#define DUPLICATE_ATTRIB(from, to) Rf_copyMostAttrib((from), (to))
+
+/* Vector NO_NA hints (R 4.0+ ALTREP) — always 0 (unknown) */
+#define INTEGER_NO_NA(x) 0
+#define REAL_NO_NA(x)    0
+#define LOGICAL_NO_NA(x) 0
+#define STRING_NO_NA(x)  0
+
+/* TRUELENGTH — not used in miniR */
+#define TRUELENGTH(x)     0
+#define SET_TRUELENGTH(x,n) ((void)(n))
+
+/* Pairlist traversal */
+SEXP Rf_nthcdr(SEXP s, int n);
+#define nthcdr Rf_nthcdr
+
+/* Sorting */
+void R_isort(int *x, int n);
+void R_rsort(double *x, int n);
+
+/* More type checks */
+#define isOrdered(x)   Rf_inherits((x), "ordered")
+#define isS4(x)        (TYPEOF(x) == OBJSXP || Rf_inherits((x), "refClass"))
+#define isList(x)      (TYPEOF(x) == LISTSXP || TYPEOF(x) == NILSXP)
+#define isPairList(x)  (TYPEOF(x) == LISTSXP)
+#define isComplex(x)   (TYPEOF(x) == CPLXSXP)
+#define isArray(x)     (Rf_getAttrib((x), R_DimSymbol) != R_NilValue)
+
+/* Sorted hints (ALTREP) */
+#define KNOWN_INCR(x)        0
+#define KNOWN_DECR(x)        0
+#define STRING_IS_SORTED(x)  0
+#define REAL_IS_SORTED(x)    0
+#define INTEGER_IS_SORTED(x) 0
+
+/* More pairlist macros */
+#define CDDDR(x)  CDR(CDR(CDR(x)))
+
+/* XTRUELENGTH */
+#define XTRUELENGTH(x)  0
+
+/* Slot assignment */
+void R_do_slot_assign(SEXP obj, SEXP name, SEXP val);
+
+/* Console flush — no-op */
+void R_FlushConsole(void);
+
+/* allocList — allocate pairlist */
+SEXP Rf_allocList(int n);
+#define allocList Rf_allocList
+
+/* Rf_match — match values */
+SEXP Rf_match(SEXP table, SEXP x, int nomatch);
+#define match Rf_match
+
+/* Factor conversion */
+SEXP Rf_asCharacterFactor(SEXP x);
+#define asCharacterFactor Rf_asCharacterFactor
+
 /* Rf_nchar — string length */
 int Rf_nchar(SEXP x, int type, Rboolean allowNA, Rboolean keepNA, const char *msg_name);
 #define nchar Rf_nchar

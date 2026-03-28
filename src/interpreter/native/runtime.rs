@@ -1523,6 +1523,107 @@ pub extern "C" fn Rf_nchar(
     }
 }
 
+// Rf_isFrame — check if data.frame
+#[no_mangle]
+pub extern "C" fn Rf_isFrame(x: Sexp) -> c_int {
+    Rf_inherits(x, c"data.frame".as_ptr())
+}
+
+// Rf_copyMostAttrib — copy attributes from one SEXP to another
+#[no_mangle]
+pub extern "C" fn Rf_copyMostAttrib(from: Sexp, to: Sexp) {
+    if from.is_null() || to.is_null() {
+        return;
+    }
+    unsafe {
+        (*to).attrib = (*from).attrib;
+    }
+}
+
+// Rf_nthcdr — walk n steps down a pairlist
+#[no_mangle]
+pub extern "C" fn Rf_nthcdr(mut s: Sexp, n: c_int) -> Sexp {
+    for _ in 0..n {
+        if s.is_null() {
+            return unsafe { R_NilValue };
+        }
+        unsafe {
+            if (*s).stype == sexp::LISTSXP && !(*s).data.is_null() {
+                s = (*((*s).data as *const PairlistData)).cdr;
+            } else {
+                return R_NilValue;
+            }
+        }
+    }
+    s
+}
+
+// R_FlushConsole — no-op
+#[no_mangle]
+pub extern "C" fn R_FlushConsole() {}
+
+// R_do_slot_assign — slot assignment stub
+#[no_mangle]
+pub extern "C" fn R_do_slot_assign(obj: Sexp, name: Sexp, val: Sexp) {
+    Rf_setAttrib(obj, name, val);
+}
+
+// Rf_allocList — allocate a pairlist of n nodes
+#[no_mangle]
+pub extern "C" fn Rf_allocList(n: c_int) -> Sexp {
+    let mut result = unsafe { R_NilValue };
+    for _ in 0..n {
+        result = Rf_cons(unsafe { R_NilValue }, result);
+    }
+    result
+}
+
+// Rf_match — match values (stub returns vector of nomatch)
+#[no_mangle]
+pub extern "C" fn Rf_match(_table: Sexp, x: Sexp, nomatch: c_int) -> Sexp {
+    let n = if x.is_null() {
+        0
+    } else {
+        (unsafe { (*x).length }) as isize
+    };
+    let result = Rf_allocVector(sexp::INTSXP as c_int, n);
+    if n > 0 {
+        unsafe {
+            let ptr = (*result).data as *mut i32;
+            for i in 0..n as usize {
+                *ptr.add(i) = nomatch;
+            }
+        }
+    }
+    result
+}
+
+// Rf_asCharacterFactor — convert factor to character (stub)
+#[no_mangle]
+pub extern "C" fn Rf_asCharacterFactor(_x: Sexp) -> Sexp {
+    Rf_allocVector(sexp::STRSXP as c_int, 0)
+}
+
+// R_isort — integer sort (in-place)
+#[no_mangle]
+pub extern "C" fn R_isort(x: *mut c_int, n: c_int) {
+    if x.is_null() || n <= 0 {
+        return;
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(x, n as usize) };
+    slice.sort_unstable();
+}
+
+// R_rsort — double sort (in-place)
+#[no_mangle]
+pub extern "C" fn R_rsort(x: *mut f64, n: c_int) {
+    if x.is_null() || n <= 0 {
+        return;
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(x, n as usize) };
+    slice.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+}
+
 // Rf_isSymbol
 #[no_mangle]
 pub extern "C" fn Rf_isSymbol(x: Sexp) -> c_int {
