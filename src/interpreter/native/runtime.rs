@@ -2852,7 +2852,9 @@ pub extern "C" fn R_existsVarInFrame(_env: Sexp, _sym: Sexp) -> c_int {
 }
 #[no_mangle]
 pub extern "C" fn R_IsNamespaceEnv(_env: Sexp) -> c_int {
-    0
+    // In miniR, namespace environments passed to .Call are always valid namespaces.
+    // The SEXP is opaque (R_NilValue for envs) so we can't inspect it — return 1.
+    1
 }
 #[no_mangle]
 pub extern "C" fn R_lsInternal3(_env: Sexp, _all: c_int, _sorted: c_int) -> Sexp {
