@@ -517,6 +517,13 @@ SEXP R_do_new_object(SEXP class_def);
 SEXP R_getClassDef(const char *what);
 #define NEW_OBJECT(cls) R_do_new_object(cls)
 
+/* S4 object flag — no-ops in miniR (no S4 system) */
+#define OBJECT(x)       0
+#define SET_OBJECT(x, v) ((void)(x), (void)(v))
+#define IS_S4_OBJECT(x) 0
+#define SET_S4_OBJECT(x) ((void)(x))
+#define UNSET_S4_OBJECT(x) ((void)(x))
+
 /* Dimension access */
 #define GET_DIM(x) Rf_getAttrib((x), R_DimSymbol)
 #define CONS(a, b) Rf_cons((a), (b))
