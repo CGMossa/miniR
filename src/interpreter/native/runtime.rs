@@ -186,26 +186,6 @@ fn sexp_to_text_repr(s: Sexp) -> String {
     }
 }
 
-/// Signal an R error by calling Rf_error (longjmps through the C trampoline).
-///
-/// Used when `Rf_eval` callback receives an error from the interpreter — C code
-/// expects `Rf_eval` to never return when an error occurs (e.g. rlang's `r_abort`
-/// spins in `while(1)` if `Rf_eval` returns normally on error).
-fn signal_r_error(msg: &str) -> ! {
-    extern "C" {
-        fn Rf_error(fmt: *const c_char, ...);
-    }
-    let c_msg = std::ffi::CString::new(msg).unwrap_or_default();
-    unsafe {
-        Rf_error(c"%s".as_ptr(), c_msg.as_ptr());
-    }
-    // Rf_error longjmps — this is unreachable, but Rust doesn't know that
-    #[allow(unreachable_code)]
-    {
-        std::process::abort();
-    }
-}
-
 /// Clear interpreter callbacks after .Call returns.
 pub fn clear_callbacks() {
     STATE.with(|state| {
@@ -1418,19 +1398,15 @@ pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
     if unsafe { (*expr).stype == sexp::LANGSXP && (*expr).length == -1 } {
         let idx = unsafe { (*expr).data as usize };
         if let Some(stashed) = get_stashed_rvalue(idx) {
-            let result = STATE.with(|state| {
-                let st = state.borrow();
-                st.callbacks.eval_expr.map(|eval_fn| eval_fn(&stashed))
-            });
+            let eval_fn = STATE.with(|state| state.borrow().callbacks.eval_expr);
+            let result = eval_fn.map(|f| f(&stashed));
             return match result {
                 Some(Ok(val)) => {
                     let s = super::convert::rvalue_to_sexp(&val);
                     track(s);
                     s
                 }
-                Some(Err(e)) => {
-                    signal_r_error(&format!("{e}"));
-                }
+                Some(Err(_)) => unsafe { R_NilValue },
                 None => unsafe { R_NilValue },
             };
         }
@@ -1440,69 +1416,77 @@ pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
     // call into "fn(arg1, arg2, ...)" text and evaluate via parse_text callback.
     if unsafe { (*expr).stype == sexp::LANGSXP && (*expr).length != -1 } {
         if let Some(call_text) = langsxp_to_text(expr) {
-            let result = STATE.with(|state| {
+            // Extract callbacks without holding the borrow
+            let (parse_fn, eval_fn) = STATE.with(|state| {
                 let st = state.borrow();
-                if let (Some(parse), Some(eval)) = (st.callbacks.parse_text, st.callbacks.eval_expr)
-                {
-                    match parse(&call_text) {
-                        Ok(parsed) => Some(eval(&parsed)),
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    None
-                }
+                (st.callbacks.parse_text, st.callbacks.eval_expr)
             });
-            return match result {
-                Some(Ok(val)) => {
-                    let s = super::convert::rvalue_to_sexp(&val);
-                    track(s);
-                    s
-                }
-                Some(Err(e)) => {
-                    signal_r_error(&format!("{e}"));
-                }
-                None => unsafe { R_NilValue },
-            };
+            if let (Some(parse), Some(eval)) = (parse_fn, eval_fn) {
+                let result = match parse(&call_text) {
+                    Ok(parsed) => Some(eval(&parsed)),
+                    Err(e) => Some(Err(e)),
+                };
+                return match result {
+                    Some(Ok(val)) => {
+                        let s = super::convert::rvalue_to_sexp(&val);
+                        track(s);
+                        s
+                    }
+                    Some(Err(_)) | None => unsafe { R_NilValue },
+                };
+            }
         }
     }
 
     // Convert SEXP to RValue for the callback
     let rval = unsafe { super::convert::sexp_to_rvalue(expr) };
 
-    // Try the eval callback
-    let result = STATE.with(|state| {
+    // Extract callback function pointers — must not hold the RefCell borrow
+    // while calling them, since callbacks may re-enter Rf_eval.
+    let (find_var, eval_expr) = STATE.with(|state| {
         let st = state.borrow();
+        (st.callbacks.find_var, st.callbacks.eval_expr)
+    });
 
-        // For symbol lookups (most common case in init functions):
-        // r_eval(r_sym("function"), base_env) → look up "function" by name
-        if let Some(find) = st.callbacks.find_var {
-            if let crate::interpreter::value::RValue::Vector(ref rv) = rval {
-                if let crate::interpreter::value::Vector::Character(ref c) = rv.inner {
-                    if c.len() == 1 {
-                        if let Some(Some(name)) = c.first() {
-                            return find(name).map(Ok);
+    // Try symbol lookup first (most common case in init functions)
+    let mut result: Option<
+        Result<crate::interpreter::value::RValue, crate::interpreter::value::RError>,
+    > = None;
+
+    if let Some(find) = find_var {
+        // Character vector with one element → look up by name
+        if let crate::interpreter::value::RValue::Vector(ref rv) = rval {
+            if let crate::interpreter::value::Vector::Character(ref c) = rv.inner {
+                if c.len() == 1 {
+                    if let Some(Some(name)) = c.first() {
+                        if let Some(val) = find(name) {
+                            result = Some(Ok(val));
                         }
                     }
                 }
             }
-            // SYMSXP: the name is in the data field
+        }
+        // SYMSXP: the name is in the data field
+        if result.is_none() {
             unsafe {
                 if (*expr).stype == sexp::SYMSXP && !(*expr).data.is_null() {
                     let name = sexp::char_data(expr);
                     if !name.is_empty() {
-                        return find(name).map(Ok);
+                        if let Some(val) = find(name) {
+                            result = Some(Ok(val));
+                        }
                     }
                 }
             }
         }
+    }
 
-        // For general expressions, use the eval callback
-        if let Some(eval_fn) = st.callbacks.eval_expr {
-            return Some(eval_fn(&rval));
+    // For general expressions, use the eval callback
+    if result.is_none() {
+        if let Some(eval_fn) = eval_expr {
+            result = Some(eval_fn(&rval));
         }
-
-        None
-    });
+    }
 
     match result {
         Some(Ok(val)) => {
@@ -1510,12 +1494,7 @@ pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
             track(s);
             s
         }
-        Some(Err(e)) => {
-            // Evaluation failed — signal the error via Rf_error so C code can
-            // catch it with longjmp (instead of returning R_NilValue which causes
-            // C code that expects no-return on error to spin in `while(1)` loops).
-            signal_r_error(&format!("{e}"));
-        }
+        Some(Err(_)) => unsafe { R_NilValue },
         None => unsafe { R_NilValue },
     }
 }
