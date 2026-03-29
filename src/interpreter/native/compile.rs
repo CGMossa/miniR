@@ -340,6 +340,17 @@ pub fn compile_package(
     output_dir: &Path,
     include_dir: &Path,
 ) -> Result<PathBuf, String> {
+    compile_package_with_deps(pkg_src_dir, pkg_name, output_dir, include_dir, &[])
+}
+
+/// Compile package native code with additional include paths from LinkingTo dependencies.
+pub fn compile_package_with_deps(
+    pkg_src_dir: &Path,
+    pkg_name: &str,
+    output_dir: &Path,
+    include_dir: &Path,
+    linking_to_includes: &[PathBuf],
+) -> Result<PathBuf, String> {
     // Parse Makevars
     let makevars = Makevars::parse(&pkg_src_dir.join("Makevars"));
 
@@ -405,6 +416,11 @@ pub fn compile_package(
             .include(include_dir)
             .include(include_dir.join("miniR"))
             .include(pkg_src_dir);
+
+        // Add include paths from LinkingTo dependencies
+        for inc in linking_to_includes {
+            build.include(inc);
+        }
 
         // Add PKG_CPPFLAGS (preprocessor flags, applies to both C and C++)
         let cppflags = makevars.pkg_cppflags();

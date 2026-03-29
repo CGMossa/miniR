@@ -858,35 +858,77 @@ impl Interpreter {
                 ))
             })?;
 
+            // Resolve LinkingTo include paths from DESCRIPTION
+            let linking_to_includes = self.resolve_linking_to_includes(pkg_dir);
+
             // Compile into a temporary output directory under the package
             let output_dir = pkg_dir.join("libs");
+            let compile = |out_dir: &std::path::Path| {
+                super::compile::compile_package_with_deps(
+                    &src_dir,
+                    lib_name,
+                    out_dir,
+                    &include_dir,
+                    &linking_to_includes,
+                )
+                .map_err(|e| {
+                    RError::other(format!(
+                        "compilation of native code for '{pkg_name}' failed: {e}"
+                    ))
+                })
+            };
+
             if std::fs::create_dir_all(&output_dir).is_err() {
                 // If we can't write to pkg_dir/libs, use temp dir
                 let output_dir = self.temp_dir.path().join(format!("native-{pkg_name}"));
                 std::fs::create_dir_all(&output_dir)
                     .map_err(|e| RError::other(format!("cannot create output directory: {e}")))?;
-                let lib_path =
-                    super::compile::compile_package(&src_dir, lib_name, &output_dir, &include_dir)
-                        .map_err(|e| {
-                            RError::other(format!(
-                                "compilation of native code for '{pkg_name}' failed: {e}"
-                            ))
-                        })?;
+                let lib_path = compile(&output_dir)?;
                 self.dyn_load(&lib_path)?;
                 continue;
             }
 
-            let lib_path =
-                super::compile::compile_package(&src_dir, lib_name, &output_dir, &include_dir)
-                    .map_err(|e| {
-                        RError::other(format!(
-                            "compilation of native code for '{pkg_name}' failed: {e}"
-                        ))
-                    })?;
+            let lib_path = compile(&output_dir)?;
             self.dyn_load(&lib_path)?;
         }
 
         Ok(())
+    }
+
+    /// Resolve include paths for LinkingTo dependencies.
+    ///
+    /// Reads the package's DESCRIPTION, finds LinkingTo packages, and returns
+    /// their `inst/include` directories (or `include/` at package root).
+    fn resolve_linking_to_includes(&self, pkg_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let desc_path = pkg_dir.join("DESCRIPTION");
+        let desc_text = match std::fs::read_to_string(&desc_path) {
+            Ok(t) => t,
+            Err(_) => return Vec::new(),
+        };
+        let desc = match crate::interpreter::packages::description::PackageDescription::parse(
+            &desc_text,
+        ) {
+            Ok(d) => d,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut includes = Vec::new();
+        for dep in &desc.linking_to {
+            // Find the dependency's package directory
+            if let Some(dep_dir) = self.find_package_dir(&dep.package) {
+                // R packages export headers from inst/include/ (installed) or include/ (source)
+                let inst_include = dep_dir.join("inst").join("include");
+                if inst_include.is_dir() {
+                    includes.push(inst_include);
+                } else {
+                    let include = dep_dir.join("include");
+                    if include.is_dir() {
+                        includes.push(include);
+                    }
+                }
+            }
+        }
+        includes
     }
 }
 
