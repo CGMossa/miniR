@@ -85,6 +85,127 @@ pub fn set_callbacks(callbacks: InterpreterCallbacks) {
     });
 }
 
+/// Decompile a pairlist-style LANGSXP into R source text.
+///
+/// Example: `Rf_lang3(Rf_install("::"), Rf_install("base"), Rf_install("stop"))`
+/// becomes `base::stop` (infix). Regular calls become `abort(message = "...")`.
+fn langsxp_to_text(s: Sexp) -> Option<String> {
+    if s.is_null() || unsafe { (*s).stype != sexp::LANGSXP } {
+        return None;
+    }
+
+    let data = unsafe { (*s).data as *const sexp::PairlistData };
+    if data.is_null() {
+        return None;
+    }
+
+    // CAR = function (SYMSXP), CDR = argument chain
+    let func = unsafe { (*data).car };
+    let args = unsafe { (*data).cdr };
+
+    // Get function name from SYMSXP
+    let func_name = if !func.is_null() && unsafe { (*func).stype } == sexp::SYMSXP {
+        unsafe { sexp::char_data(func) }.to_string()
+    } else if !func.is_null() && unsafe { (*func).stype } == sexp::LANGSXP {
+        // Nested call — recursively decompile (e.g. base::stop(...))
+        langsxp_to_text(func)?
+    } else {
+        return None;
+    };
+
+    // Collect arguments from pairlist chain
+    let mut arg_strs = Vec::new();
+    let mut node = args;
+    while !node.is_null() && unsafe { (*node).stype } != sexp::NILSXP {
+        let nd = unsafe { (*node).data as *const sexp::PairlistData };
+        if nd.is_null() {
+            break;
+        }
+
+        let val = unsafe { (*nd).car };
+        let tag = unsafe { (*nd).tag };
+
+        // Format the argument value
+        let val_str = sexp_to_text_repr(val);
+
+        // If there's a tag (named argument), include it
+        if !tag.is_null() && unsafe { (*tag).stype } == sexp::SYMSXP {
+            let tag_name = unsafe { sexp::char_data(tag) };
+            if !tag_name.is_empty() {
+                arg_strs.push(format!("{tag_name} = {val_str}"));
+            } else {
+                arg_strs.push(val_str);
+            }
+        } else {
+            arg_strs.push(val_str);
+        }
+
+        node = unsafe { (*nd).cdr };
+    }
+
+    // Handle infix operators like `::`, `$`
+    if (func_name == "::" || func_name == ":::" || func_name == "$") && arg_strs.len() == 2 {
+        return Some(format!("{}{func_name}{}", arg_strs[0], arg_strs[1]));
+    }
+
+    Some(format!("{}({})", func_name, arg_strs.join(", ")))
+}
+
+/// Convert a SEXP value to its text representation for decompilation.
+fn sexp_to_text_repr(s: Sexp) -> String {
+    if s.is_null() {
+        return "NULL".to_string();
+    }
+    let stype = unsafe { (*s).stype };
+    match stype {
+        sexp::NILSXP => "NULL".to_string(),
+        sexp::SYMSXP => unsafe { sexp::char_data(s) }.to_string(),
+        sexp::LANGSXP => langsxp_to_text(s).unwrap_or_else(|| "NULL".to_string()),
+        sexp::LGLSXP => {
+            let rval = unsafe { super::convert::sexp_to_rvalue(s) };
+            format!("{}", rval)
+        }
+        sexp::INTSXP | sexp::REALSXP => {
+            let rval = unsafe { super::convert::sexp_to_rvalue(s) };
+            format!("{}", rval)
+        }
+        sexp::STRSXP => {
+            let rval = unsafe { super::convert::sexp_to_rvalue(s) };
+            if let Some(rv) = rval.as_vector() {
+                if let Some(s) = rv.as_character_scalar() {
+                    return format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+                }
+            }
+            format!("{}", rval)
+        }
+        _ => {
+            // For unknown types, try converting to RValue
+            let rval = unsafe { super::convert::sexp_to_rvalue(s) };
+            format!("{}", rval)
+        }
+    }
+}
+
+/// Signal an R error by calling Rf_error (longjmps through the C trampoline).
+///
+/// Used when `Rf_eval` callback receives an error from the interpreter — C code
+/// expects `Rf_eval` to never return when an error occurs (e.g. rlang's `r_abort`
+/// spins in `while(1)` if `Rf_eval` returns normally on error).
+fn signal_r_error(msg: &str) -> ! {
+    extern "C" {
+        fn Rf_error(fmt: *const c_char, ...);
+    }
+    let c_msg = std::ffi::CString::new(msg).unwrap_or_default();
+    unsafe {
+        Rf_error(c"%s".as_ptr(), c_msg.as_ptr());
+    }
+    // Rf_error longjmps — this is unreachable, but Rust doesn't know that
+    #[allow(unreachable_code)]
+    {
+        std::process::abort();
+    }
+}
+
 /// Clear interpreter callbacks after .Call returns.
 pub fn clear_callbacks() {
     STATE.with(|state| {
@@ -1307,7 +1428,40 @@ pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
                     track(s);
                     s
                 }
-                _ => unsafe { R_NilValue },
+                Some(Err(e)) => {
+                    signal_r_error(&format!("{e}"));
+                }
+                None => unsafe { R_NilValue },
+            };
+        }
+    }
+
+    // Pairlist-style LANGSXP (e.g. from Rf_lcons/Rf_lang3) — decompile the
+    // call into "fn(arg1, arg2, ...)" text and evaluate via parse_text callback.
+    if unsafe { (*expr).stype == sexp::LANGSXP && (*expr).length != -1 } {
+        if let Some(call_text) = langsxp_to_text(expr) {
+            let result = STATE.with(|state| {
+                let st = state.borrow();
+                if let (Some(parse), Some(eval)) = (st.callbacks.parse_text, st.callbacks.eval_expr)
+                {
+                    match parse(&call_text) {
+                        Ok(parsed) => Some(eval(&parsed)),
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    None
+                }
+            });
+            return match result {
+                Some(Ok(val)) => {
+                    let s = super::convert::rvalue_to_sexp(&val);
+                    track(s);
+                    s
+                }
+                Some(Err(e)) => {
+                    signal_r_error(&format!("{e}"));
+                }
+                None => unsafe { R_NilValue },
             };
         }
     }
@@ -1356,7 +1510,13 @@ pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
             track(s);
             s
         }
-        _ => unsafe { R_NilValue },
+        Some(Err(e)) => {
+            // Evaluation failed — signal the error via Rf_error so C code can
+            // catch it with longjmp (instead of returning R_NilValue which causes
+            // C code that expects no-return on error to spin in `while(1)` loops).
+            signal_r_error(&format!("{e}"));
+        }
+        None => unsafe { R_NilValue },
     }
 }
 
