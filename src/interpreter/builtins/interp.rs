@@ -5521,6 +5521,135 @@ fn interp_package_version(
     }
 }
 
+/// Read the DESCRIPTION file for a package, returning all fields as a named list.
+///
+/// @param pkg character scalar: package name
+/// @param lib.loc character vector of library paths (default: .libPaths())
+/// @param fields character vector of fields to return (default: all)
+/// @return a named list (with class "packageDescription") of DESCRIPTION fields
+/// @namespace utils
+#[interpreter_builtin(name = "packageDescription", min_args = 1, namespace = "utils")]
+fn interp_package_description(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let pkg = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "'pkg' must be a character string".to_string(),
+            )
+        })?;
+
+    let lib_loc: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "lib.loc")
+            .and_then(|(_, v)| {
+                let vec = v.as_vector()?;
+                Some(
+                    vec.to_characters()
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<String>>(),
+                )
+            });
+
+    let fields_filter: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "fields")
+            .and_then(|(_, v)| {
+                let vec = v.as_vector()?;
+                Some(
+                    vec.to_characters()
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<String>>(),
+                )
+            });
+
+    let desc_fields = context.with_interpreter(|interp| {
+        // Synthetic DESCRIPTION for base packages
+        if matches!(
+            pkg.as_str(),
+            "base"
+                | "utils"
+                | "stats"
+                | "methods"
+                | "grDevices"
+                | "graphics"
+                | "datasets"
+                | "grid"
+                | "compiler"
+                | "tools"
+                | "splines"
+                | "parallel"
+                | "tcltk"
+        ) {
+            let mut fields = std::collections::HashMap::new();
+            fields.insert("Package".to_string(), pkg.clone());
+            fields.insert("Version".to_string(), "4.4.0".to_string());
+            fields.insert("Priority".to_string(), "base".to_string());
+            fields.insert("Title".to_string(), format!("The R {pkg} Package"));
+            return Some(fields);
+        }
+
+        // Check loaded namespaces first
+        if let Some(ns) = interp.loaded_namespaces.borrow().get(&pkg) {
+            return Some(ns.description.fields.clone());
+        }
+
+        // Search on disk
+        let lib_paths = lib_loc.unwrap_or_else(|| interp.get_lib_paths());
+        for lib_path in &lib_paths {
+            let desc_path = std::path::Path::new(lib_path)
+                .join(&pkg)
+                .join("DESCRIPTION");
+            if let Ok(text) = std::fs::read_to_string(&desc_path) {
+                if let Ok(desc) = crate::interpreter::packages::PackageDescription::parse(&text) {
+                    return Some(desc.fields);
+                }
+            }
+        }
+        None
+    });
+
+    match desc_fields {
+        Some(fields) => {
+            let mut values: Vec<(Option<String>, RValue)> = Vec::new();
+            for (key, val) in &fields {
+                if let Some(ref filter) = fields_filter {
+                    if !filter.iter().any(|f| f == key) {
+                        continue;
+                    }
+                }
+                values.push((
+                    Some(key.clone()),
+                    RValue::vec(Vector::Character(vec![Some(val.clone())].into())),
+                ));
+            }
+            let mut list = RList::new(values);
+            let mut attrs = indexmap::IndexMap::new();
+            attrs.insert(
+                "class".to_string(),
+                RValue::vec(Vector::Character(
+                    vec![Some("packageDescription".to_string())].into(),
+                )),
+            );
+            list.attrs = Some(Box::new(attrs));
+            Ok(RValue::List(list))
+        }
+        None => Err(RError::new(
+            RErrorKind::Other,
+            format!("package '{}' not found", pkg),
+        )),
+    }
+}
+
 /// Return the number of builtins registered, optionally filtered by namespace.
 ///
 /// This is a miniR extension — not in GNU R. Useful for debugging.
