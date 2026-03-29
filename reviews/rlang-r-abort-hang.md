@@ -50,4 +50,26 @@ bypassing the C code entirely. This would fix the immediate hang for rlang.
 
 ## Affected packages
 
-memoise, withr, reshape2 all depend on rlang and hang because of this.
+**83 packages** (out of 260 tested) hang because they transitively depend on rlang.
+This includes the entire tidyverse: dplyr, tidyr, ggplot2, purrr, stringr, tibble,
+forcats, readr, and all their reverse dependencies. Fixing rlang would unlock
+roughly 80+ more packages, taking us from 102/260 (39%) to ~180/260 (69%).
+
+## Non-longjmp design options
+
+1. **Reimplement rlang's type-check FFI in Rust** — `ffi_is_character`, `ffi_is_logical`,
+   etc. are simple type checks. Replace the C implementations with Rust builtins that
+   never call `r_abort`. The `.Call` dispatch could check for these names and route
+   to pure-Rust implementations.
+
+2. **Error flag in Rf_eval** — Instead of longjmp, set a thread-local error flag
+   that C code can check. Requires patching rlang's C source (add `if (r_eval_errored())`
+   checks) which is fragile.
+
+3. **Thread-local error SEXP** — When Rf_eval fails, store the error condition in a
+   thread-local. C code that calls r_eval checks the error flag. Similar to R_tryEval's
+   error_occurred parameter but implicit.
+
+4. **Compile rlang with miniR error handling** — Patch rlang's `r_abort` to call
+   `Rf_error` directly instead of `r_exec_n(abort, ...)`, bypassing the Rf_eval round-trip.
+   The C trampoline's longjmp would handle it correctly since it only crosses C frames.
