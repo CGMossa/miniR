@@ -1,10 +1,24 @@
-# rlang hang: r_abort while(1) spin
+# rlang hang: eager argument evaluation triggers C abort
 
 ## What happened
 
 `library(rlang)` hangs indefinitely. The hang is a CPU spin at 100%.
 
-## Root cause
+## TRUE Root cause (2026-03-29)
+
+**miniR evaluates function arguments eagerly instead of lazily (promises).**
+
+rlang's R code uses `on_package_load("glue", .Call(ffi_glue_is_here))` and
+similar patterns where the second argument is captured by `substitute(expr)`
+inside the function. In GNU R, `expr` is NOT evaluated because function
+arguments are lazy (wrapped in promises). In miniR, the `.Call(...)` is
+evaluated immediately, calling into rlang's C code which then fails and
+hits `r_abort` → `while(1)`.
+
+**Fix: implement lazy argument evaluation (R promise semantics).** This is
+a fundamental interpreter feature, not a native code issue.
+
+## Proximate cause (the hang mechanism)
 
 rlang's C code (in `rlang.dylib`) has `r_abort()` which:
 1. Calls `r_peek_frame()` → `Rf_eval(peek_frame_call, r_envs.base)`
