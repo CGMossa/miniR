@@ -1791,6 +1791,11 @@ pub fn is_gzip_data(data: &[u8]) -> bool {
     data.len() >= 2 && data[0] == 0x1f && data[1] == 0x8b
 }
 
+/// Check for bzip2 magic number ("BZh").
+pub fn is_bzip2_data(data: &[u8]) -> bool {
+    data.len() >= 3 && data[0] == b'B' && data[1] == b'Z' && data[2] == b'h'
+}
+
 /// Decompress gzip data and then deserialize.
 #[cfg(feature = "compression")]
 pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
@@ -1807,18 +1812,31 @@ pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
             )
         })?;
         unserialize_xdr(&decompressed)
+    } else if is_bzip2_data(data) {
+        use bzip2::read::BzDecoder;
+        use std::io::Read;
+
+        let mut decoder = BzDecoder::new(data);
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed).map_err(|e| {
+            RError::new(
+                RErrorKind::Other,
+                format!("failed to decompress bzip2 RDS data: {}", e),
+            )
+        })?;
+        unserialize_xdr(&decompressed)
     } else {
         unserialize_xdr(data)
     }
 }
 
-/// Decompress gzip data and then deserialize (no-compression fallback).
+/// Decompress and then deserialize (no-compression fallback).
 #[cfg(not(feature = "compression"))]
 pub fn unserialize_rds(data: &[u8]) -> Result<RValue, RError> {
-    if is_gzip_data(data) {
+    if is_gzip_data(data) || is_bzip2_data(data) {
         Err(RError::new(
             RErrorKind::Other,
-            "RDS file is gzip-compressed but miniR was built without the 'compression' feature; \
+            "RDS file is compressed but miniR was built without the 'compression' feature; \
              rebuild with `--features compression` to read compressed RDS files"
                 .to_string(),
         ))

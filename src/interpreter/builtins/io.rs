@@ -713,12 +713,12 @@ fn interp_load(
 ///
 /// Returns Ok(Some(loaded_names)) if the file is a valid binary .RData,
 /// Ok(None) if it's not a recognized binary format (fall back to text).
-fn try_load_binary_rdata(
+pub fn try_load_binary_rdata(
     data: &[u8],
     target_env: &Environment,
 ) -> Result<Option<Vec<Option<String>>>, RError> {
     // Check for RDX2\n header (binary save format).
-    // Also handle gzip-compressed .RData files.
+    // Also handle gzip-compressed and bzip2-compressed .RData files.
     let working_data = if data.starts_with(b"RDX2\n") {
         data.to_vec()
     } else if super::serialize::is_gzip_data(data) {
@@ -732,6 +732,29 @@ fn try_load_binary_rdata(
                 RError::new(
                     RErrorKind::Other,
                     format!("failed to decompress .RData file: {}", e),
+                )
+            })?;
+            if buf.starts_with(b"RDX2\n") {
+                buf
+            } else {
+                return Ok(None);
+            }
+        }
+        #[cfg(not(feature = "compression"))]
+        {
+            return Ok(None);
+        }
+    } else if super::serialize::is_bzip2_data(data) {
+        #[cfg(feature = "compression")]
+        {
+            use bzip2::read::BzDecoder;
+            use std::io::Read;
+            let mut decoder = BzDecoder::new(data);
+            let mut buf = Vec::new();
+            decoder.read_to_end(&mut buf).map_err(|e| {
+                RError::new(
+                    RErrorKind::Other,
+                    format!("failed to decompress bzip2 .RData file: {}", e),
                 )
             })?;
             if buf.starts_with(b"RDX2\n") {

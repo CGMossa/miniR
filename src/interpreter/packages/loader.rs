@@ -315,8 +315,43 @@ impl Interpreter {
             debug!(pkg = pkg_name, "native code loaded");
         }
 
-        // Source all R files from the R/ directory, respecting Collate order
+        // Load R/sysdata.rda if present — internal package data that R functions
+        // reference at definition time (must be loaded before sourcing R files).
         let r_dir = pkg_dir.join("R");
+        let sysdata_path = r_dir.join("sysdata.rda");
+        if sysdata_path.is_file() {
+            debug!(pkg = pkg_name, "loading sysdata.rda");
+            match std::fs::read(&sysdata_path) {
+                Ok(raw_bytes) => {
+                    match crate::interpreter::builtins::io::try_load_binary_rdata(
+                        &raw_bytes,
+                        &namespace_env,
+                    ) {
+                        Ok(Some(names)) => {
+                            debug!(pkg = pkg_name, count = names.len(), "sysdata.rda loaded");
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                pkg = pkg_name,
+                                "sysdata.rda: not a recognized binary format"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                pkg = pkg_name,
+                                err = %e,
+                                "sysdata.rda: failed to load"
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(pkg = pkg_name, err = %e, "sysdata.rda: failed to read");
+                }
+            }
+        }
+
+        // Source all R files from the R/ directory, respecting Collate order
         if r_dir.is_dir() {
             debug!(pkg = pkg_name, "sourcing R files");
             let collate = description.fields.get("Collate").map(|s| s.as_str());
