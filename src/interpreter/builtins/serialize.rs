@@ -1650,7 +1650,10 @@ impl AsciiWriter {
                     self.write_attributes(&effective_attrs);
                 }
             }
-            RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) => {
+            RValue::Function(_)
+            | RValue::Environment(_)
+            | RValue::Language(_)
+            | RValue::Promise(_) => {
                 self.write_flags(NILVALUE_SXP, false, false);
             }
         }
@@ -2078,6 +2081,10 @@ impl XdrWriter {
             }
             RValue::Language(lang) => {
                 self.write_langsxp_expr(&lang.inner);
+            }
+            RValue::Promise(_) => {
+                // Promises should be forced before serialization; write NULL.
+                self.write_flags(NILVALUE_SXP, false, false);
             }
         }
     }

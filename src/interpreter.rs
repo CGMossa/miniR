@@ -29,6 +29,9 @@ pub(crate) use call::{CallFrame, S3DispatchContext};
 use environment::Environment;
 use value::*;
 
+/// Result of forcing all arguments: (positional_values, named_values).
+type ForcedArgs = (Vec<RValue>, Vec<(String, RValue)>);
+
 // region: InterpreterRng
 
 /// Selectable RNG backend for the interpreter.
@@ -711,6 +714,77 @@ impl Interpreter {
         false
     }
 
+    /// Force a value: if it's a Promise, evaluate the promise expression and
+    /// cache the result. Returns the concrete (non-promise) value.
+    ///
+    /// Non-promise values pass through unchanged. This is the main entry point
+    /// for transparent promise forcing throughout the interpreter.
+    pub fn force_value(&self, value: RValue) -> Result<RValue, RFlow> {
+        match value {
+            RValue::Promise(ref p) => {
+                // Check if already forced
+                {
+                    let inner = p.borrow();
+                    if let Some(ref cached) = inner.value {
+                        return Ok(cached.clone());
+                    }
+                    if inner.forcing {
+                        return Err(RError::other(
+                            "promise already under evaluation: recursive default argument reference or earlier problems?"
+                                .to_string(),
+                        )
+                        .into());
+                    }
+                }
+
+                // Mark as forcing
+                p.borrow_mut().forcing = true;
+
+                // Extract what we need before evaluating (avoids holding borrow during eval)
+                let (expr, env) = {
+                    let inner = p.borrow();
+                    (inner.expr.clone(), inner.env.clone())
+                };
+
+                let result = self.eval_in(&expr, &env);
+
+                match result {
+                    Ok(val) => {
+                        // Recursively force in case evaluation returned another promise
+                        let forced = self.force_value(val)?;
+                        let mut inner = p.borrow_mut();
+                        inner.value = Some(forced.clone());
+                        inner.forcing = false;
+                        Ok(forced)
+                    }
+                    Err(e) => {
+                        p.borrow_mut().forcing = false;
+                        Err(e)
+                    }
+                }
+            }
+            other => Ok(other),
+        }
+    }
+
+    /// Force all promises in a slice of values, returning concrete values.
+    /// Used at builtin dispatch boundaries.
+    pub fn force_args(
+        &self,
+        positional: &[RValue],
+        named: &[(String, RValue)],
+    ) -> Result<ForcedArgs, RFlow> {
+        let forced_pos: Vec<RValue> = positional
+            .iter()
+            .map(|v| self.force_value(v.clone()))
+            .collect::<Result<_, _>>()?;
+        let forced_named: Vec<(String, RValue)> = named
+            .iter()
+            .map(|(n, v)| Ok((n.clone(), self.force_value(v.clone())?)))
+            .collect::<Result<_, RFlow>>()?;
+        Ok((forced_pos, forced_named))
+    }
+
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
         self.eval_in(expr, &self.global_env)
     }
@@ -759,10 +833,12 @@ impl Interpreter {
                 if let Some(fun) = env.get_active_binding(name) {
                     return self.call_function(&fun, &[], &[], env);
                 }
-                env.get(name).ok_or_else(|| {
+                let val = env.get(name).ok_or_else(|| {
                     debug!(symbol = name.as_str(), "symbol not found");
-                    RError::new(RErrorKind::Name, name.clone()).into()
-                })
+                    RFlow::from(RError::new(RErrorKind::Name, name.clone()))
+                })?;
+                // Transparently force promises on access
+                self.force_value(val)
             }
             Expr::Dots => {
                 // Return the ... list from the current environment
@@ -785,10 +861,18 @@ impl Interpreter {
                 match dots {
                     RValue::List(list) => {
                         let idx = usize::try_from(i64::from(*n))?.saturating_sub(1);
-                        list.values.get(idx).map(|(_, v)| v.clone()).ok_or_else(|| {
-                            RError::other(format!("the ... list does not contain {} elements", n))
-                                .into()
-                        })
+                        let val =
+                            list.values
+                                .get(idx)
+                                .map(|(_, v)| v.clone())
+                                .ok_or_else(|| {
+                                    RFlow::from(RError::other(format!(
+                                        "the ... list does not contain {} elements",
+                                        n
+                                    )))
+                                })?;
+                        // Force promise if the dots element is a lazy argument
+                        self.force_value(val)
                     }
                     _ => Err(RError::other(format!("'..{}' used in incorrect context", n)).into()),
                 }

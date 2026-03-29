@@ -26,9 +26,11 @@ pub fn rvalue_to_sexp(val: &RValue) -> Sexp {
             s
         }
         RValue::List(list) => list_to_sexp(list),
-        // Functions, environments, language objects can't be passed to C.
+        // Functions, environments, language objects, promises can't be passed to C.
         // Return R_NilValue as a safe fallback.
-        RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) => sexp::mk_null(),
+        RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) | RValue::Promise(_) => {
+            sexp::mk_null()
+        }
     }
 }
 

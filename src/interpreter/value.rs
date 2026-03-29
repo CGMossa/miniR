@@ -452,6 +452,37 @@ impl DerefMut for Language {
     }
 }
 
+/// Lazy promise: wraps an unevaluated expression + its lexical environment.
+///
+/// Created when a closure is called — each argument becomes a promise that is
+/// only evaluated (forced) when its value is actually needed. Once forced, the
+/// result is cached so subsequent accesses return the same value.
+///
+/// The `forcing` flag detects recursive promise evaluation (e.g. `f(x = x)`).
+#[derive(Debug, Clone)]
+pub struct RPromise {
+    pub expr: Expr,
+    pub env: Environment,
+    pub value: Option<RValue>,
+    pub forcing: bool,
+}
+
+impl RPromise {
+    pub fn new(expr: Expr, env: Environment) -> Self {
+        RPromise {
+            expr,
+            env,
+            value: None,
+            forcing: false,
+        }
+    }
+}
+
+/// Shared promise handle — promises are mutable (cached once forced) and may
+/// be referenced from multiple places (e.g. `...` forwarding), so they live
+/// behind `Rc<RefCell<>>`.
+pub type SharedPromise = std::rc::Rc<std::cell::RefCell<RPromise>>;
+
 #[derive(Debug, Clone)]
 pub enum RValue {
     /// NULL
@@ -466,6 +497,8 @@ pub enum RValue {
     Environment(Environment),
     /// Language object (unevaluated expression)
     Language(Language),
+    /// Lazy promise (unevaluated argument with cached result)
+    Promise(SharedPromise),
 }
 
 /// Atomic vector with optional attributes (names, class, dim, etc.)
@@ -650,6 +683,13 @@ impl RValue {
         })
     }
 
+    /// Create a lazy promise wrapping an unevaluated expression and its lexical env.
+    pub fn promise(expr: Expr, env: Environment) -> Self {
+        RValue::Promise(std::rc::Rc::new(std::cell::RefCell::new(RPromise::new(
+            expr, env,
+        ))))
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, RValue::Null)
     }
@@ -681,6 +721,7 @@ impl RValue {
             RValue::Function(_) => "function",
             RValue::Environment(_) => "environment",
             RValue::Language(_) => "language",
+            RValue::Promise(_) => "promise",
         }
     }
 
@@ -692,6 +733,7 @@ impl RValue {
             RValue::Function(_) => 1,
             RValue::Environment(_) => 0,
             RValue::Language(lang) => lang.language_length(),
+            RValue::Promise(_) => 1,
         }
     }
 }
@@ -721,6 +763,14 @@ impl fmt::Display for RValue {
             },
             RValue::Environment(_env) => write!(f, "<environment>"),
             RValue::Language(expr) => write!(f, "{}", deparse_expr(expr)),
+            RValue::Promise(p) => {
+                let p = p.borrow();
+                if let Some(ref val) = p.value {
+                    write!(f, "{}", val)
+                } else {
+                    write!(f, "<promise: {}>", deparse_expr(&p.expr))
+                }
+            }
         }
     }
 }

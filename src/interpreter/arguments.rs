@@ -126,7 +126,9 @@ impl Interpreter {
                 supplied_args.insert(param.name.clone());
                 pos_idx += 1;
             } else if let Some(default) = &param.default {
-                let value = self.eval_in(default, &call_env)?;
+                // Default values are lazy too — create a promise evaluated in the
+                // call environment so defaults can reference other parameters.
+                let value = RValue::promise(default.clone(), call_env.clone());
                 call_env.set(param.name.clone(), value);
             }
         }

@@ -670,6 +670,12 @@ fn rlist_to_table(list: &RList) -> Result<toml_edit::Table, RError> {
                     format!("cannot convert language object to TOML (key '{key}')"),
                 ));
             }
+            RValue::Promise(_) => {
+                return Err(RError::new(
+                    RErrorKind::Type,
+                    format!("cannot convert promise to TOML (key '{key}') — force it first"),
+                ));
+            }
         }
     }
 

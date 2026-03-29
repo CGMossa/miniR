@@ -260,6 +260,10 @@ fn serialize_rvalue(value: &RValue) -> Result<String, RError> {
             details: "environments are not yet serializable".to_string(),
         }
         .into()),
+        RValue::Promise(_) => Err(IoError::UnsupportedSerialization {
+            details: "promises are not yet serializable".to_string(),
+        }
+        .into()),
     }
 }
 

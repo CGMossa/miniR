@@ -1153,13 +1153,17 @@ fn pre_eval_substitute(
 fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
     match expr {
         Expr::Symbol(name) => {
-            // First check for a promise expression (original unevaluated source
-            // expression from a function argument). This is what makes
+            // Check if the binding is a promise — if so, use the promise's
+            // unevaluated expression. This is what makes
             // `f <- function(x) substitute(x); f(a+b)` return `a + b`.
-            if let Some(promise_expr) = env.get_promise_expr(name) {
-                return promise_expr;
-            }
             if let Some(val) = env.get(name) {
+                if let RValue::Promise(p) = &val {
+                    return p.borrow().expr.clone();
+                }
+                // Also check legacy promise_exprs for backward compat
+                if let Some(promise_expr) = env.get_promise_expr(name) {
+                    return promise_expr;
+                }
                 rvalue_to_expr(&val)
             } else {
                 expr.clone()

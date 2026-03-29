@@ -1969,6 +1969,14 @@ fn str_format_element(val: &RValue, indent: usize) -> String {
         RValue::Function(_) => format!("{prefix}function (...)"),
         RValue::Environment(_) => format!("{prefix}<environment>"),
         RValue::Language(_) => format!("{prefix} language ..."),
+        RValue::Promise(p) => {
+            let inner = p.borrow();
+            if let Some(ref val) = inner.value {
+                str_format_element(val, indent)
+            } else {
+                format!("{prefix} promise ...")
+            }
+        }
     }
 }
 

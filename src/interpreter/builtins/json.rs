@@ -426,6 +426,10 @@ fn rvalue_to_json(value: &RValue) -> Result<serde_json::Value, RError> {
             RErrorKind::Type,
             "cannot convert language object to JSON".to_string(),
         )),
+        RValue::Promise(_) => Err(RError::new(
+            RErrorKind::Type,
+            "cannot convert promise to JSON (force it first)".to_string(),
+        )),
     }
 }
 

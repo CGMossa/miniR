@@ -114,7 +114,14 @@ impl Interpreter {
 
         let dispatch_object = match object_expr {
             Some(expr) => Some(self.eval_in(expr, env)?),
-            None => self.default_use_method_object(&frame)?,
+            None => {
+                // Force the default object (first param) — it may be a promise
+                let obj = self.default_use_method_object(&frame)?;
+                match obj {
+                    Some(val) => Some(self.force_value(val)?),
+                    None => None,
+                }
+            }
         };
 
         let value = self.dispatch_s3(
@@ -187,8 +194,10 @@ impl Interpreter {
         env: &Environment,
         call_expr: Option<Expr>,
     ) -> Result<RValue, RFlow> {
-        let dispatch_object =
+        let raw_dispatch =
             dispatch_object.unwrap_or_else(|| positional.first().cloned().unwrap_or(RValue::Null));
+        // Force promises so we can inspect the object's class
+        let dispatch_object = self.force_value(raw_dispatch)?;
         let classes = self.s3_classes_for(&dispatch_object);
 
         // First pass: look up generic.class in the environment chain
