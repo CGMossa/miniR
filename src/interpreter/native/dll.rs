@@ -597,6 +597,91 @@ impl Interpreter {
         Ok(result)
     }
 
+    /// Execute a `.External()` invocation.
+    ///
+    /// `.External()` passes a single SEXP pairlist to the C function.
+    /// The pairlist's first CAR is the function symbol; CDR is the argument chain.
+    pub(crate) fn dot_external(
+        &self,
+        symbol_name: &str,
+        args: &[RValue],
+    ) -> Result<RValue, RError> {
+        let fn_ptr = self.find_native_symbol(symbol_name)?;
+
+        // Build a pairlist: first node is a symbol for the function name,
+        // then each argument is a node.
+        let func_sym = super::runtime::Rf_install(
+            std::ffi::CString::new(symbol_name)
+                .unwrap_or_default()
+                .as_ptr(),
+        );
+        let pairlist = super::runtime::Rf_cons(func_sym, unsafe { super::runtime::R_NilValue });
+
+        // Append arguments in reverse order
+        let mut tail = pairlist;
+        for arg in args {
+            let sexp_arg = convert::rvalue_to_sexp(arg);
+            let node = super::runtime::Rf_cons(sexp_arg, unsafe { super::runtime::R_NilValue });
+            // Set CDR of tail to node
+            unsafe {
+                let pd = (*tail).data as *mut sexp::PairlistData;
+                if !pd.is_null() {
+                    (*pd).cdr = node;
+                }
+            }
+            tail = node;
+        }
+
+        // Set interpreter callbacks
+        CURRENT_INTERP.with(|cell| cell.set(self as *const Interpreter));
+        super::runtime::set_callbacks(super::runtime::InterpreterCallbacks {
+            find_var: Some(callback_find_var),
+            define_var: Some(callback_define_var),
+            eval_expr: Some(callback_eval_expr),
+            parse_text: Some(callback_parse_text),
+        });
+
+        extern "C" {
+            fn _minir_call_protected(
+                fn_ptr: *const (),
+                args: *const Sexp,
+                nargs: i32,
+                result: *mut Sexp,
+            ) -> i32;
+            fn _minir_get_error_msg() -> *const c_char;
+        }
+
+        let mut result_sexp: Sexp = sexp::R_NIL_VALUE;
+        let sexp_args = [pairlist];
+        let error_code =
+            unsafe { _minir_call_protected(fn_ptr, sexp_args.as_ptr(), 1, &mut result_sexp) };
+
+        if error_code != 0 {
+            let error_msg = unsafe {
+                let msg_ptr = _minir_get_error_msg();
+                if msg_ptr.is_null() {
+                    "unknown error in native code".to_string()
+                } else {
+                    CStr::from_ptr(msg_ptr)
+                        .to_str()
+                        .unwrap_or("unknown error")
+                        .to_string()
+                }
+            };
+            super::runtime::clear_callbacks();
+            CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+            super::runtime::free_allocs();
+            return Err(RError::new(RErrorKind::Other, error_msg));
+        }
+
+        let result = unsafe { convert::sexp_to_rvalue(result_sexp) };
+        super::runtime::clear_callbacks();
+        CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
+        super::runtime::free_allocs();
+
+        Ok(result)
+    }
+
     /// Execute a `.C()` invocation using the C trampoline for error safety.
     ///
     /// `.C()` is simpler than `.Call()` — it passes pointers to raw data

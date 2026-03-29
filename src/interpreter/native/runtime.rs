@@ -1066,7 +1066,7 @@ pub extern "C" fn R_registerRoutines(
     c_methods: *const RCMethodDef,
     call_methods: *const RCallMethodDef,
     _fortran_methods: *const c_void,
-    _external_methods: *const c_void,
+    external_methods: *const RCallMethodDef,
 ) -> c_int {
     // Register .C methods
     if !c_methods.is_null() {
@@ -1093,26 +1093,34 @@ pub extern "C" fn R_registerRoutines(
     }
     // Register .Call methods
     if !call_methods.is_null() {
-        let mut reg = REGISTERED_CALLS.lock().expect("lock registered calls");
-        unsafe {
-            let mut i = 0;
-            loop {
-                let entry = &*call_methods.add(i);
-                if entry.name.is_null() {
-                    break;
-                }
-                let name = CStr::from_ptr(entry.name)
-                    .to_str()
-                    .unwrap_or("")
-                    .to_string();
-                if !name.is_empty() {
-                    reg.push((name, SendPtr(entry.fun)));
-                }
-                i += 1;
-            }
-        }
+        register_call_methods(call_methods);
+    }
+    // Register .External methods — same structure as .Call, stored in the same table
+    if !external_methods.is_null() {
+        register_call_methods(external_methods);
     }
     1
+}
+
+fn register_call_methods(methods: *const RCallMethodDef) {
+    let mut reg = REGISTERED_CALLS.lock().expect("lock registered calls");
+    unsafe {
+        let mut i = 0;
+        loop {
+            let entry = &*methods.add(i);
+            if entry.name.is_null() {
+                break;
+            }
+            let name = CStr::from_ptr(entry.name)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            if !name.is_empty() {
+                reg.push((name, SendPtr(entry.fun)));
+            }
+            i += 1;
+        }
+    }
 }
 
 #[no_mangle]

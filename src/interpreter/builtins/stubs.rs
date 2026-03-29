@@ -80,6 +80,7 @@ fn builtin_dot_internal(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     ))
 }
 
+#[cfg(not(feature = "native"))]
 /// .External — stub for external C calls.
 ///
 /// @param .NAME external function reference
@@ -90,7 +91,7 @@ fn builtin_dot_internal(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
 fn builtin_dot_external(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Err(RError::new(
         RErrorKind::Other,
-        ".External() is not available — miniR cannot call compiled C code".to_string(),
+        ".External() is not available — miniR was built without the 'native' feature".to_string(),
     ))
 }
 
@@ -101,6 +102,22 @@ fn builtin_dot_external2(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
         RErrorKind::Other,
         ".External2() is not available in miniR".to_string(),
     ))
+}
+
+// endregion
+
+// region: tools package stubs
+
+/// tools::vignetteEngine — register/query vignette engines.
+/// No-op in miniR — vignette processing is not supported.
+///
+/// @param name engine name
+/// @param ... ignored
+/// @return NULL
+/// @namespace tools
+#[builtin(name = "vignetteEngine")]
+fn builtin_vignette_engine(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(RValue::Null)
 }
 
 // endregion

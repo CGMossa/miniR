@@ -72,6 +72,62 @@ fn builtin_dot_call(
 
 // endregion
 
+// region: .External
+
+/// .External — invoke a compiled C function via the .External calling convention.
+///
+/// Like .Call but passes all arguments as a single pairlist SEXP.
+/// The C function signature is `SEXP fn(SEXP args)`.
+///
+/// @param .NAME character string naming the C function
+/// @param ... arguments passed to the native function
+/// @return the value returned by the native function
+/// @namespace base
+#[interpreter_builtin(name = ".External")]
+fn builtin_dot_external(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    ctx: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if args.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            ".External requires at least one argument (the function name)".to_string(),
+        ));
+    }
+
+    let symbol_name =
+        match &args[0] {
+            RValue::Vector(rv) => rv.as_character_scalar().ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    ".External: first argument must be a character string".to_string(),
+                )
+            })?,
+            RValue::List(list) => list
+                .values
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("name"))
+                .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+                .ok_or_else(|| {
+                    RError::new(
+                        RErrorKind::Argument,
+                        ".External: native symbol reference must have a $name field".to_string(),
+                    )
+                })?,
+            _ => return Err(RError::new(
+                RErrorKind::Argument,
+                ".External: first argument must be a character string or native symbol reference"
+                    .to_string(),
+            )),
+        };
+
+    let native_args = &args[1..];
+    ctx.interpreter().dot_external(&symbol_name, native_args)
+}
+
+// endregion
+
 // region: .C
 
 /// .C — invoke a compiled C function via the .C calling convention.
