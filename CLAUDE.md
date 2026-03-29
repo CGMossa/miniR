@@ -132,7 +132,7 @@ Four feature profiles for different development scenarios:
 - **Lateral approach**: audit ALL packages at once for missing C API functions, fix in batches — don't chase one package at a time
 - Test native packages: `MINIR_INCLUDE=include ./target/release/r -e "Sys.setenv(R_LIBS='cran'); library(pkg)"`
 - Find missing C API: `cc -fsyntax-only -I include -I include/miniR -Werror=implicit-function-declaration cran/pkg/src/*.c`
-- **macOS has no `timeout` command** — use background process + sleep + kill pattern instead, or `perl -e 'alarm(N); exec @ARGV' N cmd...`
+- **macOS has no `timeout` command** — use `gtimeout` from coreutils (`brew install coreutils`), or background process + sleep + kill pattern
 
 ## CI
 
