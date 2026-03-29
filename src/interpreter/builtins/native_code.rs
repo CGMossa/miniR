@@ -67,6 +67,14 @@ fn builtin_dot_call(
     // Remaining args are passed to the native function
     let native_args = &args[1..];
 
+    // Check for rlang FFI functions that we handle natively in Rust.
+    // This bypasses rlang's C code which uses r_abort() -> while(1) hang.
+    if let Some(result) =
+        crate::interpreter::builtins::rlang_ffi::try_dispatch(&symbol_name, native_args)
+    {
+        return result;
+    }
+
     ctx.interpreter().dot_call(&symbol_name, native_args)
 }
 

@@ -29,6 +29,8 @@ mod pre_eval;
 pub mod progress;
 #[cfg(feature = "random")]
 mod random;
+#[cfg(feature = "native")]
+pub mod rlang_ffi;
 mod s4;
 pub mod serialize;
 mod stats;
