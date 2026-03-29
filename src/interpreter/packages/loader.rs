@@ -249,6 +249,14 @@ impl Interpreter {
         // Populate imports into the namespace env
         self.populate_imports(&namespace, &namespace_env)?;
 
+        // Initialize global environment SEXPs (R_BaseEnv, R_GlobalEnv) so C code
+        // that references them during init gets valid ENVSXP pointers.
+        #[cfg(feature = "native")]
+        {
+            let base = self.base_env();
+            crate::interpreter::native::runtime::init_global_envs(&base, &self.global_env);
+        }
+
         // Load native code BEFORE sourcing R files — R code may reference
         // native symbols (e.g. .Call(C_func, ...)) that need to be bound first.
         #[cfg(feature = "native")]

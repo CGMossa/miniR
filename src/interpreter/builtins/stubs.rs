@@ -420,7 +420,25 @@ fn interp_is_namespace(
 #[builtin(name = "topenv", min_args = 0)]
 fn builtin_topenv(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     match args.first() {
-        Some(RValue::Environment(env)) => Ok(RValue::Environment(env.clone())),
+        Some(RValue::Environment(env)) => {
+            // Walk up the parent chain to find a namespace, global, or base env
+            let mut current = env.clone();
+            loop {
+                if let Some(name) = current.name() {
+                    if name.starts_with("namespace:")
+                        || name == "R_GlobalEnv"
+                        || name == "base"
+                        || name.starts_with("package:")
+                    {
+                        return Ok(RValue::Environment(current));
+                    }
+                }
+                match current.parent() {
+                    Some(parent) => current = parent,
+                    None => return Ok(RValue::Environment(current)),
+                }
+            }
+        }
         _ => Ok(RValue::Null),
     }
 }

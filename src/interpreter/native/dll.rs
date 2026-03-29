@@ -577,20 +577,26 @@ impl Interpreter {
         // Free runtime allocations (result SEXP + any intermediates)
         super::runtime::free_allocs();
 
-        // Free Rust-allocated input SEXPs. External pointers (wrapped as
-        // lists with .sexp_ptr attr) pass the raw SEXP directly — skip freeing those.
+        // Free Rust-allocated input SEXPs. Skip external pointers and environments.
         unsafe {
             for (s, arg) in sexp_args.into_iter().zip(args.iter()) {
-                if let RValue::List(list) = arg {
-                    if list
-                        .attrs
-                        .as_ref()
-                        .is_some_and(|a| a.contains_key(".sexp_ptr"))
+                match arg {
+                    RValue::List(list)
+                        if list
+                            .attrs
+                            .as_ref()
+                            .is_some_and(|a| a.contains_key(".sexp_ptr")) =>
                     {
                         continue; // external pointer — owned by C
                     }
+                    RValue::Environment(_) => {
+                        // Don't free the Environment box — it's shared via Rc
+                        // Just free the SexpRec shell
+                        (*s).data = std::ptr::null_mut();
+                        sexp::free_sexp(s);
+                    }
+                    _ => sexp::free_sexp(s),
                 }
-                sexp::free_sexp(s);
             }
         }
 

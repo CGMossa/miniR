@@ -25,6 +25,7 @@ extern "C" {
 pub const NILSXP: u8 = 0;
 pub const SYMSXP: u8 = 1;
 pub const LISTSXP: u8 = 2;
+pub const ENVSXP: u8 = 4;
 pub const LANGSXP: u8 = 6;
 pub const CHARSXP: u8 = 9;
 pub const LGLSXP: u8 = 10;
@@ -294,6 +295,11 @@ pub unsafe fn free_sexp(s: Sexp) {
                     }
                 }
                 free(rec.data);
+            }
+            ENVSXP => {
+                // ENVSXP data is a Box<Environment> allocated by Rust — drop it properly
+                let env_ptr = rec.data as *mut crate::interpreter::environment::Environment;
+                drop(Box::from_raw(env_ptr));
             }
             _ => {
                 // REALSXP, INTSXP, LGLSXP, RAWSXP, CHARSXP — simple data buffer

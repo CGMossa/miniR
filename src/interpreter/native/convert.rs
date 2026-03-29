@@ -26,11 +26,9 @@ pub fn rvalue_to_sexp(val: &RValue) -> Sexp {
             s
         }
         RValue::List(list) => list_to_sexp(list),
-        // Functions, environments, language objects, promises can't be passed to C.
-        // Return R_NilValue as a safe fallback.
-        RValue::Function(_) | RValue::Environment(_) | RValue::Language(_) | RValue::Promise(_) => {
-            sexp::mk_null()
-        }
+        RValue::Environment(env) => env_to_sexp(env),
+        // Functions, language objects, promises can't be passed to C.
+        RValue::Function(_) | RValue::Language(_) | RValue::Promise(_) => sexp::mk_null(),
     }
 }
 
@@ -171,6 +169,38 @@ fn list_to_sexp(list: &RList) -> Sexp {
     s
 }
 
+/// Convert an Environment to an ENVSXP.
+///
+/// Stores a cloned Environment handle (Rc) as a leaked Box in the SEXP's data pointer.
+/// C code can pass this opaque SEXP to Rf_findVar, Rf_defineVar, etc. which
+/// extract it via `env_from_sexp`.
+fn env_to_sexp(env: &crate::interpreter::environment::Environment) -> Sexp {
+    let boxed = Box::new(env.clone());
+    let ptr = Box::into_raw(boxed);
+    unsafe {
+        let s = sexp::alloc_vector(sexp::ENVSXP, 0);
+        (*s).data = ptr as *mut u8;
+        s
+    }
+}
+
+/// Extract an Environment from an ENVSXP. Returns None if the SEXP isn't an ENVSXP.
+///
+/// # Safety
+/// `s` must be a valid SEXP pointer.
+pub unsafe fn env_from_sexp(s: Sexp) -> Option<crate::interpreter::environment::Environment> {
+    if s.is_null() {
+        return None;
+    }
+    unsafe {
+        if (*s).stype != sexp::ENVSXP || (*s).data.is_null() {
+            return None;
+        }
+        let env_ptr = (*s).data as *const crate::interpreter::environment::Environment;
+        Some((*env_ptr).clone())
+    }
+}
+
 /// Apply RValue attributes (dim, names, class, dimnames, etc.) to a SEXP.
 fn apply_attrs_to_sexp(s: Sexp, attrs: &indexmap::IndexMap<String, RValue>) {
     use super::runtime;
@@ -217,6 +247,12 @@ pub unsafe fn sexp_to_rvalue(s: Sexp) -> RValue {
         sexp::CHARSXP => {
             let st = sexp::char_data(s);
             RValue::vec(Vector::Character(vec![Some(st.to_string())].into()))
+        }
+        sexp::ENVSXP => {
+            if let Some(env) = env_from_sexp(s) {
+                return RValue::Environment(env);
+            }
+            return RValue::Null;
         }
         // External pointer — wrap as a List with a ".sexp_ptr" attribute
         // storing the raw address as an integer. This allows round-trips

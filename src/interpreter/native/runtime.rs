@@ -85,6 +85,22 @@ pub fn set_callbacks(callbacks: InterpreterCallbacks) {
     });
 }
 
+/// Initialize the global R_BaseEnv, R_GlobalEnv, R_EmptyEnv SEXPs from interpreter envs.
+/// Called once from the package loader before the first .Call.
+pub fn init_global_envs(
+    base_env: &crate::interpreter::environment::Environment,
+    global_env: &crate::interpreter::environment::Environment,
+) {
+    use super::convert::rvalue_to_sexp;
+    use crate::interpreter::value::RValue;
+    unsafe {
+        R_BaseEnv = rvalue_to_sexp(&RValue::Environment(base_env.clone()));
+        R_GlobalEnv = rvalue_to_sexp(&RValue::Environment(global_env.clone()));
+        R_BaseNamespace = R_BaseEnv;
+        // R_EmptyEnv stays NULL — it represents an empty env with no parent
+    }
+}
+
 /// Decompile a pairlist-style LANGSXP into R source text.
 ///
 /// Example: `Rf_lang3(Rf_install("::"), Rf_install("base"), Rf_install("stop"))`
@@ -1688,8 +1704,17 @@ pub extern "C" fn Rf_findVar(sym: Sexp, env: Sexp) -> Sexp {
         return unsafe { R_UnboundValue };
     }
 
-    // If env is a C-level ENVSXP, search its bindings pairlist
-    if !env.is_null() && unsafe { (*env).stype } == 4 {
+    // If env is an ENVSXP, try to extract the miniR Environment and look up in it
+    if !env.is_null() && unsafe { (*env).stype } == sexp::ENVSXP {
+        let var_name = unsafe { sexp::char_data(sym) };
+        if let Some(e) = unsafe { super::convert::env_from_sexp(env) } {
+            if let Some(val) = e.get(var_name) {
+                let s = super::convert::rvalue_to_sexp(&val);
+                track(s);
+                return s;
+            }
+        }
+        // Also check pairlist-style bindings (C-created ENVSXP)
         let mut node = unsafe { (*env).attrib };
         while !node.is_null() && unsafe { (*node).stype } == sexp::LISTSXP {
             let pd = unsafe { (*node).data as *const sexp::PairlistData };
@@ -2750,9 +2775,15 @@ pub extern "C" fn Rf_defineVar(sym: Sexp, val: Sexp, env: Sexp) {
         return;
     }
 
-    // If env is a C-level ENVSXP, store binding in its attrib pairlist
-    if !env.is_null() && unsafe { (*env).stype } == 4 {
-        // ENVSXP — add (sym, val) to the bindings pairlist
+    // If env is an ENVSXP, try miniR Environment first, then pairlist fallback
+    if !env.is_null() && unsafe { (*env).stype } == sexp::ENVSXP {
+        let var_name = unsafe { sexp::char_data(sym) };
+        if let Some(e) = unsafe { super::convert::env_from_sexp(env) } {
+            let rval = unsafe { super::convert::sexp_to_rvalue(val) };
+            e.set(var_name.to_string(), rval);
+            return;
+        }
+        // Pairlist fallback for C-created ENVSXP
         let node = Rf_cons(val, unsafe { (*env).attrib });
         unsafe {
             let pd = (*node).data as *mut sexp::PairlistData;
@@ -2851,10 +2882,15 @@ pub extern "C" fn R_existsVarInFrame(_env: Sexp, _sym: Sexp) -> c_int {
     0
 }
 #[no_mangle]
-pub extern "C" fn R_IsNamespaceEnv(_env: Sexp) -> c_int {
-    // In miniR, namespace environments passed to .Call are always valid namespaces.
-    // The SEXP is opaque (R_NilValue for envs) so we can't inspect it — return 1.
-    1
+pub extern "C" fn R_IsNamespaceEnv(env: Sexp) -> c_int {
+    if let Some(e) = unsafe { super::convert::env_from_sexp(env) } {
+        if let Some(name) = e.name() {
+            if name.starts_with("namespace:") {
+                return 1;
+            }
+        }
+    }
+    0
 }
 #[no_mangle]
 pub extern "C" fn R_lsInternal3(_env: Sexp, _all: c_int, _sorted: c_int) -> Sexp {
