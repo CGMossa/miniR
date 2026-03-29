@@ -45,6 +45,10 @@ struct RuntimeState {
     alloc_head: *mut AllocNode,
     protect_stack: Vec<Sexp>,
     callbacks: InterpreterCallbacks,
+    /// Stash for parsed RValues that need to survive the SEXP round-trip.
+    /// R_ParseVector stores parsed Language values here; Rf_eval retrieves them.
+    /// LANGSXP nodes created by R_ParseVector carry a stash index in their data pointer.
+    rvalue_stash: Vec<crate::interpreter::value::RValue>,
 }
 
 thread_local! {
@@ -52,7 +56,26 @@ thread_local! {
         alloc_head: ptr::null_mut(),
         protect_stack: Vec::with_capacity(128),
         callbacks: InterpreterCallbacks::default(),
+        rvalue_stash: Vec::new(),
     });
+}
+
+/// Stash an RValue and return its index. Used by R_ParseVector.
+fn stash_rvalue(val: crate::interpreter::value::RValue) -> usize {
+    STATE.with(|state| {
+        let mut st = state.borrow_mut();
+        let idx = st.rvalue_stash.len();
+        st.rvalue_stash.push(val);
+        idx
+    })
+}
+
+/// Retrieve a stashed RValue by index. Used by Rf_eval.
+fn get_stashed_rvalue(idx: usize) -> Option<crate::interpreter::value::RValue> {
+    STATE.with(|state| {
+        let st = state.borrow();
+        st.rvalue_stash.get(idx).cloned()
+    })
 }
 
 /// Set interpreter callbacks for the current .Call invocation.
@@ -67,6 +90,7 @@ pub fn clear_callbacks() {
     STATE.with(|state| {
         let mut st = state.borrow_mut();
         st.callbacks = InterpreterCallbacks::default();
+        st.rvalue_stash.clear();
     });
 }
 
@@ -1258,6 +1282,26 @@ pub extern "C" fn Rf_ncols(x: Sexp) -> c_int {
 pub extern "C" fn Rf_eval(expr: Sexp, _env: Sexp) -> Sexp {
     if expr.is_null() {
         return unsafe { R_NilValue };
+    }
+
+    // Stashed LANGSXP from R_ParseVector (length == -1 sentinel) —
+    // retrieve the stashed RValue and eval directly via the interpreter callback.
+    if unsafe { (*expr).stype == sexp::LANGSXP && (*expr).length == -1 } {
+        let idx = unsafe { (*expr).data as usize };
+        if let Some(stashed) = get_stashed_rvalue(idx) {
+            let result = STATE.with(|state| {
+                let st = state.borrow();
+                st.callbacks.eval_expr.map(|eval_fn| eval_fn(&stashed))
+            });
+            return match result {
+                Some(Ok(val)) => {
+                    let s = super::convert::rvalue_to_sexp(&val);
+                    track(s);
+                    s
+                }
+                _ => unsafe { R_NilValue },
+            };
+        }
     }
 
     // Convert SEXP to RValue for the callback
@@ -2802,9 +2846,17 @@ pub extern "C" fn R_ParseVector(
                     *parse_status = 1;
                 } // PARSE_OK
             }
-            // Wrap in a length-1 VECSXP — r_parse() extracts element 0
-            let expr_sexp = super::convert::rvalue_to_sexp(&val);
+            // Stash the parsed RValue so Rf_eval can retrieve it.
+            // Create a LANGSXP with the stash index encoded in the data pointer.
+            let idx = stash_rvalue(val);
+            let expr_sexp = sexp::alloc_vector(sexp::LANGSXP, 0);
+            unsafe {
+                // Mark as stashed LANGSXP with length=-1 sentinel
+                (*expr_sexp).length = -1;
+                (*expr_sexp).data = idx as *mut u8;
+            }
             track(expr_sexp);
+            // Wrap in a length-1 VECSXP — r_parse() extracts element 0
             let list = Rf_allocVector(sexp::VECSXP as c_int, 1);
             unsafe {
                 let elts = (*list).data as *mut Sexp;

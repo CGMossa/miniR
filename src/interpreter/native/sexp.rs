@@ -25,6 +25,7 @@ extern "C" {
 pub const NILSXP: u8 = 0;
 pub const SYMSXP: u8 = 1;
 pub const LISTSXP: u8 = 2;
+pub const LANGSXP: u8 = 6;
 pub const CHARSXP: u8 = 9;
 pub const LGLSXP: u8 = 10;
 pub const INTSXP: u8 = 13;
