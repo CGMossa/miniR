@@ -18,7 +18,13 @@ use crate::interpreter::value::*;
 pub fn rvalue_to_sexp(val: &RValue) -> Sexp {
     match val {
         RValue::Null => sexp::mk_null(),
-        RValue::Vector(rv) => vector_to_sexp(&rv.inner),
+        RValue::Vector(rv) => {
+            let s = vector_to_sexp(&rv.inner);
+            if let Some(attrs) = &rv.attrs {
+                apply_attrs_to_sexp(s, attrs);
+            }
+            s
+        }
         RValue::List(list) => list_to_sexp(list),
         // Functions, environments, language objects can't be passed to C.
         // Return R_NilValue as a safe fallback.
@@ -147,7 +153,40 @@ fn list_to_sexp(list: &RList) -> Sexp {
             *elts.add(i) = rvalue_to_sexp(val);
         }
     }
+
+    // Set names if any element has a name
+    let has_names = list.values.iter().any(|(n, _)| n.is_some());
+    if has_names {
+        let names: Vec<Option<String>> = list.values.iter().map(|(n, _)| n.clone()).collect();
+        let names_sexp = character_to_sexp(&Character(names));
+        super::runtime::Rf_setAttrib(s, unsafe { super::runtime::R_NamesSymbol }, names_sexp);
+    }
+
+    // Apply other attributes (class, etc.)
+    if let Some(attrs) = &list.attrs {
+        apply_attrs_to_sexp(s, attrs);
+    }
     s
+}
+
+/// Apply RValue attributes (dim, names, class, dimnames, etc.) to a SEXP.
+fn apply_attrs_to_sexp(s: Sexp, attrs: &indexmap::IndexMap<String, RValue>) {
+    use super::runtime;
+    for (key, val) in attrs {
+        let attr_sexp = rvalue_to_sexp(val);
+        let name_sym = match key.as_str() {
+            "dim" => unsafe { runtime::R_DimSymbol },
+            "names" => unsafe { runtime::R_NamesSymbol },
+            "dimnames" => unsafe { runtime::R_DimNamesSymbol },
+            "class" => unsafe { runtime::R_ClassSymbol },
+            _ => runtime::Rf_install(
+                std::ffi::CString::new(key.as_str())
+                    .unwrap_or_default()
+                    .as_ptr(),
+            ),
+        };
+        runtime::Rf_setAttrib(s, name_sym, attr_sexp);
+    }
 }
 
 // endregion
