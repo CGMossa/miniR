@@ -635,11 +635,15 @@ fn promise_functions_return_null() {
 
 #[test]
 fn unknown_ffi_returns_none() {
+    // Unknown ffi_ symbols are caught by the catch-all and return NULL
+    // (prevents segfaults from uninitialized rlang C code)
     let result = rlang_ffi::try_dispatch("ffi_unknown_function", &[]);
-    assert!(
-        result.is_none(),
-        "unknown FFI should fall through to C code"
-    );
+    assert!(result.is_some(), "unknown ffi_ should be caught by catch-all");
+    assert!(matches!(result.unwrap(), Ok(RValue::Null)));
+
+    // Non-ffi_ symbols still fall through to C code
+    let result = rlang_ffi::try_dispatch("some_other_function", &[]);
+    assert!(result.is_none(), "non-ffi_ should fall through to C code");
 }
 
 // endregion

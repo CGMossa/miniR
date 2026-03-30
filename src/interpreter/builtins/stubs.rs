@@ -169,11 +169,8 @@ fn interp_has_method(
 fn interp_set_old_class(
     _args: &[RValue],
     _named: &[(String, RValue)],
-    context: &BuiltinContext,
+    _context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    context
-        .interpreter()
-        .write_stderr("[miniR stub] setOldClass() is a no-op in miniR\n");
     Ok(RValue::Null)
 }
 

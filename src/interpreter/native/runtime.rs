@@ -1317,19 +1317,27 @@ pub extern "C" fn R_GetCCallable(package: *const c_char, name: *const c_char) ->
         return ptr;
     }
     // If rlang CCallable wasn't registered (because we skip C init),
-    // return a stub that returns NULL to prevent segfaults
+    // return a stub to prevent segfaults from NULL function pointers.
     if pkg == "rlang" {
         tracing::debug!(name = nm, "returning stub for unregistered rlang CCallable");
-        return rlang_ccallable_stub as *const ();
+        // Functions returning const char* need a string, others need a SEXP.
+        // Dispatch based on known function names.
+        if nm.contains("type_friendly") || nm.contains("format_error_arg") {
+            return rlang_ccallable_str_stub as *const ();
+        }
+        return rlang_ccallable_sexp_stub as *const ();
     }
     ptr::null()
 }
 
-/// Stub for rlang CCallable functions.
-/// Returns a valid C string pointer (not NULL) so callers that expect
-/// const char* (like rlang_obj_type_friendly_full) don't segfault.
-extern "C" fn rlang_ccallable_stub() -> *const c_char {
+/// Stub for rlang CCallable functions that return `const char*`.
+extern "C" fn rlang_ccallable_str_stub() -> *const c_char {
     c"<unknown>".as_ptr()
+}
+
+/// Stub for rlang CCallable functions that return `SEXP`.
+extern "C" fn rlang_ccallable_sexp_stub() -> Sexp {
+    unsafe { R_NilValue }
 }
 
 // endregion
