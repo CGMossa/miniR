@@ -61,7 +61,7 @@ thread_local! {
 }
 
 /// Stash an RValue and return its index. Used by R_ParseVector.
-fn stash_rvalue(val: crate::interpreter::value::RValue) -> usize {
+pub(super) fn stash_rvalue(val: crate::interpreter::value::RValue) -> usize {
     STATE.with(|state| {
         let mut st = state.borrow_mut();
         let idx = st.rvalue_stash.len();
@@ -211,7 +211,7 @@ pub fn clear_callbacks() {
     });
 }
 
-fn track(s: Sexp) {
+pub(super) fn track(s: Sexp) {
     let node = Box::into_raw(Box::new(AllocNode {
         sexp: s,
         next: ptr::null_mut(),

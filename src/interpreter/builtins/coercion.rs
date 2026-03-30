@@ -380,6 +380,100 @@ fn builtin_as_name(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     )))
 }
 
+/// Convert a list to a call object (Language).
+///
+/// `as.call(list(f, a, b))` creates the call `f(a, b)`.
+/// The first element is the function, remaining are arguments.
+///
+/// @param x a list
+/// @return a call (Language) object
+/// @namespace base
+#[builtin(name = "as.call", min_args = 1)]
+fn builtin_as_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    use crate::parser::ast::{Arg, Expr};
+    let list = match args.first() {
+        Some(RValue::List(l)) => l,
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Argument,
+                "as.call: argument must be a list".to_string(),
+            ))
+        }
+    };
+    if list.values.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "as.call: list must have at least one element (the function)".to_string(),
+        ));
+    }
+
+    // First element is the function
+    let (_, func_val) = &list.values[0];
+    let func_expr = rvalue_to_expr(func_val);
+
+    // Remaining elements are arguments
+    let call_args: Vec<Arg> = list.values[1..]
+        .iter()
+        .map(|(name, val)| Arg {
+            name: name.clone(),
+            value: Some(rvalue_to_expr(val)),
+        })
+        .collect();
+
+    let call = Expr::Call {
+        func: Box::new(func_expr),
+        args: call_args,
+    };
+    Ok(RValue::Language(Language::new(call)))
+}
+
+/// Convert an RValue to an Expr for constructing Language objects.
+fn rvalue_to_expr(val: &RValue) -> crate::parser::ast::Expr {
+    use crate::parser::ast::Expr;
+    match val {
+        RValue::Null => Expr::Null,
+        RValue::Vector(rv) => match &rv.inner {
+            Vector::Logical(l) if l.len() == 1 => match l[0] {
+                Some(true) => Expr::Bool(true),
+                Some(false) => Expr::Bool(false),
+                None => Expr::Na(crate::parser::ast::NaType::Logical),
+            },
+            Vector::Integer(i) if i.len() == 1 => match i.get_opt(0) {
+                Some(v) => Expr::Integer(v),
+                None => Expr::Na(crate::parser::ast::NaType::Integer),
+            },
+            Vector::Double(d) if d.len() == 1 => match d.get_opt(0) {
+                Some(v) => Expr::Double(v),
+                None => Expr::Na(crate::parser::ast::NaType::Real),
+            },
+            Vector::Character(c) if c.len() == 1 => match &c[0] {
+                Some(s) => Expr::String(s.clone()),
+                None => Expr::Na(crate::parser::ast::NaType::Character),
+            },
+            _ => Expr::Null,
+        },
+        RValue::Language(lang) => lang.inner.as_ref().clone(),
+        RValue::Function(_) => Expr::Symbol("<function>".to_string()),
+        _ => Expr::Null,
+    }
+}
+
+/// Convert a list to a pairlist. In miniR, pairlists are represented as lists.
+///
+/// @param x a list or other object
+/// @return a pairlist (represented as a list in miniR)
+/// @namespace base
+#[builtin(name = "as.pairlist", min_args = 1)]
+fn builtin_as_pairlist(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    // In miniR, pairlists are just lists
+    match args.first() {
+        Some(RValue::List(l)) => Ok(RValue::List(l.clone())),
+        Some(RValue::Null) => Ok(RValue::Null),
+        Some(other) => Ok(other.clone()),
+        None => Ok(RValue::Null),
+    }
+}
+
 /// Look up a function by name or return it if already a function.
 ///
 /// @param FUN function or character string naming a function

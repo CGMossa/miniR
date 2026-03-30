@@ -27,8 +27,9 @@ pub fn rvalue_to_sexp(val: &RValue) -> Sexp {
         }
         RValue::List(list) => list_to_sexp(list),
         RValue::Environment(env) => env_to_sexp(env),
-        // Functions, language objects, promises can't be passed to C.
-        RValue::Function(_) | RValue::Language(_) | RValue::Promise(_) => sexp::mk_null(),
+        RValue::Language(lang) => language_to_sexp(lang),
+        // Functions, promises can't be meaningfully passed to C.
+        RValue::Function(_) | RValue::Promise(_) => sexp::mk_null(),
     }
 }
 
@@ -167,6 +168,85 @@ fn list_to_sexp(list: &RList) -> Sexp {
         apply_attrs_to_sexp(s, attrs);
     }
     s
+}
+
+/// Convert a Language (call) to a LANGSXP pairlist.
+///
+/// `Expr::Call { func, args }` becomes `Rf_lcons(func_sexp, Rf_cons(arg1, Rf_cons(arg2, ...)))`.
+/// Other expressions are stashed as sentinel LANGSXPs for Rf_eval round-trips.
+fn language_to_sexp(lang: &crate::interpreter::value::Language) -> Sexp {
+    use crate::parser::ast::Expr;
+
+    match lang.inner.as_ref() {
+        Expr::Call { func, args } => {
+            // Convert function expression to SEXP (usually a symbol)
+            let func_sexp = expr_to_sexp(func);
+            // Build argument pairlist in reverse
+            let mut arg_list = unsafe { super::runtime::R_NilValue };
+            for arg in args.iter().rev() {
+                let val_sexp = match &arg.value {
+                    Some(expr) => expr_to_sexp(expr),
+                    None => unsafe { super::runtime::R_NilValue },
+                };
+                let node = super::runtime::Rf_cons(val_sexp, arg_list);
+                // Set tag if named
+                if let Some(name) = &arg.name {
+                    let tag = super::runtime::Rf_install(
+                        std::ffi::CString::new(name.as_str())
+                            .unwrap_or_default()
+                            .as_ptr(),
+                    );
+                    unsafe {
+                        let pd = (*node).data as *mut sexp::PairlistData;
+                        if !pd.is_null() {
+                            (*pd).tag = tag;
+                        }
+                    }
+                }
+                arg_list = node;
+            }
+            super::runtime::Rf_lcons(func_sexp, arg_list)
+        }
+        // For non-call expressions, stash in the thread-local for Rf_eval round-trips
+        _ => {
+            let idx = super::runtime::stash_rvalue(RValue::Language(lang.clone()));
+            let s = sexp::alloc_vector(sexp::LANGSXP, 0);
+            unsafe {
+                (*s).length = -1; // sentinel
+                (*s).data = idx as *mut u8;
+            }
+            super::runtime::track(s);
+            s
+        }
+    }
+}
+
+/// Convert an Expr to a SEXP for building LANGSXP pairlists.
+fn expr_to_sexp(expr: &crate::parser::ast::Expr) -> Sexp {
+    use crate::parser::ast::Expr;
+    match expr {
+        Expr::Symbol(name) => super::runtime::Rf_install(
+            std::ffi::CString::new(name.as_str())
+                .unwrap_or_default()
+                .as_ptr(),
+        ),
+        Expr::Null => unsafe { super::runtime::R_NilValue },
+        Expr::Bool(true) => super::runtime::Rf_ScalarLogical(1),
+        Expr::Bool(false) => super::runtime::Rf_ScalarLogical(0),
+        Expr::Integer(i) => super::runtime::Rf_ScalarInteger(*i as std::os::raw::c_int),
+        Expr::Double(d) => super::runtime::Rf_ScalarReal(*d),
+        Expr::String(s) => super::runtime::Rf_mkString(
+            std::ffi::CString::new(s.as_str())
+                .unwrap_or_default()
+                .as_ptr(),
+        ),
+        Expr::Call { .. } => {
+            // Nested call — recursively convert
+            let lang = crate::interpreter::value::Language::new(expr.clone());
+            language_to_sexp(&lang)
+        }
+        _ => unsafe { super::runtime::R_NilValue },
+    }
 }
 
 /// Convert an Environment to an ENVSXP.
