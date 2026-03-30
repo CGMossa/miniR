@@ -1628,6 +1628,48 @@ pub static mut R_EmptyEnv: Sexp = ptr::null_mut();
 #[no_mangle]
 pub static mut R_MissingArg: Sexp = ptr::null_mut();
 
+// R_PreserveObject — mark SEXP and its children as persistent (survive free_allocs)
+#[no_mangle]
+pub extern "C" fn R_PreserveObject(x: Sexp) {
+    if x.is_null() {
+        return;
+    }
+    unsafe {
+        if (*x).flags & 0x01 != 0 {
+            return; // already preserved — avoid infinite recursion
+        }
+        (*x).flags |= 0x01;
+
+        // Recursively preserve pairlist children (LANGSXP/LISTSXP chains)
+        if matches!((*x).stype, sexp::LISTSXP | sexp::LANGSXP) && !(*x).data.is_null() {
+            let pd = (*x).data as *const PairlistData;
+            R_PreserveObject((*pd).car);
+            R_PreserveObject((*pd).cdr);
+        }
+        // Preserve VECSXP elements
+        if (*x).stype == sexp::VECSXP && !(*x).data.is_null() {
+            let elts = (*x).data as *const Sexp;
+            for i in 0..(*x).length.max(0) as usize {
+                R_PreserveObject(*elts.add(i));
+            }
+        }
+        // Preserve attributes
+        if !(*x).attrib.is_null() {
+            R_PreserveObject((*x).attrib);
+        }
+    }
+}
+
+// R_ReleaseObject — unmark SEXP as persistent
+#[no_mangle]
+pub extern "C" fn R_ReleaseObject(x: Sexp) {
+    if !x.is_null() {
+        unsafe {
+            (*x).flags &= !0x01;
+        }
+    }
+}
+
 // MARK_NOT_MUTABLE — no-op in miniR
 #[no_mangle]
 pub extern "C" fn MARK_NOT_MUTABLE(_x: Sexp) {}
@@ -3705,40 +3747,13 @@ pub extern "C" fn R_UnwindProtect(
 /// Free all tracked allocations (called by Rust after .Call).
 /// Persistent SEXPs (external pointers, flags=1) are kept alive.
 pub fn free_allocs() {
+    // Temporarily leak all SEXP allocations — C code may store pointers
+    // to tracked SEXPs in static variables (e.g. magrittr's new_env_call).
+    // Freeing them causes use-after-free crashes.
+    // TODO: implement proper SEXP lifetime management (reference counting or GC)
     STATE.with(|state| {
         let mut st = state.borrow_mut();
-        let mut node = st.alloc_head;
-        let mut persistent_head: *mut AllocNode = ptr::null_mut();
-
-        // First pass: free data, separate persistent
-        while !node.is_null() {
-            let next = unsafe { (*node).next };
-            let s = unsafe { (*node).sexp };
-            if !s.is_null() && unsafe { (*s).flags } == 1 {
-                // Persistent — keep
-                unsafe {
-                    (*node).next = persistent_head;
-                }
-                persistent_head = node;
-            } else if !s.is_null() {
-                unsafe {
-                    if !(*s).data.is_null() {
-                        free((*s).data);
-                    }
-                    free(s as *mut u8);
-                }
-                unsafe {
-                    drop(Box::from_raw(node));
-                }
-            } else {
-                unsafe {
-                    drop(Box::from_raw(node));
-                }
-            }
-            node = next;
-        }
-
-        st.alloc_head = persistent_head;
+        st.alloc_head = ptr::null_mut();
         st.protect_stack.clear();
     });
 }

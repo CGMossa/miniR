@@ -733,10 +733,10 @@ int _minir_get_registered_calls(_minir_registered_call **out);
 #define PROTECT(s)      Rf_protect(s)
 #define UNPROTECT(n)    Rf_unprotect(n)
 
-/* R_PreserveObject / R_ReleaseObject -- no-ops in miniR (no GC).
-   Must be real functions (not macros) for C++ ::R_PreserveObject() calls. */
-static inline void R_PreserveObject(SEXP x) { (void)x; }
-static inline void R_ReleaseObject(SEXP x)  { (void)x; }
+/* R_PreserveObject / R_ReleaseObject — mark SEXPs as persistent.
+   Preserved SEXPs survive .Call cleanup (not freed by free_allocs). */
+void R_PreserveObject(SEXP x);
+void R_ReleaseObject(SEXP x);
 
 /* Rf_ aliases that are always available (not affected by R_NO_REMAP) */
 #define Rf_lazy_duplicate Rf_shallow_duplicate
