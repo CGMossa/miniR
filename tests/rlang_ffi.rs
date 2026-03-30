@@ -638,7 +638,10 @@ fn unknown_ffi_returns_none() {
     // Unknown ffi_ symbols are caught by the catch-all and return NULL
     // (prevents segfaults from uninitialized rlang C code)
     let result = rlang_ffi::try_dispatch("ffi_unknown_function", &[]);
-    assert!(result.is_some(), "unknown ffi_ should be caught by catch-all");
+    assert!(
+        result.is_some(),
+        "unknown ffi_ should be caught by catch-all"
+    );
     assert!(matches!(result.unwrap(), Ok(RValue::Null)));
 
     // Non-ffi_ symbols still fall through to C code

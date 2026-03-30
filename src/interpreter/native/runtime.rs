@@ -1309,9 +1309,10 @@ pub extern "C" fn R_GetCCallable(package: *const c_char, name: *const c_char) ->
     let pkg = unsafe { CStr::from_ptr(package) }.to_str().unwrap_or("");
     let nm = unsafe { CStr::from_ptr(name) }.to_str().unwrap_or("");
     let reg = CCALLABLE.lock().expect("lock ccallable");
+    // rfind: later registrations (our Rust overrides) take precedence
     if let Some(ptr) = reg
         .iter()
-        .find(|(p, n, _)| p == pkg && n == nm)
+        .rfind(|(p, n, _)| p == pkg && n == nm)
         .map(|(_, _, ptr)| ptr.0)
     {
         return ptr;
