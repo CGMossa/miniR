@@ -1309,10 +1309,27 @@ pub extern "C" fn R_GetCCallable(package: *const c_char, name: *const c_char) ->
     let pkg = unsafe { CStr::from_ptr(package) }.to_str().unwrap_or("");
     let nm = unsafe { CStr::from_ptr(name) }.to_str().unwrap_or("");
     let reg = CCALLABLE.lock().expect("lock ccallable");
-    reg.iter()
+    if let Some(ptr) = reg
+        .iter()
         .find(|(p, n, _)| p == pkg && n == nm)
         .map(|(_, _, ptr)| ptr.0)
-        .unwrap_or(ptr::null())
+    {
+        return ptr;
+    }
+    // If rlang CCallable wasn't registered (because we skip C init),
+    // return a stub that returns NULL to prevent segfaults
+    if pkg == "rlang" {
+        tracing::debug!(name = nm, "returning stub for unregistered rlang CCallable");
+        return rlang_ccallable_stub as *const ();
+    }
+    ptr::null()
+}
+
+/// Stub for rlang CCallable functions.
+/// Returns a valid C string pointer (not NULL) so callers that expect
+/// const char* (like rlang_obj_type_friendly_full) don't segfault.
+extern "C" fn rlang_ccallable_stub() -> *const c_char {
+    c"<unknown>".as_ptr()
 }
 
 // endregion
