@@ -74,7 +74,7 @@ fn run_expr(source: &str) {
             }
         }
         Err(e) => {
-            eprint_colored(&e.render());
+            eprint_colored(&session.render_error(&e));
             std::process::exit(1);
         }
     }
@@ -86,7 +86,7 @@ fn run_file(filename: &str) {
     match session.eval_file(filename) {
         Ok(_) => {}
         Err(e) => {
-            eprint_colored(&e.render());
+            eprint_colored(&session.render_error(&e));
             std::process::exit(1);
         }
     }
@@ -225,7 +225,7 @@ fn repl_main(session: &mut Session) {
                         }
                     }
                     Err(e) => {
-                        eprint_colored(&e.render());
+                        eprint_colored(&session.render_error(&e));
                     }
                 }
                 // Auto-flush any accumulated grid graphics to the GUI window.

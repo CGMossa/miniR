@@ -437,6 +437,9 @@ fn call_closure(interp: &Interpreter, closure_call: ClosureCall<'_>) -> Result<R
         Err(err) => Err(err),
     };
     run_on_exit_handlers(interp, &call_env);
+    if result.is_err() {
+        interp.capture_traceback();
+    }
     interp.call_stack.borrow_mut().pop();
 
     result
@@ -472,6 +475,9 @@ fn call_closure_lazy(
         Err(err) => Err(err),
     };
     run_on_exit_handlers(interp, &call_env);
+    if result.is_err() {
+        interp.capture_traceback();
+    }
     interp.call_stack.borrow_mut().pop();
 
     result

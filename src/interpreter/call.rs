@@ -9,6 +9,13 @@ use crate::interpreter::value::RValue;
 use crate::interpreter::{DiagnosticStyle, Interpreter};
 use crate::parser::ast::Expr;
 
+/// A single entry in a stack trace — a snapshot of one call frame.
+#[derive(Debug, Clone)]
+pub struct TraceEntry {
+    /// The call expression (e.g., `f(x, y)`). None for anonymous calls.
+    pub call: Option<Expr>,
+}
+
 pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
     match call_expr {
         Some(Expr::Call { args, .. }) => Some(Expr::Call {
@@ -105,5 +112,47 @@ impl Interpreter {
 
     pub(crate) fn current_call_expr(&self) -> Option<Expr> {
         self.current_call_frame().and_then(|frame| frame.call)
+    }
+
+    /// Snapshot the current call stack into `last_traceback`.
+    /// Only captures if `last_traceback` is currently empty (preserves the
+    /// deepest trace as the error bubbles up through multiple frames).
+    pub(crate) fn capture_traceback(&self) {
+        let mut tb = self.last_traceback.borrow_mut();
+        if !tb.is_empty() {
+            return;
+        }
+        let frames = self.call_stack.borrow();
+        *tb = frames
+            .iter()
+            .map(|f| TraceEntry {
+                call: f.call.clone(),
+            })
+            .collect();
+    }
+
+    /// Clear the last traceback (called at top-level eval entry).
+    pub(crate) fn clear_traceback(&self) {
+        self.last_traceback.borrow_mut().clear();
+    }
+
+    /// Format the last traceback for display, R-style (deepest frame first).
+    /// Returns `None` if there is no traceback.
+    pub fn format_traceback(&self) -> Option<String> {
+        use crate::interpreter::value::deparse_expr;
+
+        let tb = self.last_traceback.borrow();
+        if tb.is_empty() {
+            return None;
+        }
+        let mut lines = Vec::with_capacity(tb.len());
+        for (i, entry) in tb.iter().enumerate().rev() {
+            let call_str = match &entry.call {
+                Some(expr) => deparse_expr(expr),
+                None => "<anonymous>".to_string(),
+            };
+            lines.push(format!("{}: {}", i + 1, call_str));
+        }
+        Some(lines.join("\n"))
     }
 }

@@ -25,6 +25,7 @@ use tracing::{debug, info, trace};
 
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
+pub use call::TraceEntry;
 pub(crate) use call::{CallFrame, S3DispatchContext};
 use environment::Environment;
 use value::*;
@@ -183,6 +184,10 @@ pub struct Interpreter {
     color_stderr: bool,
     s3_dispatch_stack: RefCell<Vec<S3DispatchContext>>,
     call_stack: RefCell<Vec<CallFrame>>,
+    /// Snapshot of the call stack at the point the last error occurred.
+    /// Populated by `call_closure`/`call_closure_lazy` when an error propagates,
+    /// cleared at the start of each top-level `eval()`.
+    pub(crate) last_traceback: RefCell<Vec<TraceEntry>>,
     /// Stack of handler sets from withCallingHandlers() calls.
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
     /// Per-interpreter RNG state. Defaults to `SmallRng` (Xoshiro256++) for
@@ -399,6 +404,7 @@ impl Interpreter {
             color_stderr,
             s3_dispatch_stack: RefCell::new(Vec::new()),
             call_stack: RefCell::new(Vec::new()),
+            last_traceback: RefCell::new(Vec::new()),
             condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
             rng: RefCell::new({
@@ -786,6 +792,7 @@ impl Interpreter {
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
+        self.clear_traceback();
         self.eval_in(expr, &self.global_env)
     }
 

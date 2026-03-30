@@ -6197,15 +6197,39 @@ fn builtin_gcinfo(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     Ok(RValue::vec(Vector::Logical(vec![Some(false)].into())))
 }
 
-/// Print the call stack of the last error (stub).
+/// Print the call stack of the last error.
 ///
-/// miniR does not yet maintain a full traceback. Returns invisible NULL.
+/// Displays the call stack that was active when the last error occurred,
+/// numbered from the bottom (outermost) to the top (innermost) of the stack.
 ///
 /// @param x number of calls to display (ignored)
-/// @return invisible NULL
-#[builtin(names = ["traceBack"])]
-fn builtin_traceback(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    Ok(RValue::Null)
+/// @return the traceback as a character vector, invisibly
+#[interpreter_builtin(names = ["traceBack"])]
+fn interp_traceback(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    context.with_interpreter(|interp| {
+        let tb = interp.last_traceback.borrow();
+        if tb.is_empty() {
+            context.write("No traceback available\n");
+            interp.set_invisible();
+            return Ok(RValue::Null);
+        }
+        let mut lines = Vec::with_capacity(tb.len());
+        for (i, entry) in tb.iter().enumerate().rev() {
+            let call_str = match &entry.call {
+                Some(expr) => crate::interpreter::value::deparse_expr(expr),
+                None => "<anonymous>".to_string(),
+            };
+            let line = format!("{}: {}", i + 1, call_str);
+            context.write(&format!("{}\n", line));
+            lines.push(Some(line));
+        }
+        interp.set_invisible();
+        Ok(RValue::vec(Vector::Character(lines.into())))
+    })
 }
 
 /// Set a function for debug-mode single-stepping (stub).

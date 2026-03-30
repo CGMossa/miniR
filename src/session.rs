@@ -200,6 +200,22 @@ impl Session {
         &self.interpreter
     }
 
+    /// Format the last error's traceback for display, or `None` if there is none.
+    pub fn format_last_traceback(&self) -> Option<String> {
+        self.interpreter.format_traceback()
+    }
+
+    /// Render an error with its traceback (if any).
+    pub fn render_error(&self, err: &SessionError) -> String {
+        let base = err.render();
+        if matches!(err, SessionError::Runtime(_)) {
+            if let Some(tb) = self.interpreter.format_traceback() {
+                return format!("{}\nTraceback (most recent call last):\n{}\n", base, tb);
+            }
+        }
+        base
+    }
+
     /// Install a plot sender channel so builtins can send plots to the GUI thread.
     #[cfg(feature = "plot")]
     pub fn set_plot_sender(&self, tx: crate::interpreter::graphics::egui_device::PlotSender) {
