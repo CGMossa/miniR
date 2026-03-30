@@ -665,13 +665,67 @@ impl syn::parse::Parse for StubArgs {
 ///     sd: f64,
 /// }
 /// ```
-#[proc_macro_derive(FromArgs, attributes(default, builtin))]
+#[proc_macro_derive(FromArgs, attributes(default, builtin, name))]
 pub fn derive_from_args(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::DeriveInput);
     match emit_from_args(&input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
+}
+
+/// Classify a field type for codegen purposes.
+enum FieldKind {
+    /// `Dots` — captures all remaining positional args.
+    Dots,
+    /// `Arg<T>` — three-way Missing/Null/Value.
+    ThreeWay,
+    /// `Option<T>` — optional, None if missing.
+    Optional,
+    /// Plain `T` — required or defaulted.
+    Plain,
+}
+
+/// Extract the inner type `T` from `Option<T>` or `Arg<T>`.
+fn extract_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                    return Some(inner);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn classify_field(ty: &Type) -> FieldKind {
+    if type_ends_with(ty, "Dots") {
+        FieldKind::Dots
+    } else if type_ends_with(ty, "RArg") {
+        FieldKind::ThreeWay
+    } else if type_ends_with(ty, "Option") {
+        FieldKind::Optional
+    } else {
+        FieldKind::Plain
+    }
+}
+
+/// Extract `#[name = "na.rm"]` from a field's attributes.
+fn extract_name_attr(field: &syn::Field) -> Option<String> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("name") {
+            if let syn::Meta::NameValue(meta) = &attr.meta {
+                if let syn::Expr::Lit(lit) = &meta.value {
+                    if let syn::Lit::Str(s) = &lit.lit {
+                        return Some(s.value());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
@@ -700,66 +754,185 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
     // Extract struct-level doc comment
     let struct_doc = extract_doc_from_attrs(&input.attrs);
 
-    // Process fields
+    // Classify fields and detect Dots
+    let mut has_dots = false;
+    for field in &fields.named {
+        if matches!(classify_field(&field.ty), FieldKind::Dots) {
+            if has_dots {
+                return Err(syn::Error::new(
+                    field.ident.span(),
+                    "only one Dots field is allowed per struct",
+                ));
+            }
+            has_dots = true;
+        }
+    }
+
+    // Collect named param names (non-Dots fields) for the Dots filter.
+    // These are the R-visible names used for named arg matching.
+    let named_param_r_names: Vec<String> = fields
+        .named
+        .iter()
+        .filter(|f| !matches!(classify_field(&f.ty), FieldKind::Dots))
+        .map(|f| extract_name_attr(f).unwrap_or_else(|| f.ident.as_ref().unwrap().to_string()))
+        .collect();
+
+    // Process fields — generate decoders
     let mut field_decoders = Vec::new();
     let mut field_names_str = Vec::new();
     let mut field_docs = Vec::new();
     let mut min_args = 0usize;
+    let mut non_dots_count = 0usize;
 
     for field in &fields.named {
         let field_name = field.ident.as_ref().unwrap();
-        let field_name_str = field_name.to_string();
         let field_ty = &field.ty;
         let field_doc = extract_doc_from_attrs(&field.attrs);
         let default_val = extract_default_attr(field)?;
+        let kind = classify_field(field_ty);
 
-        field_names_str.push(field_name_str.clone());
+        // R-visible name: use #[name = "..."] or field ident
+        let r_param_name = extract_name_attr(field).unwrap_or_else(|| field_name.to_string());
+
+        field_names_str.push(r_param_name.clone());
         if !field_doc.is_empty() {
-            field_docs.push(format!("@param {} {}", field_name_str, field_doc));
+            field_docs.push(format!("@param {} {}", r_param_name, field_doc));
         }
 
-        // Dispatch-level `reorder_builtin_args` ensures `args[i]` maps to
-        // the i-th formal.  Use a simple sequential field index.
-        let field_idx = field_decoders.len();
-        let decoder = if let Some(default_expr) = default_val {
-            // Optional param with default
-            quote! {
-                let #field_name: #field_ty = {
-                    let raw = crate::interpreter::value::find_arg(
-                        args, named, #field_name_str, #field_idx
-                    );
-                    match raw {
-                        Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #field_name_str)?,
-                        None => #default_expr,
-                    }
-                };
+        let decoder = match kind {
+            FieldKind::Dots => {
+                // Dots: collect all positional args. Named args that match
+                // other fields are already consumed by the evaluator's
+                // reorder_builtin_args; remaining positional args go here.
+                let named_params: Vec<&String> = named_param_r_names.iter().collect();
+                quote! {
+                    let #field_name: #field_ty = {
+                        // All positional args become dots
+                        let known_names: &[&str] = &[#(#named_params),*];
+                        let mut dot_values = Vec::new();
+                        for v in args.iter() {
+                            dot_values.push(v.clone());
+                        }
+                        // Also include named args that don't match known params
+                        for (n, v) in named.iter() {
+                            if !known_names.iter().any(|k| k == &n.as_str()) {
+                                dot_values.push(v.clone());
+                            }
+                        }
+                        crate::interpreter::value::Dots(dot_values)
+                    };
+                }
             }
-        } else {
-            // Required param
-            let decoder = quote! {
-                let #field_name: #field_ty = {
-                    let raw = crate::interpreter::value::find_arg(
-                        args, named, #field_name_str, #field_idx
-                    ).ok_or_else(|| crate::interpreter::value::RError::new(
-                        crate::interpreter::value::RErrorKind::Argument,
-                        format!("argument '{}' is missing, with no default", #field_name_str),
-                    ))?;
-                    crate::interpreter::value::coerce_arg::<#field_ty>(raw, #field_name_str)?
-                };
-            };
-            min_args += 1;
-            decoder
+            FieldKind::ThreeWay => {
+                // Arg<T>: three-way Missing/Null/Value
+                let inner_ty = extract_inner_type(field_ty).ok_or_else(|| {
+                    syn::Error::new(field_name.span(), "Arg<T> requires a type parameter")
+                })?;
+                let field_idx = non_dots_count;
+                non_dots_count += 1;
+                // Arg<T> fields are never required (they can be Missing)
+                quote! {
+                    let #field_name: #field_ty = {
+                        let raw = crate::interpreter::value::find_arg(
+                            args, named, #r_param_name, #field_idx
+                        );
+                        crate::interpreter::value::coerce_arg_three_way::<#inner_ty>(raw, #r_param_name)?
+                    };
+                }
+            }
+            FieldKind::Optional => {
+                // Option<T>: None if missing, Some(coerced) if present
+                let field_idx = non_dots_count;
+                non_dots_count += 1;
+                if let Some(default_expr) = default_val {
+                    // Option<T> with #[default(...)]: use default when missing
+                    quote! {
+                        let #field_name: #field_ty = {
+                            let raw = crate::interpreter::value::find_arg(
+                                args, named, #r_param_name, #field_idx
+                            );
+                            match raw {
+                                Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #r_param_name)?,
+                                None => #default_expr,
+                            }
+                        };
+                    }
+                } else {
+                    // Option<T> without default: None if missing
+                    quote! {
+                        let #field_name: #field_ty = {
+                            let raw = crate::interpreter::value::find_arg(
+                                args, named, #r_param_name, #field_idx
+                            );
+                            match raw {
+                                Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #r_param_name)?,
+                                None => None,
+                            }
+                        };
+                    }
+                }
+            }
+            FieldKind::Plain => {
+                let field_idx = non_dots_count;
+                non_dots_count += 1;
+                if let Some(default_expr) = default_val {
+                    // Plain T with default
+                    quote! {
+                        let #field_name: #field_ty = {
+                            let raw = crate::interpreter::value::find_arg(
+                                args, named, #r_param_name, #field_idx
+                            );
+                            match raw {
+                                Some(v) => crate::interpreter::value::coerce_arg::<#field_ty>(v, #r_param_name)?,
+                                None => #default_expr,
+                            }
+                        };
+                    }
+                } else {
+                    // Plain T, required
+                    min_args += 1;
+                    quote! {
+                        let #field_name: #field_ty = {
+                            let raw = crate::interpreter::value::find_arg(
+                                args, named, #r_param_name, #field_idx
+                            ).ok_or_else(|| crate::interpreter::value::RError::new(
+                                crate::interpreter::value::RErrorKind::Argument,
+                                format!("argument '{}' is missing, with no default", #r_param_name),
+                            ))?;
+                            crate::interpreter::value::coerce_arg::<#field_ty>(raw, #r_param_name)?
+                        };
+                    }
+                }
+            }
         };
         field_decoders.push(decoder);
     }
 
     let field_idents: Vec<_> = fields.named.iter().map(|f| &f.ident).collect();
-    let max_args = fields.named.len();
+    let max_args = if has_dots {
+        quote!(None) // variadic
+    } else {
+        let n = non_dots_count;
+        quote!(Some(#n))
+    };
 
     // Build doc string: struct doc + field @param docs
     let mut full_doc_parts = vec![struct_doc.clone()];
     full_doc_parts.extend(field_docs);
     let full_doc = full_doc_parts.join("\n");
+
+    // For formals, use "..." for the Dots field
+    let formals_tokens: Vec<_> = fields
+        .named
+        .iter()
+        .map(|f| {
+            if matches!(classify_field(&f.ty), FieldKind::Dots) {
+                "...".to_string()
+            } else {
+                extract_name_attr(f).unwrap_or_else(|| f.ident.as_ref().unwrap().to_string())
+            }
+        })
+        .collect();
 
     let alias_tokens: Vec<_> = aliases.iter().map(|a| quote!(#a)).collect();
     let namespace = extract_builtin_namespace(&input.attrs);
@@ -781,9 +954,9 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                     name: #r_name,
                     aliases: &[#(#alias_tokens),*],
                     min_args: #min_args,
-                    max_args: Some(#max_args),
+                    max_args: #max_args,
                     doc: #full_doc,
-                    params: &[#(#field_names_str),*],
+                    params: &[#(#formals_tokens),*],
                 };
                 &INFO
             }
@@ -803,10 +976,10 @@ fn emit_from_args(input: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                     }
                 ),
                 min_args: #min_args,
-                max_args: Some(#max_args),
+                max_args: #max_args,
                 doc: #full_doc,
                 namespace: #namespace,
-                formals: &[#(#field_names_str),*],
+                formals: &[#(#formals_tokens),*],
             };
     })
 }
