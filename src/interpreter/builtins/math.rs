@@ -2736,8 +2736,8 @@ fn builtin_head(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
         Some(RValue::Vector(v)) => {
             let result = match &v.inner {
                 Vector::Raw(vals) => Vector::Raw(vals[..n.min(vals.len())].to_vec()),
-                Vector::Double(vals) => Vector::Double(vals.slice(..n.min(vals.len())).into()),
-                Vector::Integer(vals) => Vector::Integer(vals.slice(..n.min(vals.len())).into()),
+                Vector::Double(vals) => Vector::Double(vals.slice(0, n.min(vals.len()))),
+                Vector::Integer(vals) => Vector::Integer(vals.slice(0, n.min(vals.len()))),
                 Vector::Logical(vals) => Vector::Logical(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Complex(vals) => Vector::Complex(vals[..n.min(vals.len())].to_vec().into()),
                 Vector::Character(vals) => {
@@ -2771,8 +2771,8 @@ fn builtin_tail(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
             let start = len.saturating_sub(n);
             let result = match &v.inner {
                 Vector::Raw(vals) => Vector::Raw(vals[start..].to_vec()),
-                Vector::Double(vals) => Vector::Double(vals.slice(start..).into()),
-                Vector::Integer(vals) => Vector::Integer(vals.slice(start..).into()),
+                Vector::Double(vals) => Vector::Double(vals.slice(start, vals.len() - start)),
+                Vector::Integer(vals) => Vector::Integer(vals.slice(start, vals.len() - start)),
                 Vector::Logical(vals) => Vector::Logical(vals[start..].to_vec().into()),
                 Vector::Complex(vals) => Vector::Complex(vals[start..].to_vec().into()),
                 Vector::Character(vals) => Vector::Character(vals[start..].to_vec().into()),

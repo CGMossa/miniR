@@ -314,7 +314,7 @@ fn matrix_columns(
                         (None, Some(name)) => name,
                         (None, None) => format!("X{}", col_idx + 1),
                     },
-                    value: RValue::vec(Vector::Integer(values.slice(start..start + nrow).into())),
+                    value: RValue::vec(Vector::Integer(values.slice(start, nrow))),
                     row_count: nrow,
                     row_names: row_names.clone(),
                 }
@@ -337,7 +337,7 @@ fn matrix_columns(
                         (None, Some(name)) => name,
                         (None, None) => format!("X{}", col_idx + 1),
                     },
-                    value: RValue::vec(Vector::Double(values.slice(start..start + nrow).into())),
+                    value: RValue::vec(Vector::Double(values.slice(start, nrow))),
                     row_count: nrow,
                     row_names: row_names.clone(),
                 }

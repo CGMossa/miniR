@@ -58,8 +58,8 @@ impl Vector {
                     .collect();
                 Vector::Raw(result)
             }
-            Vector::Double(vals) => Vector::Double(vals.select_indices(indices).into()),
-            Vector::Integer(vals) => Vector::Integer(vals.select_indices(indices).into()),
+            Vector::Double(vals) => Vector::Double(vals.select_indices(indices)),
+            Vector::Integer(vals) => Vector::Integer(vals.select_indices(indices)),
             Vector::Logical(vals) => sel_option!(vals, Logical),
             Vector::Complex(vals) => sel_option!(vals, Complex),
             Vector::Character(vals) => sel_option!(vals, Character),

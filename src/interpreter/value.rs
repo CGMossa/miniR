@@ -808,7 +808,7 @@ pub fn format_vector(v: &Vector) -> String {
         Vector::Double(vals) => vals
             .iter()
             .map(|x| match x {
-                Some(f) => format_r_double(*f),
+                Some(f) => format_r_double(f),
                 None => "NA".to_string(),
             })
             .collect(),

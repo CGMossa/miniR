@@ -1884,7 +1884,7 @@ fn interp_str(
                             .iter()
                             .take(10)
                             .map(|x| match x {
-                                Some(f) => format_r_double(*f),
+                                Some(f) => format_r_double(f),
                                 None => "NA".to_string(),
                             })
                             .join(" "),

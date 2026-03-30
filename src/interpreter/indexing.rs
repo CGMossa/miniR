@@ -679,7 +679,7 @@ fn index_by_negative(
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| !exclude.contains(&(i + 1)))
-                .map(|(_, v)| v.copied())
+                .map(|(_, v)| v)
                 .collect();
             Ok(RValue::vec(Vector::$variant(result.into())))
         }};

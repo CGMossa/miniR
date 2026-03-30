@@ -1558,8 +1558,8 @@ impl AsciiWriter {
                         for v in vals.iter() {
                             match v {
                                 Some(i) => {
-                                    let clamped = i32::try_from(*i).unwrap_or_else(|_| {
-                                        if *i > i64::from(i32::MAX) {
+                                    let clamped = i32::try_from(i).unwrap_or_else(|_| {
+                                        if i > i64::from(i32::MAX) {
                                             i32::MAX
                                         } else {
                                             i32::MIN + 1
@@ -1580,7 +1580,7 @@ impl AsciiWriter {
                         self.write_length(vals.len());
                         for v in vals.iter() {
                             match v {
-                                Some(d) => self.write_double(*d),
+                                Some(d) => self.write_double(d),
                                 None => writeln!(self.buf, "NA").expect("Vec<u8> write"),
                             }
                         }
@@ -1963,8 +1963,8 @@ impl XdrWriter {
                             match v {
                                 Some(i) => {
                                     // R integers are i32; clamp to i32 range.
-                                    let clamped = i32::try_from(*i).unwrap_or_else(|_| {
-                                        if *i > i64::from(i32::MAX) {
+                                    let clamped = i32::try_from(i).unwrap_or_else(|_| {
+                                        if i > i64::from(i32::MAX) {
                                             i32::MAX
                                         } else {
                                             // i32::MIN is NA, so use MIN + 1
@@ -1988,7 +1988,7 @@ impl XdrWriter {
                         self.write_length(vals.len());
                         for v in vals.iter() {
                             match v {
-                                Some(d) => self.write_double(*d),
+                                Some(d) => self.write_double(d),
                                 None => self.buf.extend_from_slice(&R_NA_REAL_BITS.to_be_bytes()),
                             }
                         }

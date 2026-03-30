@@ -55,6 +55,8 @@ derive_more = { version = "2.1", features = [
     # "unwrap",         # derive unwrap() methods for enums
 ] }
 aho-corasick = "1"
+arrow-array = "58"
+arrow-buffer = "58"
 fnv = "1"
 indexmap = "2"
 linkme = "0.3"

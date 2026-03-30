@@ -1103,9 +1103,9 @@ fn builtin_regmatches(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue,
                 let lengths: Integer = match rv.get_attr("match.length") {
                     Some(RValue::Vector(lv)) => match &lv.inner {
                         Vector::Integer(l) => l.clone(),
-                        _ => Integer(NullableBuffer::from_values(vec![])),
+                        _ => Integer::from_values(vec![]),
                     },
-                    _ => Integer(NullableBuffer::from_values(vec![])),
+                    _ => Integer::from_values(vec![]),
                 };
                 let s = x.get(i).and_then(|s| s.as_ref());
                 let mut matches = Vec::new();
@@ -1253,9 +1253,9 @@ fn builtin_regmatches_assign(args: &[RValue], _: &[(String, RValue)]) -> Result<
                 let lengths: Integer = match rv.get_attr("match.length") {
                     Some(RValue::Vector(lv)) => match &lv.inner {
                         Vector::Integer(l) => l.clone(),
-                        _ => Integer(NullableBuffer::from_values(vec![])),
+                        _ => Integer::from_values(vec![]),
                     },
-                    _ => Integer(NullableBuffer::from_values(vec![])),
+                    _ => Integer::from_values(vec![]),
                 };
 
                 let repls: Vec<Option<String>> = match repl_list.values.get(i) {

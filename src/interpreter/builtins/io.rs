@@ -138,7 +138,7 @@ fn serialize_vector(value: &Vector) -> String {
             values
                 .iter()
                 .map(|value| match value {
-                    Some(value) => format_r_double(*value),
+                    Some(value) => format_r_double(value),
                     None => "NA_real_".to_string(),
                 })
                 .join(", ")
