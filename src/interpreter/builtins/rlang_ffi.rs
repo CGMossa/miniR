@@ -68,6 +68,14 @@ pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError
         "ffi_ns_registry_env" => Some(ffi_ns_registry_env()),
         "ffi_env_binding_types" => Some(ffi_env_binding_types(args)),
 
+        // region: List construction
+        "ffi_list2" | "ffi_dots_list" | "ffi_dots_pairlist" => {
+            // list2(...) / dots_list(...) — just return args as a named list
+            Some(Ok(RValue::List(crate::interpreter::value::RList::new(
+                args.iter().map(|v| (None, v.clone())).collect(),
+            ))))
+        }
+
         // region: Promise functions (stubs)
         "ffi_promise_expr" => Some(Ok(RValue::Null)),
         "ffi_promise_value" => Some(Ok(RValue::Null)),
@@ -76,6 +84,25 @@ pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError
         // region: Standalone type-check functions (used by lifecycle, vctrs, etc.)
         "ffi_standalone_is_bool_1.0.7" => Some(ffi_standalone_is_bool(args)),
         "ffi_standalone_check_number_1.0.7" => Some(ffi_standalone_check_number(args)),
+
+        // Package linked_version checks — return the installed version string
+        // so check_linked_version() succeeds. The C function normally returns the
+        // compiled-in version string. We read it from DESCRIPTION.
+        _ if name.ends_with("_linked_version") => {
+            let pkg_name = name.trim_end_matches("_linked_version");
+            // Try to find the version from cran/<pkg>/DESCRIPTION
+            let version = std::fs::read_to_string(format!("cran/{pkg_name}/DESCRIPTION"))
+                .ok()
+                .and_then(|desc| {
+                    desc.lines()
+                        .find(|l| l.starts_with("Version:"))
+                        .map(|l| l.trim_start_matches("Version:").trim().to_string())
+                })
+                .unwrap_or_default();
+            Some(Ok(RValue::vec(Vector::Character(
+                vec![Some(version)].into(),
+            ))))
+        }
 
         // Package init functions that pass namespace env to C — intercept as no-ops
         // since C code can't handle our ENVSXP representation.
