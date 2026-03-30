@@ -22,6 +22,7 @@ use super::sexp::{self, PairlistData, Sexp, SexpRec};
 // region: allocation tracking
 
 /// Linked list node for tracking allocations.
+#[allow(dead_code)] // sexp field read by R_PreserveObject; free_allocs currently leaks
 struct AllocNode {
     sexp: Sexp,
     next: *mut AllocNode,
@@ -249,6 +250,14 @@ pub static mut R_NilValue: Sexp = ptr::null_mut();
 
 #[no_mangle]
 pub static mut R_NaString: Sexp = ptr::null_mut();
+
+/// R_NaInt — addressable NA_INTEGER constant for C code that takes &NA_INTEGER.
+#[no_mangle]
+pub static mut R_NaInt: c_int = i32::MIN;
+
+/// R_NaReal — addressable NA_REAL constant for C code that takes &NA_REAL.
+#[no_mangle]
+pub static mut R_NaReal: f64 = sexp::NA_REAL;
 
 #[no_mangle]
 pub static mut R_BlankString: Sexp = ptr::null_mut();

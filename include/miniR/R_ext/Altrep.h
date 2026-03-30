@@ -51,6 +51,13 @@ typedef void *R_altrep_class_t;
 #define KNOWN_NA_1ST 1
 #define KNOWN_NO_NA 0
 
+#define R_set_altstring_Set_elt_method(c, m) ((void)0)
+#define R_set_altvec_Extract_subset_method(c, m) ((void)0)
+#define R_set_altraw_Elt_method(c, m)       ((void)0)
+#define R_set_altraw_Get_region_method(c, m) ((void)0)
+#define R_set_altcomplex_Elt_method(c, m)   ((void)0)
+#define R_set_altcomplex_Get_region_method(c, m) ((void)0)
+
 /* ALTREP queries — always return false/standard behavior */
 #define ALTREP(x)               0
 #define ALTVEC_DATAPTR(x)       ((x)->data)

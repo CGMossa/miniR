@@ -72,6 +72,7 @@ typedef enum { FALSE = 0, TRUE = 1 } Rboolean;
 
 typedef int R_len_t;
 typedef ptrdiff_t R_xlen_t;
+#define R_PRIdXLEN_T "td"
 typedef unsigned char Rbyte;
 #ifndef Rcomplex_is_defined
 #define Rcomplex_is_defined
@@ -110,11 +111,12 @@ static inline double _R_NaReal_fn(void) {
     na.u = 0x7FF00000000007A2ULL;
     return na.d;
 }
-#define NA_REAL   _R_NaReal_fn()
-#define R_NaReal  _R_NaReal_fn()
-#define NA_INTEGER  (-2147483647 - 1)
-#define NA_LOGICAL  NA_INTEGER
-#define R_NaInt     NA_INTEGER
+extern double R_NaReal;
+#define NA_REAL   R_NaReal
+extern int R_NaInt;
+#define NA_INTEGER  R_NaInt
+#define NA_LOGICAL  R_NaInt
+#define R_NaInt     R_NaInt
 
 #ifndef R_IsNA
 static inline int R_IsNA(double x) {
@@ -523,6 +525,7 @@ SEXP R_getClassDef(const char *what);
 #define IS_S4_OBJECT(x) 0
 #define SET_S4_OBJECT(x) ((void)(x))
 #define UNSET_S4_OBJECT(x) ((void)(x))
+static inline SEXP Rf_asS4(SEXP x, int flag, int dummy) { (void)flag; (void)dummy; return x; }
 
 /* Dimension access */
 #define GET_DIM(x) Rf_getAttrib((x), R_DimSymbol)
