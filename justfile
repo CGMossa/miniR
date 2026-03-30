@@ -273,6 +273,26 @@ update-cran-test-packages:
 
     echo -e "\nDone. $((N-FAIL))/$N packages ($FAIL failed)."
 
+# Download crates.io dump, filter to popular+recent+has-repo, write analysis/crates-io-overview.csv
+crates-io-overview min_downloads="1000000" max_age_days="548":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DUMP="/tmp/db-dump.tar.gz"
+    echo "Downloading crates.io database dump..."
+    curl -sL -o "$DUMP" https://static.crates.io/db-dump.tar.gz
+    # Find the date-prefixed directory name inside the tarball
+    DIR=$(tar tzf "$DUMP" | head -1 | cut -d/ -f1)
+    echo "Extracting tables from $DIR..."
+    cd /tmp && tar xzf "$DUMP" \
+        "$DIR/data/crates.csv" \
+        "$DIR/data/crate_downloads.csv" \
+        "$DIR/data/versions.csv" \
+        "$DIR/data/default_versions.csv"
+    echo "Filtering..."
+    python3 "{{root}}/scripts/filter-crates-io.py" "/tmp/$DIR" \
+        --min-downloads {{min_downloads}} --max-age-days {{max_age_days}}
+    rm -rf "/tmp/$DIR" "$DUMP"
+
 # Refresh the curated example datasets bundle from the original publishers
 update-datasets:
     ./scripts/update-datasets.sh
