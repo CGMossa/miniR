@@ -241,7 +241,7 @@ impl eframe::App for PlotApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.tabs.clear();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             return;
         }
 
@@ -251,7 +251,7 @@ impl eframe::App for PlotApp {
         if close_tab && !self.tabs.is_empty() {
             self.tabs.remove(self.active_tab);
             if self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             } else if self.active_tab >= self.tabs.len() {
                 self.active_tab = self.tabs.len() - 1;
             }
@@ -296,13 +296,13 @@ impl eframe::App for PlotApp {
                     }
                     if self.tabs.is_empty() {
                         // Hide window — it will reappear when new data arrives
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     }
                 }
             }
             // Show window if it was hidden and we just added a tab
             if was_empty && !self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }
@@ -413,7 +413,7 @@ impl eframe::App for PlotApp {
                     self.tabs.remove(idx);
                     if self.tabs.is_empty() {
                         // Hide — don't close (macOS can't reopen after close)
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     } else if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len() - 1;
                     }
@@ -478,7 +478,7 @@ impl eframe::App for PlotApp {
                 self.tabs.remove(i);
             }
             if self.tabs.is_empty() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
         } else {
             // Tab mode: render active tab in central panel
@@ -1561,12 +1561,6 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
             .with_title("miniR"),
-        // Hide from dock on macOS — the plot window is an accessory, not the main app.
-        #[cfg(target_os = "macos")]
-        event_loop_builder: Some(Box::new(|builder| {
-            use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
-            builder.with_activation_policy(ActivationPolicy::Accessory);
-        })),
         ..Default::default()
     };
 
