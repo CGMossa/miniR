@@ -1145,11 +1145,43 @@ fn interp_do_call(
     let env = context.env();
     if positional.len() >= 2 {
         let f = match_fun(&positional[0], env)?;
+
+        // Get the target environment from envir= named arg (defaults to calling env)
+        let target_env = named
+            .iter()
+            .find(|(n, _)| n == "envir")
+            .and_then(|(_, v)| {
+                if let RValue::Environment(e) = v {
+                    Some(e.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| env.clone());
+
+        // Filter out the envir= arg before forwarding to the function
+        let forwarded_named: Vec<(String, RValue)> = named
+            .iter()
+            .filter(|(n, _)| n != "envir")
+            .cloned()
+            .collect();
+
+        // Handle pre-eval builtins that can't go through the normal dispatch path
+        if let RValue::Function(crate::interpreter::value::RFunction::Builtin {
+            name: builtin_name,
+            ..
+        }) = &f
+        {
+            if builtin_name == "on.exit" {
+                return do_call_on_exit(&positional[1], &forwarded_named, &target_env);
+            }
+        }
+
         return context.with_interpreter(|interp| match &positional[1] {
             RValue::List(l) => {
                 // Split list elements into positional and named args
                 let mut pos_args: Vec<RValue> = Vec::new();
-                let mut named_args: Vec<(String, RValue)> = named.to_vec();
+                let mut named_args: Vec<(String, RValue)> = forwarded_named;
                 for (name, value) in &l.values {
                     match name {
                         Some(n) if !n.is_empty() => {
@@ -1161,11 +1193,11 @@ fn interp_do_call(
                     }
                 }
                 interp
-                    .call_function(&f, &pos_args, &named_args, env)
+                    .call_function(&f, &pos_args, &named_args, &target_env)
                     .map_err(RError::from)
             }
             _ => interp
-                .call_function(&f, &positional[1..], named, env)
+                .call_function(&f, &positional[1..], &forwarded_named, &target_env)
                 .map_err(RError::from),
         });
     }
@@ -1173,6 +1205,54 @@ fn interp_do_call(
         RErrorKind::Argument,
         "do.call requires at least 2 arguments".to_string(),
     ))
+}
+
+/// Handle `do.call(on.exit, list(expr, add), envir=env)`.
+///
+/// `on.exit` is a pre-eval builtin that stores unevaluated expressions.
+/// When called via `do.call`, the expression is already an RValue (typically
+/// a Language/call object). We convert it back to an Expr for storage.
+fn do_call_on_exit(
+    args_val: &RValue,
+    named: &[(String, RValue)],
+    target_env: &crate::interpreter::environment::Environment,
+) -> Result<RValue, RError> {
+    use crate::parser::ast::Expr;
+
+    let list = match args_val {
+        RValue::List(l) => l,
+        _ => return Ok(RValue::Null),
+    };
+
+    // First element is the expression to run on exit
+    let expr = list.values.first().map(|(_, v)| v);
+    // Second element or named "add" is whether to add (vs replace)
+    let add = list
+        .values
+        .iter()
+        .find(|(k, _)| k.as_deref() == Some("add"))
+        .or_else(|| list.values.get(1).filter(|(k, _)| k.is_none()))
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .or_else(|| {
+            named
+                .iter()
+                .find(|(n, _)| n == "add")
+                .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        })
+        .unwrap_or(false);
+
+    if let Some(expr_val) = expr {
+        // Convert the RValue (Language/call) back to an Expr
+        let expr_ast = match expr_val {
+            RValue::Language(lang) => (*lang.inner).clone(),
+            _ => Expr::Null,
+        };
+        target_env.push_on_exit(expr_ast, add, true);
+    } else {
+        target_env.take_on_exit();
+    }
+
+    Ok(RValue::Null)
 }
 
 /// Create a vectorized version of a function.
@@ -1469,6 +1549,38 @@ fn interp_get(
     target_env
         .get(&name)
         .ok_or_else(|| RError::other(format!("object '{}' not found", name)))
+}
+
+/// Like `get()` but returns a default value instead of erroring when not found.
+///
+/// @param x character string giving the variable name
+/// @param envir environment to look in (default: calling environment)
+/// @param ifnotfound value to return if `x` is not found (default: NULL)
+/// @return the value of the variable, or `ifnotfound` if not present
+#[interpreter_builtin(name = "get0", min_args = 1)]
+fn interp_get0(
+    positional: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let env = context.env();
+    let call_args = CallArgs::new(positional, named);
+    let name = call_args.string("x", 0)?;
+    let target_env = call_args.environment_or("envir", usize::MAX, env)?;
+    let ifnotfound = call_args.value("ifnotfound", usize::MAX).cloned();
+
+    if let Some(fun) = target_env.get_active_binding(&name) {
+        return context
+            .with_interpreter(|interp| interp.call_function(&fun, &[], &[], &target_env))
+            .map_err(|flow| match flow {
+                RFlow::Error(e) => e,
+                other => RError::other(format!("{:?}", other)),
+            });
+    }
+
+    Ok(target_env
+        .get(&name)
+        .unwrap_or_else(|| ifnotfound.unwrap_or(RValue::Null)))
 }
 
 /// Assign a value to a variable name in an environment.

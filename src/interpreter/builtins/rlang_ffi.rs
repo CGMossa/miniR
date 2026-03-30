@@ -13,7 +13,12 @@ use crate::interpreter::value::*;
 ///
 /// Returns `Some(result)` if the symbol was handled, `None` to fall through
 /// to the native C code path.
-pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError>> {
+pub fn try_dispatch(
+    name: &str,
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    env: &crate::interpreter::environment::Environment,
+) -> Option<Result<RValue, RError>> {
     match name {
         // region: Init functions — register CCallable shims so downstream packages
         // (purrr, stringr, dplyr) get working function pointers from R_GetCCallable.
@@ -70,9 +75,22 @@ pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError
 
         // region: List construction
         "ffi_list2" | "ffi_dots_list" | "ffi_dots_pairlist" => {
-            // list2(...) / dots_list(...) — just return args as a named list
+            // list2(...) / dots_list(...) — grab `...` from the calling environment.
+            // .External2 passes (call, op, args, env) in GNU R; the C code accesses
+            // dots from the env. We do the same by reading `...` from the frame env.
+            let mut elements: Vec<(Option<String>, RValue)> = Vec::new();
+            // First add any explicit positional args (beyond the function name)
+            for v in args {
+                elements.push((None, v.clone()));
+            }
+            // Then expand `...` from the calling environment
+            if let Some(RValue::List(dots)) = env.get("...") {
+                for (opt_name, value) in &dots.values {
+                    elements.push((opt_name.clone(), value.clone()));
+                }
+            }
             Some(Ok(RValue::List(crate::interpreter::value::RList::new(
-                args.iter().map(|v| (None, v.clone())).collect(),
+                elements,
             ))))
         }
 

@@ -2491,6 +2491,14 @@ pub extern "C" fn R_tryEval(expr: Sexp, env: Sexp, error_occurred: *mut c_int) -
     result
 }
 
+// R_forceAndCall — call with n args forced eagerly.
+// In GNU R this is an optimization hint for the evaluator.
+// We just delegate to Rf_eval since our eval already forces args.
+#[no_mangle]
+pub extern "C" fn R_forceAndCall(call: Sexp, _n: c_int, env: Sexp) -> Sexp {
+    Rf_eval(call, env)
+}
+
 // R_tryEvalSilent — same as R_tryEval (no error printing)
 #[no_mangle]
 pub extern "C" fn R_tryEvalSilent(expr: Sexp, env: Sexp, error_occurred: *mut c_int) -> Sexp {

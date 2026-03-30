@@ -69,9 +69,12 @@ fn builtin_dot_call(
 
     // Check for rlang FFI functions that we handle natively in Rust.
     // This bypasses rlang's C code which uses r_abort() -> while(1) hang.
-    if let Some(result) =
-        crate::interpreter::builtins::rlang_ffi::try_dispatch(&symbol_name, native_args)
-    {
+    if let Some(result) = crate::interpreter::builtins::rlang_ffi::try_dispatch(
+        &symbol_name,
+        native_args,
+        _named,
+        ctx.env(),
+    ) {
         return result;
     }
 
@@ -188,9 +191,12 @@ fn builtin_dot_external2(
 
     // Check rlang FFI intercepts first
     let native_args = &args[1..];
-    if let Some(result) =
-        crate::interpreter::builtins::rlang_ffi::try_dispatch(&symbol_name, native_args)
-    {
+    if let Some(result) = crate::interpreter::builtins::rlang_ffi::try_dispatch(
+        &symbol_name,
+        native_args,
+        _named,
+        ctx.env(),
+    ) {
         return result;
     }
 

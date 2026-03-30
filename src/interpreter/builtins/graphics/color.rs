@@ -646,6 +646,41 @@ fn builtin_gray_colors(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 
 // endregion
 
+// region: grey() / gray()
+
+/// Convert grey levels to hex color strings.
+///
+/// Vectorized: accepts a numeric vector of levels in [0,1] where 0=black, 1=white.
+///
+/// @param level numeric vector of grey levels in [0,1]
+/// @param alpha optional transparency in [0,1] (default 1, fully opaque)
+/// @return character vector of hex color strings
+#[builtin(name = "grey", namespace = "grDevices", min_args = 1, names = ["gray"])]
+fn builtin_grey(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let levels = extract_doubles(&ca, "level", 0, 0.0);
+    let alpha_val = ca.value("alpha", 1);
+    let alpha = match alpha_val {
+        Some(RValue::Null) | None => None,
+        Some(v) => Some(
+            v.as_vector()
+                .and_then(|rv| rv.as_double_scalar())
+                .unwrap_or(1.0),
+        ),
+    };
+
+    let mut result = Vec::with_capacity(levels.len());
+    for level in &levels {
+        let g = level.clamp(0.0, 1.0);
+        let a = alpha.unwrap_or(1.0);
+        result.push(Some(rgb_to_hex(g, g, g, a)));
+    }
+
+    Ok(RValue::vec(Vector::Character(result.into())))
+}
+
+// endregion
+
 // region: colorRampPalette()
 
 /// Create a color interpolation function from a vector of colors.

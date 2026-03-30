@@ -6,6 +6,7 @@
 #![cfg(feature = "native")]
 
 use r::interpreter::builtins::rlang_ffi;
+use r::interpreter::environment::Environment;
 use r::interpreter::value::*;
 
 // region: Helper
@@ -90,7 +91,7 @@ fn init_functions_return_null() {
         "ffi_fini_rlang",
         "ffi_glue_is_here",
     ] {
-        let result = rlang_ffi::try_dispatch(name, &[]);
+        let result = rlang_ffi::try_dispatch(name, &[], &[], &Environment::new_empty());
         assert!(result.is_some(), "{name} should be intercepted");
         assert_is_null(&result.unwrap());
     }
@@ -104,23 +105,27 @@ fn init_functions_return_null() {
 fn ffi_is_character_basic() {
     // character vector -> TRUE
     let args = vec![r_char("hello"), r_null(), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_character", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_character", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     // integer vector -> FALSE
     let args = vec![r_int(42), r_null(), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_character", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_character", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_character_with_length_check() {
     let args = vec![r_char_vec(&["a", "b"]), r_int(2), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_character", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_character", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_char_vec(&["a", "b"]), r_int(3), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_character", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_character", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
@@ -128,19 +133,22 @@ fn ffi_is_character_with_length_check() {
 fn ffi_is_string_basic() {
     // Single string -> TRUE
     let args = vec![r_char("hello"), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_string", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_string", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     // Length-2 character vector -> FALSE (not a single string)
     let args = vec![r_char_vec(&["a", "b"]), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_string", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_string", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_string_with_allowed_values() {
     let args = vec![r_char("error"), r_char_vec(&["error", "warning"]), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_string", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_string", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![
@@ -148,58 +156,68 @@ fn ffi_is_string_with_allowed_values() {
         r_char_vec(&["error", "warning"]),
         r_null(),
     ];
-    let result = rlang_ffi::try_dispatch("ffi_is_string", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_string", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_string_empty_rejected() {
     let args = vec![r_char(""), r_null(), r_lgl(false)];
-    let result = rlang_ffi::try_dispatch("ffi_is_string", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_string", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_logical_basic() {
     let args = vec![r_lgl(true), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_logical", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_logical", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_int(1), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_logical", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_logical", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_integer_basic() {
     let args = vec![r_int(42), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_integer", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_integer", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_double(7.5), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_integer", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_integer", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_double_basic() {
     let args = vec![r_double(7.5), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_double", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_double", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_int(42), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_double", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_double", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_double_finite_check() {
     let args = vec![r_double(f64::INFINITY), r_null(), r_lgl(true)];
-    let result = rlang_ffi::try_dispatch("ffi_is_double", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_double", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 
     let args = vec![r_double(42.0), r_null(), r_lgl(true)];
-    let result = rlang_ffi::try_dispatch("ffi_is_double", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_double", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 }
 
@@ -207,69 +225,83 @@ fn ffi_is_double_finite_check() {
 fn ffi_is_list_basic() {
     let list = RValue::List(RList::new(vec![(None, r_int(1)), (None, r_int(2))]));
     let args = vec![list, r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_list", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_list", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_int(42), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_list", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_list", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_function_basic() {
     let args = vec![r_int(42)];
-    let result = rlang_ffi::try_dispatch("ffi_is_function", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_function", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_atomic_basic() {
     let args = vec![r_int(42), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_atomic", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_atomic", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let args = vec![r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_atomic", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_atomic", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 
     let list = RValue::List(RList::new(vec![]));
     let args = vec![list, r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_atomic", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_atomic", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_integerish_integer_input() {
     let args = vec![r_int(42), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_integerish", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_integerish", &args, &[], &Environment::new_empty())
+            .unwrap();
     assert_is_true(&result);
 }
 
 #[test]
 fn ffi_is_integerish_double_whole_numbers() {
     let args = vec![r_double_vec(&[1.0, 2.0, 3.0]), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_integerish", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_integerish", &args, &[], &Environment::new_empty())
+            .unwrap();
     assert_is_true(&result);
 }
 
 #[test]
 fn ffi_is_integerish_double_non_whole() {
     let args = vec![r_double(7.5), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_integerish", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_integerish", &args, &[], &Environment::new_empty())
+            .unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_finite_all_finite() {
     let args = vec![r_double_vec(&[1.0, 2.0, 3.0])];
-    let result = rlang_ffi::try_dispatch("ffi_is_finite", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_finite", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 }
 
 #[test]
 fn ffi_is_finite_with_inf() {
     let args = vec![r_double_vec(&[1.0, f64::INFINITY])];
-    let result = rlang_ffi::try_dispatch("ffi_is_finite", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_finite", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
@@ -277,26 +309,40 @@ fn ffi_is_finite_with_inf() {
 fn ffi_is_call_language_object() {
     let lang = RValue::Language(Language::new(r::parser::ast::Expr::Symbol("x".to_string())));
     let args = vec![lang, r_null(), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_call", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_call", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_true(&result);
 }
 
 #[test]
 fn ffi_is_call_non_language() {
     let args = vec![r_int(42), r_null(), r_null(), r_null()];
-    let result = rlang_ffi::try_dispatch("ffi_is_call", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_is_call", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_weakref_always_false() {
-    let result = rlang_ffi::try_dispatch("ffi_is_weakref", &[r_int(1)]).unwrap();
+    let result = rlang_ffi::try_dispatch(
+        "ffi_is_weakref",
+        &[r_int(1)],
+        &[],
+        &Environment::new_empty(),
+    )
+    .unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_is_splice_box_always_false() {
-    let result = rlang_ffi::try_dispatch("ffi_is_splice_box", &[r_int(1)]).unwrap();
+    let result = rlang_ffi::try_dispatch(
+        "ffi_is_splice_box",
+        &[r_int(1)],
+        &[],
+        &Environment::new_empty(),
+    )
+    .unwrap();
     assert_is_false(&result);
 }
 
@@ -307,7 +353,7 @@ fn ffi_is_splice_box_always_false() {
 #[test]
 fn ffi_length_returns_correct_length() {
     let args = vec![r_int_vec(&[1, 2, 3])];
-    let result = rlang_ffi::try_dispatch("ffi_length", &args)
+    let result = rlang_ffi::try_dispatch("ffi_length", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -324,7 +370,7 @@ fn ffi_names_vector_with_names() {
     let mut rv = RVector::from(Vector::Integer(vec![Some(1i64), Some(2)].into()));
     rv.set_attr("names".to_string(), r_char_vec(&["a", "b"]));
     let args = vec![RValue::Vector(rv)];
-    let result = rlang_ffi::try_dispatch("ffi_names", &args)
+    let result = rlang_ffi::try_dispatch("ffi_names", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -342,14 +388,15 @@ fn ffi_names_vector_with_names() {
 #[test]
 fn ffi_names_without_names_returns_null() {
     let args = vec![r_int_vec(&[1, 2])];
-    let result = rlang_ffi::try_dispatch("ffi_names", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_names", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_null(&result);
 }
 
 #[test]
 fn ffi_duplicate_clones_value() {
     let args = vec![r_int(42), r_lgl(false)];
-    let result = rlang_ffi::try_dispatch("ffi_duplicate", &args)
+    let result = rlang_ffi::try_dispatch("ffi_duplicate", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -364,7 +411,7 @@ fn ffi_duplicate_clones_value() {
 #[test]
 fn ffi_symbol_creates_language_object() {
     let args = vec![r_char("x")];
-    let result = rlang_ffi::try_dispatch("ffi_symbol", &args)
+    let result = rlang_ffi::try_dispatch("ffi_symbol", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -378,20 +425,23 @@ fn ffi_symbol_creates_language_object() {
 
 #[test]
 fn ffi_compiled_by_gcc_returns_false() {
-    let result = rlang_ffi::try_dispatch("ffi_compiled_by_gcc", &[]).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_compiled_by_gcc", &[], &[], &Environment::new_empty())
+            .unwrap();
     assert_is_false(&result);
 }
 
 #[test]
 fn ffi_missing_arg_returns_null() {
-    let result = rlang_ffi::try_dispatch("ffi_missing_arg", &[]).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_missing_arg", &[], &[], &Environment::new_empty()).unwrap();
     assert_is_null(&result);
 }
 
 #[test]
 fn ffi_obj_address_returns_string() {
     let args = vec![r_int(42)];
-    let result = rlang_ffi::try_dispatch("ffi_obj_address", &args)
+    let result = rlang_ffi::try_dispatch("ffi_obj_address", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -408,7 +458,9 @@ fn ffi_obj_address_returns_string() {
 #[test]
 fn ffi_hash_returns_hex_string() {
     let args = vec![r_int(42)];
-    let result = rlang_ffi::try_dispatch("ffi_hash", &args).unwrap().unwrap();
+    let result = rlang_ffi::try_dispatch("ffi_hash", &args, &[], &Environment::new_empty())
+        .unwrap()
+        .unwrap();
     match &result {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Character(c) => {
@@ -424,9 +476,14 @@ fn ffi_hash_returns_hex_string() {
 #[test]
 fn ffi_format_error_arg_backtick_quotes() {
     let args = vec![r_char("myarg")];
-    let result = rlang_ffi::try_dispatch("ffi_format_error_arg", &args)
-        .unwrap()
-        .unwrap();
+    let result = rlang_ffi::try_dispatch(
+        "ffi_format_error_arg",
+        &args,
+        &[],
+        &Environment::new_empty(),
+    )
+    .unwrap()
+    .unwrap();
     match &result {
         RValue::Vector(rv) => match &rv.inner {
             Vector::Character(c) => {
@@ -446,7 +503,7 @@ fn ffi_cnd_type_error() {
         r_char_vec(&["simpleError", "error", "condition"]),
     );
     let args = vec![RValue::List(list)];
-    let result = rlang_ffi::try_dispatch("ffi_cnd_type", &args)
+    let result = rlang_ffi::try_dispatch("ffi_cnd_type", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -466,7 +523,7 @@ fn ffi_cnd_type_warning() {
         r_char_vec(&["simpleWarning", "warning", "condition"]),
     );
     let args = vec![RValue::List(list)];
-    let result = rlang_ffi::try_dispatch("ffi_cnd_type", &args)
+    let result = rlang_ffi::try_dispatch("ffi_cnd_type", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -492,7 +549,7 @@ fn ffi_env_has_finds_bindings() {
         r_char_vec(&["x", "y"]),
         r_lgl(false),
     ];
-    let result = rlang_ffi::try_dispatch("ffi_env_has", &args)
+    let result = rlang_ffi::try_dispatch("ffi_env_has", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -519,7 +576,7 @@ fn ffi_env_has_inherit_walks_parent() {
         r_char("x"),
         r_lgl(false),
     ];
-    let result = rlang_ffi::try_dispatch("ffi_env_has", &args)
+    let result = rlang_ffi::try_dispatch("ffi_env_has", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -532,7 +589,7 @@ fn ffi_env_has_inherit_walks_parent() {
 
     // With inherit: x found via parent
     let args = vec![RValue::Environment(child), r_char("x"), r_lgl(true)];
-    let result = rlang_ffi::try_dispatch("ffi_env_has", &args)
+    let result = rlang_ffi::try_dispatch("ffi_env_has", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -550,7 +607,7 @@ fn ffi_env_clone_copies_bindings() {
     env.set("x".to_string(), r_int(42));
 
     let args = vec![RValue::Environment(env.clone())];
-    let result = rlang_ffi::try_dispatch("ffi_env_clone", &args)
+    let result = rlang_ffi::try_dispatch("ffi_env_clone", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -570,7 +627,7 @@ fn ffi_find_var_in_env() {
     env.set("myvar".to_string(), r_int(99));
 
     let args = vec![r_char("myvar"), RValue::Environment(env)];
-    let result = rlang_ffi::try_dispatch("ffi_find_var", &args)
+    let result = rlang_ffi::try_dispatch("ffi_find_var", &args, &[], &Environment::new_empty())
         .unwrap()
         .unwrap();
     match &result {
@@ -586,15 +643,17 @@ fn ffi_find_var_in_env() {
 fn ffi_find_var_missing_returns_null() {
     let env = r::interpreter::environment::Environment::new_global();
     let args = vec![r_char("nonexistent"), RValue::Environment(env)];
-    let result = rlang_ffi::try_dispatch("ffi_find_var", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_find_var", &args, &[], &Environment::new_empty()).unwrap();
     assert_is_null(&result);
 }
 
 #[test]
 fn ffi_ns_registry_env_returns_environment() {
-    let result = rlang_ffi::try_dispatch("ffi_ns_registry_env", &[])
-        .unwrap()
-        .unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_ns_registry_env", &[], &[], &Environment::new_empty())
+            .unwrap()
+            .unwrap();
     assert!(matches!(result, RValue::Environment(_)));
 }
 
@@ -608,7 +667,9 @@ fn ffi_env_poke_parent_changes_parent() {
         RValue::Environment(child.clone()),
         RValue::Environment(parent2.clone()),
     ];
-    let result = rlang_ffi::try_dispatch("ffi_env_poke_parent", &args).unwrap();
+    let result =
+        rlang_ffi::try_dispatch("ffi_env_poke_parent", &args, &[], &Environment::new_empty())
+            .unwrap();
     assert_is_null(&result);
 
     // Verify parent was changed
@@ -623,7 +684,7 @@ fn ffi_env_poke_parent_changes_parent() {
 #[test]
 fn promise_functions_return_null() {
     for name in &["ffi_promise_expr", "ffi_promise_value", "ffi_promise_env"] {
-        let result = rlang_ffi::try_dispatch(name, &[r_null()]);
+        let result = rlang_ffi::try_dispatch(name, &[r_null()], &[], &Environment::new_empty());
         assert!(result.is_some(), "{name} should be intercepted");
         assert_is_null(&result.unwrap());
     }
@@ -637,7 +698,8 @@ fn promise_functions_return_null() {
 fn unknown_ffi_returns_none() {
     // Unknown ffi_ symbols are caught by the catch-all and return NULL
     // (prevents segfaults from uninitialized rlang C code)
-    let result = rlang_ffi::try_dispatch("ffi_unknown_function", &[]);
+    let result =
+        rlang_ffi::try_dispatch("ffi_unknown_function", &[], &[], &Environment::new_empty());
     assert!(
         result.is_some(),
         "unknown ffi_ should be caught by catch-all"
@@ -645,7 +707,8 @@ fn unknown_ffi_returns_none() {
     assert!(matches!(result.unwrap(), Ok(RValue::Null)));
 
     // Non-ffi_ symbols still fall through to C code
-    let result = rlang_ffi::try_dispatch("some_other_function", &[]);
+    let result =
+        rlang_ffi::try_dispatch("some_other_function", &[], &[], &Environment::new_empty());
     assert!(result.is_none(), "non-ffi_ should fall through to C code");
 }
 

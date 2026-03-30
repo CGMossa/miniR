@@ -231,6 +231,8 @@ pub(super) fn eval_index(
                 _ => Err(IndexingError::InvalidIndexType.into()),
             }
         }
+        // NULL[anything] returns NULL in R
+        RValue::Null => Ok(RValue::Null),
         _ => Err(IndexingError::NotSubsettable.into()),
     }
 }
@@ -968,6 +970,8 @@ pub(super) fn eval_index_double(
                 Ok(RValue::Null)
             }
         }
+        // NULL[[anything]] returns NULL in R
+        RValue::Null => Ok(RValue::Null),
         _ => Err(IndexingError::NotSubsettable.into()),
     }
 }

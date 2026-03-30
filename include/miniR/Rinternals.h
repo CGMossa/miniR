@@ -59,6 +59,7 @@ typedef unsigned int SEXPTYPE;
 #define EXTPTRSXP   22
 #define WEAKREFSXP  23
 #define RAWSXP      24
+#define S4SXP       25
 #define OBJSXP      25
 
 /* ── Rboolean ── */
@@ -183,6 +184,7 @@ extern SEXP R_DotsSymbol;
 /* REAL_ELT / INTEGER_ELT — single-element accessors */
 #define REAL_ELT(x, i)    (REAL(x)[i])
 #define INTEGER_ELT(x, i) (INTEGER(x)[i])
+#define COMPLEX_ELT(x, i) (COMPLEX(x)[i])
 #define LOGICAL_ELT(x, i) (LOGICAL(x)[i])
 
 /* Data pointer access */
@@ -703,6 +705,10 @@ static inline void R_Serialize(SEXP s, R_outpstream_t stream) {
    Packages that critically depend on Rf_eval from C won't work fully. */
 SEXP Rf_eval(SEXP expr, SEXP env);
 
+/* R_forceAndCall — call with n args forced eagerly.
+   In GNU R this is an optimization hint. We just forward to Rf_eval. */
+SEXP R_forceAndCall(SEXP call, int n, SEXP env);
+
 /* Rf_lcons — language node constructor */
 SEXP Rf_lcons(SEXP car, SEXP cdr);
 
@@ -936,9 +942,11 @@ SEXP Rf_findFun(SEXP sym, SEXP env);
 /* LCONS -- alias for Rf_lcons */
 #define LCONS(a, b) Rf_lcons((a), (b))
 #define Rf_list4(a,b,c,d) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), R_NilValue))))
+#define Rf_list5(a,b,c,d,e) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), Rf_cons((e), R_NilValue)))))
 #define R_IsNaN(x) isnan(x)
 #ifndef R_NO_REMAP
 #define list4 Rf_list4
+#define list5 Rf_list5
 #define reEnc Rf_reEnc
 #define isFactor(x)   Rf_inherits((x), "factor")
 #define isNewList(x)  (TYPEOF(x) == VECSXP)
