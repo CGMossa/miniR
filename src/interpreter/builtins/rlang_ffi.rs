@@ -71,14 +71,28 @@ pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError
         "ffi_promise_value" => Some(Ok(RValue::Null)),
         "ffi_promise_env" => Some(Ok(RValue::Null)),
 
+        // region: Standalone type-check functions (used by lifecycle, vctrs, etc.)
+        "ffi_standalone_is_bool_1.0.7" => Some(ffi_standalone_is_bool(args)),
+        "ffi_standalone_check_number_1.0.7" => Some(ffi_standalone_check_number(args)),
+
+        // Catch-all: any ffi_ name we don't handle — return NULL to avoid segfaults
+        // from uninitialized rlang C code. Log for debugging.
+        _ if name.starts_with("ffi_") => {
+            tracing::debug!(symbol = name, "unhandled rlang FFI — returning NULL");
+            Some(Ok(RValue::Null))
+        }
         _ => None,
     }
 }
 
 // region: Helpers
 
+fn lgl(v: bool) -> RValue {
+    RValue::vec(Vector::Logical(vec![Some(v)].into()))
+}
+
 fn r_false() -> RValue {
-    RValue::vec(Vector::Logical(vec![Some(false)].into()))
+    lgl(false)
 }
 
 fn r_bool(v: bool) -> RValue {
@@ -785,6 +799,101 @@ fn ffi_env_binding_types(args: &[RValue]) -> Result<RValue, RError> {
     rv.set_attr("names".to_string(), names_val.clone());
 
     Ok(RValue::Vector(rv))
+}
+
+// endregion
+
+// region: Standalone type-check functions
+
+/// ffi_standalone_is_bool(x, allow_na, allow_null) -> logical
+fn ffi_standalone_is_bool(args: &[RValue]) -> Result<RValue, RError> {
+    let x = args.first().unwrap_or(&RValue::Null);
+    let allow_na = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let allow_null = args
+        .get(2)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    if matches!(x, RValue::Null) {
+        return Ok(lgl(allow_null));
+    }
+
+    if let RValue::Vector(rv) = x {
+        if let Vector::Logical(l) = &rv.inner {
+            if l.len() == 1 {
+                return match l[0] {
+                    None => Ok(lgl(allow_na)),
+                    Some(_) => Ok(lgl(true)),
+                };
+            }
+        }
+    }
+
+    Ok(lgl(false))
+}
+
+/// ffi_standalone_check_number(x, allow_decimal, min, max, allow_infinite, allow_na, allow_null) -> integer
+/// Returns 0 for success, positive integer for various failure codes.
+fn ffi_standalone_check_number(args: &[RValue]) -> Result<RValue, RError> {
+    let x = args.first().unwrap_or(&RValue::Null);
+    let allow_decimal = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+    let allow_infinite = args
+        .get(4)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(true);
+    let allow_na = args
+        .get(5)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+    let allow_null = args
+        .get(6)
+        .and_then(|v| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    if matches!(x, RValue::Null) {
+        return Ok(int_val(if allow_null { 0 } else { 1 }));
+    }
+
+    if let RValue::Vector(rv) = x {
+        match &rv.inner {
+            Vector::Integer(i) if i.len() == 1 => {
+                return match i.get_opt(0) {
+                    None => Ok(int_val(if allow_na { 0 } else { 4 })),
+                    Some(_) => Ok(int_val(0)),
+                };
+            }
+            Vector::Double(d) if d.len() == 1 => {
+                return match d.get_opt(0) {
+                    None => Ok(int_val(if allow_na { 0 } else { 4 })),
+                    Some(val) => {
+                        if val.is_infinite() && !allow_infinite {
+                            Ok(int_val(5))
+                        } else if !allow_decimal && val.fract() != 0.0 {
+                            Ok(int_val(2))
+                        } else {
+                            Ok(int_val(0))
+                        }
+                    }
+                };
+            }
+            Vector::Logical(l) if l.len() == 1 && l[0].is_none() => {
+                return Ok(int_val(if allow_na { 0 } else { 4 }));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(int_val(1))
+}
+
+fn int_val(v: i64) -> RValue {
+    RValue::vec(Vector::Integer(vec![Some(v)].into()))
 }
 
 // endregion
