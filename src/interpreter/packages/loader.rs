@@ -246,6 +246,12 @@ impl Interpreter {
             RValue::vec(Vector::Character(vec![Some(pkg_name.to_string())].into())),
         );
 
+        // Pre-create .__rlang_hook__. for packages using rlang's on_load() pattern.
+        namespace_env.set(
+            ".__rlang_hook__.".to_string(),
+            RValue::List(crate::interpreter::value::RList::new(vec![])),
+        );
+
         // Populate imports into the namespace env
         self.populate_imports(&namespace, &namespace_env)?;
 
