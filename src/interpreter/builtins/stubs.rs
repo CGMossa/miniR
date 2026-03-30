@@ -95,12 +95,15 @@ fn builtin_dot_external(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     ))
 }
 
-/// .External2 — stub.
+// .External2 is implemented in native_code.rs when the native feature is enabled.
+// Without native, it returns an error.
+#[cfg(not(feature = "native"))]
+/// .External2 — stub when native feature is disabled.
 #[builtin(name = ".External2")]
 fn builtin_dot_external2(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     Err(RError::new(
         RErrorKind::Other,
-        ".External2() is not available in miniR".to_string(),
+        ".External2() is not available — miniR was built without the 'native' feature".to_string(),
     ))
 }
 
