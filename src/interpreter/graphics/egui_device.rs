@@ -465,8 +465,8 @@ impl eframe::App for PlotApp {
                             .open(&mut open)
                             .resizable(true)
                             .default_size([700.0, 400.0])
-                            .show(ctx, |_ui| {
-                                render_table(ctx, data, view_state);
+                            .show(ctx, |ui| {
+                                render_table(ctx, ui, data, view_state);
                             });
                     }
                 }
@@ -493,7 +493,9 @@ impl eframe::App for PlotApp {
                 Tab::Table {
                     data, view_state, ..
                 } => {
-                    render_table(ctx, data, view_state);
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        render_table(ctx, ui, data, view_state);
+                    });
                 }
             }
         }
@@ -881,8 +883,13 @@ fn render_plot_item(
     }
 }
 
-/// Render a View() data frame table in the central panel.
-fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) {
+/// Render the View() toolbar, table grid, and summary bar into the given `Ui`.
+///
+/// The table uses `egui_table::Table` for virtual scrolling when the `view`
+/// feature is enabled, falling back to `egui::Grid` (all rows) otherwise.
+/// The caller is responsible for providing the `Ui` — this works inside both
+/// `egui::CentralPanel` and `egui::Window`.
+fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &mut TableViewState) {
     if vs.dirty {
         vs.recompute(data);
     }
@@ -903,265 +910,126 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
         Some((min, max, mean, vals.len()))
     });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.heading(&data.title);
+    ui.heading(&data.title);
 
-        // Toolbar
-        ui.horizontal(|ui| {
-            ui.label("🔍");
-            let old_filter = vs.filter.clone();
-            let filter_response = ui.add(
-                egui::TextEdit::singleline(&mut vs.filter)
-                    .desired_width(200.0)
-                    .hint_text("Filter rows..."),
-            );
-            if vs.filter != old_filter {
-                vs.dirty = true;
-                vs.recompute(data);
-            }
-            // Clear filter button
-            if !vs.filter.is_empty() && ui.small_button("✕").clicked() {
-                vs.filter.clear();
-                vs.dirty = true;
-                vs.recompute(data);
-                filter_response.request_focus();
-            }
-
-            ui.separator();
-            ui.label("Digits:");
-            let mut digits_str = vs
-                .digits
-                .map(|d| d.to_string())
-                .unwrap_or_else(|| "-".to_string());
-            let resp = ui.add(egui::TextEdit::singleline(&mut digits_str).desired_width(30.0));
-            if resp.changed() {
-                vs.digits = digits_str.parse::<usize>().ok();
-            }
-
-            ui.separator();
-            if ui.selectable_label(vs.show_col_picker, "Columns").clicked() {
-                vs.show_col_picker = !vs.show_col_picker;
-            }
-
-            ui.separator();
-            ui.label(format!(
-                "{}/{} rows",
-                vs.visible_rows.len(),
-                data.rows.len()
-            ));
-
-            // Export CSV button
-            if ui.small_button("📋 CSV").clicked() {
-                let mut csv = String::new();
-                // Header
-                csv.push_str(&data.headers.join(","));
-                csv.push('\n');
-                // Visible rows
-                for &r in &vs.visible_rows {
-                    if let Some(row) = data.rows.get(r) {
-                        csv.push_str(&row.join(","));
-                        csv.push('\n');
-                    }
-                }
-                ctx.copy_text(csv);
-            }
-        });
-
-        // Column visibility picker
-        if vs.show_col_picker {
-            ui.horizontal_wrapped(|ui| {
-                for (i, header) in data.headers.iter().enumerate() {
-                    let mut visible = vs.col_visible.get(i).copied().unwrap_or(true);
-                    if ui.checkbox(&mut visible, header).changed() {
-                        if let Some(v) = vs.col_visible.get_mut(i) {
-                            *v = visible;
-                        }
-                    }
-                }
-            });
+    // Toolbar
+    ui.horizontal(|ui| {
+        ui.label("🔍");
+        let old_filter = vs.filter.clone();
+        let filter_response = ui.add(
+            egui::TextEdit::singleline(&mut vs.filter)
+                .desired_width(200.0)
+                .hint_text("Filter rows..."),
+        );
+        if vs.filter != old_filter {
+            vs.dirty = true;
+            vs.recompute(data);
+        }
+        // Clear filter button
+        if !vs.filter.is_empty() && ui.small_button("✕").clicked() {
+            vs.filter.clear();
+            vs.dirty = true;
+            vs.recompute(data);
+            filter_response.request_focus();
         }
 
         ui.separator();
+        ui.label("Digits:");
+        let mut digits_str = vs
+            .digits
+            .map(|d| d.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let resp = ui.add(egui::TextEdit::singleline(&mut digits_str).desired_width(30.0));
+        if resp.changed() {
+            vs.digits = digits_str.parse::<usize>().ok();
+        }
 
-        // Visible column indices
-        let vis_cols: Vec<usize> = (0..data.headers.len())
-            .filter(|&i| vs.col_visible.get(i).copied().unwrap_or(true))
-            .collect();
+        ui.separator();
+        if ui.selectable_label(vs.show_col_picker, "Columns").clicked() {
+            vs.show_col_picker = !vs.show_col_picker;
+        }
 
-        egui::ScrollArea::both()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Grid::new("view_grid")
-                    .striped(true)
-                    .num_columns(vis_cols.len() + 1)
-                    .min_col_width(40.0)
-                    .show(ui, |ui| {
-                        // Header row: column name <type>, clickable for sort
-                        ui.label(egui::RichText::new("").weak()); // row name col
-                        for &col_idx in &vis_cols {
-                            let header = &data.headers[col_idx];
-                            let type_tag = data
-                                .col_types
-                                .get(col_idx)
-                                .map(|t| t.short_name())
-                                .unwrap_or("???");
-                            let sort_arrow = if vs.sort_col == Some(col_idx) {
-                                if vs.sort_desc {
-                                    " ▼"
-                                } else {
-                                    " ▲"
-                                }
-                            } else {
-                                ""
-                            };
-                            let label_text = format!("{header} <{type_tag}>{sort_arrow}");
-                            let resp = ui.add(
-                                egui::Label::new(egui::RichText::new(label_text).strong())
-                                    .sense(egui::Sense::click()),
-                            );
-                            if resp.clicked() {
-                                if vs.sort_col == Some(col_idx) {
-                                    vs.sort_desc = !vs.sort_desc;
-                                } else {
-                                    vs.sort_col = Some(col_idx);
-                                    vs.sort_desc = false;
-                                }
-                                vs.selected_col = Some(col_idx);
-                                vs.dirty = true;
-                                vs.recompute(data);
-                            }
-                        }
-                        ui.end_row();
+        ui.separator();
+        ui.label(format!(
+            "{}/{} rows",
+            vs.visible_rows.len(),
+            data.rows.len()
+        ));
 
-                        // Data rows
-                        for (vis_idx, &row_idx) in vs.visible_rows.iter().enumerate() {
-                            let is_selected = vs.selected_row == Some(vis_idx);
-
-                            // Row name
-                            if let Some(rn) = data.row_names.get(row_idx) {
-                                let text = egui::RichText::new(rn).weak();
-                                let resp =
-                                    ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-                                if resp.clicked() {
-                                    vs.selected_row = Some(vis_idx);
-                                }
-                            }
-
-                            // Cells
-                            if let Some(row) = data.rows.get(row_idx) {
-                                for &col_idx in &vis_cols {
-                                    let cell = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
-                                    let is_na = cell == "NA";
-                                    let is_numeric =
-                                        data.col_types.get(col_idx).is_some_and(|t| t.is_numeric());
-
-                                    // Format the display value
-                                    let display = if is_na {
-                                        "NA".to_string()
-                                    } else if let Some(digits) = vs.digits {
-                                        if let Ok(v) = cell.parse::<f64>() {
-                                            format!("{v:.digits$}")
-                                        } else {
-                                            cell.to_string()
-                                        }
-                                    } else {
-                                        cell.to_string()
-                                    };
-
-                                    // Style: NA=gray italic, selected=highlight, numeric=monospace
-                                    let mut text = if is_na {
-                                        egui::RichText::new(&display).weak().italics()
-                                    } else if is_selected {
-                                        egui::RichText::new(&display)
-                                            .background_color(egui::Color32::from_rgb(60, 80, 120))
-                                    } else if is_numeric {
-                                        egui::RichText::new(&display).monospace()
-                                    } else {
-                                        egui::RichText::new(&display)
-                                    };
-
-                                    // Search highlighting
-                                    if !vs.filter.is_empty()
-                                        && display
-                                            .to_lowercase()
-                                            .contains(&vs.filter.to_lowercase())
-                                    {
-                                        text = text.background_color(egui::Color32::from_rgb(
-                                            120, 100, 30,
-                                        ));
-                                    }
-
-                                    let layout = if is_numeric {
-                                        egui::Layout::right_to_left(egui::Align::Center)
-                                    } else {
-                                        egui::Layout::left_to_right(egui::Align::Center)
-                                    };
-                                    ui.with_layout(layout, |ui| {
-                                        let resp = ui.add(
-                                            egui::Label::new(text).sense(egui::Sense::click()),
-                                        );
-                                        if resp.clicked() {
-                                            vs.selected_row = Some(vis_idx);
-                                            vs.selected_col = Some(col_idx);
-                                        }
-                                        resp.context_menu(|ui| {
-                                            if ui.button("Copy value").clicked() {
-                                                ui.ctx().copy_text(display.clone());
-                                                ui.close();
-                                            }
-                                            if ui.button("Copy row").clicked() {
-                                                if let Some(r) = data.rows.get(row_idx) {
-                                                    ui.ctx().copy_text(r.join("\t"));
-                                                }
-                                                ui.close();
-                                            }
-                                            if ui.button("Copy column").clicked() {
-                                                let col_vals: String = vs
-                                                    .visible_rows
-                                                    .iter()
-                                                    .filter_map(|&ri| {
-                                                        data.rows.get(ri)?.get(col_idx).cloned()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                                    .join("\n");
-                                                ui.ctx().copy_text(col_vals);
-                                                ui.close();
-                                            }
-                                        });
-                                    });
-                                }
-                            }
-                            ui.end_row();
-                        }
-                    });
-            });
-
-        // Summary stats bar at bottom
-        if let Some((min, max, mean, n)) = summary {
-            ui.separator();
-            let col_name = vs
-                .selected_col
-                .and_then(|c| data.headers.get(c))
-                .map(|s| s.as_str())
-                .unwrap_or("?");
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{col_name}: n={n}  min={min:.4}  mean={mean:.4}  max={max:.4}"
-                    ))
-                    .monospace()
-                    .weak(),
-                );
-                if ui
-                    .small_button("📊")
-                    .on_hover_text("Column statistics")
-                    .clicked()
-                {
-                    vs.show_stats_window = true;
+        // Export CSV button
+        if ui.small_button("📋 CSV").clicked() {
+            let mut csv = String::new();
+            // Header
+            csv.push_str(&data.headers.join(","));
+            csv.push('\n');
+            // Visible rows
+            for &r in &vs.visible_rows {
+                if let Some(row) = data.rows.get(r) {
+                    csv.push_str(&row.join(","));
+                    csv.push('\n');
                 }
-            });
+            }
+            ctx.copy_text(csv);
         }
     });
+
+    // Column visibility picker
+    if vs.show_col_picker {
+        ui.horizontal_wrapped(|ui| {
+            for (i, header) in data.headers.iter().enumerate() {
+                let mut visible = vs.col_visible.get(i).copied().unwrap_or(true);
+                if ui.checkbox(&mut visible, header).changed() {
+                    if let Some(v) = vs.col_visible.get_mut(i) {
+                        *v = visible;
+                    }
+                }
+            }
+        });
+    }
+
+    ui.separator();
+
+    // Visible column indices
+    let vis_cols: Vec<usize> = (0..data.headers.len())
+        .filter(|&i| vs.col_visible.get(i).copied().unwrap_or(true))
+        .collect();
+
+    // Render the table body — virtual scrolling via egui_table when available,
+    // otherwise fall back to egui::Grid (all rows).
+    #[cfg(feature = "view")]
+    {
+        render_table_virtual(ui, data, vs, &vis_cols);
+    }
+    #[cfg(not(feature = "view"))]
+    {
+        render_table_grid(ui, data, vs, &vis_cols);
+    }
+
+    // Summary stats bar at bottom
+    if let Some((min, max, mean, n)) = summary {
+        ui.separator();
+        let col_name = vs
+            .selected_col
+            .and_then(|c| data.headers.get(c))
+            .map(|s| s.as_str())
+            .unwrap_or("?");
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{col_name}: n={n}  min={min:.4}  mean={mean:.4}  max={max:.4}"
+                ))
+                .monospace()
+                .weak(),
+            );
+            if ui
+                .small_button("📊")
+                .on_hover_text("Column statistics")
+                .clicked()
+            {
+                vs.show_stats_window = true;
+            }
+        });
+    }
 
     // Floating Column Statistics window
     if vs.show_stats_window {
@@ -1228,6 +1096,423 @@ fn render_table(ctx: &egui::Context, data: &TableData, vs: &mut TableViewState) 
         }
     }
 }
+
+// region: egui_table virtual scrolling
+
+/// Render the table body using `egui_table::Table` for virtual scrolling.
+///
+/// Only cells in the visible viewport are rendered — O(viewport) cost instead
+/// of O(total_rows * total_cols). Used when the `view` feature is enabled.
+#[cfg(feature = "view")]
+fn render_table_virtual(
+    ui: &mut egui::Ui,
+    data: &TableData,
+    vs: &mut TableViewState,
+    vis_cols: &[usize],
+) {
+    // Build columns: col 0 = row names (sticky), rest = data cols
+    let mut columns: Vec<egui_table::Column> = Vec::with_capacity(vis_cols.len() + 1);
+    columns.push(
+        egui_table::Column::new(80.0)
+            .range(egui::Rangef::new(40.0, 300.0))
+            .resizable(true),
+    );
+    for _ in vis_cols {
+        columns.push(
+            egui_table::Column::new(120.0)
+                .range(egui::Rangef::new(40.0, 600.0))
+                .resizable(true),
+        );
+    }
+
+    let mut action = ViewTableAction::None;
+    let row_count = u64::try_from(vs.visible_rows.len()).unwrap_or(0);
+    {
+        let mut delegate = ViewTableDelegate {
+            data,
+            vs,
+            vis_cols,
+            action: &mut action,
+        };
+
+        egui_table::Table::new()
+            .id_salt("view_table")
+            .columns(columns)
+            .num_sticky_cols(1)
+            .headers([egui_table::HeaderRow::new(24.0)])
+            .num_rows(row_count)
+            .auto_size_mode(egui_table::AutoSizeMode::OnParentResize)
+            .show(ui, &mut delegate);
+    }
+
+    // Apply deferred actions from delegate clicks
+    match action {
+        ViewTableAction::None => {}
+        ViewTableAction::SortColumn(col_idx) => {
+            if vs.sort_col == Some(col_idx) {
+                vs.sort_desc = !vs.sort_desc;
+            } else {
+                vs.sort_col = Some(col_idx);
+                vs.sort_desc = false;
+            }
+            vs.selected_col = Some(col_idx);
+            vs.dirty = true;
+            vs.recompute(data);
+        }
+        ViewTableAction::SelectRow(vis_idx) => {
+            vs.selected_row = Some(vis_idx);
+        }
+        ViewTableAction::SelectCell(vis_idx, col_idx) => {
+            vs.selected_row = Some(vis_idx);
+            vs.selected_col = Some(col_idx);
+        }
+    }
+}
+
+/// Deferred action from a click inside the virtual table.
+///
+/// Because `egui_table::TableDelegate` methods receive `&mut self`, and we
+/// need the borrow of `TableViewState` to remain shared during rendering, we
+/// collect click intents here and apply them after `table.show()` returns.
+#[cfg(feature = "view")]
+enum ViewTableAction {
+    None,
+    SortColumn(usize),
+    SelectRow(usize),
+    SelectCell(usize, usize),
+}
+
+/// Delegate that feeds `egui_table::Table` with View() data.
+///
+/// Only cells in the visible viewport are rendered, giving O(viewport) cost
+/// instead of O(total_rows * total_cols).
+#[cfg(feature = "view")]
+struct ViewTableDelegate<'a> {
+    data: &'a TableData,
+    vs: &'a TableViewState,
+    /// Indices into `data.headers`/`data.rows[r]` for visible columns.
+    vis_cols: &'a [usize],
+    /// Collects the first click action per frame.
+    action: &'a mut ViewTableAction,
+}
+
+#[cfg(feature = "view")]
+impl egui_table::TableDelegate for ViewTableDelegate<'_> {
+    fn header_cell_ui(&mut self, ui: &mut egui::Ui, cell: &egui_table::HeaderCellInfo) {
+        let col_nr = cell.col_range.start;
+
+        if col_nr == 0 {
+            // Row-name header (sticky column)
+            ui.label(egui::RichText::new("").weak());
+            return;
+        }
+
+        // Map table column (1-based) to data column index
+        let Some(&data_col) = self.vis_cols.get(col_nr - 1) else {
+            return;
+        };
+
+        let header = &self.data.headers[data_col];
+        let type_tag = self
+            .data
+            .col_types
+            .get(data_col)
+            .map(|t| t.short_name())
+            .unwrap_or("???");
+        let sort_arrow = if self.vs.sort_col == Some(data_col) {
+            if self.vs.sort_desc {
+                " \u{25bc}"
+            } else {
+                " \u{25b2}"
+            }
+        } else {
+            ""
+        };
+        let label_text = format!("{header} <{type_tag}>{sort_arrow}");
+        let resp = ui.add(
+            egui::Label::new(egui::RichText::new(label_text).strong()).sense(egui::Sense::click()),
+        );
+        if resp.clicked() {
+            *self.action = ViewTableAction::SortColumn(data_col);
+        }
+    }
+
+    fn cell_ui(&mut self, ui: &mut egui::Ui, cell: &egui_table::CellInfo) {
+        let vis_idx = cell.row_nr as usize;
+        let col_nr = cell.col_nr;
+
+        // Look up the original row index
+        let Some(&row_idx) = self.vs.visible_rows.get(vis_idx) else {
+            return;
+        };
+
+        if col_nr == 0 {
+            // Row name (sticky column)
+            if let Some(rn) = self.data.row_names.get(row_idx) {
+                let text = egui::RichText::new(rn).weak();
+                let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                if resp.clicked() {
+                    *self.action = ViewTableAction::SelectRow(vis_idx);
+                }
+            }
+            return;
+        }
+
+        // Map table column to data column
+        let Some(&data_col) = self.vis_cols.get(col_nr - 1) else {
+            return;
+        };
+
+        let is_selected = self.vs.selected_row == Some(vis_idx);
+
+        let Some(row) = self.data.rows.get(row_idx) else {
+            return;
+        };
+        let cell_val = row.get(data_col).map(|s| s.as_str()).unwrap_or("");
+        let is_na = cell_val == "NA";
+        let is_numeric = self
+            .data
+            .col_types
+            .get(data_col)
+            .is_some_and(|t| t.is_numeric());
+
+        // Format the display value
+        let display = if is_na {
+            "NA".to_string()
+        } else if let Some(digits) = self.vs.digits {
+            if let Ok(v) = cell_val.parse::<f64>() {
+                format!("{v:.digits$}")
+            } else {
+                cell_val.to_string()
+            }
+        } else {
+            cell_val.to_string()
+        };
+
+        // Style: NA=gray italic, selected=highlight, numeric=monospace
+        let mut text = if is_na {
+            egui::RichText::new(&display).weak().italics()
+        } else if is_selected {
+            egui::RichText::new(&display).background_color(egui::Color32::from_rgb(60, 80, 120))
+        } else if is_numeric {
+            egui::RichText::new(&display).monospace()
+        } else {
+            egui::RichText::new(&display)
+        };
+
+        // Search highlighting
+        if !self.vs.filter.is_empty()
+            && display
+                .to_lowercase()
+                .contains(&self.vs.filter.to_lowercase())
+        {
+            text = text.background_color(egui::Color32::from_rgb(120, 100, 30));
+        }
+
+        // Right-align numeric columns
+        if is_numeric {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                if resp.clicked() {
+                    *self.action = ViewTableAction::SelectCell(vis_idx, data_col);
+                }
+                Self::cell_context_menu(
+                    &resp,
+                    &display,
+                    self.data,
+                    row_idx,
+                    data_col,
+                    &self.vs.visible_rows,
+                );
+            });
+        } else {
+            let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+            if resp.clicked() {
+                *self.action = ViewTableAction::SelectCell(vis_idx, data_col);
+            }
+            Self::cell_context_menu(
+                &resp,
+                &display,
+                self.data,
+                row_idx,
+                data_col,
+                &self.vs.visible_rows,
+            );
+        }
+    }
+
+    fn default_row_height(&self) -> f32 {
+        20.0
+    }
+}
+
+#[cfg(feature = "view")]
+impl ViewTableDelegate<'_> {
+    /// Attach a right-click context menu to a cell response.
+    fn cell_context_menu(
+        resp: &egui::Response,
+        display: &str,
+        data: &TableData,
+        row_idx: usize,
+        col_idx: usize,
+        visible_rows: &[usize],
+    ) {
+        let display_owned = display.to_string();
+        resp.context_menu(|ui| {
+            if ui.button("Copy value").clicked() {
+                ui.ctx().copy_text(display_owned.clone());
+                ui.close();
+            }
+            if ui.button("Copy row").clicked() {
+                if let Some(r) = data.rows.get(row_idx) {
+                    ui.ctx().copy_text(r.join("\t"));
+                }
+                ui.close();
+            }
+            if ui.button("Copy column").clicked() {
+                let col_vals: String = visible_rows
+                    .iter()
+                    .filter_map(|&ri| data.rows.get(ri)?.get(col_idx).cloned())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ui.ctx().copy_text(col_vals);
+                ui.close();
+            }
+        });
+    }
+}
+
+// endregion
+
+// region: egui::Grid fallback (no virtual scrolling)
+
+/// Fallback table body renderer using `egui::Grid` + `egui::ScrollArea`.
+///
+/// Creates a widget for every cell in every row — fine for small tables, but
+/// catastrophic for large data frames. Used when the `view` feature is disabled.
+#[cfg(not(feature = "view"))]
+fn render_table_grid(
+    ui: &mut egui::Ui,
+    data: &TableData,
+    vs: &mut TableViewState,
+    vis_cols: &[usize],
+) {
+    egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Grid::new("view_grid")
+                .striped(true)
+                .num_columns(vis_cols.len() + 1)
+                .min_col_width(40.0)
+                .show(ui, |ui| {
+                    // Header row
+                    ui.label(egui::RichText::new("").weak());
+                    for &col_idx in vis_cols {
+                        let header = &data.headers[col_idx];
+                        let type_tag = data
+                            .col_types
+                            .get(col_idx)
+                            .map(|t| t.short_name())
+                            .unwrap_or("???");
+                        let sort_arrow = if vs.sort_col == Some(col_idx) {
+                            if vs.sort_desc {
+                                " \u{25bc}"
+                            } else {
+                                " \u{25b2}"
+                            }
+                        } else {
+                            ""
+                        };
+                        let label_text = format!("{header} <{type_tag}>{sort_arrow}");
+                        let resp = ui.add(
+                            egui::Label::new(egui::RichText::new(label_text).strong())
+                                .sense(egui::Sense::click()),
+                        );
+                        if resp.clicked() {
+                            if vs.sort_col == Some(col_idx) {
+                                vs.sort_desc = !vs.sort_desc;
+                            } else {
+                                vs.sort_col = Some(col_idx);
+                                vs.sort_desc = false;
+                            }
+                            vs.selected_col = Some(col_idx);
+                            vs.dirty = true;
+                            vs.recompute(data);
+                        }
+                    }
+                    ui.end_row();
+
+                    // Data rows
+                    for (vis_idx, &row_idx) in vs.visible_rows.iter().enumerate() {
+                        let is_selected = vs.selected_row == Some(vis_idx);
+
+                        if let Some(rn) = data.row_names.get(row_idx) {
+                            let text = egui::RichText::new(rn).weak();
+                            let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                            if resp.clicked() {
+                                vs.selected_row = Some(vis_idx);
+                            }
+                        }
+
+                        if let Some(row) = data.rows.get(row_idx) {
+                            for &col_idx in vis_cols {
+                                let cell = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                                let is_na = cell == "NA";
+                                let is_numeric =
+                                    data.col_types.get(col_idx).is_some_and(|t| t.is_numeric());
+
+                                let display = if is_na {
+                                    "NA".to_string()
+                                } else if let Some(digits) = vs.digits {
+                                    if let Ok(v) = cell.parse::<f64>() {
+                                        format!("{v:.digits$}")
+                                    } else {
+                                        cell.to_string()
+                                    }
+                                } else {
+                                    cell.to_string()
+                                };
+
+                                let mut text = if is_na {
+                                    egui::RichText::new(&display).weak().italics()
+                                } else if is_selected {
+                                    egui::RichText::new(&display)
+                                        .background_color(egui::Color32::from_rgb(60, 80, 120))
+                                } else if is_numeric {
+                                    egui::RichText::new(&display).monospace()
+                                } else {
+                                    egui::RichText::new(&display)
+                                };
+
+                                if !vs.filter.is_empty()
+                                    && display.to_lowercase().contains(&vs.filter.to_lowercase())
+                                {
+                                    text = text
+                                        .background_color(egui::Color32::from_rgb(120, 100, 30));
+                                }
+
+                                let layout = if is_numeric {
+                                    egui::Layout::right_to_left(egui::Align::Center)
+                                } else {
+                                    egui::Layout::left_to_right(egui::Align::Center)
+                                };
+                                ui.with_layout(layout, |ui| {
+                                    let resp =
+                                        ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                                    if resp.clicked() {
+                                        vs.selected_row = Some(vis_idx);
+                                        vs.selected_col = Some(col_idx);
+                                    }
+                                });
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+}
+
+// endregion
 
 // endregion
 
