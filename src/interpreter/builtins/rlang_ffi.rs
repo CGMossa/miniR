@@ -77,6 +77,13 @@ pub fn try_dispatch(name: &str, args: &[RValue]) -> Option<Result<RValue, RError
         "ffi_standalone_is_bool_1.0.7" => Some(ffi_standalone_is_bool(args)),
         "ffi_standalone_check_number_1.0.7" => Some(ffi_standalone_check_number(args)),
 
+        // Package init functions that pass namespace env to C — intercept as no-ops
+        // since C code can't handle our ENVSXP representation.
+        _ if name.ends_with("_init_library") || name.ends_with("_init_utils") => {
+            tracing::debug!(symbol = name, "intercepted package init — no-op");
+            Some(Ok(RValue::Null))
+        }
+
         // Catch-all: any ffi_ name we don't handle — return NULL to avoid segfaults
         // from uninitialized rlang C code. Log for debugging.
         _ if name.starts_with("ffi_") => {

@@ -790,7 +790,7 @@ impl Interpreter {
     }
 
     /// Maximum evaluation recursion depth before returning an error.
-    const MAX_EVAL_DEPTH: usize = 256;
+    const MAX_EVAL_DEPTH: usize = 500;
 
     #[tracing::instrument(level = "trace", skip(self, env))]
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {

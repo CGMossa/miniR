@@ -1438,64 +1438,7 @@ fn interp_map(
     Ok(RValue::List(RList::new(results)))
 }
 
-/// Select one of several alternatives based on an expression value.
-///
-/// @param EXPR expression to evaluate; character for named matching, integer for positional
-/// @param ... named alternatives (for character EXPR) or positional alternatives (for integer)
-/// @return the value of the matched alternative, or NULL if none match
-#[interpreter_builtin(name = "switch", min_args = 1)]
-fn interp_switch(
-    positional: &[RValue],
-    named: &[(String, RValue)],
-    _context: &BuiltinContext,
-) -> Result<RValue, RError> {
-    let expr = positional
-        .first()
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "'EXPR' is missing".to_string()))?;
-
-    let is_character =
-        matches!(expr, RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)));
-
-    if is_character {
-        let s = match expr {
-            RValue::Vector(v) => v.as_character_scalar().unwrap_or_default(),
-            _ => String::new(),
-        };
-        let mut found = false;
-        for (name, val) in named {
-            if name == &s {
-                found = true;
-                if !matches!(val, RValue::Null) {
-                    return Ok(val.clone());
-                }
-            } else if found && !matches!(val, RValue::Null) {
-                return Ok(val.clone());
-            }
-        }
-        if let Some(default) = positional.get(1) {
-            return Ok(default.clone());
-        }
-        Ok(RValue::Null)
-    } else {
-        let idx = match expr {
-            RValue::Vector(v) => v.as_integer_scalar(),
-            _ => None,
-        };
-        match idx {
-            Some(i) if i >= 1 => {
-                let mut alts: Vec<&RValue> = positional.iter().skip(1).collect();
-                for (_, v) in named {
-                    alts.push(v);
-                }
-                Ok(alts
-                    .get(usize::try_from(i - 1)?)
-                    .map(|v| (*v).clone())
-                    .unwrap_or(RValue::Null))
-            }
-            _ => Ok(RValue::Null),
-        }
-    }
-}
+// switch() moved to pre_eval.rs — must not eagerly evaluate all branches
 
 /// Look up a variable by name in an environment.
 ///

@@ -1691,3 +1691,104 @@ fn pre_eval_require(
 }
 
 // endregion
+
+// region: switch (lazy branch evaluation)
+
+/// switch(EXPR, ...) — only evaluate the matching branch.
+///
+/// Critical for rlang's ns_env() which has `switch(typeof(x), builtin=, special=ns_env("base"), ...)`
+/// — the `ns_env("base")` must NOT be evaluated unless typeof(x) is "builtin" or "special".
+///
+/// @param EXPR expression to evaluate (determines which branch)
+/// @param ... named branches (name=value) and optional default
+/// @return value of the matching branch
+/// @namespace base
+#[pre_eval_builtin(name = "switch")]
+fn pre_eval_switch(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    if args.is_empty() {
+        return Err(RError::new(
+            RErrorKind::Argument,
+            "'EXPR' is missing".to_string(),
+        ));
+    }
+
+    // Evaluate EXPR (first argument)
+    let expr_val = context.with_interpreter(|interp| {
+        args[0]
+            .value
+            .as_ref()
+            .map(|e| interp.eval_in(e, env))
+            .transpose()
+            .map_err(RError::from)
+    })?;
+    let expr_val = expr_val.unwrap_or(RValue::Null);
+
+    let is_character =
+        matches!(&expr_val, RValue::Vector(rv) if matches!(rv.inner, Vector::Character(_)));
+
+    if is_character {
+        let s = expr_val
+            .as_vector()
+            .and_then(|v| v.as_character_scalar())
+            .unwrap_or_default();
+
+        // Find the matching named arg. Fall-through: if matched name has no value,
+        // continue to next named arg that has a value.
+        let named_args: Vec<_> = args[1..].iter().filter(|a| a.name.is_some()).collect();
+        let default_arg = args[1..].iter().find(|a| a.name.is_none());
+
+        let mut found = false;
+        for arg in &named_args {
+            let name = arg.name.as_deref().unwrap_or("");
+            if name == s {
+                found = true;
+                // If value is Some, evaluate and return it
+                if let Some(ref expr) = arg.value {
+                    return context.with_interpreter(|interp| {
+                        interp.eval_in(expr, env).map_err(RError::from)
+                    });
+                }
+                // Fall-through: no value → continue to next
+            } else if found {
+                if let Some(ref expr) = arg.value {
+                    return context.with_interpreter(|interp| {
+                        interp.eval_in(expr, env).map_err(RError::from)
+                    });
+                }
+            }
+        }
+
+        // No match — try default (unnamed arg after EXPR)
+        if let Some(arg) = default_arg {
+            if let Some(ref expr) = arg.value {
+                return context
+                    .with_interpreter(|interp| interp.eval_in(expr, env).map_err(RError::from));
+            }
+        }
+
+        Ok(RValue::Null)
+    } else {
+        // Integer indexing
+        let idx = expr_val.as_vector().and_then(|v| v.as_integer_scalar());
+        match idx {
+            Some(i) if i >= 1 => {
+                let remaining: Vec<_> = args[1..].iter().collect();
+                if let Some(arg) = remaining.get(usize::try_from(i - 1)?) {
+                    if let Some(ref expr) = arg.value {
+                        return context.with_interpreter(|interp| {
+                            interp.eval_in(expr, env).map_err(RError::from)
+                        });
+                    }
+                }
+                Ok(RValue::Null)
+            }
+            _ => Ok(RValue::Null),
+        }
+    }
+}
+
+// endregion
