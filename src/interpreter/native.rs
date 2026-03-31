@@ -9,6 +9,7 @@
 pub mod compile;
 pub mod convert;
 pub mod dll;
+pub mod rmath;
 pub mod runtime;
 pub mod sexp;
 pub mod stacktrace;
