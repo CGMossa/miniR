@@ -20,9 +20,12 @@
 #include <stdint.h>
 
 /* Native backtrace capture for stacktrace support.
- * Available on macOS (always) and Linux with glibc. */
+ * Available on macOS (always), Linux with glibc, and Windows (MSVC). */
 #if defined(__APPLE__) || defined(__GLIBC__)
 #include <execinfo.h>
+#define HAVE_BACKTRACE 1
+#elif defined(_WIN32)
+#include <windows.h>
 #define HAVE_BACKTRACE 1
 #else
 #define HAVE_BACKTRACE 0
@@ -43,6 +46,18 @@ static int     _has_error = 0;
 static void *_bt_frames[MAX_BT_FRAMES];
 static int   _bt_count = 0;
 
+/* Platform-abstracted backtrace capture. */
+static int capture_backtrace(void **frames, int max_frames) {
+#if defined(_WIN32)
+    return (int)CaptureStackBackTrace(0, (DWORD)max_frames, frames, NULL);
+#elif HAVE_BACKTRACE
+    return backtrace(frames, max_frames);
+#else
+    (void)frames; (void)max_frames;
+    return 0;
+#endif
+}
+
 /* ── Rf_error / Rf_warning — called by package C code ── */
 
 /* These are declared in Rinternals.h and resolved from the binary */
@@ -53,9 +68,7 @@ void Rf_error(const char *fmt, ...) {
     vsnprintf(_error_msg, sizeof(_error_msg), fmt, ap);
     va_end(ap);
     _has_error = 1;
-#if HAVE_BACKTRACE
-    _bt_count = backtrace(_bt_frames, MAX_BT_FRAMES);
-#endif
+    _bt_count = capture_backtrace(_bt_frames, MAX_BT_FRAMES);
     longjmp(_error_jmp, 1);
 }
 
@@ -66,9 +79,7 @@ void Rf_errorcall(SEXP call, const char *fmt, ...) {
     vsnprintf(_error_msg, sizeof(_error_msg), fmt, ap);
     va_end(ap);
     _has_error = 1;
-#if HAVE_BACKTRACE
-    _bt_count = backtrace(_bt_frames, MAX_BT_FRAMES);
-#endif
+    _bt_count = capture_backtrace(_bt_frames, MAX_BT_FRAMES);
     longjmp(_error_jmp, 1);
 }
 

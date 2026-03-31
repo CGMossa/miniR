@@ -134,8 +134,186 @@ mod dladdr_ffi {
     }
 }
 
-/// Fallback for platforms without dladdr (e.g., musl Linux).
-#[cfg(not(any(target_os = "macos", target_env = "gnu")))]
+/// Windows: use DbgHelp API for symbol resolution (function name + file:line).
+/// DbgHelp reads PDB debug info natively — no DWARF/gimli needed.
+#[cfg(windows)]
+mod dladdr_ffi {
+    use std::ffi::c_void;
+    use std::path::Path;
+
+    use super::ResolvedFrame;
+
+    // DbgHelp FFI types
+    const MAX_SYM_NAME: usize = 256;
+
+    #[repr(C)]
+    struct SymbolInfo {
+        size_of_struct: u32,
+        type_index: u32,
+        reserved: [u64; 2],
+        index: u32,
+        size: u32,
+        mod_base: u64,
+        flags: u32,
+        value: u64,
+        address: u64,
+        register: u32,
+        scope: u32,
+        tag: u32,
+        name_len: u32,
+        max_name_len: u32,
+        name: [u8; MAX_SYM_NAME],
+    }
+
+    #[repr(C)]
+    struct ImagehlpLine64 {
+        size_of_struct: u32,
+        key: *mut c_void,
+        line_number: u32,
+        file_name: *const u8,
+        address: u64,
+    }
+
+    #[repr(C)]
+    struct ImagehlpModule64 {
+        size_of_struct: u32,
+        base_of_image: u64,
+        image_size: u32,
+        time_date_stamp: u32,
+        check_sum: u32,
+        num_syms: u32,
+        sym_type: u32,
+        module_name: [u8; 32],
+        image_name: [u8; 256],
+        loaded_image_name: [u8; 256],
+        // ... more fields we don't need
+    }
+
+    extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn SymInitialize(process: *mut c_void, search_path: *const u8, invade: i32) -> i32;
+        fn SymFromAddr(
+            process: *mut c_void,
+            address: u64,
+            displacement: *mut u64,
+            symbol: *mut SymbolInfo,
+        ) -> i32;
+        fn SymGetLineFromAddr64(
+            process: *mut c_void,
+            address: u64,
+            displacement: *mut u32,
+            line: *mut ImagehlpLine64,
+        ) -> i32;
+        fn SymGetModuleInfo64(
+            process: *mut c_void,
+            address: u64,
+            module_info: *mut ImagehlpModule64,
+        ) -> i32;
+    }
+
+    use std::sync::Once;
+    static DBGHELP_INIT: Once = Once::new();
+
+    fn ensure_dbghelp_init() {
+        DBGHELP_INIT.call_once(|| unsafe {
+            let process = GetCurrentProcess();
+            SymInitialize(process, std::ptr::null(), 1);
+        });
+    }
+
+    pub struct DladdrResult {
+        pub frame: ResolvedFrame,
+        pub library_path: Option<String>,
+        pub library_base: usize,
+    }
+
+    /// Resolve using DbgHelp — gets function name, file:line, and module in one pass.
+    pub fn resolve(addr: usize) -> DladdrResult {
+        ensure_dbghelp_init();
+
+        let process = unsafe { GetCurrentProcess() };
+        let mut function = None;
+        let mut library = None;
+        let mut library_path = None;
+        let mut offset = 0usize;
+        let mut file = None;
+        let mut line = None;
+
+        // Resolve function name
+        let mut sym_info: SymbolInfo = unsafe { std::mem::zeroed() };
+        sym_info.size_of_struct =
+            std::mem::size_of::<SymbolInfo>() as u32 - MAX_SYM_NAME as u32 + 1;
+        sym_info.max_name_len = MAX_SYM_NAME as u32;
+        let mut displacement: u64 = 0;
+        if unsafe { SymFromAddr(process, addr as u64, &mut displacement, &mut sym_info) } != 0 {
+            let name_len = sym_info.name_len as usize;
+            if let Ok(name) = std::str::from_utf8(&sym_info.name[..name_len]) {
+                function = Some(name.to_string());
+            }
+            offset = displacement as usize;
+        }
+
+        // Resolve file:line
+        let mut line_info: ImagehlpLine64 = unsafe { std::mem::zeroed() };
+        line_info.size_of_struct = std::mem::size_of::<ImagehlpLine64>() as u32;
+        let mut line_displacement: u32 = 0;
+        if unsafe {
+            SymGetLineFromAddr64(process, addr as u64, &mut line_displacement, &mut line_info)
+        } != 0
+        {
+            line = Some(line_info.line_number);
+            if !line_info.file_name.is_null() {
+                let c_str = unsafe { std::ffi::CStr::from_ptr(line_info.file_name as *const _) };
+                if let Ok(s) = c_str.to_str() {
+                    file = Some(
+                        Path::new(s)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(s)
+                            .to_string(),
+                    );
+                }
+            }
+        }
+
+        // Resolve module (library)
+        let mut mod_info: ImagehlpModule64 = unsafe { std::mem::zeroed() };
+        mod_info.size_of_struct = std::mem::size_of::<ImagehlpModule64>() as u32;
+        if unsafe { SymGetModuleInfo64(process, addr as u64, &mut mod_info) } != 0 {
+            let nul_pos = mod_info
+                .image_name
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(mod_info.image_name.len());
+            if let Ok(path_str) = std::str::from_utf8(&mod_info.image_name[..nul_pos]) {
+                library_path = Some(path_str.to_string());
+                library = Some(
+                    Path::new(path_str)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(path_str)
+                        .to_string(),
+                );
+            }
+        }
+
+        DladdrResult {
+            frame: ResolvedFrame {
+                address: addr,
+                function,
+                library,
+                offset,
+                file,
+                line,
+            },
+            library_path,
+            library_base: 0,
+        }
+    }
+}
+
+/// Fallback for platforms without dladdr or DbgHelp (e.g., musl Linux).
+#[cfg(not(any(target_os = "macos", target_env = "gnu", windows)))]
 mod dladdr_ffi {
     use super::ResolvedFrame;
 
@@ -163,7 +341,7 @@ mod dladdr_ffi {
 
 // endregion
 
-// region: DWARF debug info discovery
+// region: DWARF debug info discovery (not used on Windows — DbgHelp reads PDB natively)
 //
 // Finding DWARF debug info is platform-specific:
 // - macOS: .dSYM bundles next to the library
@@ -171,6 +349,7 @@ mod dladdr_ffi {
 // - Fallback: embedded in the binary itself
 
 /// Find the file containing DWARF debug info for a given library.
+#[cfg(not(windows))]
 /// Returns the library_path itself if debug info is embedded, or a
 /// separate debug file path if found via platform-specific mechanisms.
 fn find_debug_file(library_path: &str) -> PathBuf {
@@ -316,9 +495,10 @@ fn find_build_id_debug(lib: &Path) -> Option<PathBuf> {
 
 // endregion
 
-// region: DWARF resolution via addr2line
+// region: DWARF resolution via addr2line (not used on Windows)
 
 /// Cache of addr2line contexts, keyed by library path.
+#[cfg(not(windows))]
 /// Library bytes are leaked to get a `'static` lifetime for gimli's
 /// `EndianSlice`. This is bounded by the number of unique .so files
 /// loaded per session (typically < 20).
@@ -330,6 +510,7 @@ struct DwarfCache {
     >,
 }
 
+#[cfg(not(windows))]
 impl DwarfCache {
     fn new() -> Self {
         Self {
@@ -387,11 +568,13 @@ impl DwarfCache {
     }
 }
 
+#[cfg(not(windows))]
 thread_local! {
     static DWARF_CACHE: std::cell::RefCell<DwarfCache> = std::cell::RefCell::new(DwarfCache::new());
 }
 
 /// Try to resolve file:line for an address using DWARF debug info.
+#[cfg(not(windows))]
 fn dwarf_resolve(
     addr: usize,
     library_path: &str,
@@ -438,12 +621,17 @@ pub fn resolve_native_backtrace(frames: &[usize]) -> Vec<ResolvedFrame> {
         .map(|&addr| dladdr_ffi::resolve(addr))
         .collect();
 
-    // Second pass: DWARF resolution where we have library paths
+    // Second pass: DWARF resolution where we have library paths.
+    // Skip on Windows — DbgHelp already resolves file:line from PDB in the first pass.
+    #[cfg(not(windows))]
     for result in &mut dladdr_results {
         if let Some(ref lib_path) = result.library_path {
-            let (file, line) = dwarf_resolve(result.frame.address, lib_path, result.library_base);
-            result.frame.file = file;
-            result.frame.line = line;
+            if result.frame.file.is_none() {
+                let (file, line) =
+                    dwarf_resolve(result.frame.address, lib_path, result.library_base);
+                result.frame.file = file;
+                result.frame.line = line;
+            }
         }
     }
 
