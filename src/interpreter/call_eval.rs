@@ -156,6 +156,7 @@ pub(crate) fn call_function_with_call(
                 interp,
                 name,
                 implementation,
+                0,    // min already checked above
                 None, // max already checked above
                 &reordered_pos,
                 &remaining_named,
@@ -223,6 +224,7 @@ fn try_call_special_builtin(
     let RValue::Function(RFunction::Builtin {
         name,
         implementation,
+        min_args,
         max_args,
         ..
     }) = function
@@ -235,6 +237,7 @@ fn try_call_special_builtin(
     }
 
     if let BuiltinImplementation::PreEval(handler) = implementation {
+        Interpreter::ensure_builtin_min_arity(name, *min_args, args.len()).map_err(RFlow::from)?;
         Interpreter::ensure_builtin_max_arity(name, *max_args, args.len()).map_err(RFlow::from)?;
         let ctx = BuiltinContext::new(interp, env);
         return handler(args, env, &ctx).map_err(Into::into).map(Some);
@@ -398,16 +401,19 @@ fn reorder_builtin_args(
     (result, named.iter().cloned().collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_builtin(
     interp: &Interpreter,
     name: &str,
     implementation: &BuiltinImplementation,
+    min_args: usize,
     max_args: Option<usize>,
     positional: &[RValue],
     named: &[(String, RValue)],
     env: &Environment,
 ) -> Result<RValue, RFlow> {
     let actual_args = positional.len() + named.len();
+    Interpreter::ensure_builtin_min_arity(name, min_args, actual_args).map_err(RFlow::from)?;
     Interpreter::ensure_builtin_max_arity(name, max_args, actual_args).map_err(RFlow::from)?;
 
     match implementation {
