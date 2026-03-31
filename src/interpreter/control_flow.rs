@@ -14,7 +14,7 @@ impl Interpreter {
     ) -> Result<RValue, RFlow> {
         let left_val = self.eval_in(lhs, env)?;
         match rhs {
-            Expr::Call { func, args } => {
+            Expr::Call { func, args, .. } => {
                 let f = self.eval_in(func, env)?;
 
                 // Check if any argument uses `_` or `.` as a placeholder for the LHS.

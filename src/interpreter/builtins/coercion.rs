@@ -423,6 +423,7 @@ fn builtin_as_call(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RE
     let call = Expr::Call {
         func: Box::new(func_expr),
         args: call_args,
+        span: None,
     };
     Ok(RValue::Language(Language::new(call)))
 }

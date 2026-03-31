@@ -184,6 +184,7 @@ impl Interpreter {
                 supplied_positional: positional.iter().cloned().collect(),
                 supplied_named: named.iter().cloned().collect(),
                 supplied_arg_count,
+                is_native_boundary: false,
             },
         })
     }

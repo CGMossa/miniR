@@ -6087,6 +6087,7 @@ fn builtin_call(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
     let expr = Expr::Call {
         func: Box::new(Expr::Symbol(func_name)),
         args: call_args,
+        span: None,
     };
 
     Ok(RValue::Language(Language::new(expr)))

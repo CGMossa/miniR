@@ -748,6 +748,7 @@ fn interp_color_ramp_palette(
     // Build: function(n) .colorRampInterp(.CRP_COLORS, n)
     let body = Expr::Call {
         func: Box::new(Expr::Symbol(".colorRampInterp".to_string())),
+        span: None,
         args: vec![
             Arg {
                 name: None,

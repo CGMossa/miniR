@@ -165,7 +165,7 @@ impl Language {
             return None;
         }
         match self.inner.as_ref() {
-            Expr::Call { func, args } => {
+            Expr::Call { func, args, .. } => {
                 if index == 1 {
                     Some(expr_to_rvalue(func))
                 } else {
@@ -962,7 +962,7 @@ pub fn deparse_expr(expr: &Expr) -> String {
                 AssignOp::RightSuperAssign => format!("{} ->> {}", v, t),
             }
         }
-        Expr::Call { func, args } => {
+        Expr::Call { func, args, .. } => {
             let f = deparse_expr(func);
             format!("{}({})", f, args.iter().map(deparse_arg).join(", "))
         }

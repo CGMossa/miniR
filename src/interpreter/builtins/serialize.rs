@@ -820,6 +820,7 @@ impl<'a> XdrReader<'a> {
         Some(Expr::Call {
             func: Box::new(func_expr),
             args,
+            span: None,
         })
     }
 }
@@ -2271,7 +2272,7 @@ impl XdrWriter {
     /// Other expressions are deparsed and written as STRSXP with the source marker.
     fn write_langsxp_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::Call { func, args } => {
+            Expr::Call { func, args, .. } => {
                 // LANGSXP: CAR = func symbol, CDR = args pairlist
                 let has_named_args = args.iter().any(|a| a.name.is_some());
                 self.write_flags(LANGSXP, false, has_named_args);

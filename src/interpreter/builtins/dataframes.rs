@@ -619,7 +619,7 @@ fn resolve_column_selection(
                 .collect())
         }
         // c(col1, col2)
-        Expr::Call { func, args } => {
+        Expr::Call { func, args, .. } => {
             if let Expr::Symbol(name) = func.as_ref() {
                 if name == "c" {
                     let mut indices = Vec::new();

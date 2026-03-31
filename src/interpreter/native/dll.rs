@@ -50,6 +50,7 @@ fn callback_define_var(name: &str, val: RValue) {
 
 fn callback_eval_expr(expr: &RValue) -> Result<RValue, crate::interpreter::value::RError> {
     use crate::interpreter::value::RError;
+    use crate::interpreter::CallFrame;
     CURRENT_INTERP.with(|cell| {
         let interp = cell.get();
         if interp.is_null() {
@@ -58,21 +59,36 @@ fn callback_eval_expr(expr: &RValue) -> Result<RValue, crate::interpreter::value
             ));
         }
         let interp = unsafe { &*interp };
-        // If it's a language object (parsed expression), evaluate it
-        if let RValue::Language(ref lang) = expr {
-            return interp
+
+        // Push a native boundary marker so tracebacks show the C→R transition
+        let boundary = CallFrame {
+            call: None,
+            function: RValue::Null,
+            env: interp.global_env.clone(),
+            formal_args: Default::default(),
+            supplied_args: Default::default(),
+            supplied_positional: Default::default(),
+            supplied_named: Default::default(),
+            supplied_arg_count: 0,
+            is_native_boundary: true,
+        };
+        interp.call_stack.borrow_mut().push(boundary);
+
+        let result = if let RValue::Language(ref lang) = expr {
+            interp
                 .eval_in(lang, &interp.global_env)
-                .map_err(RError::from);
-        }
-        // If it's a symbol name (character), look it up
-        if let Some(name) = expr.as_vector().and_then(|v| v.as_character_scalar()) {
-            return interp
+                .map_err(RError::from)
+        } else if let Some(name) = expr.as_vector().and_then(|v| v.as_character_scalar()) {
+            interp
                 .global_env
                 .get(&name)
-                .ok_or_else(|| RError::other(format!("object '{name}' not found")));
-        }
-        // Return the value as-is
-        Ok(expr.clone())
+                .ok_or_else(|| RError::other(format!("object '{name}' not found")))
+        } else {
+            Ok(expr.clone())
+        };
+
+        interp.call_stack.borrow_mut().pop();
+        result
     })
 }
 
@@ -527,6 +543,8 @@ impl Interpreter {
                 result: *mut Sexp,
             ) -> i32;
             fn _minir_get_error_msg() -> *const c_char;
+            fn _minir_bt_count() -> i32;
+            fn _minir_bt_frames() -> *const *const std::ffi::c_void;
         }
 
         let mut result_sexp: Sexp = sexp::R_NIL_VALUE;
@@ -553,6 +571,16 @@ impl Interpreter {
                         .to_string()
                 }
             };
+
+            // Capture native backtrace from the C trampoline
+            let bt_count = unsafe { _minir_bt_count() } as usize;
+            if bt_count > 0 {
+                let bt_raw = unsafe { std::slice::from_raw_parts(_minir_bt_frames(), bt_count) };
+                let native_bt = crate::interpreter::NativeBacktrace {
+                    frames: bt_raw.iter().map(|p| *p as usize).collect(),
+                };
+                *self.pending_native_backtrace.borrow_mut() = Some(native_bt);
+            }
 
             // Clean up before returning error
             super::runtime::clear_callbacks();
@@ -655,6 +683,8 @@ impl Interpreter {
                 result: *mut Sexp,
             ) -> i32;
             fn _minir_get_error_msg() -> *const c_char;
+            fn _minir_bt_count() -> i32;
+            fn _minir_bt_frames() -> *const *const std::ffi::c_void;
         }
 
         let mut result_sexp: Sexp = sexp::R_NIL_VALUE;
@@ -674,6 +704,17 @@ impl Interpreter {
                         .to_string()
                 }
             };
+
+            // Capture native backtrace from the C trampoline
+            let bt_count = unsafe { _minir_bt_count() } as usize;
+            if bt_count > 0 {
+                let bt_raw = unsafe { std::slice::from_raw_parts(_minir_bt_frames(), bt_count) };
+                let native_bt = crate::interpreter::NativeBacktrace {
+                    frames: bt_raw.iter().map(|p| *p as usize).collect(),
+                };
+                *self.pending_native_backtrace.borrow_mut() = Some(native_bt);
+            }
+
             super::runtime::clear_callbacks();
             CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));
             super::runtime::free_allocs();
@@ -733,6 +774,8 @@ impl Interpreter {
             fn _minir_dotC_call_protected(fn_ptr: *const (), args: *mut *mut u8, nargs: i32)
                 -> i32;
             fn _minir_get_error_msg() -> *const c_char;
+            fn _minir_bt_count() -> i32;
+            fn _minir_bt_frames() -> *const *const std::ffi::c_void;
         }
 
         let nargs = i32::try_from(ptrs.len()).unwrap_or(0);
@@ -750,6 +793,16 @@ impl Interpreter {
                         .to_string()
                 }
             };
+
+            // Capture native backtrace from the C trampoline
+            let bt_count = unsafe { _minir_bt_count() } as usize;
+            if bt_count > 0 {
+                let bt_raw = unsafe { std::slice::from_raw_parts(_minir_bt_frames(), bt_count) };
+                let native_bt = crate::interpreter::NativeBacktrace {
+                    frames: bt_raw.iter().map(|p| *p as usize).collect(),
+                };
+                *self.pending_native_backtrace.borrow_mut() = Some(native_bt);
+            }
 
             super::runtime::clear_callbacks();
             CURRENT_INTERP.with(|cell| cell.set(std::ptr::null()));

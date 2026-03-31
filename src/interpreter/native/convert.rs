@@ -178,7 +178,7 @@ fn language_to_sexp(lang: &crate::interpreter::value::Language) -> Sexp {
     use crate::parser::ast::Expr;
 
     match lang.inner.as_ref() {
-        Expr::Call { func, args } => {
+        Expr::Call { func, args, .. } => {
             // Convert function expression to SEXP (usually a symbol)
             let func_sexp = expr_to_sexp(func);
             // Build argument pairlist in reverse

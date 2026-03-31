@@ -9,11 +9,35 @@ use crate::interpreter::value::RValue;
 use crate::interpreter::{DiagnosticStyle, Interpreter};
 use crate::parser::ast::Expr;
 
+/// Convert a byte offset in source text to a 1-based line number.
+fn byte_offset_to_line(source: &str, offset: usize) -> usize {
+    source[..offset.min(source.len())]
+        .bytes()
+        .filter(|&b| b == b'\n')
+        .count()
+        + 1
+}
+
+/// Raw native backtrace captured from a C error (Rf_error).
+/// Contains instruction pointer addresses from the C stack at the point
+/// of the error, before longjmp destroyed the frames.
+#[derive(Debug, Clone, Default)]
+pub struct NativeBacktrace {
+    /// Raw instruction pointer addresses from the C stack.
+    pub frames: Vec<usize>,
+}
+
 /// A single entry in a stack trace — a snapshot of one call frame.
 #[derive(Debug, Clone)]
 pub struct TraceEntry {
     /// The call expression (e.g., `f(x, y)`). None for anonymous calls.
     pub call: Option<Expr>,
+    /// Native backtrace if this frame was a .Call/.C that errored in C code.
+    pub native_backtrace: Option<NativeBacktrace>,
+    /// True if this is a C→R boundary (C code called Rf_eval back into R).
+    pub is_native_boundary: bool,
+    /// Source file and text for resolving span → file:line (captured at traceback time).
+    pub source_context: Option<(String, String)>,
 }
 
 pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Option<Expr> {
@@ -21,6 +45,7 @@ pub(crate) fn retarget_call_expr(call_expr: Option<Expr>, target: &str) -> Optio
         Some(Expr::Call { args, .. }) => Some(Expr::Call {
             func: Box::new(Expr::Symbol(target.to_string())),
             args,
+            span: None,
         }),
         _ => None,
     }
@@ -46,6 +71,9 @@ pub(crate) struct CallFrame {
     pub supplied_positional: SmallVec<[RValue; 4]>,
     pub supplied_named: SmallVec<[(String, RValue); 2]>,
     pub supplied_arg_count: usize,
+    /// True if this frame is a synthetic boundary marker for a C→R callback
+    /// (e.g., C code called Rf_eval which re-entered the R interpreter).
+    pub is_native_boundary: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -115,25 +143,58 @@ impl Interpreter {
     }
 
     /// Snapshot the current call stack into `last_traceback`.
-    /// Only captures if `last_traceback` is currently empty (preserves the
-    /// deepest trace as the error bubbles up through multiple frames).
+    ///
+    /// Within the same top-level `eval()` (same generation), only the deepest
+    /// trace is kept (the first capture wins as the error bubbles up and frames
+    /// are popped). Across different evals, a new error always replaces the old
+    /// traceback, matching R's `traceback()` behavior.
     pub(crate) fn capture_traceback(&self) {
+        let current_gen = self.traceback_generation.get();
+        let captured_gen = self.traceback_captured_generation.get();
         let mut tb = self.last_traceback.borrow_mut();
-        if !tb.is_empty() {
+
+        // Same eval: only keep the deepest (first) capture
+        if current_gen == captured_gen && !tb.is_empty() {
             return;
         }
+        self.traceback_captured_generation.set(current_gen);
+        // Consume any pending native backtrace (set by dot_call/dot_c on C error).
+        #[cfg(feature = "native")]
+        let pending_native = self.pending_native_backtrace.borrow_mut().take();
+
+        // Snapshot current source context for span resolution
+        let source_ctx = self.source_stack.borrow().last().cloned();
+
         let frames = self.call_stack.borrow();
+        let len = frames.len();
         *tb = frames
             .iter()
-            .map(|f| TraceEntry {
-                call: f.call.clone(),
+            .enumerate()
+            .map(|(i, f)| {
+                let native_backtrace = {
+                    #[cfg(feature = "native")]
+                    {
+                        // Attach to the innermost (last) frame
+                        if i == len - 1 {
+                            pending_native.clone()
+                        } else {
+                            None
+                        }
+                    }
+                    #[cfg(not(feature = "native"))]
+                    {
+                        let _ = i;
+                        None
+                    }
+                };
+                TraceEntry {
+                    call: f.call.clone(),
+                    native_backtrace,
+                    is_native_boundary: f.is_native_boundary,
+                    source_context: source_ctx.clone(),
+                }
             })
             .collect();
-    }
-
-    /// Clear the last traceback (called at top-level eval entry).
-    pub(crate) fn clear_traceback(&self) {
-        self.last_traceback.borrow_mut().clear();
     }
 
     /// Format the last traceback for display, R-style (deepest frame first).
@@ -147,11 +208,48 @@ impl Interpreter {
         }
         let mut lines = Vec::with_capacity(tb.len());
         for (i, entry) in tb.iter().enumerate().rev() {
+            if entry.is_native_boundary {
+                lines.push("   --- entered native code (Rf_eval callback) ---".to_string());
+                continue;
+            }
             let call_str = match &entry.call {
                 Some(expr) => deparse_expr(expr),
                 None => "<anonymous>".to_string(),
             };
-            lines.push(format!("{}: {}", i + 1, call_str));
+
+            // Resolve span to file:line if available
+            let location = entry
+                .call
+                .as_ref()
+                .and_then(|expr| match expr {
+                    Expr::Call {
+                        span: Some(span), ..
+                    } => Some(span),
+                    _ => None,
+                })
+                .and_then(|span| {
+                    let (filename, source_text) = entry.source_context.as_ref()?;
+                    let line = byte_offset_to_line(source_text, span.start as usize);
+                    Some(format!(" at {}:{}", filename, line))
+                })
+                .unwrap_or_default();
+
+            lines.push(format!("{}: {}{}", i + 1, call_str, location));
+
+            // Append resolved native frames if this entry has a C backtrace
+            #[cfg(feature = "native")]
+            if let Some(ref bt) = entry.native_backtrace {
+                if !bt.frames.is_empty() {
+                    let resolved = crate::interpreter::native::stacktrace::resolve_native_backtrace(
+                        &bt.frames,
+                    );
+                    if !resolved.is_empty() {
+                        lines.push(
+                            crate::interpreter::native::stacktrace::format_native_frames(&resolved),
+                        );
+                    }
+                }
+            }
         }
         Some(lines.join("\n"))
     }

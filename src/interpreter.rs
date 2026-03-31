@@ -25,8 +25,8 @@ use tracing::{debug, info, trace};
 
 use crate::parser::ast::*;
 pub use call::BuiltinContext;
-pub use call::TraceEntry;
 pub(crate) use call::{CallFrame, S3DispatchContext};
+pub use call::{NativeBacktrace, TraceEntry};
 use environment::Environment;
 use value::*;
 
@@ -188,6 +188,20 @@ pub struct Interpreter {
     /// Populated by `call_closure`/`call_closure_lazy` when an error propagates,
     /// cleared at the start of each top-level `eval()`.
     pub(crate) last_traceback: RefCell<Vec<TraceEntry>>,
+    /// Stack of source contexts for file:line resolution in tracebacks.
+    /// Pushed by `source()` / `eval_file()`, popped when done.
+    /// Each entry is (filename, source_text) — byte offsets in Span resolve against source_text.
+    pub(crate) source_stack: RefCell<Vec<(String, String)>>,
+    /// Generation counter for traceback capture. Incremented at each top-level
+    /// `eval()` so we can distinguish "same error propagating up" from "new error
+    /// in a subsequent eval".
+    traceback_generation: std::cell::Cell<u64>,
+    /// The generation at which `last_traceback` was captured.
+    traceback_captured_generation: std::cell::Cell<u64>,
+    /// Native backtrace from the most recent .Call/.C error (Rf_error in C code).
+    /// Set by `dot_call`/`dot_c` on error, consumed by `capture_traceback()`.
+    #[cfg(feature = "native")]
+    pub(crate) pending_native_backtrace: RefCell<Option<NativeBacktrace>>,
     /// Stack of handler sets from withCallingHandlers() calls.
     pub(crate) condition_handlers: RefCell<Vec<Vec<ConditionHandler>>>,
     /// Per-interpreter RNG state. Defaults to `SmallRng` (Xoshiro256++) for
@@ -405,6 +419,11 @@ impl Interpreter {
             s3_dispatch_stack: RefCell::new(Vec::new()),
             call_stack: RefCell::new(Vec::new()),
             last_traceback: RefCell::new(Vec::new()),
+            source_stack: RefCell::new(Vec::new()),
+            traceback_generation: std::cell::Cell::new(0),
+            traceback_captured_generation: std::cell::Cell::new(0),
+            #[cfg(feature = "native")]
+            pending_native_backtrace: RefCell::new(None),
             condition_handlers: RefCell::new(Vec::new()),
             #[cfg(feature = "random")]
             rng: RefCell::new({
@@ -792,7 +811,10 @@ impl Interpreter {
     }
 
     pub fn eval(&self, expr: &Expr) -> Result<RValue, RFlow> {
-        self.clear_traceback();
+        // Increment generation so capture_traceback can distinguish new errors
+        // from the same error propagating up through frames.
+        self.traceback_generation
+            .set(self.traceback_generation.get().wrapping_add(1));
         self.eval_in(expr, &self.global_env)
     }
 
@@ -975,7 +997,9 @@ impl Interpreter {
                 self.eval_assign(op, target, val, env)
             }
 
-            Expr::Call { func, args } => self.eval_call(func, args, env),
+            Expr::Call {
+                func, args, span, ..
+            } => self.eval_call(func, args, *span, env),
             Expr::Index { object, indices } => self.eval_index(object, indices, env),
             Expr::IndexDouble { object, indices } => self.eval_index_double(object, indices, env),
             Expr::Dollar { object, member } => self.eval_dollar(object, member, env),

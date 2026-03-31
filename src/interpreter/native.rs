@@ -11,3 +11,4 @@ pub mod convert;
 pub mod dll;
 pub mod runtime;
 pub mod sexp;
+pub mod stacktrace;

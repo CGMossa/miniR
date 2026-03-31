@@ -82,7 +82,7 @@ fn vector_names(rv: &RVector) -> Option<RowNames> {
 }
 
 fn expr_vector_names(expr: &Expr) -> Option<RowNames> {
-    let Expr::Call { func, args } = expr else {
+    let Expr::Call { func, args, .. } = expr else {
         return None;
     };
     let Expr::Symbol(name) = func.as_ref() else {
@@ -1169,8 +1169,9 @@ fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
                 expr.clone()
             }
         }
-        Expr::Call { func, args } => Expr::Call {
+        Expr::Call { func, args, .. } => Expr::Call {
             func: Box::new(substitute_expr(func, env)),
+            span: None,
             args: args
                 .iter()
                 .map(|a| Arg {
@@ -1287,7 +1288,7 @@ fn bquote_expr(
 ) -> Result<Expr, RError> {
     match expr {
         // Check for .(expr) — a call to `.` with one argument
-        Expr::Call { func, args } => {
+        Expr::Call { func, args, .. } => {
             if let Expr::Symbol(name) = func.as_ref() {
                 if name == "." && args.len() == 1 {
                     // Evaluate the inner expression
@@ -1314,6 +1315,7 @@ fn bquote_expr(
             Ok(Expr::Call {
                 func: new_func,
                 args: new_args?,
+                span: None,
             })
         }
         Expr::BinaryOp { op, lhs, rhs } => Ok(Expr::BinaryOp {

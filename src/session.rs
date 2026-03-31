@@ -193,7 +193,13 @@ impl Session {
                 return Err(SessionError::Parse(err));
             }
         };
-        self.eval_expr(&ast)
+        self.interpreter
+            .source_stack
+            .borrow_mut()
+            .push((path.display().to_string(), source));
+        let result = self.eval_expr(&ast);
+        self.interpreter.source_stack.borrow_mut().pop();
+        result
     }
 
     pub fn interpreter(&self) -> &Interpreter {

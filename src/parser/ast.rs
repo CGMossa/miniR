@@ -1,3 +1,13 @@
+/// Source span — byte offsets into the source text.
+/// Used to resolve file:line info for stack traces.
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    /// Byte offset of the start of this expression in the source.
+    pub start: u32,
+    /// Byte offset of the end of this expression.
+    pub end: u32,
+}
+
 /// AST node types for the R language
 
 #[derive(Debug, Clone)]
@@ -43,7 +53,11 @@ pub enum Expr {
     },
 
     /// Function call
-    Call { func: Box<Expr>, args: Vec<Arg> },
+    Call {
+        func: Box<Expr>,
+        args: Vec<Arg>,
+        span: Option<Span>,
+    },
     /// Single bracket indexing: x[i]
     Index {
         object: Box<Expr>,

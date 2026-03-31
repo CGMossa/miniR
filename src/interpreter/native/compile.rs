@@ -390,6 +390,8 @@ pub fn compile_package_with_deps(
         build
             .pic(true)
             .warnings(false)
+            .debug(true)
+            .flag("-fno-omit-frame-pointer")
             .cargo_metadata(false) // suppress cargo:rerun-if-env-changed output
             // Suppress function pointer type errors (common in R packages with Fortran)
             .flag_if_supported("-Wno-incompatible-function-pointer-types")

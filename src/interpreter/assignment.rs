@@ -191,6 +191,7 @@ fn eval_assign(
         Expr::Call {
             func,
             args: call_args,
+            ..
         } => {
             if let Expr::Symbol(fname) = func.as_ref() {
                 let replacement_fn = format!("{}<-", fname);

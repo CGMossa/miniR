@@ -29,9 +29,10 @@ impl Interpreter {
         &self,
         func: &Expr,
         args: &[Arg],
+        span: Option<crate::parser::ast::Span>,
         env: &Environment,
     ) -> Result<RValue, RFlow> {
-        eval_call(self, func, args, env)
+        eval_call(self, func, args, span, env)
     }
 
     pub fn call_function(
@@ -60,6 +61,7 @@ pub(super) fn eval_call(
     interp: &Interpreter,
     func: &Expr,
     args: &[Arg],
+    span: Option<crate::parser::ast::Span>,
     env: &Environment,
 ) -> Result<RValue, RFlow> {
     trace!(func = %expr_name(func), nargs = args.len(), "calling function");
@@ -67,6 +69,7 @@ pub(super) fn eval_call(
     let call_expr = Expr::Call {
         func: Box::new(func.clone()),
         args: args.to_vec(),
+        span,
     };
 
     if let Some(result) = try_call_special_builtin(interp, &function, args, env)? {

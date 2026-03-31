@@ -1298,6 +1298,7 @@ fn interp_vectorize(
 
     let body = Expr::Call {
         func: Box::new(Expr::Symbol("mapply".to_string())),
+        span: None,
         args: vec![
             // FUN as first positional arg (mapply takes FUN as positional[0])
             Arg {
@@ -1658,7 +1659,15 @@ fn interp_source(
     };
     let ast = crate::parser::parse_program(&source)
         .map_err(|e| RError::other(format!("parse error in '{}': {}", display_path, e)))?;
-    context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from))
+    context.with_interpreter(|interp| {
+        interp
+            .source_stack
+            .borrow_mut()
+            .push((display_path.clone(), source));
+        let result = interp.eval(&ast).map_err(RError::from);
+        interp.source_stack.borrow_mut().pop();
+        result
+    })
 }
 
 /// Read and evaluate an R source file in a specified environment.
@@ -1709,11 +1718,20 @@ fn interp_sys_source(
     let ast = crate::parser::parse_program(&source)
         .map_err(|e| RError::other(format!("parse error in '{}': {}", display_path, e)))?;
 
-    match env {
-        Some(RValue::Environment(target_env)) => context
-            .with_interpreter(|interp| interp.eval_in(&ast, target_env).map_err(RError::from)),
-        _ => context.with_interpreter(|interp| interp.eval(&ast).map_err(RError::from)),
-    }
+    context.with_interpreter(|interp| {
+        interp
+            .source_stack
+            .borrow_mut()
+            .push((display_path.clone(), source));
+        let result = match env {
+            Some(RValue::Environment(target_env)) => {
+                interp.eval_in(&ast, target_env).map_err(RError::from)
+            }
+            _ => interp.eval(&ast).map_err(RError::from),
+        };
+        interp.source_stack.borrow_mut().pop();
+        result
+    })
 }
 
 // system.time() is in pre_eval.rs — it must time unevaluated expressions
@@ -4921,6 +4939,7 @@ fn interp_match_call(
         let matched_call = Expr::Call {
             func: Box::new(func_expr),
             args: result_args,
+            span: None,
         };
         Ok(RValue::Language(Language::new(matched_call)))
     })
@@ -5082,6 +5101,7 @@ fn interp_negate(
         op: UnaryOp::Not,
         operand: Box::new(Expr::Call {
             func: Box::new(Expr::Symbol(".negate_f".to_string())),
+            span: None,
             args: vec![Arg {
                 name: None,
                 value: Some(Expr::Dots),

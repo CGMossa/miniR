@@ -7,6 +7,8 @@ fn main() {
         cc::Build::new()
             .file("csrc/native_trampoline.c")
             .warnings(false)
+            .debug(true)
+            .flag("-fno-omit-frame-pointer")
             .cargo_metadata(true) // need rerun-if-changed for build.rs
             .compile("native_trampoline");
 

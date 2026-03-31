@@ -19,6 +19,15 @@
 #include <string.h>
 #include <stdint.h>
 
+/* Native backtrace capture for stacktrace support.
+ * Available on macOS (always) and Linux with glibc. */
+#if defined(__APPLE__) || defined(__GLIBC__)
+#include <execinfo.h>
+#define HAVE_BACKTRACE 1
+#else
+#define HAVE_BACKTRACE 0
+#endif
+
 /* Forward-declare SEXP for function signatures */
 struct SEXPREC;
 typedef struct SEXPREC *SEXP;
@@ -28,6 +37,11 @@ typedef struct SEXPREC *SEXP;
 static jmp_buf _error_jmp;
 static char    _error_msg[4096];
 static int     _has_error = 0;
+
+/* Native backtrace captured in Rf_error() before longjmp. */
+#define MAX_BT_FRAMES 64
+static void *_bt_frames[MAX_BT_FRAMES];
+static int   _bt_count = 0;
 
 /* ── Rf_error / Rf_warning — called by package C code ── */
 
@@ -39,6 +53,9 @@ void Rf_error(const char *fmt, ...) {
     vsnprintf(_error_msg, sizeof(_error_msg), fmt, ap);
     va_end(ap);
     _has_error = 1;
+#if HAVE_BACKTRACE
+    _bt_count = backtrace(_bt_frames, MAX_BT_FRAMES);
+#endif
     longjmp(_error_jmp, 1);
 }
 
@@ -49,6 +66,9 @@ void Rf_errorcall(SEXP call, const char *fmt, ...) {
     vsnprintf(_error_msg, sizeof(_error_msg), fmt, ap);
     va_end(ap);
     _has_error = 1;
+#if HAVE_BACKTRACE
+    _bt_count = backtrace(_bt_frames, MAX_BT_FRAMES);
+#endif
     longjmp(_error_jmp, 1);
 }
 
@@ -89,6 +109,7 @@ typedef SEXP (*_minir_dotcall_fn)();
 int _minir_call_protected(_minir_dotcall_fn fn, SEXP *args, int nargs, SEXP *result) {
     _has_error = 0;
     _error_msg[0] = '\0';
+    _bt_count = 0;
 
     if (setjmp(_error_jmp) != 0) {
         *result = (SEXP)0;
@@ -150,6 +171,7 @@ typedef void (*_minir_dotC_fn)();
 int _minir_dotC_call_protected(_minir_dotC_fn fn, void **args, int nargs) {
     _has_error = 0;
     _error_msg[0] = '\0';
+    _bt_count = 0;
 
     if (setjmp(_error_jmp) != 0) {
         return 1;
@@ -203,3 +225,5 @@ int _minir_dotC_call_protected(_minir_dotC_fn fn, void **args, int nargs) {
 
 const char *_minir_get_error_msg(void) { return _error_msg; }
 int _minir_has_error_flag(void) { return _has_error; }
+int _minir_bt_count(void) { return _bt_count; }
+void *const *_minir_bt_frames(void) { return _bt_frames; }

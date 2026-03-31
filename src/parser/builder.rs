@@ -140,8 +140,10 @@ fn build_help(pair: Pair<Rule>) -> Expr {
                         name: None,
                         value: Some(Expr::String(topic)),
                     }],
+                    span: None,
                 }),
             }],
+            span: None,
         }
     } else {
         // Binary: expr ~ "?" ~ expr -- just evaluate the LHS
@@ -527,7 +529,8 @@ fn build_postfix_expr(pair: Pair<Rule>) -> Expr {
 }
 
 fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
-    // Unwrap postfix_suffix wrapper if present
+    // Unwrap postfix_suffix wrapper if present, capturing span for calls
+    let outer_span = pair.as_span();
     let pair = if pair.as_rule() == Rule::postfix_suffix {
         pair.into_inner()
             .next()
@@ -545,6 +548,10 @@ fn build_postfix_suffix(object: Expr, pair: Pair<Rule>) -> Expr {
             Expr::Call {
                 func: Box::new(object),
                 args,
+                span: Some(crate::parser::ast::Span {
+                    start: u32::try_from(outer_span.start()).unwrap_or(0),
+                    end: u32::try_from(outer_span.end()).unwrap_or(0),
+                }),
             }
         }
         Rule::index1_suffix => {
