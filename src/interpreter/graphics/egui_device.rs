@@ -117,14 +117,40 @@ struct TableViewState {
     selected_col: Option<usize>,
     /// Column visibility (true = shown).
     col_visible: Vec<bool>,
+    /// Column range start (inclusive) for the range selector.
+    col_range_start: usize,
+    /// Column range end (inclusive) for the range selector.
+    col_range_end: usize,
+    /// Search filter for column names in the picker.
+    col_picker_filter: String,
     /// Show column visibility panel.
     show_col_picker: bool,
     /// Show floating statistics window.
     show_stats_window: bool,
+    /// Pre-parsed numeric values: numeric_cache[col][row] = Some(f64) or None.
+    /// Populated once at construction time — avoids repeated parse::<f64>() per frame.
+    numeric_cache: Vec<Vec<Option<f64>>>,
 }
 
 impl TableViewState {
-    fn new(ncol: usize, nrow: usize) -> Self {
+    fn new(data: &TableData) -> Self {
+        let ncol = data.headers.len();
+        let nrow = data.rows.len();
+
+        // Pre-parse all numeric values once
+        let numeric_cache: Vec<Vec<Option<f64>>> = (0..ncol)
+            .map(|col| {
+                (0..nrow)
+                    .map(|row| {
+                        data.rows
+                            .get(row)
+                            .and_then(|r| r.get(col))
+                            .and_then(|s| s.parse::<f64>().ok())
+                    })
+                    .collect()
+            })
+            .collect();
+
         Self {
             filter: String::new(),
             sort_col: None,
@@ -135,9 +161,20 @@ impl TableViewState {
             selected_row: None,
             selected_col: None,
             col_visible: vec![true; ncol],
+            col_range_start: 0,
+            col_range_end: ncol.saturating_sub(1),
+            col_picker_filter: String::new(),
             show_col_picker: false,
             show_stats_window: false,
+            numeric_cache,
         }
+    }
+
+    /// Get the pre-parsed numeric value for a cell, or None.
+    fn numeric_val(&self, col: usize, row: usize) -> Option<f64> {
+        self.numeric_cache
+            .get(col)
+            .and_then(|c| c.get(row).copied().flatten())
     }
 
     fn recompute(&mut self, data: &TableData) {
@@ -159,13 +196,23 @@ impl TableViewState {
         };
 
         if let Some(col) = self.sort_col {
+            let cache = &self.numeric_cache;
             indices.sort_by(|&a, &b| {
-                let va = data.rows[a].get(col).map(|s| s.as_str()).unwrap_or("");
-                let vb = data.rows[b].get(col).map(|s| s.as_str()).unwrap_or("");
-                // Try numeric comparison first
-                let cmp = match (va.parse::<f64>(), vb.parse::<f64>()) {
-                    (Ok(fa), Ok(fb)) => fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal),
-                    _ => va.cmp(vb),
+                // Use pre-parsed numeric cache instead of parsing per comparison
+                let cmp = match (
+                    cache.get(col).and_then(|c| c.get(a).copied().flatten()),
+                    cache.get(col).and_then(|c| c.get(b).copied().flatten()),
+                ) {
+                    (Some(fa), Some(fb)) => {
+                        fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Some(_), None) => std::cmp::Ordering::Less, // numbers before non-numbers
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => {
+                        let va = data.rows[a].get(col).map(|s| s.as_str()).unwrap_or("");
+                        let vb = data.rows[b].get(col).map(|s| s.as_str()).unwrap_or("");
+                        va.cmp(vb)
+                    }
                 };
                 if self.sort_desc {
                     cmp.reverse()
@@ -177,6 +224,13 @@ impl TableViewState {
 
         self.visible_rows = indices;
         self.dirty = false;
+    }
+
+    /// Apply the column range selector: set col_visible based on range.
+    fn apply_col_range(&mut self) {
+        for (i, vis) in self.col_visible.iter_mut().enumerate() {
+            *vis = i >= self.col_range_start && i <= self.col_range_end;
+        }
     }
 }
 
@@ -279,10 +333,9 @@ impl eframe::App for PlotApp {
                 }
                 PlotMessage::View(data) => {
                     let title = data.title.clone();
-                    let nrow = data.rows.len();
                     self.tabs.push(Tab::Table {
                         title,
-                        view_state: TableViewState::new(data.headers.len(), nrow),
+                        view_state: TableViewState::new(&data),
                         data,
                     });
                     self.active_tab = self.tabs.len() - 1;
@@ -390,10 +443,9 @@ impl eframe::App for PlotApp {
                             match super::csv_drop::csv_to_table_data(&path) {
                                 Ok(data) => {
                                     let title = data.title.clone();
-                                    let nrow = data.rows.len();
                                     self.tabs.push(Tab::Table {
                                         title,
-                                        view_state: TableViewState::new(data.headers.len(), nrow),
+                                        view_state: TableViewState::new(&data),
                                         data,
                                     });
                                     self.active_tab = self.tabs.len() - 1;
@@ -894,12 +946,12 @@ fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &m
         vs.recompute(data);
     }
 
-    // Summary stats for selected column
+    // Summary stats for selected column (uses pre-parsed numeric cache)
     let summary = vs.selected_col.and_then(|col| {
         let vals: Vec<f64> = vs
             .visible_rows
             .iter()
-            .filter_map(|&r| data.rows.get(r)?.get(col)?.parse::<f64>().ok())
+            .filter_map(|&r| vs.numeric_val(col, r))
             .collect();
         if vals.is_empty() {
             return None;
@@ -973,18 +1025,72 @@ fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &m
         }
     });
 
-    // Column visibility picker
+    // Column visibility picker with range selector
     if vs.show_col_picker {
-        ui.horizontal_wrapped(|ui| {
-            for (i, header) in data.headers.iter().enumerate() {
-                let mut visible = vs.col_visible.get(i).copied().unwrap_or(true);
-                if ui.checkbox(&mut visible, header).changed() {
-                    if let Some(v) = vs.col_visible.get_mut(i) {
-                        *v = visible;
-                    }
-                }
+        let ncol = data.headers.len();
+
+        // Range selector row
+        ui.horizontal(|ui| {
+            ui.label("Range:");
+            let mut start = vs.col_range_start;
+            let mut end = vs.col_range_end;
+            ui.add(
+                egui::DragValue::new(&mut start)
+                    .range(0..=ncol.saturating_sub(1))
+                    .prefix("from "),
+            );
+            ui.add(
+                egui::DragValue::new(&mut end)
+                    .range(0..=ncol.saturating_sub(1))
+                    .prefix("to "),
+            );
+            if start != vs.col_range_start || end != vs.col_range_end {
+                vs.col_range_start = start.min(ncol.saturating_sub(1));
+                vs.col_range_end = end.min(ncol.saturating_sub(1));
+                vs.apply_col_range();
             }
+
+            ui.separator();
+            if ui.small_button("All").clicked() {
+                vs.col_visible.fill(true);
+                vs.col_range_start = 0;
+                vs.col_range_end = ncol.saturating_sub(1);
+            }
+            if ui.small_button("None").clicked() {
+                vs.col_visible.fill(false);
+            }
+
+            ui.separator();
+            ui.label("Search:");
+            ui.add(
+                egui::TextEdit::singleline(&mut vs.col_picker_filter)
+                    .desired_width(120.0)
+                    .hint_text("column name..."),
+            );
         });
+
+        // Scrollable checkbox area with search filtering
+        let picker_filter = vs.col_picker_filter.to_lowercase();
+        egui::ScrollArea::vertical()
+            .max_height(120.0)
+            .id_salt("col_picker_scroll")
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (i, header) in data.headers.iter().enumerate() {
+                        if !picker_filter.is_empty()
+                            && !header.to_lowercase().contains(&picker_filter)
+                        {
+                            continue;
+                        }
+                        let mut visible = vs.col_visible.get(i).copied().unwrap_or(true);
+                        if ui.checkbox(&mut visible, header).changed() {
+                            if let Some(v) = vs.col_visible.get_mut(i) {
+                                *v = visible;
+                            }
+                        }
+                    }
+                });
+            });
     }
 
     ui.separator();
@@ -1005,15 +1111,84 @@ fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &m
         render_table_grid(ui, data, vs, &vis_cols);
     }
 
-    // Summary stats bar at bottom
-    if let Some((min, max, mean, n)) = summary {
-        ui.separator();
-        let col_name = vs
-            .selected_col
-            .and_then(|c| data.headers.get(c))
-            .map(|s| s.as_str())
-            .unwrap_or("?");
-        ui.horizontal(|ui| {
+    // Keyboard navigation
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        let max_row = vs.visible_rows.len().saturating_sub(1);
+        vs.selected_row = Some(vs.selected_row.map(|r| (r + 1).min(max_row)).unwrap_or(0));
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        vs.selected_row = Some(vs.selected_row.map(|r| r.saturating_sub(1)).unwrap_or(0));
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+        let max_col = data.headers.len().saturating_sub(1);
+        vs.selected_col = Some(vs.selected_col.map(|c| (c + 1).min(max_col)).unwrap_or(0));
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+        vs.selected_col = Some(vs.selected_col.map(|c| c.saturating_sub(1)).unwrap_or(0));
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::Home)) {
+        if ctx.input(|i| i.modifiers.command) {
+            vs.selected_col = Some(0);
+        } else {
+            vs.selected_row = Some(0);
+        }
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::End)) {
+        if ctx.input(|i| i.modifiers.command) {
+            vs.selected_col = Some(data.headers.len().saturating_sub(1));
+        } else {
+            vs.selected_row = Some(vs.visible_rows.len().saturating_sub(1));
+        }
+    }
+    // Escape clears selection
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        vs.selected_row = None;
+        vs.selected_col = None;
+    }
+
+    // Status bar at bottom
+    ui.separator();
+    ui.horizontal(|ui| {
+        // Dimensions
+        ui.label(
+            egui::RichText::new(format!("{} x {}", data.rows.len(), data.headers.len()))
+                .monospace()
+                .weak(),
+        );
+
+        // Selection info
+        if let Some(row) = vs.selected_row {
+            ui.separator();
+            let row_label = vs
+                .visible_rows
+                .get(row)
+                .and_then(|&r| data.row_names.get(r))
+                .map(|s| s.as_str())
+                .unwrap_or("?");
+            if let Some(col) = vs.selected_col {
+                let col_name = data.headers.get(col).map(|s| s.as_str()).unwrap_or("?");
+                ui.label(
+                    egui::RichText::new(format!("Row {row_label}, Col '{col_name}'"))
+                        .monospace()
+                        .weak(),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new(format!("Row {row_label}"))
+                        .monospace()
+                        .weak(),
+                );
+            }
+        }
+
+        // Summary stats for selected numeric column
+        if let Some((min, max, mean, n)) = summary {
+            ui.separator();
+            let col_name = vs
+                .selected_col
+                .and_then(|c| data.headers.get(c))
+                .map(|s| s.as_str())
+                .unwrap_or("?");
             ui.label(
                 egui::RichText::new(format!(
                     "{col_name}: n={n}  min={min:.4}  mean={mean:.4}  max={max:.4}"
@@ -1028,8 +1203,8 @@ fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &m
             {
                 vs.show_stats_window = true;
             }
-        });
-    }
+        }
+    });
 
     // Floating Column Statistics window
     if vs.show_stats_window {
@@ -1038,7 +1213,7 @@ fn render_table(ctx: &egui::Context, ui: &mut egui::Ui, data: &TableData, vs: &m
             let vals: Vec<f64> = vs
                 .visible_rows
                 .iter()
-                .filter_map(|&r| data.rows.get(r)?.get(col)?.parse::<f64>().ok())
+                .filter_map(|&r| vs.numeric_val(col, r))
                 .collect();
 
             egui::Window::new(format!("Statistics: {col_name}"))
@@ -1203,7 +1378,7 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
 
         if col_nr == 0 {
             // Row-name header (sticky column)
-            ui.label(egui::RichText::new("").weak());
+            ui.label(egui::RichText::new("#").weak().monospace().size(11.0));
             return;
         }
 
@@ -1212,13 +1387,29 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
             return;
         };
 
+        // Selected column highlight
+        if self.vs.selected_col == Some(data_col) {
+            let tint = if ui.visuals().dark_mode {
+                egui::Color32::from_rgba_premultiplied(60, 100, 180, 20)
+            } else {
+                egui::Color32::from_rgba_premultiplied(40, 80, 160, 15)
+            };
+            ui.painter().rect_filled(ui.max_rect(), 0.0, tint);
+        }
+
         let header = &self.data.headers[data_col];
-        let type_tag = self
-            .data
-            .col_types
-            .get(data_col)
-            .map(|t| t.short_name())
-            .unwrap_or("???");
+        let col_type = self.data.col_types.get(data_col).copied();
+        let type_tag = col_type.map(|t| t.short_name()).unwrap_or("???");
+
+        // Colored type badge
+        let badge_color = match col_type {
+            Some(super::view::ColType::Double) => egui::Color32::from_rgb(80, 140, 220),
+            Some(super::view::ColType::Integer) => egui::Color32::from_rgb(200, 140, 50),
+            Some(super::view::ColType::Character) => egui::Color32::from_rgb(80, 170, 100),
+            Some(super::view::ColType::Logical) => egui::Color32::from_rgb(160, 100, 200),
+            _ => egui::Color32::GRAY,
+        };
+
         let sort_arrow = if self.vs.sort_col == Some(data_col) {
             if self.vs.sort_desc {
                 " \u{25bc}"
@@ -1228,10 +1419,41 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
         } else {
             ""
         };
-        let label_text = format!("{header} <{type_tag}>{sort_arrow}");
-        let resp = ui.add(
-            egui::Label::new(egui::RichText::new(label_text).strong()).sense(egui::Sense::click()),
-        );
+
+        // Build rich header: name + colored badge + sort arrow
+        let resp = ui
+            .horizontal(|ui| {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(header).strong())
+                        .sense(egui::Sense::click()),
+                );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(type_tag)
+                            .size(10.0)
+                            .color(badge_color)
+                            .monospace(),
+                    )
+                    .sense(egui::Sense::click()),
+                );
+                if !sort_arrow.is_empty() {
+                    ui.label(egui::RichText::new(sort_arrow).strong());
+                }
+            })
+            .response;
+
+        // Tooltip with column details
+        let na_count = self
+            .vs
+            .numeric_cache
+            .get(data_col)
+            .map(|c| c.iter().filter(|v| v.is_none()).count())
+            .unwrap_or(0);
+        let resp = resp.on_hover_text(format!(
+            "{header}\nType: {type_tag}\nNA: {na_count}\nColumn: {}",
+            data_col + 1
+        ));
+
         if resp.clicked() {
             *self.action = ViewTableAction::SortColumn(data_col);
         }
@@ -1246,10 +1468,34 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
             return;
         };
 
+        // Zebra striping — subtle alternating row background
+        if vis_idx.is_multiple_of(2) {
+            let stripe = if ui.visuals().dark_mode {
+                egui::Color32::from_rgba_premultiplied(255, 255, 255, 6)
+            } else {
+                egui::Color32::from_rgba_premultiplied(0, 0, 0, 8)
+            };
+            ui.painter().rect_filled(ui.max_rect(), 0.0, stripe);
+        }
+
+        // Column highlight — subtle tint for the selected column
+        if col_nr > 0 {
+            if let Some(&data_col_check) = self.vis_cols.get(col_nr - 1) {
+                if self.vs.selected_col == Some(data_col_check) {
+                    let col_tint = if ui.visuals().dark_mode {
+                        egui::Color32::from_rgba_premultiplied(60, 100, 180, 15)
+                    } else {
+                        egui::Color32::from_rgba_premultiplied(40, 80, 160, 12)
+                    };
+                    ui.painter().rect_filled(ui.max_rect(), 0.0, col_tint);
+                }
+            }
+        }
+
         if col_nr == 0 {
             // Row name (sticky column)
             if let Some(rn) = self.data.row_names.get(row_idx) {
-                let text = egui::RichText::new(rn).weak();
+                let text = egui::RichText::new(rn).weak().monospace().size(11.0);
                 let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
                 if resp.clicked() {
                     *self.action = ViewTableAction::SelectRow(vis_idx);
@@ -1263,7 +1509,9 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
             return;
         };
 
-        let is_selected = self.vs.selected_row == Some(vis_idx);
+        let is_row_selected = self.vs.selected_row == Some(vis_idx);
+        let is_col_selected = self.vs.selected_col == Some(data_col);
+        let is_cell_selected = is_row_selected && is_col_selected;
 
         let Some(row) = self.data.rows.get(row_idx) else {
             return;
@@ -1276,11 +1524,11 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
             .get(data_col)
             .is_some_and(|t| t.is_numeric());
 
-        // Format the display value
+        // Format the display value — use numeric cache for digits formatting
         let display = if is_na {
             "NA".to_string()
         } else if let Some(digits) = self.vs.digits {
-            if let Ok(v) = cell_val.parse::<f64>() {
+            if let Some(v) = self.vs.numeric_val(data_col, row_idx) {
                 format!("{v:.digits$}")
             } else {
                 cell_val.to_string()
@@ -1289,11 +1537,15 @@ impl egui_table::TableDelegate for ViewTableDelegate<'_> {
             cell_val.to_string()
         };
 
-        // Style: NA=gray italic, selected=highlight, numeric=monospace
-        let mut text = if is_na {
-            egui::RichText::new(&display).weak().italics()
-        } else if is_selected {
+        // Style: cell selection > row selection > NA > numeric > default
+        let mut text = if is_cell_selected {
+            egui::RichText::new(&display)
+                .background_color(egui::Color32::from_rgb(50, 90, 150))
+                .color(egui::Color32::WHITE)
+        } else if is_row_selected {
             egui::RichText::new(&display).background_color(egui::Color32::from_rgb(60, 80, 120))
+        } else if is_na {
+            egui::RichText::new(&display).weak().italics()
         } else if is_numeric {
             egui::RichText::new(&display).monospace()
         } else {
@@ -1542,10 +1794,9 @@ pub fn run_plot_event_loop(rx: PlotReceiver) -> Result<(), String> {
             }
             Ok(PlotMessage::View(data)) => {
                 let title = data.title.clone();
-                let nrow = data.rows.len();
                 break Tab::Table {
                     title,
-                    view_state: TableViewState::new(data.headers.len(), nrow),
+                    view_state: TableViewState::new(&data),
                     data,
                 };
             }
