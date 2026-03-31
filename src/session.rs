@@ -169,6 +169,8 @@ impl Session {
     pub fn auto_print(&mut self, value: &crate::interpreter::value::RValue) {
         use crate::interpreter::value::RValue;
         if matches!(value, RValue::Null) {
+            // Print "NULL" like GNU R does for visible NULL results
+            self.interpreter.write_stdout("NULL\n");
             return;
         }
         let print_code = "print(.miniR.auto_print_value)";
