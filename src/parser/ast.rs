@@ -1,5 +1,8 @@
 /// Source span — byte offsets into the source text.
 /// Used to resolve file:line info for stack traces.
+///
+/// `PartialEq` always returns true — spans are metadata for diagnostics
+/// and must not affect semantic comparisons (e.g., `identical()` on language objects).
 #[derive(Debug, Clone, Copy)]
 pub struct Span {
     /// Byte offset of the start of this expression in the source.
@@ -8,9 +11,17 @@ pub struct Span {
     pub end: u32,
 }
 
+impl PartialEq for Span {
+    fn eq(&self, _other: &Self) -> bool {
+        true // Spans are metadata — never affect semantic equality
+    }
+}
+
+impl Eq for Span {}
+
 /// AST node types for the R language
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     /// NULL literal
     Null,
@@ -119,20 +130,20 @@ pub enum Expr {
     Program(Vec<Expr>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Arg {
     pub name: Option<String>,
     pub value: Option<Expr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: String,
     pub default: Option<Expr>,
     pub is_dots: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NaType {
     Logical,
     Integer,
@@ -141,7 +152,7 @@ pub enum NaType {
     Complex,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Neg,
     Pos,
@@ -150,7 +161,7 @@ pub enum UnaryOp {
     Formula,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -181,7 +192,7 @@ pub enum BinaryOp {
     DoubleTilde,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialOp {
     In,
     MatMul,
@@ -190,7 +201,7 @@ pub enum SpecialOp {
     Other,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignOp {
     LeftAssign,       // <-
     SuperAssign,      // <<-

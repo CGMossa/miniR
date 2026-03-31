@@ -2072,10 +2072,7 @@ fn r_identical(a: &RValue, b: &RValue) -> bool {
                     body: bb,
                     ..
                 },
-            ) => {
-                format!("{:?}", pa) == format!("{:?}", pb)
-                    && format!("{:?}", ba) == format!("{:?}", bb)
-            }
+            ) => pa == pb && ba == bb,
             _ => false,
         },
         (RValue::Environment(ea), RValue::Environment(eb)) => {
@@ -2083,8 +2080,7 @@ fn r_identical(a: &RValue, b: &RValue) -> bool {
             ea.ptr_eq(eb)
         }
         (RValue::Language(la), RValue::Language(lb)) => {
-            format!("{:?}", la.inner) == format!("{:?}", lb.inner)
-                && attrs_identical(&la.attrs, &lb.attrs)
+            *la.inner == *lb.inner && attrs_identical(&la.attrs, &lb.attrs)
         }
         _ => false,
     }
