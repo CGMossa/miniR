@@ -3030,6 +3030,12 @@ pub extern "C" fn Rf_GetOption1(_tag: Sexp) -> Sexp {
     unsafe { R_NilValue }
 }
 
+// Rf_GetOptionWidth — return the current console width option
+#[no_mangle]
+pub extern "C" fn Rf_GetOptionWidth() -> c_int {
+    80 // default R console width
+}
+
 // S_realloc — reallocate and zero-fill new portion
 #[no_mangle]
 pub extern "C" fn S_realloc(

@@ -23,6 +23,8 @@
 #include <limits.h>
 #include <float.h>
 
+#include "Rconfig.h"
+
 /* R_INLINE — used by package headers */
 #ifndef R_INLINE
 #define R_INLINE static inline
@@ -602,11 +604,13 @@ SEXP Rf_findVar(SEXP sym, SEXP env);
 SEXP Rf_findVarInFrame(SEXP env, SEXP sym);
 SEXP Rf_findVarInFrame3(SEXP env, SEXP sym, int inherits_flag);
 SEXP Rf_GetOption1(SEXP tag);
+int Rf_GetOptionWidth(void);
 #ifndef R_NO_REMAP
 #define findVar Rf_findVar
 #define findVarInFrame Rf_findVarInFrame
 #define findVarInFrame3 Rf_findVarInFrame3
 #define GetOption1 Rf_GetOption1
+#define GetOptionWidth Rf_GetOptionWidth
 #endif
 
 /* Eval variants */
