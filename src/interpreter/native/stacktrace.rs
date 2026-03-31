@@ -6,11 +6,14 @@
 //!
 //! The DWARF layer is optional and gracefully falls back to dladdr-only
 //! output when debug info is unavailable.
+//!
+//! Platform quirks handled:
+//! - **macOS**: dSYM bundles (`<lib>.dSYM/Contents/Resources/DWARF/<filename>`)
+//! - **Linux**: `.gnu_debuglink` section, build-id paths, `/usr/lib/debug/` mirror
+//! - **musl**: no `dladdr` or `backtrace()` — graceful no-op
 
 use std::collections::HashMap;
-use std::ffi::{c_void, CStr};
-use std::os::raw::c_char;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A resolved native stack frame.
 #[derive(Debug, Clone)]
@@ -30,34 +33,120 @@ pub struct ResolvedFrame {
 }
 
 // region: dladdr FFI
+//
+// dladdr is available on macOS (always) and Linux with glibc.
+// On musl Linux it does not exist — the entire dladdr layer is a no-op.
 
-#[repr(C)]
-struct DlInfo {
-    dli_fname: *const c_char,
-    dli_fbase: *mut c_void,
-    dli_sname: *const c_char,
-    dli_saddr: *mut c_void,
+#[cfg(any(target_os = "macos", target_env = "gnu"))]
+mod dladdr_ffi {
+    use std::ffi::{c_void, CStr};
+    use std::os::raw::c_char;
+    use std::path::Path;
+
+    use super::ResolvedFrame;
+
+    #[repr(C)]
+    struct DlInfo {
+        dli_fname: *const c_char,
+        dli_fbase: *mut c_void,
+        dli_sname: *const c_char,
+        dli_saddr: *mut c_void,
+    }
+
+    extern "C" {
+        fn dladdr(addr: *const c_void, info: *mut DlInfo) -> i32;
+    }
+
+    /// Result of dladdr lookup — raw info needed for DWARF resolution.
+    pub struct DladdrResult {
+        pub frame: ResolvedFrame,
+        /// Full path to the shared library (for DWARF lookup).
+        pub library_path: Option<String>,
+        /// Base address where the library is loaded (for address rebasing).
+        pub library_base: usize,
+    }
+
+    /// Resolve a single address via dladdr.
+    pub fn resolve(addr: usize) -> DladdrResult {
+        let mut info: DlInfo = unsafe { std::mem::zeroed() };
+        let ret = unsafe { dladdr(addr as *const c_void, &mut info) };
+        if ret == 0 {
+            return DladdrResult {
+                frame: ResolvedFrame {
+                    address: addr,
+                    function: None,
+                    library: None,
+                    offset: 0,
+                    file: None,
+                    line: None,
+                },
+                library_path: None,
+                library_base: 0,
+            };
+        }
+
+        let function = if info.dli_sname.is_null() {
+            None
+        } else {
+            unsafe { CStr::from_ptr(info.dli_sname) }
+                .to_str()
+                .ok()
+                .map(String::from)
+        };
+
+        let (library, library_path) = if info.dli_fname.is_null() {
+            (None, None)
+        } else {
+            let full_path = unsafe { CStr::from_ptr(info.dli_fname) }
+                .to_str()
+                .ok()
+                .map(String::from);
+            let short_name = full_path.as_deref().map(|s| {
+                Path::new(s)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or(s)
+                    .to_string()
+            });
+            (short_name, full_path)
+        };
+
+        let offset = if info.dli_saddr.is_null() {
+            0
+        } else {
+            addr.wrapping_sub(info.dli_saddr as usize)
+        };
+
+        let library_base = info.dli_fbase as usize;
+
+        DladdrResult {
+            frame: ResolvedFrame {
+                address: addr,
+                function,
+                library,
+                offset,
+                file: None,
+                line: None,
+            },
+            library_path,
+            library_base,
+        }
+    }
 }
 
-extern "C" {
-    fn dladdr(addr: *const c_void, info: *mut DlInfo) -> i32;
-}
+/// Fallback for platforms without dladdr (e.g., musl Linux).
+#[cfg(not(any(target_os = "macos", target_env = "gnu")))]
+mod dladdr_ffi {
+    use super::ResolvedFrame;
 
-/// Result of dladdr lookup — raw info needed for DWARF resolution.
-struct DladdrResult {
-    frame: ResolvedFrame,
-    /// Full path to the shared library (for DWARF lookup).
-    library_path: Option<String>,
-    /// Base address where the library is loaded (for address rebasing).
-    library_base: usize,
-}
+    pub struct DladdrResult {
+        pub frame: ResolvedFrame,
+        pub library_path: Option<String>,
+        pub library_base: usize,
+    }
 
-/// Resolve a single address via dladdr (lightweight, no DWARF).
-fn dladdr_resolve(addr: usize) -> DladdrResult {
-    let mut info: DlInfo = unsafe { std::mem::zeroed() };
-    let ret = unsafe { dladdr(addr as *const c_void, &mut info) };
-    if ret == 0 {
-        return DladdrResult {
+    pub fn resolve(addr: usize) -> DladdrResult {
+        DladdrResult {
             frame: ResolvedFrame {
                 address: addr,
                 function: None,
@@ -68,54 +157,160 @@ fn dladdr_resolve(addr: usize) -> DladdrResult {
             },
             library_path: None,
             library_base: 0,
-        };
+        }
+    }
+}
+
+// endregion
+
+// region: DWARF debug info discovery
+//
+// Finding DWARF debug info is platform-specific:
+// - macOS: .dSYM bundles next to the library
+// - Linux: .gnu_debuglink section, build-id paths, /usr/lib/debug/ mirror
+// - Fallback: embedded in the binary itself
+
+/// Find the file containing DWARF debug info for a given library.
+/// Returns the library_path itself if debug info is embedded, or a
+/// separate debug file path if found via platform-specific mechanisms.
+fn find_debug_file(library_path: &str) -> PathBuf {
+    let lib = Path::new(library_path);
+
+    // macOS: check for .dSYM bundle
+    #[cfg(target_os = "macos")]
+    if let Some(dsym) = find_dsym(lib) {
+        return dsym;
     }
 
-    let function = if info.dli_sname.is_null() {
+    // Linux: check .gnu_debuglink, build-id, and /usr/lib/debug/ mirror
+    #[cfg(target_os = "linux")]
+    if let Some(debug) = find_linux_debug_file(lib) {
+        return debug;
+    }
+
+    // Fallback: debug info embedded in the binary itself
+    lib.to_path_buf()
+}
+
+/// macOS: look for `<path>.dSYM/Contents/Resources/DWARF/<filename>`.
+#[cfg(target_os = "macos")]
+fn find_dsym(lib: &Path) -> Option<PathBuf> {
+    let filename = lib.file_name()?.to_str()?;
+    let dsym = lib
+        .parent()?
+        .join(format!("{}.dSYM", filename))
+        .join("Contents")
+        .join("Resources")
+        .join("DWARF")
+        .join(filename);
+    if dsym.exists() {
+        Some(dsym)
+    } else {
         None
+    }
+}
+
+/// Linux: find separate debug info via multiple strategies.
+#[cfg(target_os = "linux")]
+fn find_linux_debug_file(lib: &Path) -> Option<PathBuf> {
+    // Strategy 1: .gnu_debuglink section in the binary
+    if let Some(path) = find_gnu_debuglink(lib) {
+        return Some(path);
+    }
+
+    // Strategy 2: build-id path (/usr/lib/debug/.build-id/<xx>/<rest>.debug)
+    if let Some(path) = find_build_id_debug(lib) {
+        return Some(path);
+    }
+
+    // Strategy 3: /usr/lib/debug mirror of the original path
+    let debug_mirror = Path::new("/usr/lib/debug").join(lib.strip_prefix("/").unwrap_or(lib));
+    if debug_mirror.exists() {
+        return Some(debug_mirror);
+    }
+
+    None
+}
+
+/// Read the `.gnu_debuglink` section to find a separate debug file.
+/// The section contains a filename (no directory) and a CRC32 checksum.
+/// Search order: same directory as the library, then `/usr/lib/debug/`.
+#[cfg(target_os = "linux")]
+fn find_gnu_debuglink(lib: &Path) -> Option<PathBuf> {
+    use object::{Object as _, ObjectSection as _};
+
+    let bytes = std::fs::read(lib).ok()?;
+    let object = object::File::parse(&*bytes).ok()?;
+    let section = object.section_by_name(".gnu_debuglink")?;
+    let data = section.data().ok()?;
+
+    // The section contains: null-terminated filename, padding, 4-byte CRC32.
+    // We only need the filename.
+    let nul_pos = data.iter().position(|&b| b == 0)?;
+    let debug_filename = std::str::from_utf8(&data[..nul_pos]).ok()?;
+
+    // Check same directory as the library
+    if let Some(dir) = lib.parent() {
+        let candidate = dir.join(debug_filename);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        // Also check a .debug/ subdirectory
+        let candidate = dir.join(".debug").join(debug_filename);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // Check /usr/lib/debug/ + original directory
+    if let Some(dir) = lib.parent() {
+        let candidate = Path::new("/usr/lib/debug")
+            .join(dir.strip_prefix("/").unwrap_or(dir))
+            .join(debug_filename);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+/// Read the ELF `.note.gnu.build-id` section and check
+/// `/usr/lib/debug/.build-id/<xx>/<rest>.debug`.
+#[cfg(target_os = "linux")]
+fn find_build_id_debug(lib: &Path) -> Option<PathBuf> {
+    use object::{Object as _, ObjectSection as _};
+
+    let bytes = std::fs::read(lib).ok()?;
+    let object = object::File::parse(&*bytes).ok()?;
+
+    // The build-id is in the .note.gnu.build-id section.
+    // Format: 4-byte namesz, 4-byte descsz, 4-byte type, name, desc(build-id)
+    let section = object.section_by_name(".note.gnu.build-id")?;
+    let data = section.data().ok()?;
+    if data.len() < 16 {
+        return None;
+    }
+
+    let namesz = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
+    let descsz = u32::from_le_bytes(data[4..8].try_into().ok()?) as usize;
+    // Skip: type (4 bytes), name (namesz aligned to 4), then desc is the build-id
+    let name_end = 12 + ((namesz + 3) & !3);
+    if data.len() < name_end + descsz || descsz < 2 {
+        return None;
+    }
+    let build_id = &data[name_end..name_end + descsz];
+
+    // Convert to hex: first byte is directory, rest is filename
+    let hex: String = build_id.iter().map(|b| format!("{:02x}", b)).collect();
+    let (dir_part, file_part) = hex.split_at(2);
+    let candidate = Path::new("/usr/lib/debug/.build-id")
+        .join(dir_part)
+        .join(format!("{}.debug", file_part));
+    if candidate.exists() {
+        Some(candidate)
     } else {
-        unsafe { CStr::from_ptr(info.dli_sname) }
-            .to_str()
-            .ok()
-            .map(String::from)
-    };
-
-    let (library, library_path) = if info.dli_fname.is_null() {
-        (None, None)
-    } else {
-        let full_path = unsafe { CStr::from_ptr(info.dli_fname) }
-            .to_str()
-            .ok()
-            .map(String::from);
-        let short_name = full_path.as_deref().map(|s| {
-            Path::new(s)
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or(s)
-                .to_string()
-        });
-        (short_name, full_path)
-    };
-
-    let offset = if info.dli_saddr.is_null() {
-        0
-    } else {
-        addr.wrapping_sub(info.dli_saddr as usize)
-    };
-
-    let library_base = info.dli_fbase as usize;
-
-    DladdrResult {
-        frame: ResolvedFrame {
-            address: addr,
-            function,
-            library,
-            offset,
-            file: None,
-            line: None,
-        },
-        library_path,
-        library_base,
+        None
     }
 }
 
@@ -154,34 +349,14 @@ impl DwarfCache {
         self.contexts.get(library_path).and_then(|opt| opt.as_ref())
     }
 
-    /// Find the path containing DWARF debug info.
-    /// On macOS, this is often `<path>.dSYM/Contents/Resources/DWARF/<filename>`.
-    fn find_dwarf_path(library_path: &str) -> Option<String> {
-        let lib = Path::new(library_path);
-        let filename = lib.file_name()?.to_str()?;
-        let dsym = lib
-            .parent()?
-            .join(format!("{}.dSYM", filename))
-            .join("Contents")
-            .join("Resources")
-            .join("DWARF")
-            .join(filename);
-        if dsym.exists() {
-            Some(dsym.to_string_lossy().into_owned())
-        } else {
-            None
-        }
-    }
-
     /// Try to load DWARF debug info from a shared library.
-    /// On macOS, also checks for a `.dSYM` bundle next to the library.
+    /// Uses platform-specific discovery to find debug info in dSYM bundles,
+    /// .gnu_debuglink targets, build-id paths, or the binary itself.
     fn load_context(
         library_path: &str,
     ) -> Option<addr2line::Context<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> {
-        // On macOS, debug info is often in a .dSYM bundle rather than the binary.
-        // Check for <path>.dSYM/Contents/Resources/DWARF/<filename> first.
-        let dwarf_path = Self::find_dwarf_path(library_path);
-        let bytes = std::fs::read(dwarf_path.as_deref().unwrap_or(library_path)).ok()?;
+        let debug_path = find_debug_file(library_path);
+        let bytes = std::fs::read(&debug_path).ok()?;
         // Leak the bytes to get 'static lifetime for gimli slices.
         // Bounded by number of unique libraries per session.
         let bytes: &'static [u8] = Vec::leak(bytes);
@@ -200,8 +375,6 @@ impl DwarfCache {
                 .section_by_name(section_id.name())
                 .and_then(|s: object::Section<'_, '_>| s.uncompressed_data().ok())
                 .unwrap_or(std::borrow::Cow::Borrowed(&[]));
-            // For borrowed data, the lifetime is 'static (from leaked bytes).
-            // For owned data (decompressed), leak it too.
             let slice: &'static [u8] = match data {
                 std::borrow::Cow::Borrowed(b) => b,
                 std::borrow::Cow::Owned(v) => Vec::leak(v),
@@ -260,8 +433,10 @@ fn dwarf_resolve(
 /// only the interesting package code between the .Call entry and the error.
 pub fn resolve_native_backtrace(frames: &[usize]) -> Vec<ResolvedFrame> {
     // First pass: dladdr resolution for all frames
-    let mut dladdr_results: Vec<DladdrResult> =
-        frames.iter().map(|&addr| dladdr_resolve(addr)).collect();
+    let mut dladdr_results: Vec<dladdr_ffi::DladdrResult> = frames
+        .iter()
+        .map(|&addr| dladdr_ffi::resolve(addr))
+        .collect();
 
     // Second pass: DWARF resolution where we have library paths
     for result in &mut dladdr_results {
