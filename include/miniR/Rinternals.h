@@ -181,11 +181,27 @@ extern SEXP R_DotsSymbol;
 #define DATAPTR_RO(x)     ((const void*)((SEXP)(x))->data)
 #define RAW_POINTER(x)    RAW(x)
 
-/* REAL_ELT / INTEGER_ELT — single-element accessors */
+/* Single-element read accessors */
 #define REAL_ELT(x, i)    (REAL(x)[i])
 #define INTEGER_ELT(x, i) (INTEGER(x)[i])
 #define COMPLEX_ELT(x, i) (COMPLEX(x)[i])
 #define LOGICAL_ELT(x, i) (LOGICAL(x)[i])
+#define RAW_ELT(x, i)     (RAW(x)[i])
+#define STRING_ELT_0(x)    STRING_ELT(x, 0)
+
+/* Single-element write accessors (R >= 4.0) */
+#define SET_REAL_ELT(x, i, v)    (REAL(x)[i] = (v))
+#define SET_INTEGER_ELT(x, i, v) (INTEGER(x)[i] = (v))
+#define SET_LOGICAL_ELT(x, i, v) (LOGICAL(x)[i] = (v))
+#define SET_RAW_ELT(x, i, v)     (RAW(x)[i] = (v))
+#define SET_COMPLEX_ELT(x, i, v) (COMPLEX(x)[i] = (v))
+
+/* Nullable data pointer accessors — return DATAPTR or NULL for zero-length vectors */
+#define REAL_OR_NULL(x)    (LENGTH(x) > 0 ? REAL(x) : (double*)0)
+#define INTEGER_OR_NULL(x) (LENGTH(x) > 0 ? INTEGER(x) : (int*)0)
+#define LOGICAL_OR_NULL(x) (LENGTH(x) > 0 ? LOGICAL(x) : (int*)0)
+#define RAW_OR_NULL(x)     (LENGTH(x) > 0 ? RAW(x) : (Rbyte*)0)
+#define COMPLEX_OR_NULL(x) (LENGTH(x) > 0 ? COMPLEX(x) : (Rcomplex*)0)
 
 /* Data pointer access */
 #define DATAPTR_OR_NULL(x) (((SEXP)(x))->data)
@@ -202,6 +218,24 @@ static inline int REAL_GET_REGION(SEXP x, int i, int n, double *buf) {
     int len = LENGTH(x);
     int actual = (i + n > len) ? len - i : n;
     if (actual > 0) memcpy(buf, REAL(x) + i, (size_t)actual * sizeof(double));
+    return actual;
+}
+static inline int LOGICAL_GET_REGION(SEXP x, int i, int n, int *buf) {
+    int len = LENGTH(x);
+    int actual = (i + n > len) ? len - i : n;
+    if (actual > 0) memcpy(buf, LOGICAL(x) + i, (size_t)actual * sizeof(int));
+    return actual;
+}
+static inline int RAW_GET_REGION(SEXP x, int i, int n, Rbyte *buf) {
+    int len = LENGTH(x);
+    int actual = (i + n > len) ? len - i : n;
+    if (actual > 0) memcpy(buf, RAW(x) + i, (size_t)actual * sizeof(Rbyte));
+    return actual;
+}
+static inline int COMPLEX_GET_REGION(SEXP x, int i, int n, Rcomplex *buf) {
+    int len = LENGTH(x);
+    int actual = (i + n > len) ? len - i : n;
+    if (actual > 0) memcpy(buf, COMPLEX(x) + i, (size_t)actual * sizeof(Rcomplex));
     return actual;
 }
 
@@ -944,18 +978,21 @@ SEXP Rf_findFun(SEXP sym, SEXP env);
 #define Rf_list4(a,b,c,d) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), R_NilValue))))
 #define Rf_list5(a,b,c,d,e) Rf_cons((a), Rf_cons((b), Rf_cons((c), Rf_cons((d), Rf_cons((e), R_NilValue)))))
 #define R_IsNaN(x) isnan(x)
+/* Rf_-prefixed predicates always available (even under R_NO_REMAP) */
+static inline Rboolean Rf_isFactor(SEXP x) { return Rf_inherits(x, "factor"); }
+static inline Rboolean Rf_isOrdered(SEXP x) { return Rf_inherits(x, "ordered"); }
+static inline int Rf_isNewList(SEXP x) { return TYPEOF(x) == VECSXP; }
+
+Rboolean Rf_isFrame(SEXP x);
+
 #ifndef R_NO_REMAP
 #define list4 Rf_list4
 #define list5 Rf_list5
 #define reEnc Rf_reEnc
-#define isFactor(x)   Rf_inherits((x), "factor")
-#define isNewList(x)  (TYPEOF(x) == VECSXP)
-#endif
-
-/* More type predicates */
-Rboolean Rf_isFrame(SEXP x);
-#ifndef R_NO_REMAP
-#define isFrame Rf_isFrame
+#define isFactor  Rf_isFactor
+#define isNewList Rf_isNewList
+#define isOrdered Rf_isOrdered
+#define isFrame   Rf_isFrame
 #endif
 
 /* Attribute copying */
@@ -1023,7 +1060,6 @@ Rboolean Rf_isPrimitive(SEXP x);
 /* More type checks */
 Rboolean Rf_isS4(SEXP x);
 #ifndef R_NO_REMAP
-#define isOrdered(x)   Rf_inherits((x), "ordered")
 #define isS4(x)        Rf_isS4(x)
 #define isList(x)      (TYPEOF(x) == LISTSXP || TYPEOF(x) == NILSXP)
 #define isPairList(x)  (TYPEOF(x) == LISTSXP)
