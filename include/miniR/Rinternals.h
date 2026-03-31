@@ -4,9 +4,9 @@
  * C-compatible header for R packages compiled against miniR.
  * Defines the SEXP type, accessor macros, and API function declarations.
  *
- * All state and function implementations live in minir_runtime.c, which
- * is compiled once per package .so. This header only contains struct
- * definitions, macros, constants, and extern declarations.
+ * Function implementations are extern "C" Rust functions in the miniR
+ * binary (src/interpreter/native/runtime.rs). Package .so files resolve
+ * these symbols at load time via dynamic linking.
  */
 
 #ifndef MINIR_RINTERNALS_H
@@ -129,7 +129,7 @@ static inline int R_IsNA(double x) {
 #define ISNA(x)  R_IsNA(x)
 #define ISNAN(x) (isnan(x))
 
-/* ── Globals (defined in minir_runtime.c) ── */
+/* ── Globals (defined in runtime.rs as extern "C") ── */
 
 extern SEXP R_NilValue;
 extern SEXP R_NaString;
@@ -240,7 +240,7 @@ void R_SetExternalPtrProtected(SEXP s, SEXP prot);
 void R_RegisterCFinalizer(SEXP s, void (*fun)(SEXP));
 void R_RegisterCFinalizerEx(SEXP s, void (*fun)(SEXP), Rboolean onexit);
 
-/* ── Function declarations (implemented in minir_runtime.c) ── */
+/* ── Function declarations (implemented in runtime.rs as extern "C") ── */
 
 /* Allocation */
 SEXP Rf_allocVector(SEXPTYPE type, R_xlen_t length);

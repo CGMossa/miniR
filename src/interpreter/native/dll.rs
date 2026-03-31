@@ -4,9 +4,9 @@
 //! and resolve function symbols for `.Call()` dispatch.
 //!
 //! The actual native function call goes through a C trampoline
-//! (`_minir_call_protected` in `minir_runtime.c`) which sets up `setjmp`
-//! so that `Rf_error()` in C code safely longjmps back instead of crashing.
-//! The trampoline also handles variable argument counts (up to 16 SEXP args).
+//! (`_minir_call_protected` in `csrc/native_trampoline.c`) which sets up
+//! `setjmp` so that `Rf_error()` in C code safely longjmps back instead of
+//! crashing. The trampoline handles variable argument counts (up to 16 SEXP args).
 
 use std::collections::HashMap;
 use std::ffi::CStr;
