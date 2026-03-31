@@ -1,9 +1,13 @@
 //! Native symbol resolution for stack traces.
 //!
-//! Resolves raw instruction pointer addresses (captured by `backtrace()` in
-//! the C trampoline) into human-readable function names and library paths
-//! using `dladdr()`.
+//! Two layers of resolution:
+//! 1. **dladdr** — lightweight, zero deps: function name + library path
+//! 2. **addr2line/gimli** — DWARF debug info: file:line for C code
+//!
+//! The DWARF layer is optional and gracefully falls back to dladdr-only
+//! output when debug info is unavailable.
 
+use std::collections::HashMap;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::path::Path;
@@ -19,9 +23,14 @@ pub struct ResolvedFrame {
     pub library: Option<String>,
     /// Offset from the start of the function.
     pub offset: usize,
+    /// Source file (from DWARF debug info, if available).
+    pub file: Option<String>,
+    /// Source line number (from DWARF debug info, if available).
+    pub line: Option<u32>,
 }
 
-// dladdr FFI — available on macOS and Linux without additional linking.
+// region: dladdr FFI
+
 #[repr(C)]
 struct DlInfo {
     dli_fname: *const c_char,
@@ -34,18 +43,34 @@ extern "C" {
     fn dladdr(addr: *const c_void, info: *mut DlInfo) -> i32;
 }
 
-/// Resolve a single instruction pointer address to a function name and library.
-fn resolve_address(addr: usize) -> ResolvedFrame {
+/// Result of dladdr lookup — raw info needed for DWARF resolution.
+struct DladdrResult {
+    frame: ResolvedFrame,
+    /// Full path to the shared library (for DWARF lookup).
+    library_path: Option<String>,
+    /// Base address where the library is loaded (for address rebasing).
+    library_base: usize,
+}
+
+/// Resolve a single address via dladdr (lightweight, no DWARF).
+fn dladdr_resolve(addr: usize) -> DladdrResult {
     let mut info: DlInfo = unsafe { std::mem::zeroed() };
     let ret = unsafe { dladdr(addr as *const c_void, &mut info) };
     if ret == 0 {
-        return ResolvedFrame {
-            address: addr,
-            function: None,
-            library: None,
-            offset: 0,
+        return DladdrResult {
+            frame: ResolvedFrame {
+                address: addr,
+                function: None,
+                library: None,
+                offset: 0,
+                file: None,
+                line: None,
+            },
+            library_path: None,
+            library_base: 0,
         };
     }
+
     let function = if info.dli_sname.is_null() {
         None
     } else {
@@ -54,49 +79,183 @@ fn resolve_address(addr: usize) -> ResolvedFrame {
             .ok()
             .map(String::from)
     };
-    let library = if info.dli_fname.is_null() {
-        None
+
+    let (library, library_path) = if info.dli_fname.is_null() {
+        (None, None)
     } else {
-        unsafe { CStr::from_ptr(info.dli_fname) }
+        let full_path = unsafe { CStr::from_ptr(info.dli_fname) }
             .to_str()
             .ok()
-            .map(|s| {
-                // Show just the filename, not the full path
-                Path::new(s)
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(String::from);
+        let short_name = full_path.as_deref().map(|s| {
+            Path::new(s)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(s)
+                .to_string()
+        });
+        (short_name, full_path)
     };
+
     let offset = if info.dli_saddr.is_null() {
         0
     } else {
         addr.wrapping_sub(info.dli_saddr as usize)
     };
-    ResolvedFrame {
-        address: addr,
-        function,
-        library,
-        offset,
+
+    let library_base = info.dli_fbase as usize;
+
+    DladdrResult {
+        frame: ResolvedFrame {
+            address: addr,
+            function,
+            library,
+            offset,
+            file: None,
+            line: None,
+        },
+        library_path,
+        library_base,
     }
 }
+
+// endregion
+
+// region: DWARF resolution via addr2line
+
+/// Cache of addr2line contexts, keyed by library path.
+/// Library bytes are leaked to get a `'static` lifetime for gimli's
+/// `EndianSlice`. This is bounded by the number of unique .so files
+/// loaded per session (typically < 20).
+struct DwarfCache {
+    /// Map from library path → addr2line Context (or None if DWARF unavailable).
+    contexts: HashMap<
+        String,
+        Option<addr2line::Context<gimli::EndianSlice<'static, gimli::RunTimeEndian>>>,
+    >,
+}
+
+impl DwarfCache {
+    fn new() -> Self {
+        Self {
+            contexts: HashMap::new(),
+        }
+    }
+
+    /// Get or create an addr2line Context for the given library path.
+    fn get_context(
+        &mut self,
+        library_path: &str,
+    ) -> Option<&addr2line::Context<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> {
+        if !self.contexts.contains_key(library_path) {
+            let ctx = Self::load_context(library_path);
+            self.contexts.insert(library_path.to_string(), ctx);
+        }
+        self.contexts.get(library_path).and_then(|opt| opt.as_ref())
+    }
+
+    /// Try to load DWARF debug info from a shared library.
+    fn load_context(
+        library_path: &str,
+    ) -> Option<addr2line::Context<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> {
+        let bytes = std::fs::read(library_path).ok()?;
+        // Leak the bytes to get 'static lifetime for gimli slices.
+        // Bounded by number of unique libraries per session.
+        let bytes: &'static [u8] = Vec::leak(bytes);
+
+        use object::Object as _;
+        let object = object::File::parse(bytes).ok()?;
+        let endian = if object.is_little_endian() {
+            gimli::RunTimeEndian::Little
+        } else {
+            gimli::RunTimeEndian::Big
+        };
+
+        let dwarf = gimli::Dwarf::load(|section_id| -> Result<_, gimli::Error> {
+            use object::ObjectSection as _;
+            let data = object
+                .section_by_name(section_id.name())
+                .and_then(|s: object::Section<'_, '_>| s.uncompressed_data().ok())
+                .unwrap_or(std::borrow::Cow::Borrowed(&[]));
+            // For borrowed data, the lifetime is 'static (from leaked bytes).
+            // For owned data (decompressed), leak it too.
+            let slice: &'static [u8] = match data {
+                std::borrow::Cow::Borrowed(b) => b,
+                std::borrow::Cow::Owned(v) => Vec::leak(v),
+            };
+            Ok(gimli::EndianSlice::new(slice, endian))
+        })
+        .ok()?;
+
+        addr2line::Context::from_dwarf(dwarf).ok()
+    }
+}
+
+thread_local! {
+    static DWARF_CACHE: std::cell::RefCell<DwarfCache> = std::cell::RefCell::new(DwarfCache::new());
+}
+
+/// Try to resolve file:line for an address using DWARF debug info.
+fn dwarf_resolve(
+    addr: usize,
+    library_path: &str,
+    library_base: usize,
+) -> (Option<String>, Option<u32>) {
+    // The address in the backtrace is absolute; DWARF uses relative offsets.
+    let relative_addr = (addr as u64).wrapping_sub(library_base as u64);
+
+    DWARF_CACHE
+        .with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let ctx = cache.get_context(library_path)?;
+
+            if let Ok(Some(loc)) = ctx.find_location(relative_addr) {
+                let file = loc.file.map(|f| {
+                    // Show just the filename for short paths
+                    Path::new(f)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(f)
+                        .to_string()
+                });
+                let line = loc.line;
+                Some((file, line))
+            } else {
+                None
+            }
+        })
+        .unwrap_or((None, None))
+}
+
+// endregion
+
+// region: Public API
 
 /// Resolve a native backtrace into human-readable frames.
 ///
 /// Filters out internal frames (trampoline, backtrace machinery) to show
 /// only the interesting package code between the .Call entry and the error.
 pub fn resolve_native_backtrace(frames: &[usize]) -> Vec<ResolvedFrame> {
-    let resolved: Vec<ResolvedFrame> = frames.iter().map(|&addr| resolve_address(addr)).collect();
+    // First pass: dladdr resolution for all frames
+    let mut dladdr_results: Vec<DladdrResult> =
+        frames.iter().map(|&addr| dladdr_resolve(addr)).collect();
 
-    // Filter: skip frames from the error machinery (Rf_error, backtrace, longjmp)
-    // and stop at the trampoline (_minir_call_protected / _minir_dotC_call_protected).
+    // Second pass: DWARF resolution where we have library paths
+    for result in &mut dladdr_results {
+        if let Some(ref lib_path) = result.library_path {
+            let (file, line) = dwarf_resolve(result.frame.address, lib_path, result.library_base);
+            result.frame.file = file;
+            result.frame.line = line;
+        }
+    }
+
+    // Filter: skip error machinery frames, stop at trampoline
+    let resolved: Vec<ResolvedFrame> = dladdr_results.into_iter().map(|r| r.frame).collect();
     let mut result = Vec::new();
     let mut started = false;
     for frame in &resolved {
         let name = frame.function.as_deref().unwrap_or("");
 
-        // Skip the error/backtrace setup frames at the top
         if !started {
             if name.contains("Rf_error")
                 || name.contains("Rf_errorcall")
@@ -109,7 +268,6 @@ pub fn resolve_native_backtrace(frames: &[usize]) -> Vec<ResolvedFrame> {
             started = true;
         }
 
-        // Stop at the trampoline — everything below is miniR internals
         if name.contains("_minir_call_protected") || name.contains("_minir_dotC_call_protected") {
             break;
         }
@@ -117,8 +275,6 @@ pub fn resolve_native_backtrace(frames: &[usize]) -> Vec<ResolvedFrame> {
         result.push(frame.clone());
     }
 
-    // If filtering left nothing (e.g., the error was directly in the trampoline),
-    // return all resolved frames as a fallback.
     if result.is_empty() && !resolved.is_empty() {
         return resolved;
     }
@@ -133,11 +289,21 @@ pub fn format_native_frames(frames: &[ResolvedFrame]) -> String {
         let addr_fallback = format!("0x{:x}", frame.address);
         let func = frame.function.as_deref().unwrap_or(&addr_fallback);
         let lib = frame.library.as_deref().unwrap_or("???");
-        if frame.offset > 0 {
+
+        // Build the location suffix: " at file.c:42" if DWARF info available
+        let location = match (&frame.file, frame.line) {
+            (Some(file), Some(line)) => format!(" at {}:{}", file, line),
+            (Some(file), None) => format!(" at {}", file),
+            _ => String::new(),
+        };
+
+        if frame.offset > 0 && location.is_empty() {
             lines.push(format!("   [C] {}+0x{:x} ({})", func, frame.offset, lib));
         } else {
-            lines.push(format!("   [C] {} ({})", func, lib));
+            lines.push(format!("   [C] {}{} ({})", func, location, lib));
         }
     }
     lines.join("\n")
 }
+
+// endregion

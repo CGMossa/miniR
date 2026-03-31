@@ -132,6 +132,9 @@ resvg = { version = "0.45", optional = true }
 tiny-skia = { version = "0.11", optional = true }
 libloading = { version = "0.8", optional = true }
 cc = { version = "1", optional = true, features = ["parallel"] }
+addr2line = { version = "0.24", optional = true, default-features = false, features = ["std"] }
+gimli = { version = "0.31", optional = true, default-features = false, features = ["read", "std"] }
+object = { version = "0.36", optional = true, default-features = false, features = ["read", "std"] }
 
 [build-dependencies]
 cc = { version = "1", features = ["parallel"] }
@@ -187,4 +190,4 @@ plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "de
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]
-native = ["dep:libloading", "dep:cc"]
+native = ["dep:libloading", "dep:cc", "dep:addr2line", "dep:gimli", "dep:object"]
