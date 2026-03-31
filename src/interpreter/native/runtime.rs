@@ -3250,8 +3250,14 @@ pub extern "C" fn Rf_ftrunc(x: f64) -> f64 {
 }
 
 #[no_mangle]
-pub extern "C" fn Rf_fprec(x: f64, _digits: f64) -> f64 {
-    x // stub
+pub extern "C" fn Rf_fprec(x: f64, digits: f64) -> f64 {
+    if x == 0.0 || !x.is_finite() || digits <= 0.0 {
+        return x;
+    }
+    let digits = digits as i32;
+    let magnitude = x.abs().log10().floor() as i32 + 1;
+    let scale = 10.0_f64.powi(digits - magnitude);
+    (x * scale).round() / scale
 }
 
 #[no_mangle]
