@@ -154,11 +154,34 @@ impl DwarfCache {
         self.contexts.get(library_path).and_then(|opt| opt.as_ref())
     }
 
+    /// Find the path containing DWARF debug info.
+    /// On macOS, this is often `<path>.dSYM/Contents/Resources/DWARF/<filename>`.
+    fn find_dwarf_path(library_path: &str) -> Option<String> {
+        let lib = Path::new(library_path);
+        let filename = lib.file_name()?.to_str()?;
+        let dsym = lib
+            .parent()?
+            .join(format!("{}.dSYM", filename))
+            .join("Contents")
+            .join("Resources")
+            .join("DWARF")
+            .join(filename);
+        if dsym.exists() {
+            Some(dsym.to_string_lossy().into_owned())
+        } else {
+            None
+        }
+    }
+
     /// Try to load DWARF debug info from a shared library.
+    /// On macOS, also checks for a `.dSYM` bundle next to the library.
     fn load_context(
         library_path: &str,
     ) -> Option<addr2line::Context<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> {
-        let bytes = std::fs::read(library_path).ok()?;
+        // On macOS, debug info is often in a .dSYM bundle rather than the binary.
+        // Check for <path>.dSYM/Contents/Resources/DWARF/<filename> first.
+        let dwarf_path = Self::find_dwarf_path(library_path);
+        let bytes = std::fs::read(dwarf_path.as_deref().unwrap_or(library_path)).ok()?;
         // Leak the bytes to get 'static lifetime for gimli slices.
         // Bounded by number of unique libraries per session.
         let bytes: &'static [u8] = Vec::leak(bytes);
