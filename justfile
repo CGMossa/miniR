@@ -293,6 +293,37 @@ crates-io-overview min_downloads="1000000" max_age_days="548":
         --min-downloads {{min_downloads}} --max-age-days {{max_age_days}}
     rm -rf "/tmp/$DIR" "$DUMP"
 
+# Test native stacktrace: compile C test, run with miniR, verify output
+test-native-stacktrace:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT="{{root}}"
+    OUT="$(mktemp -d)/stacktest"
+    echo "==> Compiling test C code with debug symbols..."
+    cc -c -fPIC -g -fno-omit-frame-pointer \
+        -I "$ROOT/include" -I "$ROOT/include/miniR" \
+        -o "$OUT.o" "$ROOT/tests/native_stacktrace/test.c"
+    cc -shared -g -o "$OUT.dylib" "$OUT.o" -undefined dynamic_lookup
+    dsymutil "$OUT.dylib" 2>/dev/null || true
+    echo "==> Running with miniR (debug build)..."
+    OUTPUT=$(MINIR_INCLUDE="$ROOT/include" "$ROOT/target/debug/r" -e "
+    dyn.load('$OUT.dylib')
+    validate <- function(x) .Call('C_validate', as.integer(x))
+    run_check <- function(x) validate(x)
+    run_check(-5)
+    " 2>&1 || true)
+    echo "$OUTPUT"
+    echo ""
+    # Verify the key parts of the traceback
+    echo "==> Verifying..."
+    echo "$OUTPUT" | grep -q "deep_helper"   || { echo "FAIL: missing deep_helper";   exit 1; }
+    echo "$OUTPUT" | grep -q "middle_helper" || { echo "FAIL: missing middle_helper"; exit 1; }
+    echo "$OUTPUT" | grep -q "C_validate"    || { echo "FAIL: missing C_validate";    exit 1; }
+    echo "$OUTPUT" | grep -q "run_check"     || { echo "FAIL: missing run_check";     exit 1; }
+    echo "$OUTPUT" | grep -q "validate(x)"   || { echo "FAIL: missing validate(x)";   exit 1; }
+    echo "$OUTPUT" | grep -q "test.c:"       || echo "NOTE: no DWARF file:line (dSYM may not be available)"
+    echo "PASS: native stacktrace shows all 3 C frames + 2 R frames"
+
 # Refresh the curated example datasets bundle from the original publishers
 update-datasets:
     ./scripts/update-datasets.sh
