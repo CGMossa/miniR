@@ -126,6 +126,32 @@ miniR aims for better error messages than GNU R — more informative, more
 specific, with suggestions for how to fix the problem. This means error
 message strings will not match GNU R exactly.
 
+### Tracebacks show C frames with source locations
+
+GNU R tracebacks only show R-level call frames and opaque `.Call` entries:
+
+```
+Error in validate(x) : value must be non-negative, got -5
+Calls: run_check -> validate -> .Call
+Execution halted
+```
+
+miniR unwinds the native stack and shows individual C function frames with
+DWARF file:line info (when debug symbols are available):
+
+```
+Error: value must be non-negative, got -5
+Traceback (most recent call last):
+2: validate(x)
+   [C] deep_helper at test.c:36 (stacktest.dylib)
+   [C] middle_helper at test.c:42 (stacktest.dylib)
+   [C] C_validate at test.c:47 (stacktest.dylib)
+1: run_check(-5)
+```
+
+This makes debugging native code issues significantly easier — you can see
+exactly which C function errored and where, not just that `.Call` was invoked.
+
 ## Serialization
 
 `readRDS()` / `saveRDS()` / `load()` / `save()` support GNU R's binary
@@ -136,8 +162,6 @@ text format (`miniRDS1`) is also supported for round-tripping within miniR.
 
 These are not divergences — just features that haven't landed yet:
 
-- `~~` (plotmath) evaluates to NULL
 - `:=` (walrus operator) has no runtime semantics
-- Binary `?` (help with topic) drops the RHS
-- Full S4 inheritance chain
-- Graphics devices
+- Binary `?` (e.g. `methods?show`) — only unary `?topic` help works
+- Graphics devices (`pdf()`, `png()`, etc.) are stubbed
