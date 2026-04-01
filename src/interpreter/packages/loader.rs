@@ -152,6 +152,27 @@ impl Interpreter {
     /// 7. Calls `.onLoad()`
     ///
     /// Returns the namespace environment.
+    /// R's base packages are built into miniR — they don't exist as installable
+    /// directories.  `library(base)`, `library(stats)`, etc. should be no-ops.
+    fn is_base_package(name: &str) -> bool {
+        matches!(
+            name,
+            "base"
+                | "stats"
+                | "utils"
+                | "methods"
+                | "grDevices"
+                | "graphics"
+                | "datasets"
+                | "tools"
+                | "compiler"
+                | "grid"
+                | "splines"
+                | "parallel"
+                | "tcltk"
+        )
+    }
+
     pub(crate) fn load_namespace(&self, pkg_name: &str) -> Result<Environment, RError> {
         debug!(pkg = pkg_name, "loading namespace");
 
@@ -159,6 +180,12 @@ impl Interpreter {
         if let Some(ns) = self.loaded_namespaces.borrow().get(pkg_name) {
             debug!(pkg = pkg_name, "namespace already loaded");
             return Ok(ns.namespace_env.clone());
+        }
+
+        // Base packages are built-in — return the base env directly
+        if Self::is_base_package(pkg_name) {
+            debug!(pkg = pkg_name, "base package — returning base env");
+            return Ok(self.base_env().clone());
         }
 
         let pkg_dir = self.find_package_dir(pkg_name).ok_or_else(|| {
@@ -660,6 +687,11 @@ impl Interpreter {
     /// Inserts the package's exports environment right after `.GlobalEnv`
     /// in the environment parent chain, and adds it to the search path list.
     pub(crate) fn attach_package(&self, pkg_name: &str) -> Result<(), RError> {
+        // Base packages are built-in — their exports are already on the search path
+        if Self::is_base_package(pkg_name) {
+            return Ok(());
+        }
+
         let loaded = self
             .loaded_namespaces
             .borrow()

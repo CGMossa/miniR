@@ -1605,6 +1605,28 @@ fn extract_package_name_nse(
         )
     })?;
 
+    // When character.only=TRUE, evaluate the first arg as a variable
+    let character_only = args.iter().any(|a| {
+        a.name.as_deref() == Some("character.only")
+            && a.value
+                .as_ref()
+                .is_some_and(|e| matches!(e, Expr::Bool(true)))
+    });
+
+    if character_only {
+        let val = context
+            .with_interpreter(|interp| interp.eval_in(first_arg, env).map_err(RError::from))?;
+        return val
+            .as_vector()
+            .and_then(|v| v.as_character_scalar())
+            .ok_or_else(|| {
+                RError::new(
+                    RErrorKind::Argument,
+                    "invalid package name argument".to_string(),
+                )
+            });
+    }
+
     match first_arg {
         // Bare symbol: library(dplyr) → package name is "dplyr"
         Expr::Symbol(name) => Ok(name.clone()),
