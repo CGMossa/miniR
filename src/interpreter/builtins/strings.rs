@@ -471,6 +471,10 @@ fn builtin_trimws(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
 /// @return character vector with all matches replaced
 #[builtin(min_args = 3)]
 fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // NULL input → character(0)
+    if matches!(args.get(2), Some(RValue::Null) | None) {
+        return Ok(RValue::vec(Vector::Character(vec![].into())));
+    }
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -557,6 +561,10 @@ fn builtin_gsub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, R
 /// @return character vector with first match replaced
 #[builtin(min_args = 3)]
 fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // NULL input → character(0)
+    if matches!(args.get(2), Some(RValue::Null) | None) {
+        return Ok(RValue::vec(Vector::Character(vec![].into())));
+    }
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -636,6 +644,9 @@ fn builtin_sub(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RE
 /// @return logical vector indicating which elements match
 #[builtin(min_args = 2)]
 fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    if matches!(args.get(1), Some(RValue::Null) | None) {
+        return Ok(RValue::vec(Vector::Logical(vec![].into())));
+    }
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())
@@ -692,6 +703,9 @@ fn builtin_grepl(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, 
 /// @return integer vector of indices (default) or character vector of matching elements
 #[builtin(min_args = 2)]
 fn builtin_grep(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    if matches!(args.get(1), Some(RValue::Null) | None) {
+        return Ok(RValue::vec(Vector::Integer(vec![].into())));
+    }
     let pattern = args
         .first()
         .and_then(|v| v.as_vector()?.as_character_scalar())

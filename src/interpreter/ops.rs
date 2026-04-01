@@ -12,6 +12,21 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{BinaryOp, SpecialOp, UnaryOp};
 
+/// Coerce a list to a character vector by extracting each element's string
+/// representation. Used for comparison operators on lists (e.g. `lapply(x, class) == "NULL"`).
+fn list_to_character(list: &RList) -> Vector {
+    let chars: Vec<Option<String>> = list
+        .values
+        .iter()
+        .map(|(_, val)| match val {
+            RValue::Vector(rv) => rv.inner.as_character_scalar(),
+            RValue::Null => Some("NULL".to_string()),
+            _ => Some(val.type_name().to_string()),
+        })
+        .collect();
+    Vector::Character(chars.into())
+}
+
 /// Copy attributes (dim, dimnames, names, class) from the longer operand
 /// to the arithmetic result. R's rule: attrs come from the first operand
 /// if lengths are equal, otherwise from the longer one.
@@ -134,10 +149,17 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
         _ => {}
     };
 
-    // Get vectors for element-wise operations
+    // Get vectors for element-wise operations.
+    // Lists are coerced to character vectors for comparison operators,
+    // matching R behavior: lapply(x, class) == "NULL" works element-wise.
+    let lv_owned;
     let lv = match left {
         RValue::Vector(v) => v,
         RValue::Null => return Ok(RValue::Null),
+        RValue::List(list) if op.is_comparison() => {
+            lv_owned = RVector::from(list_to_character(list));
+            &lv_owned
+        }
         _ => {
             return Err(RError::new(
                 RErrorKind::Type,
@@ -146,9 +168,14 @@ fn eval_binary(op: BinaryOp, left: &RValue, right: &RValue) -> Result<RValue, RF
             .into())
         }
     };
+    let rv_owned;
     let rv = match right {
         RValue::Vector(v) => v,
         RValue::Null => return Ok(RValue::Null),
+        RValue::List(list) if op.is_comparison() => {
+            rv_owned = RVector::from(list_to_character(list));
+            &rv_owned
+        }
         _ => {
             return Err(RError::new(
                 RErrorKind::Type,

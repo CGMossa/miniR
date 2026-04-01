@@ -192,6 +192,16 @@ pub enum BinaryOp {
     DoubleTilde,
 }
 
+impl BinaryOp {
+    /// Returns true for comparison operators (==, !=, <, >, <=, >=).
+    pub fn is_comparison(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialOp {
     In,
