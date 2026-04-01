@@ -259,6 +259,9 @@ pub struct Interpreter {
     pub(crate) last_value_invisible: std::cell::Cell<bool>,
     /// Recursion depth counter — prevents stack overflow on deeply nested expressions.
     eval_depth: std::cell::Cell<usize>,
+    /// Maximum eval depth for this interpreter, computed from the creating thread's
+    /// stack size. Different threads may have different stack sizes, so this adapts.
+    max_eval_depth: usize,
     /// S4 class registry: class name -> class definition.
     pub(crate) s4_classes: RefCell<std::collections::HashMap<String, S4ClassDef>>,
     /// S4 generic registry: generic name -> generic definition.
@@ -452,6 +455,7 @@ impl Interpreter {
             rd_help_index: RefCell::new(packages::rd::RdHelpIndex::new()),
             last_value_invisible: std::cell::Cell::new(false),
             eval_depth: std::cell::Cell::new(0),
+            max_eval_depth: Self::compute_max_eval_depth(),
             s4_classes: RefCell::new(std::collections::HashMap::new()),
             s4_generics: RefCell::new(std::collections::HashMap::new()),
             s4_methods: RefCell::new(std::collections::HashMap::new()),
@@ -819,12 +823,67 @@ impl Interpreter {
     }
 
     /// Maximum evaluation recursion depth before returning an error.
-    const MAX_EVAL_DEPTH: usize = 500;
+    /// Stack reserved for non-eval overhead: main thread setup, native code
+    /// compilation (cc crate spawns compiler processes but builds argument
+    /// vectors on the stack), C trampoline, signal handlers, and serde
+    /// deserialization for sysdata.rda.
+    const STACK_RESERVED_BYTES: usize = 4 * 1024 * 1024;
+
+    /// Compute the per-frame stack cost from actual type sizes.
+    ///
+    /// Each eval recursion goes through:
+    ///   eval_in → eval_in_inner → (match arms with RValue/Expr temps)
+    ///     → call_function → eval_in (next level)
+    ///
+    /// The dominant cost is the Expr match in eval_in_inner (holds RValue
+    /// temporaries) and call_function (holds CallFrame + argument vectors).
+    /// We use size_of for the key types and add overhead for locals, return
+    /// values, and alignment padding.
+    fn stack_bytes_per_eval_frame() -> usize {
+        let rvalue = std::mem::size_of::<value::RValue>();
+        let expr = std::mem::size_of::<crate::parser::ast::Expr>();
+        let env = std::mem::size_of::<environment::Environment>();
+        let call_frame = std::mem::size_of::<call::CallFrame>();
+        // eval_in_inner holds ~4 RValue temps + 2 Expr refs + 1 env
+        // call_function holds 1 CallFrame + ~4 RValue args + return
+        // Multiply by 3 for alignment, spills, and debug info overhead
+        let frame_cost = (rvalue * 8 + expr * 2 + env * 2 + call_frame) * 3;
+        // Minimum 4KB per frame (measured baseline)
+        frame_cost.max(4096)
+    }
+
+    /// Compute the max eval depth from the available stack budget.
+    fn compute_max_eval_depth() -> usize {
+        // Default 8MB stack (macOS/Linux main thread)
+        let stack_size = 8 * 1024 * 1024_usize;
+        let usable = stack_size.saturating_sub(Self::STACK_RESERVED_BYTES);
+        let frame_cost = Self::stack_bytes_per_eval_frame();
+        let depth = usable / frame_cost;
+        // Clamp to a reasonable range: at least 50, at most 5000
+        depth.clamp(50, 5000)
+    }
 
     #[tracing::instrument(level = "trace", skip(self, env))]
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         let depth = self.eval_depth.get();
-        if depth >= Self::MAX_EVAL_DEPTH {
+        if depth >= self.max_eval_depth {
+            // Print a traceback to help diagnose infinite recursion
+            let frames = self.call_stack.borrow();
+            if !frames.is_empty() {
+                self.write_stderr("Traceback (most recent call last):\n");
+                for (i, frame) in frames.iter().rev().enumerate().take(20) {
+                    let name = match &frame.call {
+                        Some(call_expr) => format!(
+                            "{}",
+                            crate::interpreter::value::RValue::Language(
+                                crate::interpreter::value::Language::new(call_expr.clone())
+                            )
+                        ),
+                        None => "<anonymous>".to_string(),
+                    };
+                    self.write_stderr(&format!("{}: {}\n", i + 1, name));
+                }
+            }
             return Err(RFlow::Error(value::RError::other(
                 "evaluation nested too deeply: infinite recursion / options(expressions=) ?"
                     .to_string(),
