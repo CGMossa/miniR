@@ -154,11 +154,12 @@ impl Interpreter {
     /// Returns the namespace environment.
     /// R's base packages are built into miniR — they don't exist as installable
     /// directories.  `library(base)`, `library(stats)`, etc. should be no-ops.
-    fn is_base_package(name: &str) -> bool {
+    pub(crate) fn is_base_package(name: &str) -> bool {
         matches!(
             name,
             "base"
                 | "stats"
+                | "stats4"
                 | "utils"
                 | "methods"
                 | "grDevices"
@@ -170,6 +171,7 @@ impl Interpreter {
                 | "splines"
                 | "parallel"
                 | "tcltk"
+                | "translations"
         )
     }
 

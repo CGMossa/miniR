@@ -12,6 +12,30 @@ use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{BinaryOp, SpecialOp, UnaryOp};
 
+/// Map a BinaryOp to its R symbol name for S3 dispatch.
+fn op_symbol(op: &BinaryOp) -> String {
+    match op {
+        BinaryOp::Add => "+".to_string(),
+        BinaryOp::Sub => "-".to_string(),
+        BinaryOp::Mul => "*".to_string(),
+        BinaryOp::Div => "/".to_string(),
+        BinaryOp::Pow => "^".to_string(),
+        BinaryOp::Mod => "%%".to_string(),
+        BinaryOp::IntDiv => "%/%".to_string(),
+        BinaryOp::Eq => "==".to_string(),
+        BinaryOp::Ne => "!=".to_string(),
+        BinaryOp::Lt => "<".to_string(),
+        BinaryOp::Gt => ">".to_string(),
+        BinaryOp::Le => "<=".to_string(),
+        BinaryOp::Ge => ">=".to_string(),
+        BinaryOp::And => "&".to_string(),
+        BinaryOp::AndScalar => "&&".to_string(),
+        BinaryOp::Or => "|".to_string(),
+        BinaryOp::OrScalar => "||".to_string(),
+        _ => String::new(),
+    }
+}
+
 /// Coerce a list to a character vector by extracting each element's string
 /// representation. Used for comparison operators on lists (e.g. `lapply(x, class) == "NULL"`).
 fn list_to_character(list: &RList) -> Vector {
@@ -66,7 +90,43 @@ impl Interpreter {
         left: &RValue,
         right: &RValue,
     ) -> Result<RValue, RFlow> {
+        // Try S3 dispatch on the Ops group generic: check if either operand
+        // has a class with a method for this operator (e.g. `|.root_criterion`).
+        let op_name = op_symbol(&op);
+        if let Some(result) = self.try_s3_binary_dispatch(&op_name, left, right)? {
+            return Ok(result);
+        }
         eval_binary(op, left, right)
+    }
+
+    /// Try S3 dispatch for a binary operator on either operand's class.
+    /// Returns `Ok(Some(result))` if a method was found, `Ok(None)` otherwise.
+    fn try_s3_binary_dispatch(
+        &self,
+        op_name: &str,
+        left: &RValue,
+        right: &RValue,
+    ) -> Result<Option<RValue>, RFlow> {
+        let env = &self.global_env;
+        // Try left operand's class first, then right
+        for obj in [left, right] {
+            let classes = self.s3_classes_for(obj);
+            for class in &classes {
+                let method_name = format!("{}.{}", op_name, class);
+                if let Some(method) = env.get(&method_name) {
+                    let result =
+                        self.call_function(&method, &[left.clone(), right.clone()], &[], env)?;
+                    return Ok(Some(result));
+                }
+                // Also check the S3 method registry
+                if let Some(method) = self.lookup_s3_method(op_name, class) {
+                    let result =
+                        self.call_function(&method, &[left.clone(), right.clone()], &[], env)?;
+                    return Ok(Some(result));
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -455,6 +515,9 @@ fn eval_compare(op: BinaryOp, lv: &RVector, rv: &RVector) -> Result<RValue, RFlo
     if matches!(lv.inner, Vector::Character(_)) || matches!(rv.inner, Vector::Character(_)) {
         let lc = lv.to_characters();
         let rc = rv.to_characters();
+        if lc.is_empty() || rc.is_empty() {
+            return Ok(RValue::vec(Vector::Logical(vec![].into())));
+        }
         let len = lc.len().max(rc.len());
         let result: Vec<Option<bool>> = (0..len)
             .map(|i| {

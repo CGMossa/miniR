@@ -5676,22 +5676,7 @@ fn interp_package_description(
 
     let desc_fields = context.with_interpreter(|interp| {
         // Synthetic DESCRIPTION for base packages
-        if matches!(
-            pkg.as_str(),
-            "base"
-                | "utils"
-                | "stats"
-                | "methods"
-                | "grDevices"
-                | "graphics"
-                | "datasets"
-                | "grid"
-                | "compiler"
-                | "tools"
-                | "splines"
-                | "parallel"
-                | "tcltk"
-        ) {
+        if crate::interpreter::Interpreter::is_base_package(&pkg) {
             let mut fields = std::collections::HashMap::new();
             fields.insert("Package".to_string(), pkg.clone());
             fields.insert("Version".to_string(), "4.4.0".to_string());

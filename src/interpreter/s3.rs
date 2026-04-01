@@ -300,7 +300,7 @@ impl Interpreter {
         .into())
     }
 
-    fn s3_classes_for(&self, dispatch_object: &RValue) -> Vec<String> {
+    pub(crate) fn s3_classes_for(&self, dispatch_object: &RValue) -> Vec<String> {
         match dispatch_object {
             RValue::List(list) => {
                 if let Some(RValue::Vector(rv)) = list.get_attr("class") {
