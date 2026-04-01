@@ -1605,13 +1605,22 @@ fn extract_package_name_nse(
         )
     })?;
 
-    // When character.only=TRUE, evaluate the first arg as a variable
-    let character_only = args.iter().any(|a| {
-        a.name.as_deref() == Some("character.only")
-            && a.value
-                .as_ref()
-                .is_some_and(|e| matches!(e, Expr::Bool(true)))
-    });
+    // When character.only=TRUE, evaluate the first arg as a variable.
+    // Evaluate the argument (not just check for literal TRUE) so that
+    // `co <- TRUE; library(pkg, character.only=co)` works.
+    let character_only = args
+        .iter()
+        .find(|a| a.name.as_deref() == Some("character.only"))
+        .and_then(|a| a.value.as_ref())
+        .map(|expr| match expr {
+            Expr::Bool(b) => *b,
+            other => context
+                .with_interpreter(|interp| interp.eval_in(other, env))
+                .ok()
+                .and_then(|v| v.as_vector().and_then(|v| v.as_logical_scalar()))
+                .unwrap_or(false),
+        })
+        .unwrap_or(false);
 
     if character_only {
         let val = context

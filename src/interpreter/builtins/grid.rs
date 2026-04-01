@@ -32,6 +32,30 @@ fn opt_value(args: &CallArgs, name: &str, pos: usize) -> RValue {
     args.value(name, pos).cloned().unwrap_or(RValue::Null)
 }
 
+/// Normalize the `just` parameter: convert string names like "centre", "left",
+/// "top" to numeric c(hjust, vjust) pairs matching R's grid convention.
+fn normalize_just(ca: &CallArgs, name: &str, pos: usize) -> RValue {
+    let val = ca.value(name, pos).cloned().unwrap_or(RValue::Null);
+    if let RValue::Vector(ref rv) = val {
+        if let Some(s) = rv.inner.as_character_scalar() {
+            let (h, v) = match s.as_str() {
+                "left" => (0.0, 0.5),
+                "right" => (1.0, 0.5),
+                "top" => (0.5, 1.0),
+                "bottom" => (0.5, 0.0),
+                "centre" | "center" => (0.5, 0.5),
+                "bottom.left" | "bottomleft" => (0.0, 0.0),
+                "bottom.right" | "bottomright" => (1.0, 0.0),
+                "top.left" | "topleft" => (0.0, 1.0),
+                "top.right" | "topright" => (1.0, 1.0),
+                _ => return val, // unknown string, pass through
+            };
+            return RValue::vec(Vector::Double(vec![Some(h), Some(v)].into()));
+        }
+    }
+    val
+}
+
 /// Generate a unique grob name with the given prefix and a counter.
 fn auto_grob_name(prefix: &str, ctx: &BuiltinContext) -> String {
     // Use the display list length as a simple counter for unique names
@@ -1850,8 +1874,11 @@ fn interp_text_grob(
         &ca.value("y", 2).cloned().unwrap_or_else(default_npc_half),
         &default_units,
     );
-    let just = opt_value(&ca, "just", 3);
+    let just = normalize_just(&ca, "just", 3);
+    let hjust = opt_value(&ca, "hjust", 9);
+    let vjust = opt_value(&ca, "vjust", 10);
     let rot = opt_value(&ca, "rot", 4);
+    let check_overlap = opt_value(&ca, "check.overlap", 11);
     let gp = opt_value(&ca, "gp", 6);
 
     let entries = vec![
@@ -1859,7 +1886,10 @@ fn interp_text_grob(
         ("x".to_string(), x),
         ("y".to_string(), y),
         ("just".to_string(), just),
+        ("hjust".to_string(), hjust),
+        ("vjust".to_string(), vjust),
         ("rot".to_string(), rot),
+        ("check.overlap".to_string(), check_overlap),
         ("gp".to_string(), gp),
         (
             "name".to_string(),
@@ -2007,7 +2037,9 @@ fn interp_rect_grob(
     );
     let width = opt_value(&ca, "width", 2);
     let height = opt_value(&ca, "height", 3);
-    let just = opt_value(&ca, "just", 4);
+    let just = normalize_just(&ca, "just", 4);
+    let hjust = opt_value(&ca, "hjust", 9);
+    let vjust = opt_value(&ca, "vjust", 10);
     let gp = opt_value(&ca, "gp", 8);
 
     let entries = vec![
@@ -2016,6 +2048,8 @@ fn interp_rect_grob(
         ("width".to_string(), width),
         ("height".to_string(), height),
         ("just".to_string(), just),
+        ("hjust".to_string(), hjust),
+        ("vjust".to_string(), vjust),
         ("gp".to_string(), gp),
         (
             "name".to_string(),

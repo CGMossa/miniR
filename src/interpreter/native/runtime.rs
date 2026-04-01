@@ -1942,23 +1942,97 @@ pub extern "C" fn Rf_isFrame(x: Sexp) -> c_int {
 
 // R_check_class_etc — check if x inherits from any class in valid[]
 // Returns -1 if not found, otherwise the index in valid[].
+// Handles both explicit class attributes AND implicit classes:
+//   "matrix" — has dim attribute with length 2
+//   "array"  — has dim attribute with length > 2
+//   "numeric" — REALSXP
+//   "integer" — INTSXP
 #[no_mangle]
 pub extern "C" fn R_check_class_etc(x: Sexp, valid: *const *const c_char) -> c_int {
     if x.is_null() || valid.is_null() {
         return -1;
     }
+
+    // Collect implicit classes for this object
+    let stype = if x.is_null() {
+        0
+    } else {
+        unsafe { (*x).stype }
+    };
+    let dim_sym = Rf_install(c"dim".as_ptr());
+    let dim = Rf_getAttrib(x, dim_sym);
+    let dim_len = if dim.is_null() {
+        0
+    } else {
+        (unsafe { (*dim).length }) as usize
+    };
+
     let mut i = 0;
     loop {
         let class_ptr = unsafe { *valid.add(i) };
         if class_ptr.is_null() {
             break;
         }
+        // Check explicit class attribute
         if Rf_inherits(x, class_ptr) != 0 {
             return i as c_int;
+        }
+        // Check implicit classes
+        if let Ok(name) = unsafe { CStr::from_ptr(class_ptr) }.to_str() {
+            let matches = match name {
+                "matrix" => dim_len == 2,
+                "array" => dim_len > 0,
+                "numeric" => stype == sexp::REALSXP,
+                "integer" => stype == sexp::INTSXP,
+                "logical" => stype == sexp::LGLSXP,
+                "character" => stype == sexp::STRSXP,
+                "complex" => stype == sexp::CPLXSXP,
+                "raw" => stype == sexp::RAWSXP,
+                "list" => stype == sexp::VECSXP,
+                _ => false,
+            };
+            if matches {
+                return i as c_int;
+            }
         }
         i += 1;
     }
     -1
+}
+
+// R_new_custom_connection — create a custom R connection object.
+// Returns an INTSXP SEXP representing the connection index.
+// The Rconnection pointer is written to *ptr so C code can set up callbacks.
+#[no_mangle]
+pub extern "C" fn R_new_custom_connection(
+    _description: *const c_char,
+    _mode: *const c_char,
+    _class_name: *const c_char,
+    ptr: *mut *mut SexpRec, // Rconnection* — pointer to Rconn struct
+) -> Sexp {
+    // Allocate a zeroed Rconn struct so callers can safely write fields.
+    // Use the C allocator directly — this is freed when the connection is closed.
+    let layout = std::alloc::Layout::from_size_align(512, 8).unwrap();
+    let conn = unsafe { std::alloc::alloc_zeroed(layout) as *mut SexpRec };
+    if !ptr.is_null() {
+        unsafe { *ptr = conn };
+    }
+    // Return a minimal INTSXP with connection index 3 (first user connection)
+    let sexp = sexp::alloc_vector(sexp::INTSXP, 1);
+    if !sexp.is_null() {
+        let data = unsafe { (*sexp).data as *mut i64 };
+        if !data.is_null() {
+            unsafe { *data = 3 };
+        }
+    }
+    sexp
+}
+
+// R_GetConnection — get the Rconnection pointer from a connection SEXP.
+// Returns NULL for now since we don't track real connections.
+#[no_mangle]
+pub extern "C" fn R_GetConnection(_con: Sexp) -> *mut SexpRec {
+    ptr::null_mut()
 }
 
 // Rf_copyMostAttrib — copy attributes from one SEXP to another

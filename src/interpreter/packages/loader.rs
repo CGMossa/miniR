@@ -182,10 +182,35 @@ impl Interpreter {
             return Ok(ns.namespace_env.clone());
         }
 
-        // Base packages are built-in — return the base env directly
+        // Base packages are built-in — register a synthetic namespace so that
+        // getNamespaceExports(), asNamespace(), etc. work correctly.
         if Self::is_base_package(pkg_name) {
-            debug!(pkg = pkg_name, "base package — returning base env");
-            return Ok(self.base_env().clone());
+            debug!(
+                pkg = pkg_name,
+                "base package — registering synthetic namespace"
+            );
+            let base = self.base_env().clone();
+            let ns = LoadedNamespace {
+                name: pkg_name.to_string(),
+                lib_path: PathBuf::from("<builtin>"),
+                description: PackageDescription {
+                    package: pkg_name.to_string(),
+                    version: "0.0.0".to_string(),
+                    title: Some(format!("miniR built-in: {}", pkg_name)),
+                    depends: vec![],
+                    imports: vec![],
+                    suggests: vec![],
+                    linking_to: vec![],
+                    fields: std::collections::HashMap::new(),
+                },
+                namespace: PackageNamespace::export_all(),
+                namespace_env: base.clone(),
+                exports_env: base.clone(),
+            };
+            self.loaded_namespaces
+                .borrow_mut()
+                .insert(pkg_name.to_string(), ns);
+            return Ok(base);
         }
 
         let pkg_dir = self.find_package_dir(pkg_name).ok_or_else(|| {

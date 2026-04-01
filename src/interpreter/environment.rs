@@ -102,8 +102,15 @@ impl Environment {
     /// in the global environment (not base) — R treats global as the
     /// creation boundary for `<<-`.
     pub fn set_super(&self, name: String, value: RValue) {
-        // At global level, <<- assigns locally — there's no enclosing function
-        // scope to search. Without this, set_super recurses into base env.
+        // R semantics for <<-: search parent chain starting from the current env's
+        // parent. If found, update in place; if not found, create in global env.
+        //
+        // At global level specifically, the parent is base env, which should never
+        // receive user bindings. This short-circuit is correct because:
+        // - `source(file, local=TRUE)` creates a child env (not global), so the
+        //   parent chain search handles it normally.
+        // - `local({ x <<- 1 })` also creates a child env of global.
+        // - Only direct <<- at the R prompt / top-level script hits this path.
         if self.is_global() {
             self.set(name, value);
             return;

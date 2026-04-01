@@ -42,6 +42,24 @@ pub struct PackageNamespace {
     pub import_methods_from: Vec<(String, String)>,
 }
 
+impl PackageNamespace {
+    /// Create a namespace that exports everything (used for built-in base packages).
+    pub fn export_all() -> Self {
+        PackageNamespace {
+            exports: vec![],
+            export_patterns: vec![".*".to_string()], // exportPattern(".*")
+            imports: vec![],
+            imports_from: vec![],
+            s3_methods: vec![],
+            use_dyn_libs: vec![],
+            export_classes: vec![],
+            export_methods: vec![],
+            import_classes_from: vec![],
+            import_methods_from: vec![],
+        }
+    }
+}
+
 /// An S3 method registration from the NAMESPACE file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3MethodRegistration {

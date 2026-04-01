@@ -563,9 +563,76 @@ pub(crate) fn rvalue_to_expr(val: &RValue) -> Expr {
                 Expr::Integer(rv.inner.to_integers()[0].unwrap_or(0))
             }
         },
-        // Multi-element vectors and other types: wrap in a call expression
-        // e.g. c(1, 2, 3) — this is a best-effort deparse
-        _ => Expr::Symbol("<non-language-value>".to_string()),
+        // Multi-element vectors: generate c(e1, e2, ...) call expression
+        RValue::Vector(rv) => {
+            let args: Vec<Arg> = (0..rv.inner.len())
+                .map(|i| {
+                    let expr = match &rv.inner {
+                        Vector::Double(v) => match v.get_opt(i) {
+                            Some(d) => Expr::Double(d),
+                            None => Expr::Na(NaType::Real),
+                        },
+                        Vector::Integer(v) => match v.get_opt(i) {
+                            Some(n) => Expr::Integer(n),
+                            None => Expr::Na(NaType::Integer),
+                        },
+                        Vector::Character(v) => match &v[i] {
+                            Some(s) => Expr::String(s.clone()),
+                            None => Expr::Na(NaType::Character),
+                        },
+                        Vector::Logical(v) => match v[i] {
+                            Some(b) => Expr::Bool(b),
+                            None => Expr::Na(NaType::Logical),
+                        },
+                        Vector::Complex(v) => match &v[i] {
+                            Some(c) if c.re == 0.0 => Expr::Complex(c.im),
+                            Some(c) => Expr::BinaryOp {
+                                op: BinaryOp::Add,
+                                lhs: Box::new(Expr::Double(c.re)),
+                                rhs: Box::new(Expr::Complex(c.im)),
+                            },
+                            None => Expr::Na(NaType::Complex),
+                        },
+                        Vector::Raw(v) => Expr::Integer(i64::from(v[i])),
+                    };
+                    Arg {
+                        name: None,
+                        value: Some(expr),
+                    }
+                })
+                .collect();
+            Expr::Call {
+                func: Box::new(Expr::Symbol("c".to_string())),
+                args,
+                span: None,
+            }
+        }
+        // Functions: reconstruct the function expression from closure params/body
+        RValue::Function(f) => match f {
+            RFunction::Closure { params, body, .. } => Expr::Function {
+                params: params.clone(),
+                body: Box::new(body.clone()),
+            },
+            RFunction::Builtin { name, .. } => Expr::Symbol(name.clone()),
+        },
+        // Lists: generate list(k1=v1, k2=v2, ...) call expression
+        RValue::List(list) => {
+            let args: Vec<Arg> = list
+                .values
+                .iter()
+                .map(|(name, val)| Arg {
+                    name: name.clone(),
+                    value: Some(rvalue_to_expr(val)),
+                })
+                .collect();
+            Expr::Call {
+                func: Box::new(Expr::Symbol("list".to_string())),
+                args,
+                span: None,
+            }
+        }
+        // Environments and promises: no meaningful Expr representation
+        _ => Expr::Null,
     }
 }
 
