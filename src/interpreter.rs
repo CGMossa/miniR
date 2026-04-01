@@ -1011,7 +1011,7 @@ impl Interpreter {
                     )
                     .into());
                 }
-                self.eval_binary(op.clone(), &left, &right)
+                self.eval_binary(op.clone(), &left, &right, env)
             }
             Expr::Assign { op, target, value } => {
                 let val = self.eval_in(value, env)?;

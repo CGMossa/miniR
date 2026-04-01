@@ -8,6 +8,7 @@ use ndarray::{Array2, ShapeBuilder};
 #[cfg(feature = "linalg")]
 use crate::interpreter::builtins;
 use crate::interpreter::coerce::f64_to_i64;
+use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::Interpreter;
 use crate::parser::ast::{BinaryOp, SpecialOp, UnaryOp};
@@ -89,11 +90,12 @@ impl Interpreter {
         op: BinaryOp,
         left: &RValue,
         right: &RValue,
+        env: &Environment,
     ) -> Result<RValue, RFlow> {
         // Try S3 dispatch on the Ops group generic: check if either operand
         // has a class with a method for this operator (e.g. `|.root_criterion`).
         let op_name = op_symbol(&op);
-        if let Some(result) = self.try_s3_binary_dispatch(&op_name, left, right)? {
+        if let Some(result) = self.try_s3_binary_dispatch(&op_name, left, right, env)? {
             return Ok(result);
         }
         eval_binary(op, left, right)
@@ -106,19 +108,23 @@ impl Interpreter {
         op_name: &str,
         left: &RValue,
         right: &RValue,
+        env: &Environment,
     ) -> Result<Option<RValue>, RFlow> {
-        let env = &self.global_env;
         // Try left operand's class first, then right
         for obj in [left, right] {
             let classes = self.s3_classes_for(obj);
             for class in &classes {
                 let method_name = format!("{}.{}", op_name, class);
-                if let Some(method) = env.get(&method_name) {
+                // Search the calling env (namespace during package loading),
+                // then global, then the S3 method registry
+                if let Some(method) = env
+                    .get(&method_name)
+                    .or_else(|| self.global_env.get(&method_name))
+                {
                     let result =
                         self.call_function(&method, &[left.clone(), right.clone()], &[], env)?;
                     return Ok(Some(result));
                 }
-                // Also check the S3 method registry
                 if let Some(method) = self.lookup_s3_method(op_name, class) {
                     let result =
                         self.call_function(&method, &[left.clone(), right.clone()], &[], env)?;

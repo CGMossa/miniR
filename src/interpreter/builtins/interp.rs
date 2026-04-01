@@ -1770,7 +1770,7 @@ fn eval_binop(op: BinaryOp, args: &[RValue], context: &BuiltinContext) -> Result
     let left = args.first().cloned().unwrap_or(RValue::Null);
     let right = args.get(1).cloned().unwrap_or(RValue::Null);
     context
-        .with_interpreter(|interp| interp.eval_binary(op, &left, &right))
+        .with_interpreter(|interp| interp.eval_binary(op, &left, &right, context.env()))
         .map_err(RError::from)
 }
 
