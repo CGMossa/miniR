@@ -162,6 +162,5 @@ text format (`miniRDS1`) is also supported for round-tripping within miniR.
 
 These are not divergences — just features that haven't landed yet:
 
-- `:=` (walrus operator) has no runtime semantics
-- Binary `?` (e.g. `methods?show`) — only unary `?topic` help works
-- Graphics devices (`pdf()`, `png()`, etc.) are stubbed
+- Raster graphics devices (`png()` falls back to SVG, `jpeg()`/`bmp()` missing)
+- Some device management functions (`dev.list()`, `postscript()`)

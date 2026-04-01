@@ -146,13 +146,36 @@ fn build_help(pair: Pair<Rule>) -> Expr {
             span: None,
         }
     } else {
-        // Binary: expr ~ "?" ~ expr -- just evaluate the LHS
-        let lhs = build_expr(first);
-        // Ignore the RHS (help topic)
-        if inner.next().is_some() {
-            // just return lhs
+        // Binary: expr ? topic -> help("topic", package="expr")
+        // e.g., methods?show -> help("show", package="methods")
+        let pkg_text = first.as_str().trim().to_string();
+        match inner.next() {
+            Some(rhs) => {
+                let topic = extract_help_topic(&rhs);
+                Expr::Call {
+                    func: Box::new(Expr::Symbol("invisible".to_string())),
+                    args: vec![Arg {
+                        name: None,
+                        value: Some(Expr::Call {
+                            func: Box::new(Expr::Symbol("help".to_string())),
+                            args: vec![
+                                Arg {
+                                    name: None,
+                                    value: Some(Expr::String(topic)),
+                                },
+                                Arg {
+                                    name: Some("package".to_string()),
+                                    value: Some(Expr::String(pkg_text)),
+                                },
+                            ],
+                            span: None,
+                        }),
+                    }],
+                    span: None,
+                }
+            }
+            None => build_expr(first),
         }
-        lhs
     }
 }
 

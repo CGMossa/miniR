@@ -959,10 +959,11 @@ fn collect_c_names(entries: &[(Option<String>, RValue)]) -> Vec<Option<String>> 
 /// Display help for a function.
 ///
 /// @param topic name of the function to look up
+/// @param package restrict search to this package (used by binary `?`, e.g. `methods?show`)
 #[interpreter_builtin(min_args = 1)]
 fn interp_help(
     args: &[RValue],
-    _named: &[(String, RValue)],
+    named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
     let name = match args.first() {
@@ -973,6 +974,24 @@ fn interp_help(
     if name.is_empty() {
         return Ok(RValue::Null);
     }
+
+    // If package= is specified (from binary ? like methods?show), qualify the lookup
+    let pkg = named.iter().find_map(|(k, v)| {
+        if k == "package" {
+            if let RValue::Vector(rv) = v {
+                rv.as_character_scalar()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    });
+    let name = if let Some(ref pkg) = pkg {
+        format!("{pkg}::{name}")
+    } else {
+        name
+    };
 
     // Check if it's a namespace name (e.g. ?base, ?stats, ?utils)
     if BUILTIN_REGISTRY.iter().any(|d| d.namespace == name) {

@@ -912,8 +912,18 @@ impl Interpreter {
                 self.eval_unary(*op, &val)
             }
             Expr::BinaryOp { op, lhs, rhs } => {
-                // Special handling for pipe operators
+                // Special handling for pipe operators and walrus assignment
                 match op {
+                    // := — walrus operator, behaves like <- (used by data.table)
+                    BinaryOp::Special(SpecialOp::Walrus) => {
+                        let val = self.eval_in(rhs, env)?;
+                        return self.eval_assign(
+                            &crate::parser::ast::AssignOp::LeftAssign,
+                            lhs,
+                            val,
+                            env,
+                        );
+                    }
                     BinaryOp::Pipe => return self.eval_pipe(lhs, rhs, env),
                     BinaryOp::AssignPipe => {
                         // %<>% — pipe and assign back: x %<>% f() → x <- f(x)
