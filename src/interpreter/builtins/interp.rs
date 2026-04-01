@@ -5768,3 +5768,38 @@ fn interp_builtin_count(
 }
 
 // endregion
+
+// region: .Primitive
+
+/// `.Primitive(name)` — look up a primitive/builtin function by name.
+///
+/// In GNU R, returns a primitive function object. In miniR, returns the
+/// builtin function from the base environment via the interpreter.
+///
+/// @param name character string naming the function
+/// @return the function
+/// @namespace base
+#[interpreter_builtin(name = ".Primitive", min_args = 1)]
+fn interp_dot_primitive(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let name = args
+        .first()
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                ".Primitive() requires a character string argument",
+            )
+        })?;
+    context.with_interpreter(|interp| {
+        interp
+            .base_env()
+            .get(&name)
+            .ok_or_else(|| RError::new(RErrorKind::Other, format!("no such primitive: {name}")))
+    })
+}
+
+// endregion

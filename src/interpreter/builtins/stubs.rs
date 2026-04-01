@@ -80,34 +80,6 @@ fn builtin_dot_internal(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVal
     ))
 }
 
-/// `.Primitive(name)` — look up a primitive/builtin function by name.
-///
-/// In GNU R, returns a primitive function object. In miniR, returns the
-/// builtin function from the base environment.
-///
-/// @param name character string naming the function
-/// @return the function
-/// @namespace base
-#[builtin(name = ".Primitive", min_args = 1)]
-fn builtin_dot_primitive(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
-    let name = args
-        .first()
-        .and_then(|v| v.as_vector()?.as_character_scalar())
-        .ok_or_else(|| {
-            RError::new(
-                RErrorKind::Argument,
-                ".Primitive() requires a character string argument",
-            )
-        })?;
-    // Look up the named function in the base environment
-    crate::interpreter::with_interpreter(|interp| {
-        interp
-            .base_env()
-            .get(&name)
-            .ok_or_else(|| RError::new(RErrorKind::Other, format!("no such primitive: {name}")))
-    })
-}
-
 #[cfg(not(feature = "native"))]
 /// .External — stub for external C calls.
 ///
