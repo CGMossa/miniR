@@ -1,12 +1,18 @@
 # rlang hang: eager argument evaluation triggers C abort
 
-## What happened
+## Status: RESOLVED (2026-04-01)
 
-`library(rlang)` hangs indefinitely. The hang is a CPU spin at 100%.
+**rlang loads successfully.** Lazy argument evaluation (promises) was implemented
+prior to this session. The entire tidyverse core now loads: rlang, lifecycle,
+vctrs, tibble, dplyr, purrr, forcats, tidyselect. 131/260 CRAN packages load (50%+).
+
+## What happened (historical)
+
+`library(rlang)` hung indefinitely. The hang was a CPU spin at 100%.
 
 ## TRUE Root cause (2026-03-29)
 
-**miniR evaluates function arguments eagerly instead of lazily (promises).**
+**miniR evaluated function arguments eagerly instead of lazily (promises).**
 
 rlang's R code uses `on_package_load("glue", .Call(ffi_glue_is_here))` and
 similar patterns where the second argument is captured by `substitute(expr)`
@@ -64,10 +70,11 @@ bypassing the C code entirely. This would fix the immediate hang for rlang.
 
 ## Affected packages
 
-**83 packages** (out of 260 tested) hang because they transitively depend on rlang.
-This includes the entire tidyverse: dplyr, tidyr, ggplot2, purrr, stringr, tibble,
-forcats, readr, and all their reverse dependencies. Fixing rlang would unlock
-roughly 80+ more packages, taking us from 102/260 (39%) to ~180/260 (69%).
+**83 packages** (out of 260 tested) hung because they transitively depend on rlang.
+This included the entire tidyverse: dplyr, tidyr, ggplot2, purrr, stringr, tibble,
+forcats, readr, and all their reverse dependencies. With rlang fixed, we went from
+107/260 (41%) to 131/260 (50%+). The remaining gap to 69% is from native code
+compilation failures (missing system deps) and S7 (blocks ggplot2).
 
 ## Non-longjmp design options
 

@@ -60,21 +60,25 @@ src/interpreter/grid/render.rs    # Renderer trait, coord conversion
 src/interpreter/builtins/grid.rs  # grid.newpage, pushViewport, grid.lines, etc.
 ```
 
-## Implementation Order
+## Implementation Status
 
-1. Unit system (arithmetic, ~15 most common types, resolution to cm)
-2. Viewport (push/pop, stacking, affine transforms, data scales)
-3. Gpar (inheritance, defaults)
-4. Grob primitives (lines, rect, circle, polygon, text, points)
-5. Display list (record, replay)
-6. Builtins: grid.newpage, pushViewport, popViewport, grid.lines, grid.rect, etc.
-7. egui rendering integration (convert resolved coords to egui shapes)
-8. SVG rendering integration (reuse svg_device)
-9. Layout system (grid.layout, cell positioning)
-10. Axes and labels (grid.xaxis, grid.yaxis)
-11. Collection/frame grobs
-12. Grob editing (grid.edit, grid.get, grid.set)
-13. Width/height computation (grobwidth/grobheight units)
+1. ~~Unit system~~ — DONE (npc, cm, inches, native, null, points, mm, lines, char, strwidth/height, grobwidth/height)
+2. ~~Viewport~~ — DONE (push/pop, stacking, data scales)
+3. ~~Gpar~~ — DONE (inheritance, defaults, cascading)
+4. ~~Grob primitives~~ — DONE (lines, rect, circle, polygon, text, points, segments)
+5. ~~Display list~~ — DONE (record, replay)
+6. ~~Core builtins~~ — DONE (grid.newpage, pushViewport, popViewport, grid.lines, grid.rect, grid.text, grid.circle, grid.polygon, grid.segments, grid.points, grid.xaxis, grid.yaxis)
+7. ~~Grob constructors~~ — DONE (textGrob, rectGrob, linesGrob, pointsGrob, circleGrob, polygonGrob, segmentsGrob, nullGrob, gTree, gList — with just normalization)
+8. ~~egui rendering~~ — DONE (resolved coords to egui shapes)
+9. ~~SVG rendering~~ — DONE (reuses svg_device)
+10. ~~Layout system~~ — DONE (grid.layout, cell positioning)
+
+## Remaining
+
+- Grob editing (grid.edit, grid.get, grid.set)
+- Width/height computation (grobwidth/grobheight unit resolution)
+- Collection/frame grobs (more complex grouping)
+- ggplot2 rendering — blocked by S7 (class_function), not grid
 
 ## Key Design Decisions
 

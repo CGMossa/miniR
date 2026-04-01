@@ -8,9 +8,8 @@
 delegates to `set_super()` which goes to the parent env (base), not
 the current env. Inside functions it works correctly.
 
-**Status**: Known limitation. Works inside functions (main use case).
-**Fix**: For compound `<<-`, find the variable in the parent chain,
-modify it, and store it back in the env where it was found.
+**Status**: FIXED (2026-04-01). `set_super()` now short-circuits when
+called from global env, setting locally instead of recursing into base.
 
 ### 2. Chained replacement functions don't work
 
@@ -18,8 +17,8 @@ modify it, and store it back in the env where it was found.
 a multi-level replacement chain: `body<-`(f, `[[<-`(`[[`(body(f), 2), 2, val)).
 Found in Matrix/coerce.R and Matrix/posdef.R.
 
-**Status**: Not fixed. Requires implementing chained replacement function
-desugaring in assignment.rs.
+**Status**: FIXED (2026-04-01). Implemented `Language::set_element()` for
+`[[<-` on language objects, plus `rvalue_to_expr()` for proper round-tripping.
 
 ### 3. GNU R base packages can't be sourced
 

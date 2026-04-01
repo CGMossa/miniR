@@ -34,5 +34,5 @@ the error occurred.
 
 ## Priority
 
-High — this makes error handling unreliable for packages that use
-deep recursion (rlang, methods, base R condition system).
+~~High~~ **FIXED** — recursion depth is reset before entering error handlers
+in tryCatch. See session-issues-2026-03-19.md item #4.

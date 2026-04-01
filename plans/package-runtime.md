@@ -1,7 +1,8 @@
 # Package and Namespace Runtime
 
-The biggest remaining compatibility blocker. 197 of 222 CRAN packages in the
-corpus reference package loading or namespace operations.
+**Status (2026-04-01): Phases A–D complete.** 131/260 CRAN packages load (50%+).
+The package runtime is functional for the majority of pure-R and many native packages.
+Remaining blockers are native compilation failures (missing system deps) and S7.
 
 ## What R's package system does
 
@@ -24,56 +25,56 @@ When `library(dplyr)` runs, R:
 
 ## Minimum viable implementation
 
-### Phase A: DESCRIPTION + NAMESPACE parsing
+### Phase A: DESCRIPTION + NAMESPACE parsing — DONE
 
-- Parse `DESCRIPTION`: `Package`, `Depends`, `Imports`, `Suggests`, `LinkingTo`
-- Parse `NAMESPACE`: `export()`, `exportPattern()`, `import()`, `importFrom()`,
-  `S3method()`, `useDynLib()`
-- These are simple DSLs, not R code — hand-written parsers are fine
+- DESCRIPTION parser: Package, Version, Depends, Imports, Suggests, LinkingTo, Collate
+- NAMESPACE parser: export(), exportPattern(), import(), importFrom(),
+  S3method(), useDynLib(), exportClasses(), exportMethods()
 
-### Phase B: Namespace environments
+### Phase B: Namespace environments — DONE
 
 - Each package gets a namespace env with parent = base env
-- `R/*.R` files are sourced into the namespace env
-- Imports are resolved: `importFrom(rlang, sym)` binds `sym` in the namespace
+- R/*.R files sourced in Collate order (from DESCRIPTION) or alphabetically
+- Imports resolved: importFrom(rlang, sym) binds sym in the namespace
 - Exports create a package env that's a filtered view of the namespace
 
-### Phase C: Search path and library()
+### Phase C: Search path and library() — DONE
 
-- `library(pkg)` triggers the loading sequence
-- Package env is attached to the search path (between global and base)
+- `library(pkg)` triggers the full loading sequence
+- Package env attached to search path (between global and base)
 - `::` and `:::` resolve against package/namespace envs
 - `require()` returns FALSE instead of erroring if package not found
+- `character.only=TRUE` evaluates argument (not just literal TRUE)
+- Base packages (base, stats, utils, etc.) treated as built-in no-ops
 
-### Phase D: Hooks and S3 registration
+### Phase D: Hooks and S3 registration — DONE
 
-- Call `.onLoad(libname, pkgname)` after sourcing R/
-- Call `.onAttach(libname, pkgname)` after attaching
-- Register S3 methods declared in NAMESPACE
+- `.onLoad(libname, pkgname)` called after sourcing R/
+- `.onAttach(libname, pkgname)` called after attaching
+- S3 methods declared in NAMESPACE registered in interpreter
 
-### Phase E: Package discovery
+### Phase E: Package discovery — MOSTLY DONE
 
 - `installed.packages()` scans library directories
 - `.libPaths()` returns/sets library search paths
-- Package `data/` directories become discoverable via `data()`
+- `packageDescription()` works for installed and base packages
+- `data/` directories: basic support via sysdata.rda loading
 
-## What we can skip for now
+## Remaining gaps
 
-- `useDynLib` / `.Call()` — native loading is a separate priority
-- Vignette building
-- LazyData (can source data/*.R instead)
-- S4 method registration via NAMESPACE
-- Package installation from source/binary
+- S7 class system — blocks ggplot2 (`class_function`)
+- Native compilation failures: fs (libuv), ps (config.h), stringi (ICU),
+  openssl, timechange, Matrix (SuiteSparse) — system dep issues
+- `system.file()` for base packages returns empty
+- LazyData not fully supported (sysdata.rda works, lazy-loading doesn't)
 
 ## File structure
 
-- `src/interpreter/packages.rs` — package discovery, loading, namespace creation
+- `src/interpreter/packages/loader.rs` — package discovery, loading, namespace creation
 - `src/interpreter/packages/description.rs` — DESCRIPTION parser
 - `src/interpreter/packages/namespace.rs` — NAMESPACE parser
-- `src/interpreter/packages/search_path.rs` — search path management
 
-## First deliverable
+## Achieved
 
-`library(R6)` works — R6 is a pure-R package with no native code, simple
-NAMESPACE, and is used by 33 packages in the corpus. If R6 loads and its
-classes work, the package runtime is viable.
+`library(dplyr)` works — loads rlang, vctrs, tibble, pillar, lifecycle, cli,
+and all their transitive dependencies. 131/260 CRAN packages load (50%+).

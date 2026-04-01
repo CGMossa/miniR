@@ -2,9 +2,10 @@
 
 Scan of the checked-in `cran/` corpus to identify the runtime components miniR needs in order to execute and incorporate real packages instead of only parsing them.
 
-Last updated: 2026-03-15
-Tree directories: 234
-`DESCRIPTION`-bearing packages: 222
+Last updated: 2026-04-01
+Tree directories: 273
+`DESCRIPTION`-bearing packages: 260
+**Loading: 131/260 (50%+)** — up from 107 (41%) on 2026-03-30
 
 ## Scope
 
