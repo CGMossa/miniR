@@ -127,7 +127,7 @@ krilla = { version = "0.6", optional = true }
 krilla-svg = { version = "0.3", optional = true }
 usvg = { version = "0.45", optional = true }
 rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal"] }
-image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "bmp"] }
 resvg = { version = "0.45", optional = true }
 tiny-skia = { version = "0.11", optional = true }
 libloading = { version = "0.8", optional = true }
@@ -141,11 +141,11 @@ cc = { version = "1", features = ["parallel"] }
 
 [features]
 # Full build — everything enabled. This is what CI tests.
-full = ["default", "tls", "linalg", "gui", "svg-device", "pdf-device", "parquet", "native"]
+full = ["default", "tls", "linalg", "gui", "svg-device", "raster-device", "pdf-device", "parquet", "native"]
 
 # Default — a practical everyday build without the heaviest deps.
 # Saves ~15s CPU / ~5s wall vs full by excluding tls (ring+rustls) and linalg (nalgebra+ndarray).
-default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "svg-device", "native"]
+default = ["repl", "random", "datetime", "io", "collections", "digest", "blake3", "json", "dirs-support", "walkdir-support", "globset-support", "tables", "signal", "toml", "diagnostics", "arena", "compression", "tracing-output", "progress", "parallel", "bytecount", "terminal-size", "fast-format", "svg-device", "raster-device", "native"]
 
 # Minimal — just the core interpreter + parser. No optional deps at all.
 # Fastest possible build (~5s). Good for parser work, AST changes, WASM targets.
@@ -185,6 +185,7 @@ parallel = ["dep:rayon"]
 fast-format = ["dep:zmij"]
 # color feature removed — crossterm (via repl) handles colored output
 svg-device = ["dep:svg"]
+raster-device = ["dep:resvg", "dep:tiny-skia", "dep:usvg", "dep:image", "svg-device"]
 pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
 plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "dep:rfd", "dep:image", "dep:resvg", "dep:tiny-skia"]
 view = ["plot", "dep:egui_table"]

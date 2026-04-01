@@ -18,18 +18,23 @@ pub mod svg_device;
 #[cfg(feature = "pdf-device")]
 pub mod pdf;
 
+#[cfg(feature = "raster-device")]
+pub mod raster;
+
 #[cfg(all(feature = "plot", feature = "io"))]
 pub mod csv_drop;
 
 // region: FileDevice
 
-/// A file-based graphics device (SVG, PNG, PDF).
+/// A file-based graphics device (SVG, PNG, PDF, JPEG, BMP).
 #[derive(Debug, Clone)]
 pub struct FileDevice {
     pub filename: String,
     pub format: FileFormat,
     pub width: f64,
     pub height: f64,
+    /// JPEG quality (1-100), only used for JPEG format.
+    pub jpeg_quality: u8,
 }
 
 /// Supported file device formats.
@@ -38,6 +43,8 @@ pub enum FileFormat {
     Svg,
     Png,
     Pdf,
+    Jpeg,
+    Bmp,
 }
 
 // endregion

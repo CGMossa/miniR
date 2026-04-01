@@ -245,6 +245,7 @@ fn interp_pdf(
             format: crate::interpreter::graphics::FileFormat::Pdf,
             width,
             height,
+            jpeg_quality: 75,
         });
     *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
     context.interpreter().set_invisible();
@@ -285,6 +286,7 @@ fn interp_png(
             format: crate::interpreter::graphics::FileFormat::Png,
             width: width_px / 96.0,
             height: height_px / 96.0,
+            jpeg_quality: 75,
         });
     *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
     context.interpreter().set_invisible();
@@ -332,10 +334,96 @@ fn interp_svg(
             format: crate::interpreter::graphics::FileFormat::Svg,
             width,
             height,
+            jpeg_quality: 75,
         });
     // Start with a fresh plot
     *context.interpreter().current_plot.borrow_mut() =
         Some(crate::interpreter::graphics::plot_data::PlotState::new());
+    context.interpreter().set_invisible();
+    Ok(RValue::Null)
+}
+
+/// Open a JPEG graphics device.
+///
+/// @param filename output file path
+/// @param width width in pixels (default 480)
+/// @param height height in pixels (default 480)
+/// @param quality JPEG quality 0-100 (default 75)
+/// @return NULL (invisibly)
+#[interpreter_builtin(namespace = "grDevices")]
+fn interp_jpeg(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let filename = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .unwrap_or_else(|| "Rplot.jpeg".to_string());
+    let ca = CallArgs::new(args, named);
+    let width_px = ca
+        .named("width")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+    let height_px = ca
+        .named("height")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+    let quality = ca
+        .named("quality")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(75.0) as u8;
+
+    *context.interpreter().file_device.borrow_mut() =
+        Some(crate::interpreter::graphics::FileDevice {
+            filename,
+            format: crate::interpreter::graphics::FileFormat::Jpeg,
+            width: width_px / 96.0,
+            height: height_px / 96.0,
+            jpeg_quality: quality,
+        });
+    *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
+    context.interpreter().set_invisible();
+    Ok(RValue::Null)
+}
+
+/// Open a BMP graphics device.
+///
+/// @param filename output file path
+/// @param width width in pixels (default 480)
+/// @param height height in pixels (default 480)
+/// @return NULL (invisibly)
+#[interpreter_builtin(namespace = "grDevices")]
+fn interp_bmp(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let filename = args
+        .first()
+        .and_then(|v| v.as_vector())
+        .and_then(|v| v.as_character_scalar())
+        .unwrap_or_else(|| "Rplot.bmp".to_string());
+    let ca = CallArgs::new(args, named);
+    let width_px = ca
+        .named("width")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+    let height_px = ca
+        .named("height")
+        .and_then(|v| v.as_vector()?.as_double_scalar())
+        .unwrap_or(480.0);
+
+    *context.interpreter().file_device.borrow_mut() =
+        Some(crate::interpreter::graphics::FileDevice {
+            filename,
+            format: crate::interpreter::graphics::FileFormat::Bmp,
+            width: width_px / 96.0,
+            height: height_px / 96.0,
+            jpeg_quality: 75,
+        });
+    *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
     context.interpreter().set_invisible();
     Ok(RValue::Null)
 }
@@ -371,21 +459,83 @@ fn interp_dev_off(
                         })?;
                     }
                     crate::interpreter::graphics::FileFormat::Png => {
-                        // Write SVG content — proper PNG rasterization requires resvg
-                        let svg_filename =
-                            dev.filename.strip_suffix(".png").unwrap_or(&dev.filename);
-                        let svg_path = format!("{svg_filename}.svg");
-                        std::fs::write(&svg_path, &svg_str).map_err(|e| {
-                            RError::new(
-                                RErrorKind::Other,
-                                format!("failed to write file '{}': {e}", svg_path),
-                            )
-                        })?;
-                        context.write_err(&format!(
-                            "Note: PNG rasterization not yet supported. \
-                             SVG written to '{}' instead.\n",
-                            svg_path
-                        ));
+                        #[cfg(feature = "raster-device")]
+                        {
+                            let width_px = (dev.width * 96.0) as u32;
+                            let height_px = (dev.height * 96.0) as u32;
+                            let pixmap = crate::interpreter::graphics::raster::svg_to_raster(
+                                &svg_str, width_px, height_px,
+                            )?;
+                            pixmap.save_png(&dev.filename).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write PNG '{}': {e}", dev.filename),
+                                )
+                            })?;
+                        }
+                        #[cfg(not(feature = "raster-device"))]
+                        {
+                            let svg_filename =
+                                dev.filename.strip_suffix(".png").unwrap_or(&dev.filename);
+                            let svg_path = format!("{svg_filename}.svg");
+                            std::fs::write(&svg_path, &svg_str).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write '{}': {e}", svg_path),
+                                )
+                            })?;
+                            context.write_err(&format!(
+                                "Note: PNG rasterization requires 'raster-device' feature. \
+                                 SVG written to '{}' instead.\n",
+                                svg_path
+                            ));
+                        }
+                    }
+                    crate::interpreter::graphics::FileFormat::Jpeg => {
+                        #[cfg(feature = "raster-device")]
+                        {
+                            let width_px = (dev.width * 96.0) as u32;
+                            let height_px = (dev.height * 96.0) as u32;
+                            let pixmap = crate::interpreter::graphics::raster::svg_to_raster(
+                                &svg_str, width_px, height_px,
+                            )?;
+                            let jpeg_bytes = crate::interpreter::graphics::raster::pixmap_to_jpeg(
+                                &pixmap,
+                                dev.jpeg_quality,
+                            )?;
+                            std::fs::write(&dev.filename, &jpeg_bytes).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write JPEG '{}': {e}", dev.filename),
+                                )
+                            })?;
+                        }
+                        #[cfg(not(feature = "raster-device"))]
+                        {
+                            context.write_err("JPEG output requires the 'raster-device' feature\n");
+                        }
+                    }
+                    crate::interpreter::graphics::FileFormat::Bmp => {
+                        #[cfg(feature = "raster-device")]
+                        {
+                            let width_px = (dev.width * 96.0) as u32;
+                            let height_px = (dev.height * 96.0) as u32;
+                            let pixmap = crate::interpreter::graphics::raster::svg_to_raster(
+                                &svg_str, width_px, height_px,
+                            )?;
+                            let bmp_bytes =
+                                crate::interpreter::graphics::raster::pixmap_to_bmp(&pixmap)?;
+                            std::fs::write(&dev.filename, &bmp_bytes).map_err(|e| {
+                                RError::new(
+                                    RErrorKind::Other,
+                                    format!("failed to write BMP '{}': {e}", dev.filename),
+                                )
+                            })?;
+                        }
+                        #[cfg(not(feature = "raster-device"))]
+                        {
+                            context.write_err("BMP output requires the 'raster-device' feature\n");
+                        }
                     }
                     crate::interpreter::graphics::FileFormat::Pdf => {
                         #[cfg(feature = "pdf-device")]
@@ -475,6 +625,52 @@ fn interp_dev_new(
 ) -> Result<RValue, RError> {
     *context.interpreter().current_plot.borrow_mut() = Some(PlotState::new());
     Ok(RValue::vec(Vector::Integer(vec![Some(2i64)].into())))
+}
+
+/// List all open graphics devices.
+///
+/// Returns a named integer vector of device numbers. Device 1 is always
+/// the null device and is not listed.
+///
+/// @return named integer vector of open device numbers
+#[interpreter_builtin(name = "dev.list", namespace = "grDevices")]
+fn interp_dev_list(
+    _args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let has_device = context.interpreter().current_plot.borrow().is_some()
+        || context.interpreter().file_device.borrow().is_some();
+    if has_device {
+        let dev_name = {
+            let fd = context.interpreter().file_device.borrow();
+            match fd.as_ref().map(|d| d.format) {
+                Some(crate::interpreter::graphics::FileFormat::Png) => "png",
+                Some(crate::interpreter::graphics::FileFormat::Jpeg) => "jpeg",
+                Some(crate::interpreter::graphics::FileFormat::Bmp) => "bmp",
+                Some(crate::interpreter::graphics::FileFormat::Svg) => "svg",
+                Some(crate::interpreter::graphics::FileFormat::Pdf) => "pdf",
+                None => {
+                    if cfg!(target_os = "macos") {
+                        "quartz"
+                    } else {
+                        "X11"
+                    }
+                }
+            }
+        };
+        let mut rv = RValue::vec(Vector::Integer(vec![Some(2i64)].into()));
+        if let RValue::Vector(ref mut v) = rv {
+            v.set_attr(
+                "names".to_string(),
+                RValue::vec(Vector::Character(vec![Some(dev_name.to_string())].into())),
+            );
+        }
+        Ok(rv)
+    } else {
+        // No devices open — return empty named integer vector
+        Ok(RValue::vec(Vector::Integer(vec![].into())))
+    }
 }
 
 // endregion

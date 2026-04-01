@@ -162,5 +162,4 @@ text format (`miniRDS1`) is also supported for round-tripping within miniR.
 
 These are not divergences — just features that haven't landed yet:
 
-- Raster graphics devices (`png()` falls back to SVG, `jpeg()`/`bmp()` missing)
-- Some device management functions (`dev.list()`, `postscript()`)
+- `postscript()` device

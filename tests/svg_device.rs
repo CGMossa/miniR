@@ -220,8 +220,17 @@ fn png_device_creates_file() {
     ))
     .unwrap();
 
-    let svg_path = dir.join("test.svg");
-    assert!(svg_path.exists(), "png() + dev.off() should create a file");
+    // With raster-device feature, a real PNG is created; without it, falls back to SVG
+    #[cfg(feature = "raster-device")]
+    assert!(png_path.exists(), "png() + dev.off() should create a PNG file");
+    #[cfg(not(feature = "raster-device"))]
+    {
+        let svg_path = dir.join("test.svg");
+        assert!(
+            svg_path.exists(),
+            "png() + dev.off() should create an SVG fallback"
+        );
+    }
 
     std::fs::remove_dir_all(&dir).ok();
 }
