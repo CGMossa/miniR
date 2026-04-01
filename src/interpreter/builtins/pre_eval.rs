@@ -1181,7 +1181,7 @@ fn substitute_expr(expr: &Expr, env: &Environment) -> Expr {
                 .collect(),
         },
         Expr::BinaryOp { op, lhs, rhs } => Expr::BinaryOp {
-            op: *op,
+            op: op.clone(),
             lhs: Box::new(substitute_expr(lhs, env)),
             rhs: Box::new(substitute_expr(rhs, env)),
         },
@@ -1319,7 +1319,7 @@ fn bquote_expr(
             })
         }
         Expr::BinaryOp { op, lhs, rhs } => Ok(Expr::BinaryOp {
-            op: *op,
+            op: op.clone(),
             lhs: Box::new(bquote_expr(lhs, env, interp)?),
             rhs: Box::new(bquote_expr(rhs, env, interp)?),
         }),

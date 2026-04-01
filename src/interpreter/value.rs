@@ -665,7 +665,7 @@ fn binary_op_symbol(op: &BinaryOp) -> String {
         BinaryOp::Special(SpecialOp::MatMul) => "%*%".to_string(),
         BinaryOp::Special(SpecialOp::Kronecker) => "%x%".to_string(),
         BinaryOp::Special(SpecialOp::Walrus) => ":=".to_string(),
-        BinaryOp::Special(SpecialOp::Other) => "%%".to_string(),
+        BinaryOp::Special(SpecialOp::Other(ref name)) => name.clone(),
         BinaryOp::Tilde => "~".to_string(),
         BinaryOp::DoubleTilde => "~~".to_string(),
     }
@@ -1196,7 +1196,7 @@ pub fn deparse_expr(expr: &Expr) -> String {
                 BinaryOp::Special(SpecialOp::MatMul) => "%*%",
                 BinaryOp::Special(SpecialOp::Kronecker) => "%x%",
                 BinaryOp::Special(SpecialOp::Walrus) => ":=",
-                BinaryOp::Special(SpecialOp::Other) => "%%",
+                BinaryOp::Special(SpecialOp::Other(ref name)) => name.as_str(),
                 BinaryOp::Tilde => "~",
                 BinaryOp::DoubleTilde => "~~",
             };

@@ -112,6 +112,18 @@ fn builtin_dot_external2(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
 // region: tools package stubs
 
 /// tools::vignetteEngine — register/query vignette engines.
+/// `removeSource(fn)` — strip source references from a function.
+///
+/// No-op in miniR — we don't store source references.
+///
+/// @param fn a function
+/// @return the function unchanged
+/// @namespace utils
+#[builtin(name = "removeSource", min_args = 1)]
+fn builtin_remove_source(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    Ok(args[0].clone())
+}
+
 /// No-op in miniR — vignette processing is not supported.
 /// When called with `package=` to query registered engines, returns an empty
 /// list so callers can iterate without error.

@@ -1000,7 +1000,18 @@ impl Interpreter {
                 }
                 let left = self.eval_in(lhs, env)?;
                 let right = self.eval_in(rhs, env)?;
-                self.eval_binary(*op, &left, &right)
+                // User-defined %op% operators: look up the function and call it
+                if let BinaryOp::Special(SpecialOp::Other(ref name)) = op {
+                    if let Some(func) = env.get(name) {
+                        return self.call_function(&func, &[left, right], &[], env);
+                    }
+                    return Err(RError::new(
+                        RErrorKind::Other,
+                        format!("could not find function \"{}\"", name),
+                    )
+                    .into());
+                }
+                self.eval_binary(op.clone(), &left, &right)
             }
             Expr::Assign { op, target, value } => {
                 let val = self.eval_in(value, env)?;

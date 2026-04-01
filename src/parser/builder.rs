@@ -442,7 +442,7 @@ fn build_special_pipe(pair: Pair<Rule>) -> Expr {
                 "%<>%" => BinaryOp::AssignPipe,
                 "%T>%" => BinaryOp::TeePipe,
                 "%$%" => BinaryOp::ExpoPipe,
-                _ => BinaryOp::Special(SpecialOp::Other),
+                other => BinaryOp::Special(SpecialOp::Other(other.to_string())),
             },
             _ => unreachable!(),
         };

@@ -161,7 +161,7 @@ pub enum UnaryOp {
     Formula,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -202,13 +202,14 @@ impl BinaryOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpecialOp {
     In,
     MatMul,
     Kronecker,
     Walrus,
-    Other,
+    /// User-defined `%op%` operator, carrying the full name (e.g. `%||%`).
+    Other(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

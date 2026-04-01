@@ -3013,6 +3013,133 @@ fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(args[0].clone())
 }
 
+/// `anyDuplicated(x)` — index of first duplicate, or 0 if none.
+///
+/// @param x a vector
+/// @return integer scalar (1-based index of first dup, or 0)
+/// @namespace base
+#[builtin(name = "anyDuplicated", min_args = 1)]
+fn builtin_any_duplicated(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let chars = match &args[0] {
+        RValue::Vector(rv) => rv.inner.to_characters(),
+        RValue::List(list) => list
+            .values
+            .iter()
+            .map(|(_, v)| match v {
+                RValue::Vector(rv) => rv.inner.as_character_scalar(),
+                RValue::Null => Some("NULL".to_string()),
+                _ => Some(format!("{:?}", v)),
+            })
+            .collect(),
+        _ => vec![],
+    };
+    let mut seen = std::collections::HashSet::new();
+    for (i, s) in chars.iter().enumerate() {
+        let key = s.as_deref().unwrap_or("NA");
+        if !seen.insert(key.to_string()) {
+            return Ok(RValue::vec(Vector::Integer(
+                vec![Some(i64::try_from(i + 1).unwrap_or(0))].into(),
+            )));
+        }
+    }
+    Ok(RValue::vec(Vector::Integer(vec![Some(0)].into())))
+}
+
+/// `as.function(x, envir)` — convert a list to a function.
+///
+/// The list should contain named formals and a body as the last element.
+/// Example: `as.function(list(x=, y=1, quote(x+y)))` creates `function(x, y=1) x+y`.
+///
+/// @param x a list (formals + body)
+/// @param envir the environment for the new function
+/// @return a function (closure)
+/// @namespace base
+#[builtin(name = "as.function", min_args = 1)]
+fn builtin_as_function(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    as_function_impl(args)
+}
+
+/// `as.function.default` — same as `as.function`, dispatched for default method.
+#[builtin(name = "as.function.default", min_args = 1)]
+fn builtin_as_function_default(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    as_function_impl(args)
+}
+
+fn as_function_impl(args: &[RValue]) -> Result<RValue, RError> {
+    let list = match &args[0] {
+        RValue::List(l) => l,
+        RValue::Null => {
+            // as.function(NULL) → function() NULL
+            return Ok(RValue::Function(RFunction::Closure {
+                params: vec![],
+                body: Expr::Null,
+                env: crate::interpreter::environment::Environment::new_empty(),
+            }));
+        }
+        _ => {
+            return Err(RError::new(
+                RErrorKind::Type,
+                "cannot coerce to function — argument must be a list",
+            ))
+        }
+    };
+
+    if list.values.is_empty() {
+        return Ok(RValue::Function(RFunction::Closure {
+            params: vec![],
+            body: Expr::Null,
+            env: crate::interpreter::environment::Environment::new_empty(),
+        }));
+    }
+
+    // Last element is the body, preceding named elements are formals
+    let n = list.values.len();
+    let mut params = Vec::new();
+    for (name, val) in &list.values[..n - 1] {
+        let param_name = name.clone().unwrap_or_default();
+        if param_name == "..." {
+            params.push(Param {
+                name: "...".to_string(),
+                default: None,
+                is_dots: true,
+            });
+        } else {
+            // Convert the default value to an Expr
+            let default = match val {
+                RValue::Language(lang) => Some((*lang.inner).clone()),
+                RValue::Vector(_) => Some(crate::interpreter::value::rvalue_to_expr(val)),
+                RValue::Null => None, // missing default
+                _ => None,
+            };
+            params.push(Param {
+                name: param_name,
+                default,
+                is_dots: false,
+            });
+        }
+    }
+
+    // Body is the last element
+    let body_val = &list.values[n - 1].1;
+    let body = match body_val {
+        RValue::Language(lang) => (*lang.inner).clone(),
+        _ => crate::interpreter::value::rvalue_to_expr(body_val),
+    };
+
+    // Environment defaults to caller's env, but we use an empty env as fallback
+    // (the actual envir= argument is handled by the interpreter-level caller)
+    let env = if args.len() > 1 {
+        match &args[1] {
+            RValue::Environment(e) => e.clone(),
+            _ => crate::interpreter::environment::Environment::new_empty(),
+        }
+    } else {
+        crate::interpreter::environment::Environment::new_empty()
+    };
+
+    Ok(RValue::Function(RFunction::Closure { params, body, env }))
+}
+
 /// `I(x)` — mark an object as "AsIs", inhibiting conversion.
 ///
 /// Adds class "AsIs" to the object. Used in formulas and data.frame()
