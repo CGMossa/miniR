@@ -113,13 +113,19 @@ fn builtin_dot_external2(_args: &[RValue], _: &[(String, RValue)]) -> Result<RVa
 
 /// tools::vignetteEngine — register/query vignette engines.
 /// No-op in miniR — vignette processing is not supported.
+/// When called with `package=` to query registered engines, returns an empty
+/// list so callers can iterate without error.
 ///
-/// @param name engine name
+/// @param name engine name (or missing to register)
 /// @param ... ignored
-/// @return NULL
+/// @return empty list (query mode) or NULL (registration mode)
 /// @namespace tools
 #[builtin(name = "vignetteEngine")]
-fn builtin_vignette_engine(_args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+fn builtin_vignette_engine(_args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // When called with package= arg, return an empty list (query mode)
+    if named.iter().any(|(n, _)| n == "package") {
+        return Ok(RValue::List(RList::new(vec![])));
+    }
     Ok(RValue::Null)
 }
 

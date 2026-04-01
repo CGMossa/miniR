@@ -3013,6 +3013,39 @@ fn builtin_identity(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, R
     Ok(args[0].clone())
 }
 
+/// `I(x)` — mark an object as "AsIs", inhibiting conversion.
+///
+/// Adds class "AsIs" to the object. Used in formulas and data.frame()
+/// to prevent automatic type coercion.
+///
+/// @param x any R object
+/// @return x with class "AsIs" prepended
+/// @namespace base
+#[builtin(name = "I", min_args = 1)]
+fn builtin_asis(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
+    let mut val = args[0].clone();
+    // Get existing class from the value
+    let existing: Vec<String> = match &val {
+        RValue::Vector(rv) => rv.class().unwrap_or_default(),
+        RValue::List(l) => l.class().unwrap_or_default(),
+        _ => vec![],
+    };
+    let mut new_class: Vec<Option<String>> = vec![Some("AsIs".to_string())];
+    new_class.extend(existing.into_iter().map(Some));
+    let class_val = RValue::vec(Vector::Character(new_class.into()));
+    match &mut val {
+        RValue::Vector(rv) => rv.set_attr("class".to_string(), class_val),
+        RValue::List(list) => list.set_attr("class".to_string(), class_val),
+        RValue::Language(lang) => lang.set_attr("class".to_string(), class_val),
+        _ => {
+            let mut list = RList::new(vec![(None, val)]);
+            list.set_attr("class".to_string(), class_val);
+            return Ok(RValue::List(list));
+        }
+    }
+    Ok(val)
+}
+
 /// Create a pairlist from named arguments.
 ///
 /// In miniR, pairlists are represented as named lists since we don't
