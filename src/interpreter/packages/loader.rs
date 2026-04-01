@@ -289,10 +289,28 @@ impl Interpreter {
             self.load_namespace(&dep.package)?;
         }
 
-        // Create namespace environment with base env as parent
+        // Create namespace environment with base env as parent.
+        // Register it immediately so re-entrant loadNamespace() calls
+        // (e.g. from import() directives in R files) return early instead
+        // of recursing infinitely.
         let base_env = self.base_env();
         let namespace_env = Environment::new_child(&base_env);
         namespace_env.set_name(format!("namespace:{}", pkg_name));
+        let exports_env = Environment::new_child(&namespace_env);
+        exports_env.set_name(format!("package:{}", pkg_name));
+
+        // Pre-register so load_namespace() sees it as "already loaded"
+        self.loaded_namespaces.borrow_mut().insert(
+            pkg_name.to_string(),
+            LoadedNamespace {
+                name: pkg_name.to_string(),
+                lib_path: pkg_dir.to_path_buf(),
+                description: description.clone(),
+                namespace: namespace.clone(),
+                namespace_env: namespace_env.clone(),
+                exports_env: exports_env.clone(),
+            },
+        );
 
         // Set .packageName — R packages reference this during loading
         namespace_env.set(
@@ -427,26 +445,17 @@ impl Interpreter {
             debug!(pkg = pkg_name, "R files sourced");
         }
 
-        // Build exports environment
-        let exports_env = Environment::new_child(&base_env);
-        exports_env.set_name(format!("package:{}", pkg_name));
+        // Build exports into the pre-registered exports environment
         self.build_exports(&namespace, &namespace_env, &exports_env);
 
         // Register S3 methods declared in NAMESPACE
         self.register_s3_methods(&namespace, &namespace_env);
 
-        // Store the loaded namespace
-        let loaded = LoadedNamespace {
-            name: pkg_name.to_string(),
-            lib_path: pkg_dir.to_path_buf(),
-            description,
-            namespace,
-            namespace_env: namespace_env.clone(),
-            exports_env,
-        };
-        self.loaded_namespaces
-            .borrow_mut()
-            .insert(pkg_name.to_string(), loaded);
+        // Update the pre-registered entry with final state
+        if let Some(entry) = self.loaded_namespaces.borrow_mut().get_mut(pkg_name) {
+            entry.namespace_env = namespace_env.clone();
+            entry.exports_env = exports_env;
+        }
 
         debug!(pkg = pkg_name, "namespace loaded");
 
