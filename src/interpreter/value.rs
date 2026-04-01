@@ -352,6 +352,140 @@ impl Language {
             }
         }
     }
+
+    /// Return a new Language with the i-th element (1-based) replaced by `val`.
+    ///
+    /// This is the write-side counterpart to `language_element` — it implements
+    /// `[[<-` on language objects.  Returns `None` if the index is out of bounds.
+    pub fn set_element(&self, index: usize, val: &RValue) -> Option<Language> {
+        if index == 0 || index > self.language_length() {
+            return None;
+        }
+        let new_expr = rvalue_to_expr(val);
+        let mut result = (*self.inner).clone();
+        match &mut result {
+            Expr::Call { func, args, .. } => {
+                if index == 1 {
+                    **func = new_expr;
+                } else {
+                    // Find the (index-2)th arg with a value
+                    let mut count = 0;
+                    for arg in args.iter_mut() {
+                        if arg.value.is_some() {
+                            if count == index - 2 {
+                                arg.value = Some(new_expr);
+                                break;
+                            }
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            Expr::BinaryOp { lhs, rhs, .. } => match index {
+                2 => **lhs = new_expr,
+                3 => **rhs = new_expr,
+                _ => return None,
+            },
+            Expr::UnaryOp { operand, .. } => {
+                if index == 2 {
+                    **operand = new_expr;
+                } else {
+                    return None;
+                }
+            }
+            Expr::Block(exprs) => {
+                if index >= 2 && index - 2 < exprs.len() {
+                    exprs[index - 2] = new_expr;
+                } else {
+                    return None;
+                }
+            }
+            Expr::If {
+                condition,
+                then_body,
+                else_body,
+            } => match index {
+                2 => **condition = new_expr,
+                3 => **then_body = new_expr,
+                4 => *else_body = Some(Box::new(new_expr)),
+                _ => return None,
+            },
+            Expr::For { var, iter, body } => match index {
+                2 => {
+                    if let Expr::Symbol(name) = new_expr {
+                        *var = name;
+                    }
+                }
+                3 => **iter = new_expr,
+                4 => **body = new_expr,
+                _ => return None,
+            },
+            Expr::While { condition, body } => match index {
+                2 => **condition = new_expr,
+                3 => **body = new_expr,
+                _ => return None,
+            },
+            Expr::Repeat { body } => {
+                if index == 2 {
+                    **body = new_expr;
+                } else {
+                    return None;
+                }
+            }
+            Expr::Assign { target, value, .. } => match index {
+                2 => **target = new_expr,
+                3 => **value = new_expr,
+                _ => return None,
+            },
+            Expr::Function { body, .. } => {
+                if index == 3 {
+                    **body = new_expr;
+                } else {
+                    return None;
+                }
+            }
+            Expr::Index { object, indices } | Expr::IndexDouble { object, indices } => {
+                if index == 2 {
+                    **object = new_expr;
+                } else if index >= 3 && index - 3 < indices.len() {
+                    indices[index - 3].value = Some(new_expr);
+                } else {
+                    return None;
+                }
+            }
+            Expr::Dollar { object, member } | Expr::Slot { object, member } => match index {
+                2 => **object = new_expr,
+                3 => {
+                    if let Expr::Symbol(name) = new_expr {
+                        *member = name;
+                    }
+                }
+                _ => return None,
+            },
+            Expr::Formula { lhs, rhs } => {
+                let has_lhs = lhs.is_some();
+                match (index, has_lhs) {
+                    (2, true) => *lhs = Some(Box::new(new_expr)),
+                    (2, false) => *rhs = Some(Box::new(new_expr)),
+                    (3, true) => *rhs = Some(Box::new(new_expr)),
+                    _ => return None,
+                }
+            }
+            Expr::Return(arg) => {
+                if index == 2 {
+                    *arg = Some(Box::new(new_expr));
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        let mut lang = Language::new(result);
+        if let Some(ref attrs) = self.attrs {
+            lang.attrs = Some(attrs.clone());
+        }
+        Some(lang)
+    }
 }
 
 /// Convert an Expr to an RValue — atomic expressions become symbols/literals,
@@ -382,6 +516,56 @@ fn expr_to_rvalue(expr: &Expr) -> RValue {
         }
         // Compound expressions become language objects
         _ => RValue::Language(Language::new(expr.clone())),
+    }
+}
+
+/// Convert an RValue back to an Expr — the inverse of `expr_to_rvalue`.
+///
+/// Used by `Language::set_element` to splice RValues into AST nodes.
+pub(crate) fn rvalue_to_expr(val: &RValue) -> Expr {
+    match val {
+        RValue::Null => Expr::Null,
+        RValue::Language(lang) => (*lang.inner).clone(),
+        RValue::Vector(rv) if rv.inner.len() == 1 => match &rv.inner {
+            Vector::Logical(v) => match v[0] {
+                Some(true) => Expr::Bool(true),
+                Some(false) => Expr::Bool(false),
+                None => Expr::Na(NaType::Logical),
+            },
+            Vector::Integer(v) => match v.get_opt(0) {
+                Some(i) => Expr::Integer(i),
+                None => Expr::Na(NaType::Integer),
+            },
+            Vector::Double(v) => match v.get_opt(0) {
+                Some(d) if d.is_infinite() && d > 0.0 => Expr::Inf,
+                Some(d) if d.is_nan() => Expr::NaN,
+                Some(d) => Expr::Double(d),
+                None => Expr::Na(NaType::Real),
+            },
+            Vector::Character(v) => match &v[0] {
+                Some(s) => Expr::String(s.clone()),
+                None => Expr::Na(NaType::Character),
+            },
+            Vector::Complex(v) => match &v[0] {
+                Some(c) if c.re == 0.0 => Expr::Complex(c.im),
+                Some(c) => {
+                    // a+bi → BinaryOp(Add, Double(a), Complex(b))
+                    Expr::BinaryOp {
+                        op: BinaryOp::Add,
+                        lhs: Box::new(Expr::Double(c.re)),
+                        rhs: Box::new(Expr::Complex(c.im)),
+                    }
+                }
+                None => Expr::Na(NaType::Complex),
+            },
+            Vector::Raw(_) => {
+                // Raw scalars don't have a direct Expr form; wrap as integer
+                Expr::Integer(rv.inner.to_integers()[0].unwrap_or(0))
+            }
+        },
+        // Multi-element vectors and other types: wrap in a call expression
+        // e.g. c(1, 2, 3) — this is a best-effort deparse
+        _ => Expr::Symbol("<non-language-value>".to_string()),
     }
 }
 

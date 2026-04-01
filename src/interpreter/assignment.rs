@@ -427,6 +427,34 @@ fn eval_index_double_assign(
             }
             Ok(val)
         }
+        RValue::Language(lang) => {
+            // lang[[i]] <- val  — replace the i-th element of the language object
+            let i = match &idx_val {
+                RValue::Vector(iv) => {
+                    usize::try_from(iv.as_integer_scalar().unwrap_or(0)).unwrap_or(0)
+                }
+                _ => 0,
+            };
+            if let Some(new_lang) = lang.set_element(i, &val) {
+                eval_assign(interp, op, object, RValue::Language(new_lang), env)?;
+                Ok(val)
+            } else {
+                Err(RError::new(
+                    RErrorKind::Index,
+                    format!(
+                        "attempt to select {} element{} from a language object of length {}",
+                        if i == 0 { "zero-th" } else { "beyond-end" },
+                        if i > 0 {
+                            format!(" ({})", i)
+                        } else {
+                            String::new()
+                        },
+                        lang.language_length()
+                    ),
+                )
+                .into())
+            }
+        }
         _ => eval_index_assign(interp, op, object, indices, val, env),
     }
 }

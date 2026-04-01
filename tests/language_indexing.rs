@@ -306,6 +306,143 @@ e[[3]]
 
 // endregion
 
+// region: [[<- assignment for language objects
+
+#[test]
+fn language_set_element_call_arg() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Replace an argument in a call
+e <- quote(f(a, b))
+e[[2]] <- quote(z)
+stopifnot(identical(e[[2]], quote(z)))
+stopifnot(identical(e[[3]], quote(b)))  # other args unchanged
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn language_set_element_call_function() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Replace the function in a call
+e <- quote(f(a, b))
+e[[1]] <- quote(g)
+stopifnot(identical(e[[1]], quote(g)))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn language_set_element_binary_op() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Replace operands in a binary op
+e <- quote(a + b)
+e[[2]] <- quote(x)
+e[[3]] <- quote(y)
+stopifnot(identical(e[[2]], quote(x)))
+stopifnot(identical(e[[3]], quote(y)))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn language_set_element_with_literal() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Replace with a literal value
+e <- quote(x + y)
+e[[3]] <- 42
+stopifnot(e[[3]] == 42)
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn language_set_element_block() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# Replace an expression in a block
+e <- quote({ a; b })
+e[[2]] <- quote(x + 1)
+stopifnot(identical(e[[2]], quote(x + 1)))
+stopifnot(identical(e[[3]], quote(b)))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn body_set_element_single_level() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# body(f)[[i]] <- val  (single-level replacement function + language [[<-)
+f <- function(x) x + 1
+body(f)[[2]] <- quote(z)
+stopifnot(identical(body(f)[[2]], quote(z)))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn body_set_element_chained() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# body(f)[[2]][[2]] <- val  (chained replacement — the original failing case)
+f <- function(x, y) { x + y }
+body(f)[[2]][[2]] <- quote(a)
+stopifnot(identical(body(f)[[2]][[2]], quote(a)))
+stopifnot(identical(body(f)[[2]][[3]], quote(y)))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn super_assign_compound_top_level() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# <<- with compound targets at top level
+msgs <- list(NULL, NULL)
+msgs[[1]] <<- "hello"
+stopifnot(msgs[[1]] == "hello")
+stopifnot(is.null(msgs[[2]]))
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn super_assign_compound_inside_function() {
+    let mut s = Session::new();
+    s.eval_source(
+        r#"
+# <<- with compound targets inside a function
+counter <- list(n = 0)
+inc <- function() counter$n <<- counter$n + 1
+inc(); inc(); inc()
+stopifnot(counter$n == 3)
+"#,
+    )
+    .unwrap();
+}
+
+// endregion
+
 // region: body() + [[ integration
 
 #[test]

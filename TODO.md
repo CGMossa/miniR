@@ -9,12 +9,12 @@
 
 ### Language Features
 
-- [ ] `%>%` as alias for `|>` with `.` placeholder (plan: magrittr-pipes.md)
-- [ ] `%<>%` assignment pipe (plan: magrittr-pipes.md)
-- [ ] `%T>%` tee pipe (plan: magrittr-pipes.md)
-- [ ] `%$%` exposition pipe (plan: magrittr-pipes.md)
-- [ ] Chained replacement: `body(f)[[2]][[2]] <- val` (review: session-issues)
-- [ ] `<<-` with compound targets at global level (review: session-issues)
+- [x] `%>%` as alias for `|>` with `.` placeholder (plan: magrittr-pipes.md)
+- [x] `%<>%` assignment pipe (plan: magrittr-pipes.md)
+- [x] `%T>%` tee pipe (plan: magrittr-pipes.md)
+- [x] `%$%` exposition pipe (plan: magrittr-pipes.md)
+- [x] Chained replacement: `body(f)[[2]][[2]] <- val` (review: session-issues)
+- [x] `<<-` with compound targets at global level (review: session-issues)
 - [ ] Full S4 inheritance chain resolution
 
 ### Grid Graphics

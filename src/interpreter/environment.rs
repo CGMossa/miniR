@@ -102,6 +102,12 @@ impl Environment {
     /// in the global environment (not base) — R treats global as the
     /// creation boundary for `<<-`.
     pub fn set_super(&self, name: String, value: RValue) {
+        // At global level, <<- assigns locally — there's no enclosing function
+        // scope to search. Without this, set_super recurses into base env.
+        if self.is_global() {
+            self.set(name, value);
+            return;
+        }
         let inner = self.inner.borrow();
         if let Some(ref parent) = inner.parent {
             if parent.has_local(&name) {
@@ -113,7 +119,7 @@ impl Environment {
                 parent.set_super(name, value);
             }
         } else {
-            // No parent at all (we ARE global or base) — set locally
+            // No parent at all (we ARE base) — set locally
             drop(inner);
             self.set(name, value);
         }

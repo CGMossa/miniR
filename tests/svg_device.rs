@@ -222,7 +222,10 @@ fn png_device_creates_file() {
 
     // With raster-device feature, a real PNG is created; without it, falls back to SVG
     #[cfg(feature = "raster-device")]
-    assert!(png_path.exists(), "png() + dev.off() should create a PNG file");
+    assert!(
+        png_path.exists(),
+        "png() + dev.off() should create a PNG file"
+    );
     #[cfg(not(feature = "raster-device"))]
     {
         let svg_path = dir.join("test.svg");
