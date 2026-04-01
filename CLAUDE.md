@@ -43,15 +43,16 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `src/interpreter/s3.rs` — S3 method dispatch (UseMethod/NextMethod)
 - `src/interpreter/value.rs` — `RValue`, `Vector`, `RError` types
 - `src/interpreter/environment.rs` — lexical scoping with `Rc<RefCell<>>`
-- `src/interpreter/builtins.rs` — 200+ built-in functions (unified `BuiltinDescriptor` dispatch)
+- `src/interpreter/builtins.rs` — 800+ built-in functions (unified `BuiltinDescriptor` dispatch)
 - `src/interpreter/builtins/args.rs` — `CallArgs` helper for argument decoding
 - `src/interpreter/builtins/datetime.rs` — date/time builtins (jiff crate)
 - `src/interpreter/native.rs` — native code loading module root
-- `src/interpreter/native/runtime.rs` — Rust `extern "C"` R C API (1800+ lines, Rf_allocVector, PROTECT, etc.)
+- `src/interpreter/native/runtime.rs` — Rust `extern "C"` R C API (3400+ lines, Rf_allocVector, PROTECT, Rmath distributions, etc.)
 - `src/interpreter/native/sexp.rs` — SEXP type layout and C-allocator allocation
 - `src/interpreter/native/convert.rs` — RValue ↔ SEXP conversion
 - `src/interpreter/native/dll.rs` — dyn.load/dyn.unload, .Call dispatch, interpreter callbacks
 - `src/interpreter/native/compile.rs` — cc crate C/C++ compilation, Makevars parser
+- `src/interpreter/graphics/raster.rs` — SVG→PNG/JPEG/BMP rasterization (resvg + tiny-skia)
 - `csrc/native_trampoline.c` — setjmp/longjmp for Rf_error (compiled via build.rs)
 - `include/miniR/Rinternals.h` — C header for packages (struct defs, macros, declarations)
 - `include/miniR/R_ext/*.h` — compatibility headers (Rdynload, Altrep, Applic, etc.)
@@ -60,6 +61,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `tests/` — Rust integration tests + R test scripts
 - `plans/` — dependency and design plans
 - `reviews/` — development notes on bugs and missing features
+- `docs/divergences.md` — documented differences from GNU R (trailing commas, forward refs, pipes, tracebacks, etc.)
 
 ## Key Decisions
 
@@ -68,12 +70,13 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - `TRUE` and `FALSE` are keywords (not reassignable)
 - `**` is a synonym for `^` (power)
 - Function lookup in call position skips non-function bindings (R's findFun behavior)
-- Formula (`~`) is parsed but stubbed in the interpreter
+- Formula (`~`) is fully supported — returns class "formula" with proper lhs/rhs
 - Complex numbers are fully supported via `num-complex` (Vector::Complex, arithmetic, Re/Im/Mod/Arg/Conj)
 - Dependencies are vendored (`cargo vendor`) for LLM help and clarity
 - Make as many dependencies optional as possible, and let the default feature include all additive features
 - `<<-` creates missing bindings in global env (not base)
 - `print()` and `format()` are S3 generics — they dispatch to `print.Date`, `format.POSIXct`, etc.
+- `:=` (walrus) is a synonym for `<-` (assignment) — matches data.table semantics
 
 ## Native Code Loading
 
@@ -93,8 +96,7 @@ Error messages should be *better* than GNU R's — more informative, more specif
 - **Newline continuation in postfix chains**: `x\n(y)` parses as a call `x(y)`, not two expressions. Same for `x\n$y` and `pkg\n::foo`. Required for CRAN compat (7014/7014 files pass). See `reviews/parser-newline-continuation.md`.
 - **`if...else` across newlines**: `if (TRUE) 1\nelse 2` is accepted (GNU R rejects when else is on a new line without braces).
 - **`?` not embeddable**: `x <- ?sin` doesn't work — `?` is only at the top level of the precedence chain. Interactive-only, low priority.
-- **Binary `?` drops RHS**: `foo ? bar` parses but the AST discards the topic. Help system not fully implemented.
-- **`~~` and `:=` are parsed but stubbed**: `~~` (plotmath) evaluates to NULL; `:=` (walrus) has no runtime semantics yet.
+- **Binary `?` works**: `base?sum` calls `help("sum", package="base")`. Unary `?topic` also works.
 - **`!` precedence**: `!a && b` parses as `(!a) && b` (correct R precedence). Tradeoff: `!?x` no longer parses (interactive help inside negation). The fix is critical — it was breaking virtually every CRAN package.
 
 ## Build Profiles
@@ -108,7 +110,7 @@ Four feature profiles for different development scenarios:
 | **default** | `cargo build` | ~8.5s | ~613 | Everyday development |
 | **full** | `cargo build -F full` | ~15s | ~994 | CI, release builds, TLS + linalg + GUI |
 
-- **default** excludes `tls` (ring+rustls, 7.7s) and `linalg` (nalgebra+ndarray, 7.3s) — 45% faster than full
+- **default** includes `raster-device` (resvg+tiny-skia for PNG/JPEG/BMP output) but excludes `tls` (ring+rustls) and `linalg` (nalgebra+ndarray)
 - **full** includes all additive features — use `-F full`, NOT `--all-features`
 - **Never use `--all-features`** — always use `-F full` instead. The `full` feature is the union of all additive features. `--all-features` can enable conflicting or non-additive feature combinations.
 - **minimal** has zero optional deps — suitable for `wasm32-unknown-unknown`
