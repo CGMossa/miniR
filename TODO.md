@@ -2,46 +2,43 @@
 
 ## Stats
 
-800+ builtins, 1100+ tests, 7014/7014 R parse, 10838/10841 Rd parse,
+800+ builtins, 1700+ tests, 7014/7014 R parse, 10838/10841 Rd parse,
 751 .Rd man pages generated. Interactive egui plotting with SVG/PDF/PNG export.
-124/260 CRAN packages load (47%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats.
+131/260 CRAN packages load (50%+). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
+Also: knitr, shiny, ggpubr, plotly, broom, dbplyr, readr, rvest, renv, xml2, tidyverse.
 
 ## Open
 
+### S7 Class System (blocks ggplot2)
+
+- [ ] `new_class()` / `class_function` / `class_any` / `class_missing`
+- [ ] `new_generic()` / `method()` / `method<-()`
+- [ ] `S7_object()` base class, `@` slot access via S7
+- [ ] `convert()` / `super()` dispatch
+- Blocks: ggplot2, S7, Hmisc
+
+### Native Compilation Gaps (system deps)
+
+- [ ] `fs` → needs libuv headers — blocks DT, devtools, gargle, htmlwidgets, pkgdown, rmarkdown, usethis (7 pkgs)
+- [ ] `ps` → needs configure-generated config.h — blocks processx, rcmdcheck, reprex, testthat (4 pkgs)
+- [ ] `stringi` → needs ICU headers — blocks stringr, tidyr (2 pkgs)
+- [ ] `openssl` → needs OpenSSL headers — blocks httr, covr
+- [ ] `Matrix` → needs SuiteSparse — blocks igraph, car
+- [ ] `timechange` → C++ compilation failure — blocks lubridate
+- Strategy: Rust -sys crates for curl/openssl (plan: system-deps-strategy.md)
+
 ### Language Features
 
-- [x] `%>%` as alias for `|>` with `.` placeholder (plan: magrittr-pipes.md)
-- [x] `%<>%` assignment pipe (plan: magrittr-pipes.md)
-- [x] `%T>%` tee pipe (plan: magrittr-pipes.md)
-- [x] `%$%` exposition pipe (plan: magrittr-pipes.md)
-- [x] Chained replacement: `body(f)[[2]][[2]] <- val` (review: session-issues)
-- [x] `<<-` with compound targets at global level (review: session-issues)
 - [ ] Full S4 inheritance chain resolution
-
-### Grid Graphics
-
-- [ ] Unit system (npc, cm, inches, native, null, strwidth, etc.)
-- [ ] Viewport tree (push/pop, transforms, data scales)
-- [ ] Grob primitives (lines, rect, circle, polygon, text, points)
-- [ ] Display list (record/replay/edit)
-- [ ] Layout system (grid.layout, cell positioning)
-- [ ] ggplot2 rendering via grid
-- Plan: grid-graphics.md
+- [ ] `format(digits=)` ignores digits parameter
+- [ ] `rm(x)` NSE for bare names
+- [ ] `aggregate()` formula interface
+- [ ] Grob editing (grid.edit, grid.get, grid.set)
 
 ### WASM Target
 
 - [x] reedline/crossterm gated behind `repl` feature
 - [ ] Fork linkme for wasm32 support (plan: linkme-wasm.md)
-- Alternative: build-script registry for WASM builds
-
-### Package System (from review)
-
-- [ ] `library(pkg)` should accept unquoted names (NSE)
-- [ ] `.libPaths()` and `get_lib_paths()` disagree — FIXED
-- [ ] `search()` order wrong after attach
-- [ ] `asNamespace()` returns NULL — FIXED
-- [ ] `isNamespace()` wrong for non-namespace envs — FIXED
-- [ ] Stub warnings bypass session writers — FIXED
 
 ### Performance
 
@@ -51,7 +48,22 @@
 - [x] `aho-corasick` — SIMD fixed-pattern grep
 - [ ] Arrow/Polars backend for vector storage (deferred)
 
-## Done (this session)
+## Done (2026-04-01 session)
+
+- Language `[[<-` assignment + chained replacement (`body(f)[[2]][[2]] <- val`)
+- `<<-` with compound targets at global level
+- S3 dispatch for binary operators (`|`, `+`, `==`, etc.)
+- List comparison operators (element-wise `==`/`!=`)
+- `library()` for base packages (no-op), `character.only=TRUE`
+- Base package synthetic namespace registration
+- `I()` (AsIs), `args()` fix, `vapply` named args
+- Grob constructors (textGrob, rectGrob, etc.) with just normalization
+- C API: Rconn struct, Rf_isPairList, R_check_class_etc, R_new_custom_connection
+- NULL handling in sub/gsub/grep/grepl
+- Modulo-zero fix for empty vector comparison
+- stats4/translations added to base package list
+
+## Done (previous sessions)
 
 - Named-arg dispatch for all builtins (formals matching at dispatch)
 - data.frame() forward references
@@ -63,21 +75,12 @@
 - String builtins (vectorized startsWith/endsWith, trimws, encodeString)
 - egui_plot interactive window (non-blocking, tabbed, windowed mode)
 - plot(), hist(), barplot(), boxplot(), pairs() with rendering
-- plot(y ~ x) formula + log="xy" axes
 - Color palettes (rainbow, heat.colors, hsv, hcl, colorRampPalette)
-- 657 named colors, par() state
-- SVG file device (real SVG output)
-- PDF file device (real PDF via krilla)
-- PNG export (SVG→resvg→PNG)
+- SVG/PDF/PNG file devices
 - View(df) in egui table with filter/sort/stats/CSV export
-- Native file dialogs (rfd)
-- Dark/light theme with persistence
-- Collapsible plot sidebar with sliders
-- Context menus (plot + table)
-- CSV drag-and-drop
-- Floating Column Statistics window
-- Keyboard shortcuts (Cmd+W, Ctrl+Tab)
+- Grid graphics: units, viewports, grobs, gpar, display list, layout
+- `%>%` `%<>%` `%T>%` `%$%` pipes
 - `_` placeholder for |> pipe (R 4.2+)
+- `:=` walrus assignment
+- Lazy evaluation (promises)
 - 751 .Rd files via --generate-docs
-- Dep consolidation (removed env_logger, termcolor, log)
-- Upgraded arrow/parquet to v58, krilla to v0.6
