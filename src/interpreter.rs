@@ -262,6 +262,8 @@ pub struct Interpreter {
     /// Maximum eval depth for this interpreter, computed from the creating thread's
     /// stack size. Different threads may have different stack sizes, so this adapts.
     max_eval_depth: usize,
+    /// Stack pointer at interpreter creation — used to estimate remaining stack.
+    stack_base: usize,
     /// S4 class registry: class name -> class definition.
     pub(crate) s4_classes: RefCell<std::collections::HashMap<String, S4ClassDef>>,
     /// S4 generic registry: generic name -> generic definition.
@@ -456,6 +458,7 @@ impl Interpreter {
             last_value_invisible: std::cell::Cell::new(false),
             eval_depth: std::cell::Cell::new(0),
             max_eval_depth: Self::compute_max_eval_depth(),
+            stack_base: Self::current_stack_addr(),
             s4_classes: RefCell::new(std::collections::HashMap::new()),
             s4_generics: RefCell::new(std::collections::HashMap::new()),
             s4_methods: RefCell::new(std::collections::HashMap::new()),
@@ -827,6 +830,8 @@ impl Interpreter {
     /// compilation (cc crate spawns compiler processes but builds argument
     /// vectors on the stack), C trampoline, signal handlers, and serde
     /// deserialization for sysdata.rda.
+    /// Default stack size assumed when we can't query the actual thread stack.
+    const DEFAULT_STACK_SIZE: usize = 8 * 1024 * 1024;
     const STACK_RESERVED_BYTES: usize = 4 * 1024 * 1024;
 
     /// Compute the per-frame stack cost from actual type sizes.
@@ -859,14 +864,32 @@ impl Interpreter {
         let usable = stack_size.saturating_sub(Self::STACK_RESERVED_BYTES);
         let frame_cost = Self::stack_bytes_per_eval_frame();
         let depth = usable / frame_cost;
-        // Clamp to a reasonable range: at least 50, at most 5000
         depth.clamp(50, 5000)
+    }
+
+    /// Get the approximate current stack address (for stack usage estimation).
+    #[inline(never)]
+    fn current_stack_addr() -> usize {
+        let local = 0u8;
+        std::ptr::addr_of!(local) as usize
+    }
+
+    /// Check if we're running low on stack space (within STACK_RESERVED_BYTES
+    /// of the estimated stack limit). This catches recursion that bypasses
+    /// the eval_depth counter (e.g. Rust-level recursion in the loader).
+    #[inline]
+    fn stack_is_low(&self) -> bool {
+        let current = Self::current_stack_addr();
+        // Stack grows downward on all supported platforms
+        let used = self.stack_base.saturating_sub(current);
+        let limit = Self::DEFAULT_STACK_SIZE.saturating_sub(Self::STACK_RESERVED_BYTES);
+        used > limit
     }
 
     #[tracing::instrument(level = "trace", skip(self, env))]
     pub fn eval_in(&self, expr: &Expr, env: &Environment) -> Result<RValue, RFlow> {
         let depth = self.eval_depth.get();
-        if depth >= self.max_eval_depth {
+        if depth >= self.max_eval_depth || self.stack_is_low() {
             // Print a traceback to help diagnose infinite recursion
             let frames = self.call_stack.borrow();
             if !frames.is_empty() {

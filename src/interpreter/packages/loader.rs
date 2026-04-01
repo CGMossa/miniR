@@ -296,10 +296,10 @@ impl Interpreter {
         let base_env = self.base_env();
         let namespace_env = Environment::new_child(&base_env);
         namespace_env.set_name(format!("namespace:{}", pkg_name));
-        let exports_env = Environment::new_child(&namespace_env);
-        exports_env.set_name(format!("package:{}", pkg_name));
-
-        // Pre-register so load_namespace() sees it as "already loaded"
+        // Pre-register so load_namespace() sees it as "already loaded".
+        // Use namespace_env as the exports env during loading — all symbols
+        // being sourced are immediately visible to re-entrant imports.
+        // The real filtered exports_env is built after sourcing completes.
         self.loaded_namespaces.borrow_mut().insert(
             pkg_name.to_string(),
             LoadedNamespace {
@@ -308,7 +308,7 @@ impl Interpreter {
                 description: description.clone(),
                 namespace: namespace.clone(),
                 namespace_env: namespace_env.clone(),
-                exports_env: exports_env.clone(),
+                exports_env: namespace_env.clone(), // temporary: all symbols visible
             },
         );
 
@@ -445,15 +445,16 @@ impl Interpreter {
             debug!(pkg = pkg_name, "R files sourced");
         }
 
-        // Build exports into the pre-registered exports environment
+        // Build the real filtered exports environment
+        let exports_env = Environment::new_child(&base_env);
+        exports_env.set_name(format!("package:{}", pkg_name));
         self.build_exports(&namespace, &namespace_env, &exports_env);
 
         // Register S3 methods declared in NAMESPACE
         self.register_s3_methods(&namespace, &namespace_env);
 
-        // Update the pre-registered entry with final state
+        // Update the pre-registered entry with the real exports
         if let Some(entry) = self.loaded_namespaces.borrow_mut().get_mut(pkg_name) {
-            entry.namespace_env = namespace_env.clone();
             entry.exports_env = exports_env;
         }
 
