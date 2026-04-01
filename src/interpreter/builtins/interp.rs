@@ -897,28 +897,55 @@ fn interp_vapply(
     named: &[(String, RValue)],
     context: &BuiltinContext,
 ) -> Result<RValue, RError> {
-    if positional.len() < 3 {
-        return Err(RError::new(
-            RErrorKind::Argument,
-            "vapply requires at least 3 arguments: X, FUN, and FUN.VALUE".to_string(),
-        ));
-    }
+    let ca = CallArgs::new(positional, named);
     let env = context.env();
-    let (fail_fast, extra_named) = extract_fail_fast(named);
-    let x = &positional[0];
-    let f = match_fun(&positional[1], env)?;
-    let fun_value = &positional[2];
+
+    let x = ca
+        .value("X", 0)
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "vapply requires at least 3 arguments: X, FUN, and FUN.VALUE",
+            )
+        })?
+        .clone();
+    let f_val = ca
+        .value("FUN", 1)
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "vapply requires at least 3 arguments: X, FUN, and FUN.VALUE",
+            )
+        })?
+        .clone();
+    let f = match_fun(&f_val, env)?;
+    let fun_value = ca
+        .value("FUN.VALUE", 2)
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "vapply requires at least 3 arguments: X, FUN, and FUN.VALUE",
+            )
+        })?
+        .clone();
+
+    // Filter out vapply's own named args before passing the rest to FUN
+    let vapply_params = ["X", "FUN", "FUN.VALUE", "USE.NAMES", "fail_fast"];
+    let (fail_fast, _) = extract_fail_fast(named);
+    let extra_named: Vec<(String, RValue)> = named
+        .iter()
+        .filter(|(n, _)| !vapply_params.contains(&n.as_str()))
+        .cloned()
+        .collect();
 
     // Determine expected type and length from FUN.VALUE
     let expected_len = fun_value.length();
     let expected_type = fun_value.type_name().to_string();
 
-    let items: Vec<RValue> = rvalue_to_items(x);
+    let items: Vec<RValue> = rvalue_to_items(&x);
 
     // Extra positional args beyond X, FUN, FUN.VALUE are passed to FUN
     let extra_args: Vec<RValue> = positional.iter().skip(3).cloned().collect();
-
-    let env = context.env();
     context.with_interpreter(|interp| {
         let mut results: Vec<RValue> = Vec::with_capacity(items.len());
         for (i, item) in items.iter().enumerate() {

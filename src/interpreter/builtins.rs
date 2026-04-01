@@ -49,7 +49,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::*;
 use crate::interpreter::BuiltinContext;
-use crate::parser::ast::Arg;
+use crate::parser::ast::{Arg, Param};
 use itertools::Itertools;
 use linkme::distributed_slice;
 use minir_macros::{builtin, interpreter_builtin};
@@ -6064,8 +6064,38 @@ fn builtin_environment_set(args: &[RValue], _: &[(String, RValue)]) -> Result<RV
 /// In GNU R, args() returns a function with the same formals but NULL body.
 /// We simplify to just returning formals, which covers all practical uses.
 #[builtin(min_args = 1)]
-fn builtin_args(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue, RError> {
-    builtin_formals(args, named)
+fn builtin_args(args: &[RValue], _named: &[(String, RValue)]) -> Result<RValue, RError> {
+    // args(f) returns a function with the same formals as f but NULL body.
+    // This is used by memoise: formals(args(f)) to get the formals.
+    let f = args
+        .first()
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "args() requires a function argument"))?;
+    match f {
+        RValue::Function(func) => match func {
+            RFunction::Closure { params, env, .. } => Ok(RValue::Function(RFunction::Closure {
+                params: params.clone(),
+                body: Expr::Null,
+                env: env.clone(),
+            })),
+            RFunction::Builtin { formals, .. } => {
+                let params: Vec<Param> = formals
+                    .iter()
+                    .map(|&s| Param {
+                        name: s.to_string(),
+                        default: None,
+                        is_dots: s == "...",
+                    })
+                    .collect();
+                Ok(RValue::Function(RFunction::Closure {
+                    params,
+                    body: Expr::Null,
+                    env: crate::interpreter::environment::Environment::new_empty(),
+                }))
+            }
+        },
+        RValue::Null => Ok(RValue::Null),
+        _ => Ok(RValue::Null), // args() on non-function returns NULL in R
+    }
 }
 
 /// `call(name, ...)` — construct an unevaluated function call expression.
