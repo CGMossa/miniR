@@ -51,11 +51,63 @@ fn get_regex_opts(named: &[(String, RValue)]) -> (bool, bool) {
 
 /// Build a compiled regex from a pattern string, respecting fixed and ignore.case options.
 /// Returns Err(RError) if the pattern is invalid regex.
+/// Translate R/PCRE regex patterns to Rust regex syntax.
+///
+/// Handles known incompatibilities:
+/// - `\]` inside character classes → `]` (PCRE allows escaping `]`, Rust doesn't)
+fn translate_pcre_to_rust(pattern: &str) -> String {
+    let mut result = String::with_capacity(pattern.len());
+    let mut in_class = false;
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '[' if !in_class => {
+                in_class = true;
+                result.push('[');
+                // Handle negation and literal ] at start of class
+                if i + 1 < chars.len() && chars[i + 1] == '^' {
+                    result.push('^');
+                    i += 1;
+                }
+                if i + 1 < chars.len() && chars[i + 1] == ']' {
+                    result.push(']');
+                    i += 1;
+                }
+            }
+            ']' if in_class => {
+                in_class = false;
+                result.push(']');
+            }
+            '\\' if in_class && i + 1 < chars.len() => {
+                if chars[i + 1] == '\\' {
+                    // \\ inside class: escaped backslash, push both
+                    result.push('\\');
+                    result.push('\\');
+                    i += 1;
+                } else if chars[i + 1] == ']' {
+                    // \] inside a character class → literal ] (PCRE escaped bracket)
+                    result.push(']');
+                    i += 1;
+                } else {
+                    // Other escapes inside class: pass through
+                    result.push('\\');
+                    result.push(chars[i + 1]);
+                    i += 1;
+                }
+            }
+            c => result.push(c),
+        }
+        i += 1;
+    }
+    result
+}
+
 fn build_regex(pattern: &str, fixed: bool, ignore_case: bool) -> Result<Regex, RError> {
     let pat = if fixed {
         regex::escape(pattern)
     } else {
-        pattern.to_string()
+        translate_pcre_to_rust(pattern)
     };
     let pat = if ignore_case {
         format!("(?i){}", pat)
