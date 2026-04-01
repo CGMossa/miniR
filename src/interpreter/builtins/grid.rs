@@ -90,6 +90,11 @@ fn default_npc(val: f64) -> RValue {
     )
 }
 
+/// Default unit of 0 npc.
+fn default_npc_zero() -> RValue {
+    default_npc(0.0)
+}
+
 /// Default unit of 1 npc for width/height.
 fn default_npc_one() -> RValue {
     default_npc(1.0)
@@ -1802,6 +1807,457 @@ fn interp_grid_text(
     ];
 
     make_grob("text", entries, draw, vp, context)
+}
+
+// endregion
+
+// region: Grob constructors (*Grob — create without drawing)
+
+/// Create a text grob object without drawing it.
+///
+/// Equivalent to `grid.text(..., draw=FALSE)`.
+///
+/// @param label text to display
+/// @param x,y position (unit or numeric in default.units)
+/// @param just justification
+/// @param rot rotation angle in degrees
+/// @param gp graphical parameters (gpar)
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a text grob object
+/// @namespace grid
+#[interpreter_builtin(name = "textGrob", namespace = "grid")]
+fn interp_text_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 5)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 7);
+    let name = ca
+        .optional_string("name", 8)
+        .unwrap_or_else(|| auto_grob_name("GRID.text", context));
+
+    let label = opt_value(&ca, "label", 0);
+    let x = ensure_unit(
+        &ca.value("x", 1).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 2).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let just = opt_value(&ca, "just", 3);
+    let rot = opt_value(&ca, "rot", 4);
+    let gp = opt_value(&ca, "gp", 6);
+
+    let entries = vec![
+        ("label".to_string(), label),
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("just".to_string(), just),
+        ("rot".to_string(), rot),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("text", entries, false, vp, context)
+}
+
+/// Create a lines grob object without drawing it.
+///
+/// @param x,y positions (unit or numeric)
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a lines grob object
+/// @namespace grid
+#[interpreter_builtin(name = "linesGrob", namespace = "grid")]
+fn interp_lines_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 4)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 5);
+    let name = ca
+        .optional_string("name", 3)
+        .unwrap_or_else(|| auto_grob_name("GRID.lines", context));
+
+    let x = ensure_unit(
+        &ca.value("x", 0)
+            .cloned()
+            .unwrap_or_else(|| RValue::vec(Vector::Double(vec![Some(0.0), Some(1.0)].into()))),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 1)
+            .cloned()
+            .unwrap_or_else(|| RValue::vec(Vector::Double(vec![Some(0.0), Some(1.0)].into()))),
+        &default_units,
+    );
+    let gp = opt_value(&ca, "gp", 2);
+
+    let entries = vec![
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("lines", entries, false, vp, context)
+}
+
+/// Create a points grob object without drawing it.
+///
+/// @param x,y positions
+/// @param pch point character
+/// @param size point size
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a points grob object
+/// @namespace grid
+#[interpreter_builtin(name = "pointsGrob", namespace = "grid")]
+fn interp_points_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 5)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 6);
+    let name = ca
+        .optional_string("name", 4)
+        .unwrap_or_else(|| auto_grob_name("GRID.points", context));
+
+    let x = ensure_unit(
+        &ca.value("x", 0).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 1).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let pch = opt_value(&ca, "pch", 2);
+    let size = opt_value(&ca, "size", 3);
+    let gp = opt_value(&ca, "gp", 7);
+
+    let entries = vec![
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("pch".to_string(), pch),
+        ("size".to_string(), size),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("points", entries, false, vp, context)
+}
+
+/// Create a rect grob object without drawing it.
+///
+/// @param x,y center position
+/// @param width,height dimensions
+/// @param just justification
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a rect grob object
+/// @namespace grid
+#[interpreter_builtin(name = "rectGrob", namespace = "grid")]
+fn interp_rect_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 6)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 7);
+    let name = ca
+        .optional_string("name", 5)
+        .unwrap_or_else(|| auto_grob_name("GRID.rect", context));
+
+    let x = ensure_unit(
+        &ca.value("x", 0).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 1).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let width = opt_value(&ca, "width", 2);
+    let height = opt_value(&ca, "height", 3);
+    let just = opt_value(&ca, "just", 4);
+    let gp = opt_value(&ca, "gp", 8);
+
+    let entries = vec![
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("width".to_string(), width),
+        ("height".to_string(), height),
+        ("just".to_string(), just),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("rect", entries, false, vp, context)
+}
+
+/// Create a circle grob object without drawing it.
+///
+/// @param x,y center position
+/// @param r radius
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a circle grob object
+/// @namespace grid
+#[interpreter_builtin(name = "circleGrob", namespace = "grid")]
+fn interp_circle_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 4)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 5);
+    let name = ca
+        .optional_string("name", 3)
+        .unwrap_or_else(|| auto_grob_name("GRID.circle", context));
+
+    let x = ensure_unit(
+        &ca.value("x", 0).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 1).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let r = opt_value(&ca, "r", 2);
+    let gp = opt_value(&ca, "gp", 6);
+
+    let entries = vec![
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("r".to_string(), r),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("circle", entries, false, vp, context)
+}
+
+/// Create a polygon grob object without drawing it.
+///
+/// @param x,y positions
+/// @param id grouping indicator
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a polygon grob object
+/// @namespace grid
+#[interpreter_builtin(name = "polygonGrob", namespace = "grid")]
+fn interp_polygon_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 4)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 5);
+    let name = ca
+        .optional_string("name", 3)
+        .unwrap_or_else(|| auto_grob_name("GRID.polygon", context));
+
+    let x = ensure_unit(
+        &ca.value("x", 0).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let y = ensure_unit(
+        &ca.value("y", 1).cloned().unwrap_or_else(default_npc_half),
+        &default_units,
+    );
+    let id = opt_value(&ca, "id", 2);
+    let gp = opt_value(&ca, "gp", 6);
+
+    let entries = vec![
+        ("x".to_string(), x),
+        ("y".to_string(), y),
+        ("id".to_string(), id),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("polygon", entries, false, vp, context)
+}
+
+/// Create a segments grob object without drawing it.
+///
+/// @param x0,y0 start positions
+/// @param x1,y1 end positions
+/// @param gp graphical parameters
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a segments grob object
+/// @namespace grid
+#[interpreter_builtin(name = "segmentsGrob", namespace = "grid")]
+fn interp_segments_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let default_units = ca
+        .optional_string("default.units", 6)
+        .unwrap_or_else(|| "npc".to_string());
+    let vp = opt_value(&ca, "vp", 7);
+    let name = ca
+        .optional_string("name", 5)
+        .unwrap_or_else(|| auto_grob_name("GRID.segments", context));
+
+    let x0 = ensure_unit(
+        &ca.value("x0", 0).cloned().unwrap_or_else(default_npc_zero),
+        &default_units,
+    );
+    let y0 = ensure_unit(
+        &ca.value("y0", 1).cloned().unwrap_or_else(default_npc_zero),
+        &default_units,
+    );
+    let x1 = ensure_unit(
+        &ca.value("x1", 2).cloned().unwrap_or_else(default_npc_one),
+        &default_units,
+    );
+    let y1 = ensure_unit(
+        &ca.value("y1", 3).cloned().unwrap_or_else(default_npc_one),
+        &default_units,
+    );
+    let gp = opt_value(&ca, "gp", 4);
+
+    let entries = vec![
+        ("x0".to_string(), x0),
+        ("y0".to_string(), y0),
+        ("x1".to_string(), x1),
+        ("y1".to_string(), y1),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("segments", entries, false, vp, context)
+}
+
+/// Create a null grob (empty placeholder).
+///
+/// @param name unique grob name
+/// @param vp viewport
+/// @return a null grob object
+/// @namespace grid
+#[interpreter_builtin(name = "nullGrob", namespace = "grid")]
+fn interp_null_grob(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let name = ca
+        .optional_string("name", 0)
+        .unwrap_or_else(|| auto_grob_name("GRID.null", context));
+
+    let entries = vec![(
+        "name".to_string(),
+        RValue::vec(Vector::Character(vec![Some(name)].into())),
+    )];
+
+    make_grob("null", entries, false, RValue::Null, context)
+}
+
+/// Create a gTree (group of grobs).
+///
+/// @param children list of grobs (gList)
+/// @param name unique grob name
+/// @param gp graphical parameters
+/// @param vp viewport
+/// @return a gTree grob object
+/// @namespace grid
+#[interpreter_builtin(name = "gTree", namespace = "grid")]
+fn interp_gtree(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let ca = CallArgs::new(args, named);
+    let name = ca
+        .optional_string("name", 1)
+        .unwrap_or_else(|| auto_grob_name("GRID.gTree", context));
+    let children = opt_value(&ca, "children", 0);
+    let gp = opt_value(&ca, "gp", 2);
+    let vp = opt_value(&ca, "vp", 3);
+
+    let entries = vec![
+        ("children".to_string(), children),
+        ("gp".to_string(), gp),
+        (
+            "name".to_string(),
+            RValue::vec(Vector::Character(vec![Some(name)].into())),
+        ),
+    ];
+
+    make_grob("gTree", entries, false, vp, context)
+}
+
+/// Create a gList (list of grobs).
+///
+/// @param ... grobs to combine
+/// @return a gList object
+/// @namespace grid
+#[interpreter_builtin(name = "gList", namespace = "grid")]
+fn interp_glist(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    _context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let entries: Vec<(Option<String>, RValue)> = args.iter().map(|a| (None, a.clone())).collect();
+    let mut list = RList::new(entries);
+    list.set_attr(
+        "class".to_string(),
+        RValue::vec(Vector::Character(vec![Some("gList".to_string())].into())),
+    );
+    Ok(RValue::List(list))
 }
 
 // endregion
