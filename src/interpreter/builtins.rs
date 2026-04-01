@@ -3037,11 +3037,10 @@ fn builtin_asis(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErro
         RValue::Vector(rv) => rv.set_attr("class".to_string(), class_val),
         RValue::List(list) => list.set_attr("class".to_string(), class_val),
         RValue::Language(lang) => lang.set_attr("class".to_string(), class_val),
-        _ => {
-            let mut list = RList::new(vec![(None, val)]);
-            list.set_attr("class".to_string(), class_val);
-            return Ok(RValue::List(list));
-        }
+        // Functions, environments, promises, and NULL don't carry attributes
+        // in miniR. Return unchanged — I() on these is a no-op, matching R
+        // behavior where the class is effectively invisible for these types.
+        _ => return Ok(val),
     }
     Ok(val)
 }
