@@ -2931,6 +2931,10 @@ fn builtin_vector(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, REr
             vec![Some(false); length].into(),
         ))),
         "list" => Ok(RValue::List(RList::new(vec![(None, RValue::Null); length]))),
+        "raw" => Ok(RValue::vec(Vector::Raw(vec![0u8; length]))),
+        "complex" => Ok(RValue::vec(Vector::Complex(
+            vec![Some(num_complex::Complex64::new(0.0, 0.0)); length].into(),
+        ))),
         _ => Ok(RValue::vec(Vector::Logical(
             vec![Some(false); length].into(),
         ))),

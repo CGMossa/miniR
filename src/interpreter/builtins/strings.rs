@@ -2226,12 +2226,14 @@ fn builtin_raw_to_char(args: &[RValue], named: &[(String, RValue)]) -> Result<RV
 }
 
 /// `raw(length)` — create a raw (byte) vector of zeros.
-#[builtin(min_args = 1)]
+///
+/// `raw()` with no arguments returns an empty raw vector (length 0).
+#[builtin]
 fn builtin_raw(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RError> {
     let n = args
         .first()
         .and_then(|v| v.as_vector()?.as_integer_scalar())
-        .ok_or_else(|| RError::new(RErrorKind::Argument, "argument must be a single integer"))?;
+        .unwrap_or(0);
     if n < 0 {
         return Err(RError::new(
             RErrorKind::Argument,
