@@ -1940,6 +1940,27 @@ pub extern "C" fn Rf_isFrame(x: Sexp) -> c_int {
     Rf_inherits(x, c"data.frame".as_ptr())
 }
 
+// R_check_class_etc — check if x inherits from any class in valid[]
+// Returns -1 if not found, otherwise the index in valid[].
+#[no_mangle]
+pub extern "C" fn R_check_class_etc(x: Sexp, valid: *const *const c_char) -> c_int {
+    if x.is_null() || valid.is_null() {
+        return -1;
+    }
+    let mut i = 0;
+    loop {
+        let class_ptr = unsafe { *valid.add(i) };
+        if class_ptr.is_null() {
+            break;
+        }
+        if Rf_inherits(x, class_ptr) != 0 {
+            return i as c_int;
+        }
+        i += 1;
+    }
+    -1
+}
+
 // Rf_copyMostAttrib — copy attributes from one SEXP to another
 #[no_mangle]
 pub extern "C" fn Rf_copyMostAttrib(from: Sexp, to: Sexp) {

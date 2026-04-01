@@ -986,17 +986,26 @@ SEXP Rf_findFun(SEXP sym, SEXP env);
 static inline Rboolean Rf_isFactor(SEXP x) { return Rf_inherits(x, "factor"); }
 static inline Rboolean Rf_isOrdered(SEXP x) { return Rf_inherits(x, "ordered"); }
 static inline int Rf_isNewList(SEXP x) { return TYPEOF(x) == VECSXP; }
+static inline int Rf_isPairList(SEXP x) {
+    int t = TYPEOF(x);
+    return t == LISTSXP || t == NILSXP || t == LANGSXP || t == DOTSXP;
+}
 
 Rboolean Rf_isFrame(SEXP x);
+
+/* Check if x inherits from any class in the valid[] array.
+   Returns -1 if not found, otherwise the index. */
+int R_check_class_etc(SEXP x, const char **valid);
 
 #ifndef R_NO_REMAP
 #define list4 Rf_list4
 #define list5 Rf_list5
 #define reEnc Rf_reEnc
 #define isFactor  Rf_isFactor
-#define isNewList Rf_isNewList
-#define isOrdered Rf_isOrdered
-#define isFrame   Rf_isFrame
+#define isNewList  Rf_isNewList
+#define isPairList Rf_isPairList
+#define isOrdered  Rf_isOrdered
+#define isFrame    Rf_isFrame
 #endif
 
 /* Attribute copying */
@@ -1066,7 +1075,6 @@ Rboolean Rf_isS4(SEXP x);
 #ifndef R_NO_REMAP
 #define isS4(x)        Rf_isS4(x)
 #define isList(x)      (TYPEOF(x) == LISTSXP || TYPEOF(x) == NILSXP)
-#define isPairList(x)  (TYPEOF(x) == LISTSXP)
 #define isComplex(x)   (TYPEOF(x) == CPLXSXP)
 #define isArray(x)     (Rf_getAttrib((x), R_DimSymbol) != R_NilValue)
 #endif
