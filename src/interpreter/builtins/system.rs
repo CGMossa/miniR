@@ -2007,7 +2007,18 @@ fn interp_find_package(
             .map(|pkg_opt| {
                 let pkg = pkg_opt.as_deref().unwrap_or("");
                 if crate::interpreter::Interpreter::is_base_package(pkg) {
-                    return Some(format!("<builtin:{pkg}>"));
+                    // Base packages are built-in. Return a path that
+                    // exists if the package is in the CRAN corpus (for
+                    // packages like renv that inspect base package dirs),
+                    // otherwise return the include dir as a fallback.
+                    for lp in &lib_paths {
+                        let pkg_dir = std::path::Path::new(lp).join(pkg);
+                        if pkg_dir.is_dir() {
+                            return Some(pkg_dir.to_string_lossy().to_string());
+                        }
+                    }
+                    // No physical directory — return a path under R_HOME
+                    return Some(format!("lib/{pkg}"));
                 }
                 for lib_path in &lib_paths {
                     let pkg_dir = std::path::Path::new(lib_path).join(pkg);

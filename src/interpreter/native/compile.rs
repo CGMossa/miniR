@@ -347,6 +347,7 @@ impl Makevars {
                     }
                     AssignOp::Append => {
                         let existing = vars.get(key).cloned().unwrap_or_default();
+                        let val = val.trim();
                         let new_val = if existing.is_empty() {
                             val.to_string()
                         } else {
