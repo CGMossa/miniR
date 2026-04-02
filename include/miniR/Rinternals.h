@@ -68,6 +68,14 @@ typedef unsigned int SEXPTYPE;
 
 #ifndef Rboolean_is_defined
 #define Rboolean_is_defined
+/* Undef TRUE/FALSE macros from system headers (macOS mach/boolean.h,
+   CoreFoundation/CFBase.h) to avoid conflict with enum values. */
+#ifdef TRUE
+#undef TRUE
+#endif
+#ifdef FALSE
+#undef FALSE
+#endif
 typedef enum { FALSE = 0, TRUE = 1 } Rboolean;
 #endif
 
@@ -377,6 +385,8 @@ void Rf_warning(const char *fmt, ...);
 /* Output */
 void Rprintf(const char *fmt, ...);
 void REprintf(const char *fmt, ...);
+void Rvprintf(const char *fmt, va_list ap);
+void REvprintf(const char *fmt, va_list ap);
 
 /* Dimensions */
 int Rf_nrows(SEXP x);

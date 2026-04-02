@@ -113,6 +113,14 @@ void REprintf(const char *fmt, ...) {
     va_end(ap);
 }
 
+void Rvprintf(const char *fmt, va_list ap) {
+    vfprintf(stdout, fmt, ap);
+}
+
+void REvprintf(const char *fmt, va_list ap) {
+    vfprintf(stderr, fmt, ap);
+}
+
 /* ── Protected call trampoline ── */
 
 typedef SEXP (*_minir_dotcall_fn)();
