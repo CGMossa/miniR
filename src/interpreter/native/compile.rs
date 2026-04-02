@@ -11,6 +11,134 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// region: Anticonf / pkg-config resolution
+
+/// Known mappings from CRAN package names to their pkg-config library names.
+/// Derived from the `PKG_CONFIG_NAME` variable in each package's configure script.
+fn pkg_config_name_for_package(pkg_src_dir: &Path) -> Option<&'static str> {
+    // Try to detect package name from the directory path
+    // The parent of src/ is the package root, whose name is the package
+    let pkg_dir = pkg_src_dir.parent()?;
+    let pkg_name = pkg_dir.file_name()?.to_str()?;
+    match pkg_name {
+        "openssl" => Some("openssl"),
+        "xml2" => Some("libxml-2.0"),
+        "stringi" => Some("icu-i18n"),
+        "curl" => Some("libcurl"),
+        "sodium" => Some("libsodium"),
+        "cairo" => Some("cairo"),
+        "RPostgres" | "RPostgreSQL" => Some("libpq"),
+        "magick" => Some("Magick++"),
+        "poppler" => Some("poppler-cpp"),
+        "protolite" => Some("protobuf"),
+        "pdftools" => Some("poppler-glib"),
+        "rsvg" => Some("librsvg-2.0"),
+        "gifski" => Some("gifski"),
+        _ => None,
+    }
+}
+
+/// Parse a configure script to extract the pkg-config library name.
+/// Looks for `PKG_CONFIG_NAME="..."` pattern.
+fn extract_pkg_config_name_from_configure(pkg_src_dir: &Path) -> Option<String> {
+    let configure = pkg_src_dir.parent()?.join("configure");
+    let content = std::fs::read_to_string(configure).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("PKG_CONFIG_NAME=") {
+            let name = rest.trim_matches('"').trim_matches('\'');
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Resolve `@cflags@` and `@libs@` placeholders in a Makevars.in file
+/// by querying pkg-config, replicating R's "anticonf" configure pattern.
+fn resolve_anticonf(pkg_src_dir: &Path, makevars_in_content: &str) -> String {
+    // Determine the pkg-config library name
+    let lib_name = pkg_config_name_for_package(pkg_src_dir)
+        .map(String::from)
+        .or_else(|| extract_pkg_config_name_from_configure(pkg_src_dir));
+
+    let (cflags, libs) = if let Some(ref name) = lib_name {
+        // Try pkg-config
+        match pkg_config::Config::new()
+            .cargo_metadata(false)
+            .env_metadata(false)
+            .probe(name)
+        {
+            Ok(lib) => {
+                let cflags: String = lib
+                    .include_paths
+                    .iter()
+                    .map(|p| format!("-I{}", p.display()))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let libs: String = {
+                    let mut parts: Vec<String> = lib
+                        .link_paths
+                        .iter()
+                        .map(|p| format!("-L{}", p.display()))
+                        .collect();
+                    parts.extend(lib.libs.iter().map(|l| format!("-l{l}")));
+                    parts.join(" ")
+                };
+                tracing::debug!(
+                    pkg = name,
+                    cflags = cflags.as_str(),
+                    libs = libs.as_str(),
+                    "pkg-config resolved"
+                );
+                (cflags, libs)
+            }
+            Err(e) => {
+                tracing::debug!(pkg = name, error = %e, "pkg-config failed");
+                (String::new(), String::new())
+            }
+        }
+    } else {
+        (String::new(), String::new())
+    };
+
+    // Replace @cflags@ and @libs@ placeholders
+    makevars_in_content
+        .replace("@cflags@", &cflags)
+        .replace("@libs@", &libs)
+        // Some packages use uppercase
+        .replace("@CFLAGS@", &cflags)
+        .replace("@LIBS@", &libs)
+        // stringi uses custom names
+        .replace("@STRINGI_CPPFLAGS@", &cflags)
+        .replace("@STRINGI_LIBS@", &libs)
+        .replace("@STRINGI_LDFLAGS@", "")
+        .replace("@STRINGI_CXXSTD@", "-std=c++17")
+        // Strip any remaining @...@ placeholders to avoid compiler errors
+        .split('\n')
+        .map(|line| {
+            if line.contains('@') {
+                // Replace remaining @VAR@ with empty string
+                let mut result = line.to_string();
+                while let Some(start) = result.find('@') {
+                    if let Some(end) = result[start + 1..].find('@') {
+                        result.replace_range(start..=start + 1 + end, "");
+                    } else {
+                        break;
+                    }
+                }
+                result
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// endregion
+
 // region: Makevars parser
 
 /// Parsed Makevars key-value pairs.
@@ -21,13 +149,23 @@ pub struct Makevars {
 }
 
 impl Makevars {
-    /// Parse a Makevars file. Returns empty Makevars if the file doesn't exist.
+    /// Parse a Makevars file. If `Makevars` doesn't exist, falls back to
+    /// `Makevars.in` and resolves `@placeholder@` tokens via pkg-config
+    /// (replicating R's "anticonf" configure pattern).
     pub fn parse(path: &Path) -> Self {
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => return Makevars::default(),
-        };
-        Self::parse_str(&content)
+        // Try Makevars first
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return Self::parse_str(&content);
+        }
+
+        // Fall back to Makevars.in with placeholder resolution
+        let makevars_in = path.with_extension("in");
+        if let Ok(content) = std::fs::read_to_string(&makevars_in) {
+            let resolved = resolve_anticonf(path.parent().unwrap_or(Path::new(".")), &content);
+            return Self::parse_str(&resolved);
+        }
+
+        Makevars::default()
     }
 
     /// Parse Makevars content from a string.

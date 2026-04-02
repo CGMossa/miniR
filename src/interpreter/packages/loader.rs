@@ -908,7 +908,6 @@ fn bind_native_symbol(
     env.set(r_name.to_string(), info);
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
