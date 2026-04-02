@@ -2977,7 +2977,8 @@ fn builtin_unlist(args: &[RValue], named: &[(String, RValue)]) -> Result<RValue,
                     }
                 }
             }
-            // If all elements were NULL, return NULL (not empty vector)
+            // Filter out NULL elements — in R, unlist(list(NULL)) is NULL
+            all_vals.retain(|v| !matches!(v, RValue::Null));
             if all_vals.is_empty() {
                 return Ok(RValue::Null);
             }
