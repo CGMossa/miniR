@@ -26,6 +26,7 @@ fn pkg_config_name_for_package(pkg_src_dir: &Path) -> Option<&'static str> {
         "stringi" => Some("icu-i18n"),
         "curl" => Some("libcurl"),
         "sodium" => Some("libsodium"),
+        "fs" => Some("libuv"),
         "cairo" => Some("cairo"),
         "RPostgres" | "RPostgreSQL" => Some("libpq"),
         "magick" => Some("Magick++"),
@@ -151,6 +152,8 @@ fn emulate_configure(pkg_src_dir: &Path) {
 
     if pkg_name == "ps" {
         emulate_configure_ps(pkg_src_dir);
+    } else if pkg_name == "fs" {
+        emulate_configure_fs(pkg_src_dir);
     }
 }
 
@@ -225,6 +228,58 @@ fn emulate_configure_ps(pkg_src_dir: &Path) {
     tracing::debug!(
         pkg = "ps",
         "configure emulated: config.h + Makevars generated"
+    );
+}
+
+/// Generate Makevars for `fs` package using system libuv instead of bundled.
+///
+/// The fs package bundles libuv and builds it from source using autotools.
+/// We bypass that by using the system libuv (found via pkg-config).
+fn emulate_configure_fs(pkg_src_dir: &Path) {
+    let makevars_path = pkg_src_dir.join("Makevars");
+
+    // Check if system libuv is available via pkg-config
+    let lib = match pkg_config::Config::new()
+        .cargo_metadata(false)
+        .env_metadata(false)
+        .probe("libuv")
+    {
+        Ok(lib) => lib,
+        Err(_) => return, // No system libuv — can't help
+    };
+
+    let cflags: String = lib
+        .include_paths
+        .iter()
+        .map(|p| format!("-I{}", p.display()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let libs: String = {
+        let mut parts: Vec<String> = lib
+            .link_paths
+            .iter()
+            .map(|p| format!("-L{}", p.display()))
+            .collect();
+        parts.extend(lib.libs.iter().map(|l| format!("-l{l}")));
+        parts.push("-lpthread".to_string());
+        parts.join(" ")
+    };
+
+    // Write a Makevars that uses system libuv instead of bundled
+    let makevars = format!(
+        "PKG_CPPFLAGS = {cflags} -I. -pthread\n\
+         PKG_LIBS = {libs}\n\
+         PKG_CFLAGS = -fvisibility=hidden\n"
+    );
+
+    if let Err(e) = std::fs::write(&makevars_path, &makevars) {
+        tracing::warn!(error = %e, "failed to write Makevars for fs");
+        return;
+    }
+    tracing::debug!(
+        cflags = cflags.as_str(),
+        libs = libs.as_str(),
+        "fs: using system libuv"
     );
 }
 
