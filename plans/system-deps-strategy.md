@@ -1,62 +1,59 @@
 # System Dependencies Strategy
 
-## Problem
-CRAN packages with native code need system libraries: libcurl, OpenSSL,
-libpng, zlib, libgit2, etc. These are available via Homebrew/apt but
-requiring system installs is fragile.
+## Status (2026-04-03)
 
-## Approach: Rust -sys Crates
+pkg-config integration implemented in compile.rs. Packages with `Makevars.in`
+but no `Makevars` now have their `@cflags@`/`@libs@` placeholders resolved
+via pkg-config, replicating R's "anticonf" configure pattern.
 
-Rust's `-sys` crate ecosystem bundles C libraries and builds them from
-source. By adding these as optional dependencies, CRAN packages can
-link against them without system installs.
+## Approach
 
-### Crates to integrate
+**pkg-config is the primary mechanism.** When a CRAN package has `Makevars.in`
+but no `Makevars` (i.e. its configure script hasn't been run), we:
 
-| -sys crate | Provides | CRAN packages unblocked |
-|-----------|----------|------------------------|
-| `curl-sys` | libcurl | curl, covr, gert (via libgit2) |
-| `openssl-sys` | OpenSSL/LibreSSL | openssl, gert |
-| `libz-sys` | zlib | many (compression) |
-| `libpng-sys` | libpng | png |
-| `libgit2-sys` | libgit2 | gert |
+1. Detect the pkg-config library name from a hardcoded map or the `configure`
+   script's `PKG_CONFIG_NAME="..."` variable
+2. Run `pkg-config --cflags --libs <name>` via the `pkg-config` Rust crate
+3. Substitute `@cflags@` and `@libs@` placeholders in `Makevars.in`
+4. Strip remaining `@VAR@` placeholders to prevent compiler errors
 
-### Fallback: pkg-config
+Users must install system libraries (e.g. `brew install openssl libxml2 icu4c`).
 
-The `pkg-config` crate (already vendored) can find system-installed
-libraries as a fallback. In `compile.rs`, when PKG_LIBS has `-lcurl`:
+## Per-package status
 
-1. Try `-sys` crate paths first (if feature enabled)
-2. Fall back to `pkg-config::probe_library("libcurl")`
-3. Last resort: pass `-lcurl` to linker and hope
+| Package | System dep | pkg-config name | Status |
+|---------|-----------|----------------|--------|
+| xml2 | libxml2 | `libxml-2.0` | **Works** |
+| openssl | OpenSSL | `openssl` | Compiles, runtime segfault (C API gap) |
+| curl | libcurl | `libcurl` | Already works via Connections.h fix |
+| stringi | ICU | `icu-i18n` | Needs full configure emulation (custom vars) |
+| fs | libuv | `libuv` | Bundles libuv source, needs autotools-like build |
+| Matrix | SuiteSparse | N/A | Bundles SuiteSparse, needs `SuiteSparse_config.h` |
+| ps | platform APIs | N/A | Needs generated `config.h` |
+| sodium | libsodium | `libsodium` | Not yet tested |
 
-### Implementation
+## Known pkg-config names
 
-Add features:
-```toml
-curl-sys = { version = "0.4", optional = true }
-openssl-sys = { version = "0.9", optional = true }
-libz-sys = { version = "1", optional = true }
-```
+Hardcoded in `compile.rs::pkg_config_name_for_package()`:
 
-In `compile.rs`, resolve system library flags:
-```rust
-fn resolve_system_lib(name: &str) -> Option<Vec<String>> {
-    // Try -sys crate first
-    #[cfg(feature = "curl-sys")]
-    if name == "curl" {
-        // curl-sys provides link paths via DEP_CURL_* env vars
-    }
-    // Fall back to pkg-config
-    pkg_config::probe_library(name).ok().map(|lib| {
-        lib.link_paths.iter().map(|p| format!("-L{}", p.display()))
-            .chain(lib.libs.iter().map(|l| format!("-l{l}")))
-            .collect()
-    })
-}
-```
+- openssl → `openssl`
+- xml2 → `libxml-2.0`
+- stringi → `icu-i18n`
+- curl → `libcurl`
+- sodium → `libsodium`
+- cairo → `cairo`
+- RPostgres → `libpq`
+- magick → `Magick++`
+- poppler → `poppler-cpp`
+- pdftools → `poppler-glib`
+- rsvg → `librsvg-2.0`
 
-### vcpkg (Windows)
+## Next steps
 
-The `vcpkg` crate handles Windows package management. Lower priority
-since miniR is primarily macOS/Linux for now.
+- Fix openssl runtime segfault (missing C API in dyn.load init)
+- Generate `config.h` for `ps` package from platform detection
+- For stringi: provide a pre-configured Makevars for macOS/Linux
+  (stringi's configure is too complex to replicate — it selects source
+  files and ICU bundling strategy)
+- For Matrix: vendor the `SuiteSparse_config.h` header
+- For fs: investigate if system libuv can be used instead of bundled
