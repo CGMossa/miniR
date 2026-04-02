@@ -2691,6 +2691,16 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
     Rf_allocVector(sexp::NILSXP as c_int, 0)
 }
 
+// ps package stubs — init.c references functions that don't exist in this package version
+#[no_mangle]
+pub extern "C" fn ps__list_apps() -> Sexp {
+    ptr::null_mut()
+}
+#[no_mangle]
+pub extern "C" fn ps__define_errno() -> Sexp {
+    ptr::null_mut()
+}
+
 // rlang stubs
 #[no_mangle]
 pub extern "C" fn R_CheckStack() {}
