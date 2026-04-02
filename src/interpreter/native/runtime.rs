@@ -2693,6 +2693,8 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
 
 // rlang stubs
 #[no_mangle]
+pub extern "C" fn R_CheckStack() {}
+#[no_mangle]
 pub extern "C" fn R_CheckStack2(_extra: c_int) {}
 #[no_mangle]
 pub extern "C" fn R_MakeActiveBinding(_sym: Sexp, _fun: Sexp, _env: Sexp) {}

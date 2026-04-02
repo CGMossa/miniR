@@ -340,9 +340,9 @@ impl Makevars {
                     AssignOp::Set => {
                         if has_continuation {
                             continued_key = Some(key.to_string());
-                            continued_val = val.to_string();
+                            continued_val = val.trim().to_string();
                         } else {
-                            vars.insert(key.to_string(), val.to_string());
+                            vars.insert(key.to_string(), val.trim().to_string());
                         }
                     }
                     AssignOp::Append => {
@@ -368,13 +368,47 @@ impl Makevars {
             vars.insert(key, continued_val.trim().to_string());
         }
 
-        // Expand $(VAR) references in all values
-        let expanded: HashMap<String, String> = vars
+        // First pass: expand user-defined Makevars variables.
+        // e.g. ssdir = SuiteSparse → $(ssdir) becomes SuiteSparse in other values.
+        // Repeat until no more expansions occur (handles chained references).
+        let mut expanded = vars;
+        for _ in 0..5 {
+            let snapshot = expanded.clone();
+            let mut changed = false;
+            for value in expanded.values_mut() {
+                let mut result = String::with_capacity(value.len());
+                let mut rest = value.as_str();
+                while let Some(start) = rest.find("$(") {
+                    result.push_str(&rest[..start]);
+                    let after = &rest[start + 2..];
+                    if let Some(end) = after.find(')') {
+                        let var = &after[..end];
+                        if let Some(replacement) = snapshot.get(var) {
+                            result.push_str(replacement);
+                            changed = true;
+                        }
+                        // else: leave $(VAR) stripped (already handled by first pass)
+                        rest = &after[end + 1..];
+                    } else {
+                        result.push_str(&rest[start..]);
+                        rest = "";
+                    }
+                }
+                result.push_str(rest);
+                *value = result;
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        // Second pass: expand known R variables and strip remaining $(VAR) refs
+        let final_vars: HashMap<String, String> = expanded
             .into_iter()
             .map(|(k, v)| (k, expand_make_vars(&v)))
             .collect();
 
-        Makevars { vars: expanded }
+        Makevars { vars: final_vars }
     }
 
     /// Get PKG_CFLAGS (additional C compiler flags).
@@ -661,6 +695,7 @@ pub fn compile_package_with_deps(
         if !cppflags.is_empty() {
             for flag in shell_split(cppflags) {
                 if let Some(rel_path) = flag.strip_prefix("-I") {
+                    let rel_path = rel_path.trim_matches('"').trim_matches('\'');
                     let path = Path::new(rel_path);
                     if path.is_relative() {
                         build.include(pkg_src_dir.join(path));

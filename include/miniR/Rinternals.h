@@ -467,6 +467,7 @@ Rboolean R_IsPackageEnv(SEXP env);
 SEXP R_PackageEnvName(SEXP env);
 
 /* More stubs for rlang */
+void R_CheckStack(void);
 void R_CheckStack2(int extra);
 void R_MakeActiveBinding(SEXP sym, SEXP fun, SEXP env);
 SEXP R_MakeExternalPtrFn(void (*p)(void), SEXP tag, SEXP prot);
