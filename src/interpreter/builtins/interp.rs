@@ -5803,3 +5803,67 @@ fn interp_dot_primitive(
 }
 
 // endregion
+
+// region: namespace info
+
+/// `getNamespaceInfo(ns, which)` — get metadata about a namespace.
+///
+/// @param ns a namespace or package name
+/// @param which character: "exports", "imports", "path", "spec"
+/// @return the requested info
+/// @namespace base
+#[interpreter_builtin(name = "getNamespaceInfo", min_args = 2)]
+fn interp_get_namespace_info(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    get_namespace_info_impl(args, context)
+}
+
+/// `.getNamespaceInfo(ns, which)` — internal version.
+#[interpreter_builtin(name = ".getNamespaceInfo", min_args = 2)]
+fn interp_dot_get_namespace_info(
+    args: &[RValue],
+    _named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    get_namespace_info_impl(args, context)
+}
+
+fn get_namespace_info_impl(args: &[RValue], context: &BuiltinContext) -> Result<RValue, RError> {
+    let which = args
+        .get(1)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
+        .unwrap_or_default();
+
+    // Resolve the namespace: accept environment or string name
+    let ns_env = match &args[0] {
+        RValue::Environment(env) => env.clone(),
+        RValue::Vector(rv) => {
+            let name = rv
+                .inner
+                .as_character_scalar()
+                .ok_or_else(|| RError::new(RErrorKind::Argument, "invalid namespace"))?;
+            context.with_interpreter(|interp| interp.load_namespace(&name))?
+        }
+        _ => return Err(RError::new(RErrorKind::Argument, "invalid namespace")),
+    };
+
+    match which.as_str() {
+        "exports" => {
+            let names: Vec<Option<String>> = ns_env.ls().into_iter().map(Some).collect();
+            Ok(RValue::vec(Vector::Character(names.into())))
+        }
+        "path" | "spec" => {
+            let name = ns_env.name().unwrap_or_default();
+            let name = name.strip_prefix("namespace:").unwrap_or(&name);
+            Ok(RValue::vec(Vector::Character(
+                vec![Some(name.to_string())].into(),
+            )))
+        }
+        _ => Ok(RValue::Null),
+    }
+}
+
+// endregion

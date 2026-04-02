@@ -412,6 +412,17 @@ impl Interpreter {
         builtins::register_builtins(&base_env);
         let global_env = Environment::new_child(&base_env);
         global_env.set_name("R_GlobalEnv".to_string());
+
+        // Bind R's standard environment variables in base
+        base_env.set(
+            ".GlobalEnv".to_string(),
+            value::RValue::Environment(global_env.clone()),
+        );
+        base_env.set(
+            ".BaseNamespaceEnv".to_string(),
+            value::RValue::Environment(base_env.clone()),
+        );
+
         let color_stderr = {
             use std::io::IsTerminal;
             std::io::stderr().is_terminal()

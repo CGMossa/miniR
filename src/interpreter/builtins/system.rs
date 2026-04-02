@@ -1968,6 +1968,74 @@ fn interp_system_file(
     Ok(RValue::vec(Vector::Character(vec![Some(result)].into())))
 }
 
+/// `find.package(package, lib.loc, quiet)` — find the directory of an installed package.
+///
+/// @param package character vector of package names
+/// @param lib.loc library paths (default: .libPaths())
+/// @param quiet logical: suppress errors for missing packages
+/// @return character vector of package directories
+/// @namespace base
+#[interpreter_builtin(name = "find.package", min_args = 1)]
+fn interp_find_package(
+    args: &[RValue],
+    named: &[(String, RValue)],
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    let packages = match &args[0] {
+        RValue::Vector(rv) => rv.inner.to_characters(),
+        _ => vec![],
+    };
+    let quiet = named
+        .iter()
+        .find(|(n, _)| n == "quiet")
+        .and_then(|(_, v)| v.as_vector()?.as_logical_scalar())
+        .unwrap_or(false);
+
+    let lib_loc: Option<Vec<String>> =
+        named
+            .iter()
+            .find(|(n, _)| n == "lib.loc")
+            .and_then(|(_, v)| {
+                let vec = v.as_vector()?;
+                Some(vec.to_characters().into_iter().flatten().collect())
+            });
+
+    let results: Vec<Option<String>> = context.with_interpreter(|interp| {
+        let lib_paths = lib_loc.unwrap_or_else(|| interp.get_lib_paths());
+        packages
+            .iter()
+            .map(|pkg_opt| {
+                let pkg = pkg_opt.as_deref().unwrap_or("");
+                if crate::interpreter::Interpreter::is_base_package(pkg) {
+                    return Some(format!("<builtin:{pkg}>"));
+                }
+                for lib_path in &lib_paths {
+                    let pkg_dir = std::path::Path::new(lib_path).join(pkg);
+                    if pkg_dir.join("DESCRIPTION").is_file() {
+                        return Some(pkg_dir.to_string_lossy().to_string());
+                    }
+                }
+                None
+            })
+            .collect()
+    });
+
+    if results.iter().any(|r| r.is_none()) && !quiet {
+        let missing: Vec<&str> = packages
+            .iter()
+            .zip(&results)
+            .filter(|(_, r)| r.is_none())
+            .map(|(p, _)| p.as_deref().unwrap_or(""))
+            .collect();
+        return Err(RError::new(
+            RErrorKind::Other,
+            format!("there is no package called '{}'", missing.join("', '")),
+        ));
+    }
+
+    Ok(RValue::vec(Vector::Character(results.into())))
+}
+
 /// Return the process ID of the current R process.
 ///
 /// @return integer scalar: the PID
