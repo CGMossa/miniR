@@ -273,7 +273,7 @@ impl Interpreter {
 
         // Load dependencies from Imports
         for dep in &description.imports {
-            if dep.package == "R" || is_base_package(&dep.package) {
+            if dep.package == "R" || Self::is_base_package(&dep.package) {
                 continue;
             }
             // Silently skip unresolvable imports for now — they may be
@@ -283,7 +283,7 @@ impl Interpreter {
 
         // Load Depends (non-R) namespaces too
         for dep in &description.depends {
-            if dep.package == "R" || is_base_package(&dep.package) {
+            if dep.package == "R" || Self::is_base_package(&dep.package) {
                 continue;
             }
             self.load_namespace(&dep.package)?;
@@ -493,7 +493,7 @@ impl Interpreter {
     ) -> Result<(), RError> {
         // Handle `import(pkg)` — import all exports from a package
         for pkg_name in &namespace.imports {
-            if is_base_package(pkg_name) {
+            if Self::is_base_package(pkg_name) {
                 // Base package bindings are already accessible through the parent chain
                 continue;
             }
@@ -509,7 +509,7 @@ impl Interpreter {
 
         // Handle `importFrom(pkg, sym)` — import specific symbols
         for (pkg_name, sym_name) in &namespace.imports_from {
-            if is_base_package(pkg_name) {
+            if Self::is_base_package(pkg_name) {
                 // Try to get from base env
                 let base = self.base_env();
                 if let Some(val) = base.get(sym_name) {
@@ -908,25 +908,6 @@ fn bind_native_symbol(
     env.set(r_name.to_string(), info);
 }
 
-/// Check if a package name refers to a "base" package that's always available.
-fn is_base_package(name: &str) -> bool {
-    matches!(
-        name,
-        "base"
-            | "utils"
-            | "stats"
-            | "grDevices"
-            | "graphics"
-            | "methods"
-            | "datasets"
-            | "tools"
-            | "compiler"
-            | "grid"
-            | "splines"
-            | "parallel"
-            | "tcltk"
-    )
-}
 
 #[cfg(test)]
 mod tests {
