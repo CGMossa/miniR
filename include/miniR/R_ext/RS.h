@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_RS_H
 #define MINIR_R_EXT_RS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdlib.h>
 
 #define R_Calloc(n, t)     ((t*)calloc((size_t)(n), sizeof(t)))
@@ -28,4 +32,8 @@
 #define FCONE
 #endif
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

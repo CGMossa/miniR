@@ -9,6 +9,10 @@
 #ifndef MINIR_R_EXT_LAPACK_H
 #define MINIR_R_EXT_LAPACK_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../R_ext/RS.h"  /* F77_NAME, F77_CALL */
 
 /* LAPACK integer type */
@@ -66,4 +70,8 @@ void F77_NAME(ztpcon)();  void F77_NAME(ztpmv)();   void F77_NAME(ztptri)();
 void F77_NAME(ztptrs)();  void F77_NAME(ztrcon)();  void F77_NAME(ztrmm)();
 void F77_NAME(ztrtri)();  void F77_NAME(ztrtrs)();
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

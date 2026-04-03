@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_CONSTANTS_H
 #define MINIR_R_EXT_CONSTANTS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <math.h>
 
 #ifndef M_PI
@@ -14,4 +18,8 @@
 #define M_LOG10_2 0.301029995663981195213738894947
 #endif
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

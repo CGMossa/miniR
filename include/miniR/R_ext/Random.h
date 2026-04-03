@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_RANDOM_H
 #define MINIR_R_EXT_RANDOM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void GetRNGstate(void);
 void PutRNGstate(void);
 double unif_rand(void);
@@ -14,4 +18,8 @@ typedef enum {
     KNUTH_TAOCP2, LECUYER_CMRG, DEFAULT_RNG
 } RNGtype;
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

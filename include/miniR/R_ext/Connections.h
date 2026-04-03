@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_CONNECTIONS_H
 #define MINIR_R_EXT_CONNECTIONS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../Rinternals.h"
 
 #define R_CONNECTIONS_VERSION 1
@@ -54,4 +58,8 @@ SEXP R_new_custom_connection(const char *description, const char *mode,
 /* Get a Rconnection from a SEXP connection object */
 Rconnection R_GetConnection(SEXP con);
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

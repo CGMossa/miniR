@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_PARSE_H
 #define MINIR_R_EXT_PARSE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../Rinternals.h"
 
 typedef enum {
@@ -10,4 +14,8 @@ typedef enum {
 
 SEXP R_ParseVector(SEXP text, int n, ParseStatus *status, SEXP srcfile);
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

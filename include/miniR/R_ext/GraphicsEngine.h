@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_GRAPHICSENGINE_H
 #define MINIR_R_EXT_GRAPHICSENGINE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../Rinternals.h"
 #include "GraphicsDevice.h"
 
@@ -75,4 +79,8 @@ void GEplaySnapshot(SEXP snapshot, pGEDevDesc dd);
 /* New page callback */
 void GENewPage(const pGEcontext gc, pGEDevDesc dd);
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

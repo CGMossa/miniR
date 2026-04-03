@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_LINPACK_H
 #define MINIR_R_EXT_LINPACK_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* F77_NAME / F77_CALL / F77_SUB — Fortran name mangling */
 #ifndef F77_NAME
 #define F77_NAME(x) x ## _
@@ -44,4 +48,8 @@ void rs_(int *nm, int *n, double *a, double *w, int *matz,
 #define Memzero(to, n)      memset((to), 0, (size_t)(n) * sizeof(*(to)))
 #endif
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

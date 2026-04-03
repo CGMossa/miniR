@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_APPLIC_H
 #define MINIR_R_EXT_APPLIC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*optimfn)(int, double *, double *, void *);
 typedef void (*optimgr)(int, double *, double *, void *);
 
@@ -20,4 +24,8 @@ void lbfgsb(int n, int m, double *x, double *l, double *u, int *nbd,
             double factr, double pgtol, int *fncount, int *grcount,
             int maxit, char *msg, int trace, int nREPORT);
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

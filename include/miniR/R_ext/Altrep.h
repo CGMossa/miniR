@@ -5,6 +5,10 @@
 #ifndef MINIR_R_EXT_ALTREP_H
 #define MINIR_R_EXT_ALTREP_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../Rinternals.h"
 
 /* ALTREP class registration — no-ops in miniR */
@@ -75,4 +79,8 @@ R_INLINE SEXP R_altrep_data2(SEXP x) { (void)x; return R_NilValue; }
 R_INLINE void R_set_altrep_data1(SEXP x, SEXP v) { (void)x; (void)v; }
 R_INLINE void R_set_altrep_data2(SEXP x, SEXP v) { (void)x; (void)v; }
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif /* MINIR_R_EXT_ALTREP_H */

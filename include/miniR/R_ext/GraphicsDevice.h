@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_GRAPHICSDEVICE_H
 #define MINIR_R_EXT_GRAPHICSDEVICE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../Rinternals.h"
 
 /* Forward declaration — full struct is opaque to most packages */
@@ -31,4 +35,8 @@ struct _DevDesc {
     int haveTransparency, haveTransparentBg, haveRaster, haveCapture, haveLocator;
 };
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

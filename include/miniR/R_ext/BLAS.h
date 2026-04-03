@@ -2,6 +2,10 @@
 #ifndef MINIR_R_EXT_BLAS_H
 #define MINIR_R_EXT_BLAS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "RS.h" /* F77_NAME */
 
 /* BLAS subroutines (void return) */
@@ -24,4 +28,8 @@ int F77_NAME(idamax)();
 /* Additional BLAS used by CRAN packages */
 void F77_NAME(dger)();   void F77_NAME(dtpmv)();
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif
