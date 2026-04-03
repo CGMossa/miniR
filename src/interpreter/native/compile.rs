@@ -750,16 +750,19 @@ pub fn compile_package_with_deps(
     // env vars are set. At runtime we set them to the current platform.
     let target = current_target_triple();
 
-    // Split files into C and C++ groups — must compile separately because
-    // cc::Build with .cpp(true) compiles ALL files as C++, which breaks
-    // C files that rely on C linkage (extern declarations without extern "C").
-    let (c_files, cpp_files): (Vec<_>, Vec<_>) = src_files.iter().partition(|f| {
-        !matches!(
-            f.extension().and_then(|e| e.to_str()),
-            Some("cpp" | "cc" | "cxx" | "C")
-        )
-    });
+    // Split files into C, C++, and Fortran groups.
+    let mut c_files = Vec::new();
+    let mut cpp_files = Vec::new();
+    let mut fortran_files = Vec::new();
+    for f in &src_files {
+        match f.extension().and_then(|e| e.to_str()) {
+            Some("cpp" | "cc" | "cxx" | "C") => cpp_files.push(f.clone()),
+            Some("f" | "f90" | "f95" | "F" | "F90" | "F95") => fortran_files.push(f.clone()),
+            _ => c_files.push(f.clone()),
+        }
+    }
     let has_cpp = !cpp_files.is_empty();
+    let has_fortran = !fortran_files.is_empty();
 
     // Helper: configure common build settings
     let configure_build = |build: &mut cc::Build| {
@@ -860,6 +863,34 @@ pub fn compile_package_with_deps(
         object_files.extend(cxx_objs);
     }
 
+    // Compile Fortran files with gfortran
+    if has_fortran {
+        let gfortran = std::env::var("FC")
+            .or_else(|_| std::env::var("F77"))
+            .unwrap_or_else(|_| "gfortran".to_string());
+        for src in &fortran_files {
+            let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("f");
+            let obj_path = output_dir.join(format!("{stem}.o"));
+            let output = Command::new(&gfortran)
+                .arg("-c")
+                .arg("-fPIC")
+                .arg("-O2")
+                .arg("-o")
+                .arg(&obj_path)
+                .arg(src)
+                .output()
+                .map_err(|e| format!("failed to run gfortran: {e}"))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "Fortran compilation failed for {}:\n{stderr}",
+                    src.display()
+                ));
+            }
+            object_files.push(obj_path);
+        }
+    }
+
     // Link .o files into a shared library (.so/.dylib)
     // Use the C++ compiler as linker if any C++ files were compiled.
     let linker_build = if has_cpp {
@@ -906,6 +937,26 @@ pub fn compile_package_with_deps(
         } else {
             cmd.arg("-lstdc++");
         }
+    }
+
+    // Fortran runtime linking — find libgfortran via gfortran itself
+    if has_fortran {
+        let gfortran = std::env::var("FC")
+            .or_else(|_| std::env::var("F77"))
+            .unwrap_or_else(|_| "gfortran".to_string());
+        // Ask gfortran where its runtime library lives
+        if let Ok(output) = Command::new(&gfortran)
+            .arg("-print-file-name=libgfortran.dylib")
+            .output()
+        {
+            if output.status.success() {
+                let lib_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if let Some(dir) = Path::new(&lib_path).parent() {
+                    cmd.arg(format!("-L{}", dir.display()));
+                }
+            }
+        }
+        cmd.arg("-lgfortran");
     }
 
     // Add PKG_LIBS (linker flags) — skip local -L/-l for bundled static libs
@@ -983,7 +1034,7 @@ fn find_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, Str
             } else {
                 continue;
             };
-            for ext in &["c", "cpp", "cc", "cxx"] {
+            for ext in &["c", "cpp", "cc", "cxx", "f", "f90", "f95"] {
                 let path = src_dir.join(format!("{stem}.{ext}"));
                 if path.is_file() && seen.insert(path.clone()) {
                     sources.push(path);
@@ -1004,7 +1055,7 @@ fn find_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, Str
                     let path = entry.path();
                     if path.is_file() {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                            if matches!(ext, "c" | "cpp" | "cc" | "cxx")
+                            if matches!(ext, "c" | "cpp" | "cc" | "cxx" | "f" | "f90" | "f95")
                                 && seen.insert(path.clone())
                             {
                                 sources.push(path);
@@ -1027,7 +1078,7 @@ fn find_sources(src_dir: &Path, makevars: &Makevars) -> Result<Vec<PathBuf>, Str
             let path = entry.path();
             if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                    if matches!(ext, "c" | "cpp" | "cc" | "cxx") {
+                    if matches!(ext, "c" | "cpp" | "cc" | "cxx" | "f" | "f90" | "f95") {
                         sources.push(path);
                     }
                 }
