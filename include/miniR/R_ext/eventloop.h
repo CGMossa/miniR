@@ -20,10 +20,18 @@ typedef struct _InputHandler {
     int active;
 } InputHandler;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 InputHandler *addInputHandler(InputHandler *handlers, int fd,
     fd_set_action_func action, int activity);
 InputHandler *removeInputHandler(InputHandler **handlers, InputHandler *handler);
 InputHandler *getInputHandler(InputHandler *handlers, int fd);
+
+#ifdef __cplusplus
+}
+#endif
 
 /* Global input handler chain */
 extern InputHandler *R_InputHandlers;
