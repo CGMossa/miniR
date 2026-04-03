@@ -4,8 +4,9 @@
 
 800+ builtins, 1700+ tests, 7014/7014 R parse, 10838/10841 Rd parse,
 751 .Rd man pages generated. Interactive egui plotting with SVG/PDF/PNG export.
-151/260 CRAN packages load (58%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
-Also: knitr, bslib, htmlwidgets, rmarkdown, ggpubr, plotly, broom, dbplyr, readr, xml2, tidyverse, Rcpp, fs.
+154/260 CRAN packages load (59%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
+Also: knitr, bslib, htmlwidgets, rmarkdown, Rcpp, fs, xml2, lmtest, classInt, quadprog, tseries, urca.
+Plus: ggpubr, plotly, broom, dbplyr, readr, tidyverse, sass, sodium, sp, fontawesome.
 
 ## Open
 
@@ -27,7 +28,8 @@ Also: knitr, bslib, htmlwidgets, rmarkdown, ggpubr, plotly, broom, dbplyr, readr
 - [ ] `ps` → compiles, segfaults on load — blocks processx, callr, testthat (5 pkgs)
 - [ ] `stringi` → needs full configure emulation for ICU — blocks stringr, tidyr
 - [ ] `Matrix` → needs SuiteSparse build + more Lapack — blocks igraph, car, survival
-- [ ] Fortran compilation (`.f` files) — blocks classInt, lmtest, fracdiff, quantreg
+- [x] Fortran compilation (`.f` files) — gfortran invocation in compile.rs
+- [ ] `delayedAssign` via `do.call` in rlang `on_load` hooks — blocks ~15 packages
 - Strategy: pkg-config + configure emulation (plan: system-deps-strategy.md)
 
 ### Language Features
@@ -75,6 +77,15 @@ Also: knitr, bslib, htmlwidgets, rmarkdown, ggpubr, plotly, broom, dbplyr, readr
 - NULL handling in sub/gsub/grep/grepl, unlist(list(NULL)) fix
 - `raw()` zero-arg, `anyDuplicated`, `removeSource`, `duplicated`
 - Adaptive eval depth from measured type sizes + stack pointer guard
+- Fortran compilation via gfortran with runtime library discovery
+- BLAS.h/Lapack.h with correct return types (ddot→double, etc.)
+- R_ext/eventloop.h, libextern.h, BLAS.h headers
+- `delayedAssign` pre-eval builtin + do.call handler
+- NAMESPACE parser: semicolon-separated directives on one line
+- unlist(list(NULL)) → NULL fix
+- `emulate_configure_system_lib` for sass (system libsass)
+- `emulate_configure_fs` for fs (system libuv)
+- `emulate_configure_ps` for ps (config.h generation)
 
 ## Done (previous sessions)
 
