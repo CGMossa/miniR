@@ -32,6 +32,15 @@ extern "C" {
 #define FCONE
 #endif
 
+/* Fortran function parameter list: in C, () means unspecified args;
+ * in C++, () means zero args. Use (...) in C++ so Fortran functions
+ * can be called with arguments. */
+#ifdef __cplusplus
+#define FORTRAN_ARGS ...
+#else
+#define FORTRAN_ARGS
+#endif
+
 
 #ifdef __cplusplus
 }
