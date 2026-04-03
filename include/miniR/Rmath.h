@@ -108,6 +108,10 @@ double log1pexp(double x);
 double Rf_lgamma1p(double a);
 double Rf_logspace_add(double lx, double ly);
 double Rf_logspace_sub(double lx, double ly);
+#ifndef R_NO_REMAP
+#define logspace_add Rf_logspace_add
+#define logspace_sub Rf_logspace_sub
+#endif
 
 /* Normal Distribution */
 double Rf_dnorm4(double x, double mu, double sigma, int lg);

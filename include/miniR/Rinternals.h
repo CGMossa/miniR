@@ -277,7 +277,10 @@ static inline int COMPLEX_GET_REGION(SEXP x, int i, int n, Rcomplex *buf) {
 
 /* ── Character encoding ── */
 
+#ifndef cetype_t_is_defined
+#define cetype_t_is_defined
 typedef enum { CE_NATIVE = 0, CE_UTF8 = 1, CE_LATIN1 = 2, CE_BYTES = 3, CE_SYMBOL = 5, CE_ANY = 99 } cetype_t;
+#endif
 
 /* NA_STRING — canonical NA for character vectors */
 #define NA_STRING R_NaString

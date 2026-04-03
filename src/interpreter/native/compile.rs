@@ -866,7 +866,18 @@ pub fn compile_package_with_deps(
         let cxxflags = makevars.pkg_cxxflags();
         if !cxxflags.is_empty() {
             for flag in shell_split(cxxflags) {
-                cxx_build.flag(&flag);
+                // Resolve -I paths relative to pkg_src_dir (same as PKG_CPPFLAGS)
+                if let Some(rel_path) = flag.strip_prefix("-I") {
+                    let rel_path = rel_path.trim_matches('"').trim_matches('\'');
+                    let path = Path::new(rel_path);
+                    if path.is_relative() {
+                        cxx_build.include(pkg_src_dir.join(path));
+                    } else {
+                        cxx_build.include(path);
+                    }
+                } else {
+                    cxx_build.flag(&flag);
+                }
             }
         }
         for src in &cpp_files {
