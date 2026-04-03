@@ -1825,3 +1825,80 @@ fn pre_eval_switch(
 }
 
 // endregion
+
+// region: delayedAssign
+
+/// `delayedAssign(x, value, eval.env, assign.env)` — create a promise binding.
+///
+/// The variable `x` is bound as a promise in `assign.env`. When first accessed,
+/// `value` is evaluated in `eval.env` and the result cached.
+///
+/// This is the core mechanism behind rlang's `on_load()` system.
+///
+/// @param x character: variable name to bind
+/// @param value expression (unevaluated) to evaluate on first access
+/// @param eval.env environment for evaluating value (default: parent.frame())
+/// @param assign.env environment to bind in (default: parent.frame())
+/// @return NULL (invisibly)
+/// @namespace base
+#[pre_eval_builtin(name = "delayedAssign", min_args = 2)]
+fn pre_eval_delayed_assign(
+    args: &[Arg],
+    env: &Environment,
+    context: &BuiltinContext,
+) -> Result<RValue, RError> {
+    // First arg: variable name (evaluated to get a string)
+    let name = args.first().and_then(|a| a.value.as_ref()).ok_or_else(|| {
+        RError::new(
+            RErrorKind::Argument,
+            "delayedAssign requires a variable name",
+        )
+    })?;
+    let name = context.with_interpreter(|interp| interp.eval_in(name, env))?;
+    let name = name
+        .as_vector()
+        .and_then(|v| v.as_character_scalar())
+        .ok_or_else(|| {
+            RError::new(
+                RErrorKind::Argument,
+                "first argument must be a character string",
+            )
+        })?;
+
+    // Second arg: the expression to evaluate lazily (captured as unevaluated AST)
+    let value_expr = args
+        .get(1)
+        .and_then(|a| a.value.as_ref())
+        .cloned()
+        .unwrap_or(Expr::Null);
+
+    // Third arg: eval.env (default: parent.frame() = env)
+    let eval_env = if let Some(arg) = args.get(2).and_then(|a| a.value.as_ref()) {
+        match context.with_interpreter(|interp| interp.eval_in(arg, env))? {
+            RValue::Environment(e) => e,
+            _ => env.clone(),
+        }
+    } else {
+        env.clone()
+    };
+
+    // Fourth arg: assign.env (default: parent.frame() = env)
+    let assign_env = if let Some(arg) = args.get(3).and_then(|a| a.value.as_ref()) {
+        match context.with_interpreter(|interp| interp.eval_in(arg, env))? {
+            RValue::Environment(e) => e,
+            _ => env.clone(),
+        }
+    } else {
+        env.clone()
+    };
+
+    // Create a promise and bind it in assign_env
+    let promise = RValue::Promise(std::rc::Rc::new(std::cell::RefCell::new(RPromise::new(
+        value_expr, eval_env,
+    ))));
+    assign_env.set(name, promise);
+
+    Ok(RValue::Null)
+}
+
+// endregion

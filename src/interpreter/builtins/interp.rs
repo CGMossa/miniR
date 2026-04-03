@@ -1202,6 +1202,11 @@ fn interp_do_call(
             if builtin_name == "on.exit" {
                 return do_call_on_exit(&positional[1], &forwarded_named, &target_env);
             }
+            // delayedAssign via do.call: the value arg is already evaluated,
+            // so we create the promise directly instead of going through pre_eval.
+            if builtin_name == "delayedAssign" {
+                return do_call_delayed_assign(&positional[1], &target_env);
+            }
         }
 
         return context.with_interpreter(|interp| match &positional[1] {
@@ -1279,6 +1284,53 @@ fn do_call_on_exit(
         target_env.take_on_exit();
     }
 
+    Ok(RValue::Null)
+}
+
+/// `do.call(delayedAssign, list(name, expr, eval.env, assign.env))` handler.
+fn do_call_delayed_assign(
+    args_val: &RValue,
+    target_env: &crate::interpreter::environment::Environment,
+) -> Result<RValue, RError> {
+    let list = match args_val {
+        RValue::List(l) => l,
+        _ => return Err(RError::new(RErrorKind::Argument, "args must be a list")),
+    };
+
+    let name = list
+        .values
+        .first()
+        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+        .ok_or_else(|| RError::new(RErrorKind::Argument, "first arg must be a character name"))?;
+
+    let value_expr = match list.values.get(1).map(|(_, v)| v) {
+        Some(RValue::Language(lang)) => (*lang.inner).clone(),
+        Some(other) => crate::interpreter::value::rvalue_to_expr(other),
+        None => crate::parser::ast::Expr::Null,
+    };
+
+    let eval_env = list
+        .values
+        .get(2)
+        .and_then(|(_, v)| match v {
+            RValue::Environment(e) => Some(e.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| target_env.clone());
+
+    let assign_env = list
+        .values
+        .get(3)
+        .and_then(|(_, v)| match v {
+            RValue::Environment(e) => Some(e.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| target_env.clone());
+
+    let promise = RValue::Promise(std::rc::Rc::new(std::cell::RefCell::new(RPromise::new(
+        value_expr, eval_env,
+    ))));
+    assign_env.set(name, promise);
     Ok(RValue::Null)
 }
 
