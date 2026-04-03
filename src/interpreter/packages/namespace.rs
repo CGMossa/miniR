@@ -321,53 +321,100 @@ fn collect_directives(input: &str) -> Result<Vec<(usize, String, String)>, Names
                 line
             };
 
-            // Look for a new directive: `name(`
-            if let Some(paren_pos) = line.find('(') {
-                let name = line[..paren_pos].trim().to_string();
-                if name.is_empty() {
+            // Process the line for one or more directives: `name(args) ; name2(args2)`
+            // Split on `;` to handle multiple directives per line
+            let segments: Vec<&str> = if current_name.is_some() {
+                // Continuation line — don't split
+                vec![line]
+            } else {
+                line.split(';').collect()
+            };
+            for segment in segments {
+                let segment = segment.trim();
+                if segment.is_empty() || segment.starts_with('#') {
                     continue;
                 }
-                start_line = line_number;
-                current_name = Some(name);
-                paren_depth = 0;
+                if current_name.is_none() {
+                    if let Some(paren_pos) = segment.find('(') {
+                        let name = segment[..paren_pos].trim().to_string();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        start_line = line_number;
+                        current_name = Some(name);
+                        paren_depth = 0;
 
-                // Process the rest of the line after the directive name
-                let mut in_quotes = false;
-                for ch in line[paren_pos..].chars() {
-                    if ch == '"' {
-                        in_quotes = !in_quotes;
-                        if paren_depth > 0 {
-                            current_args.push(ch);
+                        // Process chars from the opening paren
+                        let mut in_quotes = false;
+                        for ch in segment[paren_pos..].chars() {
+                            if ch == '"' {
+                                in_quotes = !in_quotes;
+                                if paren_depth > 0 {
+                                    current_args.push(ch);
+                                }
+                                continue;
+                            }
+                            if in_quotes {
+                                if paren_depth > 0 {
+                                    current_args.push(ch);
+                                }
+                                continue;
+                            }
+                            if ch == '(' {
+                                paren_depth += 1;
+                                if paren_depth > 1 {
+                                    current_args.push(ch);
+                                }
+                            } else if ch == ')' {
+                                paren_depth -= 1;
+                                if paren_depth == 0 {
+                                    if let Some(name) = current_name.take() {
+                                        directives.push((start_line, name, current_args.clone()));
+                                    }
+                                    current_args.clear();
+                                } else {
+                                    current_args.push(ch);
+                                }
+                            } else if paren_depth > 0 {
+                                current_args.push(ch);
+                            }
                         }
-                        continue;
                     }
-                    if in_quotes {
-                        if paren_depth > 0 {
+                } else {
+                    // Continuation of a multi-line directive
+                    let mut in_quotes = false;
+                    for ch in segment.chars() {
+                        if ch == '"' {
+                            in_quotes = !in_quotes;
+                            if paren_depth > 0 {
+                                current_args.push(ch);
+                            }
+                            continue;
+                        }
+                        if in_quotes {
+                            if paren_depth > 0 {
+                                current_args.push(ch);
+                            }
+                            continue;
+                        }
+                        if ch == '(' {
+                            paren_depth += 1;
+                            if paren_depth > 1 {
+                                current_args.push(ch);
+                            }
+                        } else if ch == ')' {
+                            paren_depth -= 1;
+                            if paren_depth == 0 {
+                                if let Some(name) = current_name.take() {
+                                    directives.push((start_line, name, current_args.clone()));
+                                }
+                                current_args.clear();
+                            } else {
+                                current_args.push(ch);
+                            }
+                        } else if paren_depth > 0 {
                             current_args.push(ch);
                         }
-                        continue;
-                    }
-                    if ch == '(' {
-                        paren_depth += 1;
-                        if paren_depth > 1 {
-                            current_args.push(ch);
-                        }
-                    } else if ch == ')' {
-                        paren_depth -= 1;
-                        if paren_depth == 0 {
-                            directives.push((
-                                start_line,
-                                current_name
-                                    .take()
-                                    .expect("current_name is Some (just set above)"),
-                                current_args.clone(),
-                            ));
-                            current_args.clear();
-                        } else {
-                            current_args.push(ch);
-                        }
-                    } else if paren_depth > 0 {
-                        current_args.push(ch);
                     }
                 }
             }
