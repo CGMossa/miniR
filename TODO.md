@@ -4,8 +4,8 @@
 
 800+ builtins, 1700+ tests, 7014/7014 R parse, 10838/10841 Rd parse,
 751 .Rd man pages generated. Interactive egui plotting with SVG/PDF/PNG export.
-131/260 CRAN packages load (50%+). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
-Also: knitr, shiny, ggpubr, plotly, broom, dbplyr, readr, rvest, renv, xml2, tidyverse.
+151/260 CRAN packages load (58%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
+Also: knitr, bslib, htmlwidgets, rmarkdown, ggpubr, plotly, broom, dbplyr, readr, xml2, tidyverse, Rcpp, fs.
 
 ## Open
 
@@ -17,15 +17,18 @@ Also: knitr, shiny, ggpubr, plotly, broom, dbplyr, readr, rvest, renv, xml2, tid
 - [ ] `convert()` / `super()` dispatch
 - Blocks: ggplot2, S7, Hmisc
 
-### Native Compilation Gaps (system deps)
+### Native Compilation Gaps
 
-- [ ] `fs` → needs libuv headers — blocks DT, devtools, gargle, htmlwidgets, pkgdown, rmarkdown, usethis (7 pkgs)
-- [ ] `ps` → needs configure-generated config.h — blocks processx, rcmdcheck, reprex, testthat (4 pkgs)
-- [ ] `stringi` → needs ICU headers — blocks stringr, tidyr (2 pkgs)
-- [ ] `openssl` → needs OpenSSL headers — blocks httr, covr
-- [ ] `Matrix` → needs SuiteSparse — blocks igraph, car
-- [ ] `timechange` → C++ compilation failure — blocks lubridate
-- Strategy: Rust -sys crates for curl/openssl (plan: system-deps-strategy.md)
+- [x] `fs` → system libuv via pkg-config (done)
+- [x] `xml2` → system libxml2 via pkg-config (done)
+- [x] `sass` → system libsass via pkg-config (done)
+- [x] `openssl` → compiles via pkg-config, segfaults on load (C API gap)
+- [ ] `later` → compiles, segfaults on load — blocks promises, httpuv, shiny, DT
+- [ ] `ps` → compiles, segfaults on load — blocks processx, callr, testthat (5 pkgs)
+- [ ] `stringi` → needs full configure emulation for ICU — blocks stringr, tidyr
+- [ ] `Matrix` → needs SuiteSparse build + more Lapack — blocks igraph, car, survival
+- [ ] Fortran compilation (`.f` files) — blocks classInt, lmtest, fracdiff, quantreg
+- Strategy: pkg-config + configure emulation (plan: system-deps-strategy.md)
 
 ### Language Features
 
@@ -48,20 +51,30 @@ Also: knitr, shiny, ggpubr, plotly, broom, dbplyr, readr, rvest, renv, xml2, tid
 - [x] `aho-corasick` — SIMD fixed-pattern grep
 - [ ] Arrow/Polars backend for vector storage (deferred)
 
-## Done (2026-04-01 session)
+## Done (2026-04-01 — 2026-04-03 session)
 
 - Language `[[<-` assignment + chained replacement (`body(f)[[2]][[2]] <- val`)
 - `<<-` with compound targets at global level
-- S3 dispatch for binary operators (`|`, `+`, `==`, etc.)
+- S3 dispatch for binary operators (`|`, `+`, `==`, etc.) with env-aware lookup
+- Custom `%op%` dispatch (SpecialOp::Other carries operator name)
 - List comparison operators (element-wise `==`/`!=`)
 - `library()` for base packages (no-op), `character.only=TRUE`
 - Base package synthetic namespace registration
-- `I()` (AsIs), `args()` fix, `vapply` named args
+- Namespace pre-registration (prevents infinite recursion)
+- `I()` (AsIs), `args()`, `vapply` named args, `.Primitive()`, `as.function`
+- `find.package`, `getNamespaceInfo`, `.GlobalEnv`/`.BaseNamespaceEnv` bindings
 - Grob constructors (textGrob, rectGrob, etc.) with just normalization
 - C API: Rconn struct, Rf_isPairList, R_check_class_etc, R_new_custom_connection
-- NULL handling in sub/gsub/grep/grepl
-- Modulo-zero fix for empty vector comparison
-- stats4/translations added to base package list
+- C API: R_ext/Lapack.h, eventloop.h, libextern.h, Connections.h v1
+- C API: Rf_warningcall_immediate, Rvprintf/REvprintf, R_CheckStack, R_interrupts_pending
+- pkg-config integration for Makevars.in anticonf resolution
+- Configure emulation for ps (config.h), fs (system libuv), sass (system libsass)
+- Makevars parser: user-defined variable expansion, value trimming, quote stripping
+- PCRE regex `\]` compatibility in character classes
+- TRUE/FALSE macro conflict fix for macOS system headers
+- NULL handling in sub/gsub/grep/grepl, unlist(list(NULL)) fix
+- `raw()` zero-arg, `anyDuplicated`, `removeSource`, `duplicated`
+- Adaptive eval depth from measured type sizes + stack pointer guard
 
 ## Done (previous sessions)
 
