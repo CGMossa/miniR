@@ -1013,6 +1013,32 @@ pub fn compile_package_with_deps(
             if has_local_lib && flag.starts_with("-l") {
                 continue; // skip all -l when using local lib paths
             }
+            // Resolve .o/.a file references relative to pkg_src_dir.
+            // If the referenced .o doesn't exist, try compiling its .c source.
+            if flag.ends_with(".o") || flag.ends_with(".a") {
+                let obj_path = if Path::new(flag).is_relative() {
+                    pkg_src_dir.join(flag)
+                } else {
+                    PathBuf::from(flag)
+                };
+                if !obj_path.exists() && flag.ends_with(".o") {
+                    // Try to compile the corresponding .c file
+                    let c_src = obj_path.with_extension("c");
+                    if c_src.is_file() {
+                        let mut obj_build = cc::Build::new();
+                        configure_build(&mut obj_build);
+                        obj_build.file(&c_src);
+                        if let Ok(objs) = obj_build.try_compile_intermediates() {
+                            object_files.extend(objs);
+                            continue; // compiled and added to objects, skip the flag
+                        }
+                    }
+                }
+                if obj_path.exists() {
+                    cmd.arg(&obj_path);
+                }
+                continue;
+            }
             cmd.arg(flag);
         }
     }
