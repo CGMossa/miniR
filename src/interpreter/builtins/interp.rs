@@ -1297,31 +1297,35 @@ fn do_call_delayed_assign(
         _ => return Err(RError::new(RErrorKind::Argument, "args must be a list")),
     };
 
-    let name = list
-        .values
-        .first()
-        .and_then(|(_, v)| v.as_vector()?.as_character_scalar())
+    // Resolve args by name first, then position.
+    // delayedAssign(x, value, eval.env, assign.env)
+    let get_arg = |name_key: &str, pos: usize| -> Option<&RValue> {
+        list.values
+            .iter()
+            .find(|(n, _)| n.as_deref() == Some(name_key))
+            .map(|(_, v)| v)
+            .or_else(|| list.values.get(pos).map(|(_, v)| v))
+    };
+
+    let name = get_arg("x", 0)
+        .and_then(|v| v.as_vector()?.as_character_scalar())
         .ok_or_else(|| RError::new(RErrorKind::Argument, "first arg must be a character name"))?;
 
-    let value_expr = match list.values.get(1).map(|(_, v)| v) {
+    let value_expr = match get_arg("value", 1) {
         Some(RValue::Language(lang)) => (*lang.inner).clone(),
         Some(other) => crate::interpreter::value::rvalue_to_expr(other),
         None => crate::parser::ast::Expr::Null,
     };
 
-    let eval_env = list
-        .values
-        .get(2)
-        .and_then(|(_, v)| match v {
+    let eval_env = get_arg("eval.env", 2)
+        .and_then(|v| match v {
             RValue::Environment(e) => Some(e.clone()),
             _ => None,
         })
         .unwrap_or_else(|| target_env.clone());
 
-    let assign_env = list
-        .values
-        .get(3)
-        .and_then(|(_, v)| match v {
+    let assign_env = get_arg("assign.env", 3)
+        .and_then(|v| match v {
             RValue::Environment(e) => Some(e.clone()),
             _ => None,
         })
