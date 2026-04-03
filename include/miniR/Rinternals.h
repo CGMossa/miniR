@@ -377,6 +377,7 @@ SEXP Rf_duplicate(SEXP x);
 /* Error/warning with call (defined in csrc/native_trampoline.c) */
 void Rf_errorcall(SEXP call, const char *fmt, ...) __attribute__((noreturn));
 void Rf_warningcall(SEXP call, const char *fmt, ...);
+void Rf_warningcall_immediate(SEXP call, const char *fmt, ...);
 
 /* Error handling */
 void Rf_error(const char *fmt, ...) __attribute__((noreturn));

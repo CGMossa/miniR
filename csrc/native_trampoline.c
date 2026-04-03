@@ -97,6 +97,15 @@ void Rf_warningcall(SEXP call, const char *fmt, ...) {
     Rf_warning(fmt);
 }
 
+void Rf_warningcall_immediate(SEXP call, const char *fmt, ...) {
+    (void)call;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "\n");
+}
+
 /* ── Printing (must be C for va_list) ── */
 
 void Rprintf(const char *fmt, ...) {

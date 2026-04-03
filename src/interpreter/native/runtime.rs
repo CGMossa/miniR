@@ -2691,6 +2691,38 @@ pub extern "C" fn Rf_allocS4Object() -> Sexp {
     Rf_allocVector(sexp::NILSXP as c_int, 0)
 }
 
+// Signal/interrupt stubs
+#[no_mangle]
+pub static mut R_interrupts_pending: c_int = 0;
+#[no_mangle]
+pub static mut R_interrupts_suspended: c_int = 0;
+
+// Event loop stubs (for later/httpuv packages)
+#[no_mangle]
+pub static mut R_InputHandlers: *mut c_void = ptr::null_mut();
+#[no_mangle]
+pub static mut R_PolledEvents: *mut c_void = ptr::null_mut();
+#[no_mangle]
+pub static mut R_wait_usec: c_int = 0;
+
+#[no_mangle]
+pub extern "C" fn addInputHandler(
+    handlers: *mut c_void,
+    _fd: c_int,
+    _action: *mut c_void,
+    _activity: c_int,
+) -> *mut c_void {
+    handlers
+}
+
+#[no_mangle]
+pub extern "C" fn removeInputHandler(
+    _handlers: *mut *mut c_void,
+    _handler: *mut c_void,
+) -> *mut c_void {
+    ptr::null_mut()
+}
+
 // ps package stubs — init.c references functions that don't exist in this package version
 #[no_mangle]
 pub extern "C" fn ps__list_apps() -> Sexp {

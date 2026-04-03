@@ -25,6 +25,9 @@ InputHandler *addInputHandler(InputHandler *handlers, int fd,
 InputHandler *removeInputHandler(InputHandler **handlers, InputHandler *handler);
 InputHandler *getInputHandler(InputHandler *handlers, int fd);
 
+/* Global input handler chain */
+extern InputHandler *R_InputHandlers;
+
 /* R_PolledEvents — called during event loop idle */
 extern void (*R_PolledEvents)(void);
 extern int R_wait_usec;
