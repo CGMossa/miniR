@@ -35,4 +35,15 @@
 #define F77_SUB(x) x ## _
 #endif
 
+/* Noreturn attribute — used by RSQLite and other packages */
+#ifndef NORET
+#if defined(__GNUC__) || defined(__clang__)
+#define NORET __attribute__((noreturn))
+#elif defined(_MSC_VER)
+#define NORET __declspec(noreturn)
+#else
+#define NORET
+#endif
+#endif
+
 #endif /* MINIR_R_H */

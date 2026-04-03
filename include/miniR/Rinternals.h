@@ -64,6 +64,17 @@ typedef unsigned int SEXPTYPE;
 #define S4SXP       25
 #define OBJSXP      25
 
+/* ── NORET (noreturn attribute) ── */
+#ifndef NORET
+#if defined(__GNUC__) || defined(__clang__)
+#define NORET __attribute__((noreturn))
+#elif defined(_MSC_VER)
+#define NORET __declspec(noreturn)
+#else
+#define NORET
+#endif
+#endif
+
 /* ── Rboolean ── */
 
 #ifndef Rboolean_is_defined
