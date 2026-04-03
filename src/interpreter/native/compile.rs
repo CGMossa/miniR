@@ -154,6 +154,8 @@ fn emulate_configure(pkg_src_dir: &Path) {
         emulate_configure_ps(pkg_src_dir);
     } else if pkg_name == "fs" {
         emulate_configure_fs(pkg_src_dir);
+    } else if pkg_name == "sass" {
+        emulate_configure_system_lib(pkg_src_dir, "libsass", "-I./libsass/include");
     }
 }
 
@@ -281,6 +283,58 @@ fn emulate_configure_fs(pkg_src_dir: &Path) {
         libs = libs.as_str(),
         "fs: using system libuv"
     );
+}
+
+/// Generic configure emulation: replace a bundled static lib build with
+/// system library found via pkg-config. Writes a Makevars that uses system
+/// headers and libs instead of bundled source.
+fn emulate_configure_system_lib(
+    pkg_src_dir: &Path,
+    pkg_config_name: &str,
+    fallback_cppflags: &str,
+) {
+    let makevars_path = pkg_src_dir.join("Makevars");
+    // Don't overwrite if already configured
+    if makevars_path.exists() {
+        // Check if it references a bundled .a file — if so, we need to override
+        let content = std::fs::read_to_string(&makevars_path).unwrap_or_default();
+        if !content.contains(".a") {
+            return; // Already configured without bundled lib
+        }
+    }
+
+    let lib = match pkg_config::Config::new()
+        .cargo_metadata(false)
+        .env_metadata(false)
+        .probe(pkg_config_name)
+    {
+        Ok(lib) => lib,
+        Err(_) => return, // System lib not available
+    };
+
+    let cflags: String = lib
+        .include_paths
+        .iter()
+        .map(|p| format!("-I{}", p.display()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let libs: String = {
+        let mut parts: Vec<String> = lib
+            .link_paths
+            .iter()
+            .map(|p| format!("-L{}", p.display()))
+            .collect();
+        parts.extend(lib.libs.iter().map(|l| format!("-l{l}")));
+        parts.join(" ")
+    };
+
+    let makevars = format!("PKG_CPPFLAGS = {cflags} {fallback_cppflags}\nPKG_LIBS = {libs}\n");
+
+    if let Err(e) = std::fs::write(&makevars_path, &makevars) {
+        tracing::warn!(error = %e, pkg = pkg_config_name, "failed to write Makevars");
+        return;
+    }
+    tracing::debug!(pkg = pkg_config_name, "using system library via pkg-config");
 }
 
 // endregion
