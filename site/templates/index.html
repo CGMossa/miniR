@@ -7,12 +7,29 @@
     <h1>miniR</h1>
     <p class="tagline">An R interpreter written in Rust</p>
     <div class="stats">
-        <div class="stat"><span class="num">157</span><span class="label">/ 260 CRAN packages</span></div>
-        <div class="stat"><span class="num">800+</span><span class="label">builtins</span></div>
-        <div class="stat"><span class="num">60%</span><span class="label">CRAN compatibility</span></div>
+        <div class="stat"><span class="num">131 / 260</span><span class="label">checked-in CRAN corpus</span></div>
+        <div class="stat"><span class="num">800+</span><span class="label">builtin entry points</span></div>
+        <div class="stat"><span class="num">Reentrant</span><span class="label">per-interpreter state</span></div>
     </div>
 </div>
 <div class="content">
     {{ section.content | safe }}
 </div>
+<section class="docs-section">
+    <p class="eyebrow">Documentation</p>
+    <p class="docs-lead">
+        Start with architecture and package runtime if you want to understand the interpreter.
+        Use the later pages for object systems, graphics, native internals, and compatibility notes.
+    </p>
+    <div class="docs-grid">
+        {% for page in section.pages %}
+        <a class="doc-card" href="{{ page.permalink }}">
+            <h2>{{ page.title }}</h2>
+            {% if page.description %}
+            <p>{{ page.description }}</p>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</section>
 {% endblock %}

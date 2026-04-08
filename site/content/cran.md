@@ -1,59 +1,45 @@
 +++
-title = "CRAN Package Compatibility"
-weight = 3
-description = "157/260 packages load --- 60% of the tested corpus"
+title = "CRAN Corpus Compatibility"
+weight = 9
+description = "Compatibility numbers for the checked-in `cran/` corpus, not the full CRAN archive"
 +++
 
-miniR loads **157 out of 260** tested CRAN packages (60%).
+The compatibility numbers on this site refer to the checked-in `cran/` tree in the repository. They do **not** refer to the full CRAN archive.
 
-## Tidyverse Core
+The local corpus is refreshed with `just update-cran-test-packages` and is meant to stress the interpreter with real package code: base packages, recommended packages, and a large set of popular CRAN packages.
 
-All load successfully:
+## Current Headline
 
-| Package | Status |
-|---------|--------|
-| rlang | OK |
-| lifecycle | OK |
-| vctrs | OK |
-| tibble | OK |
-| dplyr | OK |
-| purrr | OK |
-| forcats | OK |
-| tidyselect | OK |
-| tidyverse | OK |
+- Latest repo scan: **131 / 260** packages in the checked-in corpus load successfully.
+- Parse-only corpus checks are separate and opt in via `MINIR_PARSE_CRAN=1 cargo test --test parse_corpus`.
+- The remaining compatibility work is mostly runtime, package loading, object system, and native-code work - not parser work.
 
-## Notable Packages
+## What The Corpus Contains
 
-| Category | Packages |
-|----------|----------|
-| **Data wrangling** | dplyr, tibble, tidyr*, readr, dbplyr, broom |
-| **Visualization** | plotly, ggpubr, gridExtra, scales |
-| **Web/HTML** | knitr, rmarkdown, bslib, htmlwidgets, htmltools, sass |
-| **Package dev** | Rcpp, RcppEigen, cli, rlang |
-| **Time/Date** | lubridate, timechange, hms |
-| **Spatial** | sp, classInt |
-| **Financial** | quantmod, TTR, tseries, xts, zoo |
-| **Statistics** | lmtest, quadprog, urca, sandwich |
-| **I/O** | xml2, curl, jsonlite, yaml, readxl |
+- Checked-in package trees under `cran/`, so corpus runs are reproducible from the repo state.
+- Base and recommended packages, not only third-party CRAN packages.
+- A compatibility denominator tied to the repo snapshot, which is why miniR talks about a corpus rather than "all of CRAN".
+- Real package assets such as `R/`, `NAMESPACE`, `man/`, `src/`, and `inst/`, not just parser fixtures.
 
-*tidyr requires stringi which needs ICU system library
+## Representative Packages Already Loading
 
-## Remaining Blockers
+Examples from the current corpus that load:
 
-| Blocker | Packages Affected | Status |
-|---------|-------------------|--------|
-| **S7 class system** | ggplot2, cowplot, patchwork, viridis | Deep class machinery |
-| **rlang on_load hooks** | later, promises, httpuv, shiny | topenv() scoping issue |
-| **stringi (ICU)** | stringr, tidyr, reshape2 | Needs configure emulation |
-| **Matrix (SuiteSparse)** | survival, mgcv, igraph | Needs bundled lib build |
-| **Native segfaults** | data.table, ps, openssl, haven | C API runtime gaps |
+- Tidyverse core pieces such as `rlang`, `vctrs`, `tibble`, `dplyr`, `purrr`, `forcats`, and `tidyselect`
+- Web and reporting packages such as `knitr`, `rmarkdown`, `htmltools`, `htmlwidgets`, and `bslib`
+- Time and statistics packages such as `lubridate`, `timechange`, `lmtest`, and `sandwich`
+- IO and systems packages such as `xml2`, `curl`, `jsonlite`, `yaml`, and `readxl`
 
-## System Dependencies
+## What Blocks More Packages
 
-miniR uses `pkg-config` to find system libraries for native packages:
+| Area | Why it blocks the corpus |
+|------|---------------------------|
+| Package runtime | The corpus expects namespaces, imports, exports, hooks, datasets, and base/recommended package environments to behave like packages, not loose files. |
+| Native code | Many packages ship `src/` trees and expect `.Call`, `.External`, routine registration, and package build/link behavior. |
+| Object systems | S3 already matters, and packages also lean on `methods`, S4, and newer class machinery. |
+| Data-model fidelity | Attributes, `data.frame`, factors, recycling, subsetting, and replacement semantics still decide whether package code survives contact with reality. |
+| Graphics and devices | The corpus assumes `graphics`, `grDevices`, and `grid` exist as runtime subsystems, not optional niceties. |
 
-```bash
-brew install openssl libxml2 libuv libsass  # macOS
-```
+## System Libraries Still Matter
 
-Packages that benefit: xml2, fs, sass, sodium, openssl.
+The corpus includes many native packages that benefit from system libraries discovered through `pkg-config`, for example `xml2`, `fs`, `sass`, `openssl`, and packages layered on top of them.

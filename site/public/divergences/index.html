@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Divergences from GNU R &mdash; miniR</title>
+    
+    <meta name="description" content="Intentional differences from GNU R&#x27;s behavior">
+    
     <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
 </head>
 <body>
@@ -12,18 +15,28 @@
             <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
             <div class="nav-links">
                 <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
-                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
-                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
-                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
                 <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
             </div>
         </div>
     </nav>
     <main>
         
-<article>
-    <h1>Divergences from GNU R</h1>
-    <p>miniR intentionally diverges from GNU R where R's behavior is confusing,
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Divergences from GNU R</h1>
+        
+        <p class="page-description">Intentional differences from GNU R&#x27;s behavior</p>
+        
+    </header>
+    <div class="page-body">
+        <p>miniR intentionally diverges from GNU R where R's behavior is confusing,
 inconsistent, or unnecessarily restrictive. This is not a drop-in replacement
 --- it's a fresh implementation that respects R's useful semantics while fixing
 the bad ones.</p>
@@ -65,6 +78,10 @@ Traceback (most recent call last):
 1: run_check(-5)
 </code></pre>
 
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
 </article>
 
     </main>

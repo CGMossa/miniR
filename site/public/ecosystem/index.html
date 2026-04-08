@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rust Ecosystem &mdash; miniR</title>
+    
+    <meta name="description" content="The crates miniR uses, why some dependencies travel in bundles, and how feature flags compose">
+    
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Rust Ecosystem</h1>
+        
+        <p class="page-description">The crates miniR uses, why some dependencies travel in bundles, and how feature flags compose</p>
+        
+    </header>
+    <div class="page-body">
+        <p>miniR is one crate with a fairly small always-on core and a long list of optional subsystems. The point of the feature flags is not just smaller binaries. They keep parser and evaluator work fast while letting native code, graphics, linalg, TLS, parquet, and GUI support grow without becoming mandatory for every build.</p>
+<h2 id="core-crates">Core Crates</h2>
+<p>These are the main pieces of the always-on Rust stack:</p>
+<table><thead><tr><th>Area</th><th>Crates</th><th>Why they are here</th></tr></thead><tbody>
+<tr><td>Parsing</td><td><code>pest</code>, <code>pest_derive</code></td><td>R grammar and AST construction start here.</td></tr>
+<tr><td>Builtin registration</td><td><code>minir-macros</code>, <code>linkme</code></td><td>Attribute macros declare builtins; <code>linkme</code> turns them into one registry.</td></tr>
+<tr><td>Runtime/value plumbing</td><td><code>derive_more</code>, <code>smallvec</code>, <code>indexmap</code>, <code>itertools</code></td><td>Reduces boilerplate in value types and call machinery.</td></tr>
+<tr><td>Strings and matching</td><td><code>regex</code>, <code>aho-corasick</code>, <code>memchr</code>, <code>unicode-width</code>, <code>unicode-segmentation</code>, <code>unicase</code></td><td>Powers string builtins, formatting, and CLI output.</td></tr>
+<tr><td>Numeric support</td><td><code>libm</code>, <code>num-complex</code></td><td>Mathematical functions and full complex-number support.</td></tr>
+<tr><td>Columnar backend</td><td><code>arrow-array</code>, <code>arrow-buffer</code></td><td>Efficient array-backed storage for vectors and Arrow/Parquet-adjacent work.</td></tr>
+<tr><td>General utility</td><td><code>glob</code>, <code>temp-dir</code>, <code>base64</code>, <code>bstr</code>, <code>log</code>, <code>tracing</code></td><td>Filesystem helpers, temporary state, binary/text helpers, and instrumentation.</td></tr>
+</tbody></table>
+<h2 id="feature-gated-subsystems">Feature-Gated Subsystems</h2>
+<p>The optional features are where most crate coupling lives:</p>
+<table><thead><tr><th>Feature</th><th>Main crates</th><th>What it enables</th></tr></thead><tbody>
+<tr><td><code>repl</code></td><td><code>reedline</code>, <code>crossterm</code>, <code>nu-ansi-term</code></td><td>Interactive line editing, completion, terminal UX</td></tr>
+<tr><td><code>random</code></td><td><code>rand</code>, <code>rand_chacha</code>, <code>rand_distr</code></td><td>RNG state, deterministic mode, statistical distributions</td></tr>
+<tr><td><code>datetime</code></td><td><code>jiff</code></td><td>Time zones, POSIXct/POSIXlt, date formatting</td></tr>
+<tr><td><code>io</code></td><td><code>csv</code></td><td>Delimited text IO</td></tr>
+<tr><td><code>json</code></td><td><code>serde_json</code></td><td>JSON parsing and emission</td></tr>
+<tr><td><code>toml</code></td><td><code>toml_edit</code></td><td>TOML parsing and writing</td></tr>
+<tr><td><code>linalg</code></td><td><code>ndarray</code>, <code>nalgebra</code></td><td>Matrix factorization and linear algebra helpers</td></tr>
+<tr><td><code>tls</code></td><td><code>rustls</code>, <code>rustls-native-certs</code>, <code>webpki-roots</code></td><td>HTTPS and secure URL connections</td></tr>
+<tr><td><code>compression</code></td><td><code>flate2</code>, <code>bzip2</code></td><td>Compressed file and serialization support</td></tr>
+<tr><td><code>progress</code></td><td><code>indicatif</code></td><td>Text progress bars</td></tr>
+<tr><td><code>parallel</code></td><td><code>rayon</code></td><td>Parallel helpers where the runtime allows them</td></tr>
+<tr><td><code>parquet</code></td><td><code>parquet</code>, <code>arrow</code></td><td>Arrow tables and Parquet files</td></tr>
+<tr><td><code>svg-device</code></td><td><code>svg</code></td><td>SVG graphics output</td></tr>
+<tr><td><code>raster-device</code></td><td><code>resvg</code>, <code>tiny-skia</code>, <code>usvg</code>, <code>image</code></td><td>Raster graphics from SVG scene data</td></tr>
+<tr><td><code>pdf-device</code></td><td><code>krilla</code>, <code>krilla-svg</code>, <code>usvg</code></td><td>PDF graphics device</td></tr>
+<tr><td><code>plot</code> / <code>gui</code></td><td><code>eframe</code>, <code>egui</code>, <code>egui_plot</code>, <code>egui_table</code>, <code>winit</code>, <code>rfd</code></td><td>Interactive plotting and GUI viewers</td></tr>
+<tr><td><code>native</code></td><td><code>libloading</code>, <code>cc</code>, <code>pkg-config</code>, <code>addr2line</code>, <code>gimli</code>, <code>object</code></td><td>Package compilation, shared-library loading, and native stack unwinding</td></tr>
+</tbody></table>
+<h2 id="why-some-dependencies-are-coupled">Why Some Dependencies Are Coupled</h2>
+<p>Several feature flags intentionally pull in bundles rather than single crates:</p>
+<ul>
+<li><code>native</code> is not only <code>libloading</code>. miniR also needs <code>cc</code> and <code>pkg-config</code> to build packages, plus <code>addr2line</code>, <code>gimli</code>, and <code>object</code> to turn raw instruction pointers into useful native backtraces.</li>
+<li><code>raster-device</code> and <code>pdf-device</code> build on the SVG scene pipeline. That is why they depend on <code>svg-device</code> instead of duplicating graphics generation.</li>
+<li><code>gui</code> is layered on top of plotting and viewing support rather than being a separate rendering stack.</li>
+<li><code>random</code> uses both fast and deterministic RNG backends because miniR wants good interactive performance <strong>and</strong> reproducible cross-platform test behavior.</li>
+</ul>
+<h2 id="build-profiles">Build Profiles</h2>
+<p>The repo exposes a few useful build shapes:</p>
+<table><thead><tr><th>Profile</th><th>Command</th><th>Intent</th></tr></thead><tbody>
+<tr><td><code>minimal</code></td><td><code>cargo build --no-default-features --features minimal</code></td><td>Parser and evaluator work with the lightest dependency set</td></tr>
+<tr><td><code>fast</code></td><td><code>cargo build --no-default-features --features fast</code></td><td>Quick iteration with common runtime helpers</td></tr>
+<tr><td><code>default</code></td><td><code>cargo build</code></td><td>Daily development build</td></tr>
+<tr><td><code>full</code></td><td><code>cargo build --features full</code></td><td>CI and release-style build with heavy optional subsystems</td></tr>
+</tbody></table>
+<h2 id="practical-reading-of-the-feature-graph">Practical Reading Of The Feature Graph</h2>
+<p>If you are changing parser behavior, basic evaluation, environments, or pure builtins, stay on <code>minimal</code> or <code>fast</code> as long as possible.</p>
+<p>If you are changing:</p>
+<ul>
+<li>package loading or compiled extensions, you probably need <code>native</code></li>
+<li>URL connections, you need <code>tls</code></li>
+<li>matrix-heavy stats functionality, you need <code>linalg</code></li>
+<li>plotting or device output, you need <code>svg-device</code>, <code>raster-device</code>, <code>pdf-device</code>, or <code>gui</code></li>
+</ul>
+<p>That split is deliberate. miniR is trying to stay pleasant to work on even while it grows into a serious package runtime.</p>
+
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

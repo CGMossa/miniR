@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Package Runtime &mdash; miniR</title>
+    
+    <meta name="description" content="How miniR finds packages, loads namespaces, sources R files, and attaches exports">
+    
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Package Runtime</h1>
+        
+        <p class="page-description">How miniR finds packages, loads namespaces, sources R files, and attaches exports</p>
+        
+    </header>
+    <div class="page-body">
+        <p>miniR treats package loading as a runtime subsystem, not as a thin wrapper around <code>source()</code>. The package loader is responsible for finding packages, building namespace environments, importing symbols, loading native code, sourcing <code>R/</code> files, indexing help, and attaching exports onto the search path.</p>
+<h2 id="the-loading-sequence">The Loading Sequence</h2>
+<p>The core loader lives in <code>src/interpreter/packages/loader.rs</code>. The rough order is:</p>
+<ol>
+<li>Find the package directory on <code>.libPaths()</code></li>
+<li>Parse <code>DESCRIPTION</code></li>
+<li>Parse <code>NAMESPACE</code></li>
+<li>Create a namespace environment with the base environment as parent</li>
+<li>Populate imports from already-loaded packages</li>
+<li>Load native code declared by <code>useDynLib()</code> before sourcing R code</li>
+<li>Load <code>R/sysdata.rda</code> if present</li>
+<li>Source <code>R/*.R</code> files, respecting <code>Collate</code></li>
+<li>Build a filtered exports environment</li>
+<li>Register <code>S3method()</code> entries</li>
+<li>Run <code>.onLoad()</code></li>
+<li>If the caller used <code>library()</code> or <code>require()</code>, attach the exports environment and then run <code>.onAttach()</code></li>
+</ol>
+<p>That is why package compatibility work in miniR is usually about runtime semantics, not only parser coverage.</p>
+<h2 id="where-packages-are-found">Where Packages Are Found</h2>
+<p>Library paths are built from interpreter-local environment state:</p>
+<ul>
+<li><code>R_LIBS</code></li>
+<li><code>R_LIBS_USER</code></li>
+<li>miniR's default library directory under the user data dir</li>
+</ul>
+<p>This logic is in <code>Interpreter::get_lib_paths()</code>. The paths are resolved against the interpreter's working directory and environment variables, both of which are also stored on the interpreter instance.</p>
+<h2 id="namespace-versus-search-path">Namespace Versus Search Path</h2>
+<p>miniR keeps these distinct:</p>
+<table><thead><tr><th>Concept</th><th>What it is</th></tr></thead><tbody>
+<tr><td>Namespace environment</td><td>All package code and internal objects</td></tr>
+<tr><td>Exports environment</td><td>The user-visible subset of the namespace</td></tr>
+<tr><td>Search path entry</td><td>An attached exports environment inserted between <code>.GlobalEnv</code> and <code>base</code></td></tr>
+</tbody></table>
+<p><code>load_namespace()</code> builds the namespace. <code>attach_package()</code> inserts the exports environment into the parent chain and records it in the interpreter's search-path list.</p>
+<h2 id="built-in-base-packages">Built-In Base Packages</h2>
+<p>Packages such as <code>base</code>, <code>stats</code>, <code>utils</code>, <code>methods</code>, <code>graphics</code>, <code>grDevices</code>, and <code>grid</code> are treated specially. miniR registers synthetic namespaces for them instead of expecting installable package directories.</p>
+<p>That means calls like <code>library(base)</code> and <code>loadNamespace("stats")</code> can still work even though those packages are backed by builtin code and interpreter state.</p>
+<h2 id="description-and-namespace-matter">DESCRIPTION And NAMESPACE Matter</h2>
+<p>The package runtime does real metadata work:</p>
+<ul>
+<li><code>DESCRIPTION</code> drives package identity, dependencies, imports, and collate order.</li>
+<li><code>NAMESPACE</code> drives exports, imports, <code>importFrom()</code>, <code>S3method()</code>, and <code>useDynLib()</code>.</li>
+<li><code>man/</code> directories are indexed into the Rd help store.</li>
+</ul>
+<p>If a package fails because a symbol is missing or a method is not visible, the problem is often in this metadata path rather than in the parser.</p>
+<h2 id="r-file-sourcing">R File Sourcing</h2>
+<p>miniR sources package <code>R/</code> files in collate order when <code>DESCRIPTION</code> provides one. Files not listed in <code>Collate</code> are sourced afterwards in alphabetical order.</p>
+<p>There is one pragmatic divergence here: top-level expression failures while sourcing a file are logged and the loader continues with later expressions. That keeps packages usable when one top-level helper fails but later definitions, hooks, or methods still need to exist.</p>
+<h2 id="imports-exports-and-hooks">Imports, Exports, And Hooks</h2>
+<p>The package loader:</p>
+<ul>
+<li>copies imported symbols into the namespace environment</li>
+<li>builds a filtered exports environment from <code>export()</code> and <code>exportPattern()</code></li>
+<li>registers S3 methods declared in <code>NAMESPACE</code></li>
+<li>calls <code>.onLoad()</code> after the namespace is ready</li>
+<li>calls <code>.onAttach()</code> only when the package is attached to the search path</li>
+</ul>
+<p>This split matches how packages expect to behave in real R sessions.</p>
+<h2 id="native-code-is-part-of-package-loading">Native Code Is Part Of Package Loading</h2>
+<p>When <code>NAMESPACE</code> includes <code>useDynLib()</code>, miniR loads package native code before sourcing <code>R/</code> files. That allows package R code to refer to <code>.Call</code> targets during load.</p>
+<p>This is one reason package compatibility and native-runtime work are tightly coupled in miniR.</p>
+<h2 id="where-to-work-when-package-loading-fails">Where To Work When Package Loading Fails</h2>
+<table><thead><tr><th>Symptom</th><th>Start here</th></tr></thead><tbody>
+<tr><td>Package not found</td><td><code>packages/loader.rs</code>, <code>.libPaths()</code> logic</td></tr>
+<tr><td>Wrong exports/imports</td><td><code>packages/namespace.rs</code>, <code>build_exports()</code>, <code>populate_imports()</code></td></tr>
+<tr><td>Hook or load-order issue</td><td><code>packages/loader.rs</code>, <code>Collate</code>, <code>.onLoad()</code>, <code>.onAttach()</code></td></tr>
+<tr><td>Missing S3 method</td><td><code>packages/namespace.rs</code>, <code>register_s3_methods()</code>, <code>s3.rs</code></td></tr>
+<tr><td>Native symbol not available during load</td><td><code>packages/loader.rs</code>, <code>native/dll.rs</code>, <code>native/runtime.rs</code></td></tr>
+</tbody></table>
+<p>In practice, package runtime bugs are often environment-chain or metadata bugs. Treat them that way and the fixes stay coherent.</p>
+
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

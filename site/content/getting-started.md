@@ -52,7 +52,7 @@ export R_LIBS=/path/to/R/library
 ./target/release/r -e 'library(dplyr); glimpse(mtcars)'
 ```
 
-miniR loads 157/260 tested CRAN packages including the tidyverse core (rlang, dplyr, tibble, purrr, vctrs, forcats).
+miniR currently loads 131/260 packages in the checked-in compatibility corpus, including the tidyverse core (`rlang`, `dplyr`, `tibble`, `purrr`, `vctrs`, `forcats`).
 
 ## System Libraries for Native Packages
 

@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Getting Started &mdash; miniR</title>
+    
+    <meta name="description" content="Installation, build profiles, and first steps">
+    
     <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
 </head>
 <body>
@@ -12,18 +15,28 @@
             <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
             <div class="nav-links">
                 <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
-                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
-                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
-                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
                 <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
             </div>
         </div>
     </nav>
     <main>
         
-<article>
-    <h1>Getting Started</h1>
-    <h2 id="prerequisites">Prerequisites</h2>
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Getting Started</h1>
+        
+        <p class="page-description">Installation, build profiles, and first steps</p>
+        
+    </header>
+    <div class="page-body">
+        <h2 id="prerequisites">Prerequisites</h2>
 <ul>
 <li>Rust (latest stable)</li>
 <li>On macOS: Xcode command line tools (<code>xcode-select --install</code>)</li>
@@ -59,7 +72,7 @@ export R_LIBS=/path/to/R/library
 # Load a package
 ./target/release/r -e &#39;library(dplyr); glimpse(mtcars)&#39;
 </code></pre>
-<p>miniR loads 157/260 tested CRAN packages including the tidyverse core (rlang, dplyr, tibble, purrr, vctrs, forcats).</p>
+<p>miniR currently loads 131/260 packages in the checked-in compatibility corpus, including the tidyverse core (<code>rlang</code>, <code>dplyr</code>, <code>tibble</code>, <code>purrr</code>, <code>vctrs</code>, <code>forcats</code>).</p>
 <h2 id="system-libraries-for-native-packages">System Libraries for Native Packages</h2>
 <p>Some CRAN packages with C/C++ code need system libraries. miniR uses <code>pkg-config</code> to find them:</p>
 <pre><code data-lang="bash"># macOS (Homebrew)
@@ -72,6 +85,10 @@ brew install openssl libxml2 libuv libsass
 # libsass → sass → bslib, rmarkdown
 </code></pre>
 
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
 </article>
 
     </main>

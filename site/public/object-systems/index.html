@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>S3 And S4 &mdash; miniR</title>
+    
+    <meta name="description" content="How miniR handles S3 dispatch in the evaluator and S4 registries in the runtime">
+    
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>S3 And S4</h1>
+        
+        <p class="page-description">How miniR handles S3 dispatch in the evaluator and S4 registries in the runtime</p>
+        
+    </header>
+    <div class="page-body">
+        <p>miniR supports both of R's major object systems, but they sit at different depths in the runtime.</p>
+<ul>
+<li><strong>S3</strong> is wired directly into evaluation and operator dispatch.</li>
+<li><strong>S4</strong> is currently more registry- and builtin-driven, centered around class, generic, and method tables stored on the interpreter.</li>
+</ul>
+<h2 id="s3-the-everyday-dispatch-path">S3: The Everyday Dispatch Path</h2>
+<p>S3 support lives primarily in <code>src/interpreter/s3.rs</code>, plus operator hooks in <code>src/interpreter/ops.rs</code> and package registration through the loader.</p>
+<p>The dispatch shape is:</p>
+<ol>
+<li>Force the dispatch object enough to inspect its class vector</li>
+<li>Look for <code>generic.class</code> in the current environment chain</li>
+<li>Fall back to the interpreter's S3 method registry</li>
+<li>Fall back to <code>generic.default</code></li>
+<li>Push S3 dispatch context so <code>NextMethod()</code> can continue the chain</li>
+</ol>
+<p>That registry exists because packages register methods through <code>S3method()</code> in <code>NAMESPACE</code>, and those methods are not always discoverable by ordinary environment lookup alone.</p>
+<h2 id="what-s3-keeps-on-the-interpreter">What S3 Keeps On The Interpreter</h2>
+<p>The interpreter stores:</p>
+<ul>
+<li>an S3 dispatch stack for active method calls</li>
+<li>a per-interpreter S3 method registry keyed by <code>(generic, class)</code></li>
+<li>ordinary environments where <code>generic.class</code> functions may also live</li>
+</ul>
+<p>This is why S3 works with both user-defined methods and package-declared methods loaded through the package runtime.</p>
+<h2 id="s3-entry-points">S3 Entry Points</h2>
+<p>The main S3-facing pieces are:</p>
+<ul>
+<li><code>UseMethod()</code> and <code>NextMethod()</code></li>
+<li>generic functions such as <code>print()</code> and <code>format()</code></li>
+<li>operator dispatch paths in <code>ops.rs</code></li>
+<li>package loader registration of <code>S3method()</code> directives</li>
+</ul>
+<p>If S3 dispatch looks wrong, the fix is usually in <code>s3.rs</code>, <code>ops.rs</code>, or package loading - not in the parser.</p>
+<h2 id="s4-registries-on-the-interpreter">S4: Registries On The Interpreter</h2>
+<p>S4 support lives mainly in <code>src/interpreter/builtins/s4.rs</code>. The interpreter stores three tables:</p>
+<table><thead><tr><th>Registry</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>s4_classes</code></td><td>class name -&gt; class definition</td></tr>
+<tr><td><code>s4_generics</code></td><td>generic name -&gt; generic definition</td></tr>
+<tr><td><code>s4_methods</code></td><td><code>(generic, signature)</code> -&gt; method function</td></tr>
+</tbody></table>
+<p>That state is per interpreter, which keeps different sessions isolated.</p>
+<h2 id="what-setclass-stores">What <code>setClass()</code> Stores</h2>
+<p><code>setClass()</code> registers:</p>
+<ul>
+<li>slot definitions</li>
+<li>inheritance via <code>contains</code></li>
+<li>prototype defaults</li>
+<li>virtual-class status</li>
+<li>optional validity functions</li>
+</ul>
+<p>The implementation collects inherited slots and prototypes by walking the registered class graph, so class definitions are more than just a flat slot map.</p>
+<h2 id="what-new-slot-and-validation-do">What <code>new()</code>, <code>slot()</code>, And Validation Do</h2>
+<p>The current S4 object model is list-backed:</p>
+<ul>
+<li><code>new()</code> constructs an object from the registered class definition</li>
+<li><code>slot()</code> and <code>slot&lt;-</code> read and write named slots</li>
+<li><code>validObject()</code> calls any registered validity function</li>
+<li><code>showClass()</code> and <code>existsMethod()</code> inspect the registries</li>
+</ul>
+<p>This is enough to support a meaningful subset of <code>methods</code> behavior while keeping the representation straightforward.</p>
+<h2 id="what-setgeneric-and-setmethod-do">What <code>setGeneric()</code> And <code>setMethod()</code> Do</h2>
+<p><code>setGeneric()</code> stores a generic definition in the S4 generic registry and may also bind a callable definition in the current environment.</p>
+<p><code>setMethod()</code> stores a method in the per-interpreter method table keyed by the generic name and signature vector. If no generic was registered yet, the implementation falls back to binding the function directly under the generic name for compatibility.</p>
+<p>That makes the current S4 implementation more explicit and table-oriented than S3's evaluator-first model.</p>
+<h2 id="the-practical-difference-between-s3-and-s4-in-minir">The Practical Difference Between S3 And S4 In miniR</h2>
+<table><thead><tr><th>System</th><th>Current center of gravity</th></tr></thead><tbody>
+<tr><td>S3</td><td>Evaluator and package runtime</td></tr>
+<tr><td>S4</td><td>Builtins and interpreter registries</td></tr>
+</tbody></table>
+<p>So:</p>
+<ul>
+<li>missing S3 behavior usually means a dispatch, environment, or package-loader issue</li>
+<li>missing S4 behavior usually means class/generic/method registry work in <code>builtins/s4.rs</code></li>
+</ul>
+<h2 id="where-to-extend">Where To Extend</h2>
+<table><thead><tr><th>If you need to add...</th><th>Start here</th></tr></thead><tbody>
+<tr><td>New S3 dispatch semantics</td><td><code>src/interpreter/s3.rs</code></td></tr>
+<tr><td>Operator method lookup</td><td><code>src/interpreter/ops.rs</code></td></tr>
+<tr><td>Package-declared S3 methods</td><td><code>src/interpreter/packages/loader.rs</code> and <code>namespace.rs</code></td></tr>
+<tr><td>New S4 registration/inspection builtin</td><td><code>src/interpreter/builtins/s4.rs</code></td></tr>
+<tr><td>New S4 runtime state</td><td><code>src/interpreter.rs</code></td></tr>
+</tbody></table>
+<p>The two systems are intentionally not collapsed into one abstraction. R itself treats them differently, and miniR follows that reality.</p>
+
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

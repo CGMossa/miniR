@@ -1,6 +1,6 @@
 +++
 title = "Divergences from GNU R"
-weight = 2
+weight = 12
 description = "Intentional differences from GNU R's behavior"
 +++
 

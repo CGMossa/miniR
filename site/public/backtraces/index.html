@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tracebacks And Backtraces &mdash; miniR</title>
+    
+    <meta name="description" content="R-level call stacks, file-and-line locations, and native `.Call` backtraces">
+    
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Tracebacks And Backtraces</h1>
+        
+        <p class="page-description">R-level call stacks, file-and-line locations, and native `.Call` backtraces</p>
+        
+    </header>
+    <div class="page-body">
+        <p>miniR has two related debugging layers:</p>
+<ul>
+<li><strong>Traceback</strong> for the R call stack</li>
+<li><strong>Backtrace</strong> for native C frames reached through <code>.Call</code>, <code>.C</code>, or <code>.External</code></li>
+</ul>
+<p>Both are stored per interpreter. There is no process-global traceback slot shared by unrelated sessions.</p>
+<h2 id="layer-1-r-tracebacks">Layer 1: R Tracebacks</h2>
+<p>When an error propagates through nested closure calls, miniR snapshots the call stack and makes it available through <code>traceback()</code> and through session error rendering.</p>
+<p>Example:</p>
+<pre><code data-lang="r">f &lt;- function() stop(&quot;boom&quot;)
+g &lt;- function() f()
+h &lt;- function() g()
+h()
+</code></pre>
+<p>Typical output:</p>
+<pre><code data-lang="text">Error: boom
+Traceback (most recent call last):
+3: f()
+2: g()
+1: h()
+</code></pre>
+<p>Important details:</p>
+<ul>
+<li>Successful evaluations do not erase the last traceback. A new error replaces it.</li>
+<li>Top-level builtin errors like <code>stop("x")</code> have no closure frames, so there may be no traceback to print.</li>
+<li><code>traceback()</code> is implemented as a builtin, but it is reading interpreter-owned traceback state rather than a process-global singleton.</li>
+</ul>
+<h2 id="file-and-line-locations">File And Line Locations</h2>
+<p>When code is evaluated from a file, miniR pushes source context onto the interpreter so traceback entries can resolve call spans back to <code>file:line</code>.</p>
+<p>That means sourced code can produce entries like:</p>
+<pre><code data-lang="text">2: inner() at /path/to/script.R:14
+1: outer() at /path/to/script.R:18
+</code></pre>
+<p>This is especially useful for package loading and corpus runs, where "which file and which line" matters more than a generic call name.</p>
+<h2 id="layer-2-native-backtraces">Layer 2: Native Backtraces</h2>
+<p>When native code calls <code>Rf_error()</code>, miniR captures the raw instruction pointer stack before the C frames disappear, then resolves those addresses into symbols and source lines when debug info is available.</p>
+<p>That native layer lives behind the <code>native</code> feature and is built from a coupled set of crates:</p>
+<ul>
+<li><code>libloading</code> for shared-library loading</li>
+<li><code>cc</code> and <code>pkg-config</code> for package compilation</li>
+<li><code>addr2line</code>, <code>gimli</code>, and <code>object</code> for turning raw addresses into readable stack frames</li>
+</ul>
+<p>Example from the native stacktrace test fixture:</p>
+<pre><code data-lang="text">Error: value must be non-negative, got -5
+Traceback (most recent call last):
+2: validate(x)
+   [C] deep_helper at test.c:30 (stacktest.dylib)
+   [C] middle_helper at test.c:36 (stacktest.dylib)
+   [C] C_validate at test.c:41 (stacktest.dylib)
+1: run_check(-5)
+</code></pre>
+<p>If native code re-enters R through <code>Rf_eval</code>, miniR can also mark that boundary in the traceback so you can see where control moved from C back into R.</p>
+<h2 id="why-this-matters-for-minir">Why This Matters For miniR</h2>
+<p>miniR is trying to run real package code, not only toy examples. That means errors often cross boundaries:</p>
+<ul>
+<li>R code calling into package native code</li>
+<li>native code calling back into R</li>
+<li>sourced package files calling helpers deep in a namespace</li>
+</ul>
+<p>A good traceback is not optional in that world. It is part of the interpreter architecture, and it is one of the places where miniR can be more useful than GNU R during development.</p>
+
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Native Runtime &mdash; miniR</title>
+    
+    <meta name="description" content="The R C API surface compiled into miniR, callback plumbing, and native-call execution">
+    
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/architecture/">Architecture</a>
+                <a href="https://cgmossa.github.io/miniR/package-runtime/">Packages</a>
+                <a href="https://cgmossa.github.io/miniR/object-systems/">S3/S4</a>
+                <a href="https://cgmossa.github.io/miniR/graphics-devices/">Graphics</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native</a>
+                <a href="https://cgmossa.github.io/miniR/">Docs</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article class="doc-page">
+    <header class="page-header">
+        <p class="eyebrow">Documentation</p>
+        <h1>Native Runtime</h1>
+        
+        <p class="page-description">The R C API surface compiled into miniR, callback plumbing, and native-call execution</p>
+        
+    </header>
+    <div class="page-body">
+        <p>The existing native-code page is about compiling and loading package code. This page is about the runtime that those shared libraries call into once they are loaded.</p>
+<h2 id="the-core-idea">The Core Idea</h2>
+<p>miniR compiles a Rust implementation of a large slice of the R C API directly into the main binary. Package shared libraries then resolve symbols such as <code>Rf_allocVector</code>, <code>Rf_eval</code>, <code>Rf_findVar</code>, and <code>R_registerRoutines</code> against that binary.</p>
+<p>The center of that implementation is <code>src/interpreter/native/runtime.rs</code>.</p>
+<h2 id="what-lives-in-the-native-runtime">What Lives In The Native Runtime</h2>
+<p><code>runtime.rs</code> provides:</p>
+<ul>
+<li>exported sentinel globals such as <code>R_NilValue</code>, <code>R_BaseEnv</code>, and <code>R_GlobalEnv</code></li>
+<li>many <code>extern "C"</code> functions implementing the R C API</li>
+<li>thread-local native invocation state</li>
+<li>callback plumbing back into the current Rust interpreter</li>
+<li>helpers for parsing/evaluating language objects across the R/C boundary</li>
+</ul>
+<p>This is why native compatibility is not just a loader problem. miniR needs a whole in-process R ABI surface.</p>
+<h2 id="thread-local-native-state">Thread-Local Native State</h2>
+<p>During native calls, miniR keeps a thread-local runtime state with:</p>
+<ul>
+<li>allocation tracking</li>
+<li>a protect stack</li>
+<li>interpreter callbacks for variable lookup, definition, evaluation, and parsing</li>
+<li>an <code>RValue</code> stash used for round-tripping parsed language objects</li>
+</ul>
+<p>That state is local to the calling thread and reset around native entry points, which keeps reentrant interpreter calls manageable.</p>
+<h2 id="how-call-crosses-the-boundary">How <code>.Call()</code> Crosses The Boundary</h2>
+<p>The rough flow is:</p>
+<ol>
+<li><code>native/dll.rs</code> looks up the symbol in a loaded shared library</li>
+<li>miniR installs interpreter callbacks into the native runtime</li>
+<li>Rust values are converted to <code>SEXP</code></li>
+<li>the native function is called</li>
+<li>returned <code>SEXP</code> values are converted back to <code>RValue</code></li>
+<li>callbacks and temporary state are cleared</li>
+</ol>
+<p>That same layer also handles registered routines and native error propagation.</p>
+<h2 id="global-symbol-initialization">Global Symbol Initialization</h2>
+<p>There are two important initialization steps:</p>
+<ul>
+<li><code>init_globals()</code> seeds sentinel SEXPs and well-known symbols inside the native runtime</li>
+<li><code>init_global_envs()</code> maps the current interpreter's base and global environments to <code>R_BaseEnv</code> and <code>R_GlobalEnv</code> before package native code runs</li>
+</ul>
+<p>Without those, native package init functions would see null or meaningless environment pointers.</p>
+<h2 id="errors-and-protected-calls">Errors And Protected Calls</h2>
+<p><code>Rf_error()</code> and related longjmp-based behavior are not implemented directly in Rust. miniR uses a C trampoline for the setjmp/longjmp boundary and then converts failures back into Rust-side errors.</p>
+<p>That bridge is what allows:</p>
+<ul>
+<li>native errors to unwind safely back into miniR</li>
+<li>traceback capture to include native frames</li>
+<li>R callbacks from native code to re-enter the interpreter</li>
+</ul>
+<h2 id="routine-registration-and-native-abi-coverage">Routine Registration And Native ABI Coverage</h2>
+<p>The native runtime includes support for routine registration such as <code>R_registerRoutines()</code> and C-callable lookup helpers. That matters because many real packages do not just export a bare symbol table; they register entry points during package init.</p>
+<p>The API surface is broad and includes allocation, coercion, attributes, symbols, evaluation, environments, RNG hooks, connections, and large chunks of Rmath-facing support.</p>
+<h2 id="backtraces-are-part-of-the-runtime-story">Backtraces Are Part Of The Runtime Story</h2>
+<p>Native runtime support is coupled to native stack unwinding:</p>
+<ul>
+<li><code>object</code>, <code>gimli</code>, and <code>addr2line</code> resolve raw instruction pointers</li>
+<li><code>dll.rs</code> captures frames when native code errors</li>
+<li><code>stacktrace.rs</code> turns those frames into readable <code>[C] file:line</code> entries</li>
+</ul>
+<p>That is why the <code>native</code> feature pulls in more than just <code>libloading</code>.</p>
+<h2 id="where-to-extend">Where To Extend</h2>
+<table><thead><tr><th>If you need to add...</th><th>Start here</th></tr></thead><tbody>
+<tr><td>Another R C API function</td><td><code>src/interpreter/native/runtime.rs</code></td></tr>
+<tr><td>Better <code>RValue</code> &lt;-&gt; <code>SEXP</code> conversion</td><td><code>src/interpreter/native/convert.rs</code></td></tr>
+<tr><td>Shared-library loading or routine lookup changes</td><td><code>src/interpreter/native/dll.rs</code></td></tr>
+<tr><td>Compiler/build integration</td><td><code>src/interpreter/native/compile.rs</code></td></tr>
+<tr><td>Native backtrace formatting</td><td><code>src/interpreter/native/stacktrace.rs</code></td></tr>
+</tbody></table>
+<p>The native runtime is one of the highest-leverage parts of miniR. When it gets better, package compatibility moves in large jumps rather than in single-builtin increments.</p>
+
+    </div>
+    <p class="page-back">
+        <a href="https://cgmossa.github.io/miniR/">Back to docs overview</a>
+    </p>
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>
