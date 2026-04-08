@@ -1,0 +1,11 @@
+base_url = "https://cgmossa.github.io/miniR"
+title = "miniR"
+description = "An R interpreter written in Rust"
+compile_sass = false
+build_search_index = true
+generate_feeds = false
+
+[markdown]
+
+[extra]
+repo_url = "https://github.com/CGMossa/miniR"

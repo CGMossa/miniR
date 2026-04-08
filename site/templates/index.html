@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}miniR &mdash; R interpreter in Rust{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>miniR</h1>
+    <p class="tagline">An R interpreter written in Rust</p>
+    <div class="stats">
+        <div class="stat"><span class="num">157</span><span class="label">/ 260 CRAN packages</span></div>
+        <div class="stat"><span class="num">800+</span><span class="label">builtins</span></div>
+        <div class="stat"><span class="num">60%</span><span class="label">CRAN compatibility</span></div>
+    </div>
+</div>
+<div class="content">
+    {{ section.content | safe }}
+</div>
+{% endblock %}

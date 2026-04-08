@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Divergences from GNU R &mdash; miniR</title>
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
+                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article>
+    <h1>Divergences from GNU R</h1>
+    <p>miniR intentionally diverges from GNU R where R's behavior is confusing,
+inconsistent, or unnecessarily restrictive. This is not a drop-in replacement
+--- it's a fresh implementation that respects R's useful semantics while fixing
+the bad ones.</p>
+<h2 id="language-improvements">Language Improvements</h2>
+<h3 id="trailing-commas-everywhere">Trailing commas everywhere</h3>
+<p>GNU R rejects trailing commas in function calls and definitions. miniR allows them in all contexts:</p>
+<pre><code data-lang="r">c(1, 2, 3,)
+list(a = 1, b = 2,)
+data.frame(x = 1:3, y = 4:6,)
+function(a, b,) a + b
+</code></pre>
+<h3 id="data-frame-forward-references"><code>data.frame()</code> forward references</h3>
+<p>miniR evaluates columns left-to-right, so later columns can reference earlier ones:</p>
+<pre><code data-lang="r">data.frame(x = 1:5, xx = x * x)   # works in miniR
+data.frame(a = 1:3, b = a + 10L, c = a + b)
+</code></pre>
+<h3 id="unified-pipe-operators">Unified pipe operators</h3>
+<p><code>|&gt;</code> and <code>%&gt;%</code> are identical in miniR --- both support <code>_</code> and <code>.</code> placeholders. No <code>library(magrittr)</code> needed:</p>
+<pre><code data-lang="r">x |&gt; f(a, _)      # R 4.2+ style
+x %&gt;% f(a, .)     # magrittr style --- same thing
+</code></pre>
+<p>Also native: <code>%&lt;&gt;%</code> (assignment pipe), <code>%T&gt;%</code> (tee pipe), <code>%$%</code> (exposition pipe).</p>
+<h3 id="if-else-across-newlines"><code>if...else</code> across newlines</h3>
+<pre><code data-lang="r">if (TRUE) 1
+else 2           # works in miniR (GNU R rejects this)
+</code></pre>
+<h3 id="as-power-operator"><code>**</code> as power operator</h3>
+<pre><code data-lang="r">2 ** 3  # 8 --- synonym for ^
+</code></pre>
+<h2 id="error-messages">Error Messages</h2>
+<p>miniR aims for better error messages than GNU R --- more informative, more specific, with suggestions for how to fix the problem.</p>
+<h3 id="tracebacks-show-c-frames">Tracebacks show C frames</h3>
+<p>GNU R tracebacks only show opaque <code>.Call</code> entries. miniR unwinds the native stack with DWARF source locations:</p>
+<pre><code>Error: value must be non-negative, got -5
+Traceback (most recent call last):
+2: validate(x)
+   [C] deep_helper at test.c:36 (stacktest.dylib)
+   [C] C_validate at test.c:47 (stacktest.dylib)
+1: run_check(-5)
+</code></pre>
+
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

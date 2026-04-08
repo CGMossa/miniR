@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ config.title }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ get_url(path='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="{{ config.base_url }}" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="{{ get_url(path='@/getting-started.md') }}">Getting Started</a>
+                <a href="{{ get_url(path='@/divergences.md') }}">Divergences</a>
+                <a href="{{ get_url(path='@/cran.md') }}">CRAN Packages</a>
+                <a href="{{ get_url(path='@/native.md') }}">Native Code</a>
+                <a href="{{ config.extra.repo_url }}">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

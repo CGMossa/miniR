@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CRAN Package Compatibility &mdash; miniR</title>
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
+                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article>
+    <h1>CRAN Package Compatibility</h1>
+    <p>miniR loads <strong>157 out of 260</strong> tested CRAN packages (60%).</p>
+<h2 id="tidyverse-core">Tidyverse Core</h2>
+<p>All load successfully:</p>
+<table><thead><tr><th>Package</th><th>Status</th></tr></thead><tbody>
+<tr><td>rlang</td><td>OK</td></tr>
+<tr><td>lifecycle</td><td>OK</td></tr>
+<tr><td>vctrs</td><td>OK</td></tr>
+<tr><td>tibble</td><td>OK</td></tr>
+<tr><td>dplyr</td><td>OK</td></tr>
+<tr><td>purrr</td><td>OK</td></tr>
+<tr><td>forcats</td><td>OK</td></tr>
+<tr><td>tidyselect</td><td>OK</td></tr>
+<tr><td>tidyverse</td><td>OK</td></tr>
+</tbody></table>
+<h2 id="notable-packages">Notable Packages</h2>
+<table><thead><tr><th>Category</th><th>Packages</th></tr></thead><tbody>
+<tr><td><strong>Data wrangling</strong></td><td>dplyr, tibble, tidyr*, readr, dbplyr, broom</td></tr>
+<tr><td><strong>Visualization</strong></td><td>plotly, ggpubr, gridExtra, scales</td></tr>
+<tr><td><strong>Web/HTML</strong></td><td>knitr, rmarkdown, bslib, htmlwidgets, htmltools, sass</td></tr>
+<tr><td><strong>Package dev</strong></td><td>Rcpp, RcppEigen, cli, rlang</td></tr>
+<tr><td><strong>Time/Date</strong></td><td>lubridate, timechange, hms</td></tr>
+<tr><td><strong>Spatial</strong></td><td>sp, classInt</td></tr>
+<tr><td><strong>Financial</strong></td><td>quantmod, TTR, tseries, xts, zoo</td></tr>
+<tr><td><strong>Statistics</strong></td><td>lmtest, quadprog, urca, sandwich</td></tr>
+<tr><td><strong>I/O</strong></td><td>xml2, curl, jsonlite, yaml, readxl</td></tr>
+</tbody></table>
+<p>*tidyr requires stringi which needs ICU system library</p>
+<h2 id="remaining-blockers">Remaining Blockers</h2>
+<table><thead><tr><th>Blocker</th><th>Packages Affected</th><th>Status</th></tr></thead><tbody>
+<tr><td><strong>S7 class system</strong></td><td>ggplot2, cowplot, patchwork, viridis</td><td>Deep class machinery</td></tr>
+<tr><td><strong>rlang on_load hooks</strong></td><td>later, promises, httpuv, shiny</td><td>topenv() scoping issue</td></tr>
+<tr><td><strong>stringi (ICU)</strong></td><td>stringr, tidyr, reshape2</td><td>Needs configure emulation</td></tr>
+<tr><td><strong>Matrix (SuiteSparse)</strong></td><td>survival, mgcv, igraph</td><td>Needs bundled lib build</td></tr>
+<tr><td><strong>Native segfaults</strong></td><td>data.table, ps, openssl, haven</td><td>C API runtime gaps</td></tr>
+</tbody></table>
+<h2 id="system-dependencies">System Dependencies</h2>
+<p>miniR uses <code>pkg-config</code> to find system libraries for native packages:</p>
+<pre><code data-lang="bash">brew install openssl libxml2 libuv libsass  # macOS
+</code></pre>
+<p>Packages that benefit: xml2, fs, sass, sodium, openssl.</p>
+
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

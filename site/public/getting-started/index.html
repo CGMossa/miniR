@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Getting Started &mdash; miniR</title>
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
+                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<article>
+    <h1>Getting Started</h1>
+    <h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>Rust (latest stable)</li>
+<li>On macOS: Xcode command line tools (<code>xcode-select --install</code>)</li>
+<li>Optional: <code>pkg-config</code> and system libraries for native R packages</li>
+</ul>
+<h2 id="building">Building</h2>
+<pre><code data-lang="bash">git clone https://github.com/CGMossa/miniR.git
+cd miniR
+cargo build --release
+</code></pre>
+<h3 id="build-profiles">Build Profiles</h3>
+<table><thead><tr><th>Profile</th><th>Command</th><th>Build Time</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><strong>minimal</strong></td><td><code>cargo build --no-default-features -F minimal</code></td><td>~3s</td><td>Parser work, WASM</td></tr>
+<tr><td><strong>fast</strong></td><td><code>cargo build --no-default-features -F fast</code></td><td>~5s</td><td>Quick iteration</td></tr>
+<tr><td><strong>default</strong></td><td><code>cargo build</code></td><td>~8.5s</td><td>Everyday development</td></tr>
+<tr><td><strong>full</strong></td><td><code>cargo build -F full</code></td><td>~15s</td><td>CI, release builds</td></tr>
+</tbody></table>
+<h2 id="running">Running</h2>
+<pre><code data-lang="bash"># Execute an expression
+./target/release/r -e &#39;print(1:10)&#39;
+
+# Run a script
+./target/release/r script.R
+
+# Interactive REPL
+./target/release/r
+</code></pre>
+<h2 id="loading-cran-packages">Loading CRAN Packages</h2>
+<p>Point <code>R_LIBS</code> at a directory containing installed R packages:</p>
+<pre><code data-lang="bash"># Set the library path
+export R_LIBS=/path/to/R/library
+
+# Load a package
+./target/release/r -e &#39;library(dplyr); glimpse(mtcars)&#39;
+</code></pre>
+<p>miniR loads 157/260 tested CRAN packages including the tidyverse core (rlang, dplyr, tibble, purrr, vctrs, forcats).</p>
+<h2 id="system-libraries-for-native-packages">System Libraries for Native Packages</h2>
+<p>Some CRAN packages with C/C++ code need system libraries. miniR uses <code>pkg-config</code> to find them:</p>
+<pre><code data-lang="bash"># macOS (Homebrew)
+brew install openssl libxml2 libuv libsass
+
+# The packages that benefit:
+# openssl → httr, covr
+# libxml2 → xml2
+# libuv → fs → htmlwidgets, rmarkdown, bslib
+# libsass → sass → bslib, rmarkdown
+</code></pre>
+
+</article>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>

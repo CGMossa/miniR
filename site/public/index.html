@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>miniR &mdash; R interpreter in Rust</title>
+    <link rel="stylesheet" href="https://cgmossa.github.io/miniR/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="https:&#x2F;&#x2F;cgmossa.github.io&#x2F;miniR" class="logo">miniR</a>
+            <div class="nav-links">
+                <a href="https://cgmossa.github.io/miniR/getting-started/">Getting Started</a>
+                <a href="https://cgmossa.github.io/miniR/divergences/">Divergences</a>
+                <a href="https://cgmossa.github.io/miniR/cran/">CRAN Packages</a>
+                <a href="https://cgmossa.github.io/miniR/native/">Native Code</a>
+                <a href="https:&#x2F;&#x2F;github.com&#x2F;CGMossa&#x2F;miniR">GitHub</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        
+<div class="hero">
+    <h1>miniR</h1>
+    <p class="tagline">An R interpreter written in Rust</p>
+    <div class="stats">
+        <div class="stat"><span class="num">157</span><span class="label">/ 260 CRAN packages</span></div>
+        <div class="stat"><span class="num">800+</span><span class="label">builtins</span></div>
+        <div class="stat"><span class="num">60%</span><span class="label">CRAN compatibility</span></div>
+    </div>
+</div>
+<div class="content">
+    <p>miniR is an R interpreter written in Rust. It runs real-world R code from popular CRAN packages — not just toy examples.</p>
+<h2 id="goals">Goals</h2>
+<ol>
+<li><strong>Run top CRAN packages</strong> — 157/260 tested packages load successfully (60%)</li>
+<li><strong>Well-written code</strong> — clean, idiomatic Rust; 87K+ lines</li>
+<li><strong>Reentrant interpreter</strong> — multiple R sessions in one process, no global state</li>
+</ol>
+<h2 id="quick-start">Quick Start</h2>
+<pre><code data-lang="bash"># Clone and build
+git clone https://github.com/CGMossa/miniR.git
+cd miniR
+cargo build --release
+
+# Run R code
+./target/release/r -e &#39;cat(&quot;hello from miniR\n&quot;)&#39;
+
+# Interactive REPL
+./target/release/r
+</code></pre>
+<h2 id="features">Features</h2>
+<ul>
+<li><strong>800+ built-in functions</strong> — base R, stats, utils, and more</li>
+<li><strong>Lazy evaluation</strong> — R promise semantics for function arguments</li>
+<li><strong>S3 dispatch</strong> — method dispatch for all operators and generics</li>
+<li><strong>Native code</strong> — <code>.Call</code>, <code>.External</code>, <code>.C</code>, <code>dyn.load</code> with automatic C/C++/Fortran compilation</li>
+<li><strong>Package loading</strong> — <code>library()</code>, <code>require()</code>, namespace management, S3 method registration</li>
+<li><strong>Grid graphics</strong> — units, viewports, grobs, display list, gpar</li>
+<li><strong>Interactive plotting</strong> — egui window with SVG/PDF/PNG export</li>
+<li><strong>Arrow backend</strong> — Float64Array/Int64Array for Double/Integer vectors</li>
+</ul>
+
+</div>
+
+    </main>
+    <footer>
+        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+    </footer>
+</body>
+</html>
