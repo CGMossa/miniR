@@ -6,3 +6,4 @@ vendor/
 .RData
 .Rhistory
 *.mod
+background/

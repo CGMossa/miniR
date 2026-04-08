@@ -1,0 +1,17 @@
+@charset "utf-8";
+
+$bg: #1a1b26;
+$fg: #c0caf5;
+$accent: #7aa2f7;
+$muted: #565f89;
+$surface: #24283b;
+$border: #3b4261;
+$code-bg: #1f2335;
+$success: #9ece6a;
+$mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+@import "base";
+@import "nav";
+@import "hero";
+@import "docs";
+@import "search";

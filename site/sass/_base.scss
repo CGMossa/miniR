@@ -1,0 +1,89 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: $bg;
+    color: $fg;
+    line-height: 1.7;
+}
+
+main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+a { color: $accent; }
+a:hover { text-decoration: underline; }
+p { margin-bottom: 1rem; }
+
+h1 { font-size: 2rem; margin-bottom: 1rem; color: $accent; }
+h2 { font-size: 1.4rem; margin: 2rem 0 0.8rem; color: $fg; border-bottom: 1px solid $border; padding-bottom: 0.3rem; }
+h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: $fg; }
+
+h1, h2, h3, h4 {
+    .zola-anchor {
+        font-size: 0.8em;
+        margin-left: -1.5em;
+        padding-right: 0.5em;
+        text-decoration: none;
+        opacity: 0.3;
+        color: $muted;
+        &:hover { opacity: 1; color: $accent; }
+    }
+}
+
+code {
+    background: $code-bg;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: $mono;
+}
+
+pre {
+    background: $code-bg;
+    border: 1px solid $border;
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1rem 0;
+    code { background: none; padding: 0; }
+}
+
+ul, ol { margin: 0.5rem 0 1rem 1.5rem; }
+li { margin-bottom: 0.3rem; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+}
+
+th, td {
+    padding: 0.5rem 0.8rem;
+    border: 1px solid $border;
+    text-align: left;
+}
+
+th { background: $code-bg; font-weight: 600; }
+
+blockquote {
+    border-left: 3px solid $accent;
+    padding: 0.5rem 1rem;
+    margin: 1rem 0;
+    color: $muted;
+}
+
+footer {
+    text-align: center;
+    padding: 2rem;
+    color: $muted;
+    font-size: 0.85rem;
+    border-top: 1px solid $border;
+    margin-top: 3rem;
+}
+
+@media (max-width: 768px) {
+    main { padding: 1.25rem; }
+}

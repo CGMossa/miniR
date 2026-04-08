@@ -3,19 +3,26 @@
 {% block title %}{{ page.title }} &mdash; miniR{% endblock %}
 
 {% block content %}
-<article class="doc-page">
-    <header class="page-header">
-        <p class="eyebrow">Documentation</p>
-        <h1>{{ page.title }}</h1>
-        {% if page.description %}
-        <p class="page-description">{{ page.description }}</p>
-        {% endif %}
-    </header>
-    <div class="page-body">
+{% set section = get_section(path="_index.md") %}
+<div class="docs-layout">
+    <aside class="sidebar">
+        <ul>
+        {% for p in section.pages %}
+            <li class="{% if current_path == p.path %}active{% endif %}">
+                <a href="{{ p.permalink }}">{{ p.title }}</a>
+            </li>
+        {% endfor %}
+        </ul>
+    </aside>
+    <div class="doc-content">
+        <header class="page-header">
+            <p class="eyebrow">Documentation</p>
+            <h1>{{ page.title }}</h1>
+            {% if page.description %}
+            <p class="page-description">{{ page.description }}</p>
+            {% endif %}
+        </header>
         {{ page.content | safe }}
     </div>
-    <p class="page-back">
-        <a href="{{ get_url(path='@/_index.md') }}">Back to docs overview</a>
-    </p>
-</article>
+</div>
 {% endblock %}

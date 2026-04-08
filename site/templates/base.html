@@ -11,21 +11,24 @@
     {% else %}
     <meta name="description" content="{{ config.description }}">
     {% endif %}
-    <link rel="stylesheet" href="{{ get_url(path='css/style.css') }}">
+    <link rel="stylesheet" href="{{ get_url(path='site.css') }}">
 </head>
 <body>
     <nav>
         <div class="nav-inner">
             <a href="{{ config.base_url }}" class="logo">miniR</a>
             <div class="nav-links">
-                <a href="{{ get_url(path='@/getting-started.md') }}">Getting Started</a>
+                <a href="{{ get_url(path='@/getting-started.md') }}">Get Started</a>
                 <a href="{{ get_url(path='@/architecture.md') }}">Architecture</a>
-                <a href="{{ get_url(path='@/package-runtime.md') }}">Packages</a>
-                <a href="{{ get_url(path='@/object-systems.md') }}">S3/S4</a>
-                <a href="{{ get_url(path='@/graphics-devices.md') }}">Graphics</a>
                 <a href="{{ get_url(path='@/native.md') }}">Native</a>
-                <a href="{{ get_url(path='@/_index.md') }}">Docs</a>
+                <a href="{{ get_url(path='@/cran.md') }}">CRAN</a>
                 <a href="{{ config.extra.repo_url }}">GitHub</a>
+                <div class="search-container">
+                    <input id="search" type="search" placeholder="Search docs...">
+                    <div class="search-results">
+                        <div class="search-results__items"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </nav>
@@ -33,7 +36,9 @@
         {% block content %}{% endblock %}
     </main>
     <footer>
-        <p>miniR v0.2.0 &mdash; An R interpreter written in Rust</p>
+        <p>miniR v0.2.0 — An R interpreter written in Rust — <a href="{{ config.extra.repo_url }}">GitHub</a></p>
     </footer>
+    <script type="text/javascript" src="{{ get_url(path='elasticlunr.min.js') }}"></script>
+    <script type="text/javascript" src="{{ get_url(path='search.js') }}"></script>
 </body>
 </html>
