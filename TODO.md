@@ -4,9 +4,9 @@
 
 800+ builtins, 1700+ tests, 7014/7014 R parse, 10838/10841 Rd parse,
 751 .Rd man pages generated. Interactive egui plotting with SVG/PDF/PNG export.
-154/260 CRAN packages load (59%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
-Also: knitr, bslib, htmlwidgets, rmarkdown, Rcpp, fs, xml2, lmtest, classInt, quadprog, tseries, urca.
-Plus: ggpubr, plotly, broom, dbplyr, readr, tidyverse, sass, sodium, sp, fontawesome.
+157/260 CRAN packages load (60%). Tidyverse core: rlang, dplyr, tibble, purrr, vctrs, forcats, tidyselect.
+Also: knitr, bslib, htmlwidgets, rmarkdown, Rcpp, RcppEigen, fs, xml2, lubridate, timechange.
+Plus: lmtest, classInt, quadprog, tseries, urca, sass, sodium, sp, fontawesome, systemfonts.
 
 ## Open
 
