@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - 'src/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -23,6 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build rustdoc
+        run: cargo doc --no-deps -F full
+
       - name: Install Zola
         run: |
           ZOLA_VERSION="0.19.2"
@@ -31,6 +38,9 @@ jobs:
 
       - name: Build site
         run: cd site && zola build
+
+      - name: Copy rustdoc into site
+        run: cp -r target/doc site/public/rustdoc
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
