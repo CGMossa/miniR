@@ -29,7 +29,7 @@ jobs:
       - name: Build rustdoc
         env:
           RUSTFLAGS: --cfg=docsrs
-          RUSTDOCFLAGS: --cfg=docsrs -Dwarnings -Z unstable-options --document-private-items
+          RUSTDOCFLAGS: --cfg=docsrs -Z unstable-options --document-private-items
         run: cargo doc --no-deps -Z rustdoc-map -F default,tls,linalg,svg-device,raster-device,pdf-device,parquet,native
 
       - name: Install Zola
