@@ -152,6 +152,47 @@ Traceback (most recent call last):
 This makes debugging native code issues significantly easier — you can see
 exactly which C function errored and where, not just that `.Call` was invoked.
 
+## Apply Family
+
+### `vapply` is stricter about types
+
+GNU R silently coerces integer results to double when `FUN.VALUE = numeric(1)`.
+miniR rejects the type mismatch:
+
+```r
+# GNU R: c(1, 2, 3) — silently coerces integer to double
+vapply(1:3, function(x) x, numeric(1))
+
+# miniR: error — "values must be type 'double', but result is type 'integer'"
+# Fix: be explicit about the return type
+vapply(1:3, function(x) as.double(x), numeric(1))  # works
+vapply(1:3, function(x) x, integer(1))              # also works
+```
+
+This catches a common source of subtle bugs where the function returns an
+unexpected type.
+
+### `vapply` accepts fully named arguments
+
+GNU R's `vapply` requires positional arguments for `X`, `FUN`, and `FUN.VALUE`.
+miniR also accepts them by name:
+
+```r
+# Works in miniR, not in GNU R
+vapply(X = letters[1:3], FUN = nchar, FUN.VALUE = integer(1))
+```
+
+### `sapply` does not preserve input names
+
+GNU R's `sapply` copies names from the input vector to the result by default
+(`USE.NAMES = TRUE`). miniR currently does not propagate names through `sapply`.
+This is a known gap, not a deliberate divergence.
+
+### `lapply` / `Map` / `Reduce` / `Filter` / `Find` / `Position` / `Negate`
+
+These behave the same as GNU R. All are implemented, including extra-argument
+forwarding (`lapply(x, f, extra_arg)`).
+
 ## Serialization
 
 `readRDS()` / `saveRDS()` / `load()` / `save()` support GNU R's binary
