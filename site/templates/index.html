@@ -75,29 +75,36 @@ $ ./target/release/r
     <aside class="content-card content-card-accent">
         <p class="section-kicker">Launch paths</p>
         <div class="launch-list">
-            <a class="launch-card" href="{{ get_url(path='@/reentrant-runtime.md') }}">
+            <a class="launch-card" href="{{ get_url(path='@/interpreter.md') }}">
                 <span class="launch-index">01</span>
+                <div>
+                    <strong>Follow the interpreter path</strong>
+                    <p>See how `Session`, `Interpreter`, environments, promises, and builtin dispatch fit together during evaluation.</p>
+                </div>
+            </a>
+            <a class="launch-card" href="{{ get_url(path='@/reentrant-runtime.md') }}">
+                <span class="launch-index">02</span>
                 <div>
                     <strong>Understand the reentrant runtime</strong>
                     <p>See what state belongs on `Interpreter`, why that matters, and how miniR avoids process-global runtime design.</p>
                 </div>
             </a>
             <a class="launch-card" href="{{ get_url(path='@/getting-started.md') }}">
-                <span class="launch-index">02</span>
+                <span class="launch-index">03</span>
                 <div>
                     <strong>Build and run the interpreter</strong>
                     <p>Get from clone to REPL, understand feature sets, and point miniR at an R library tree.</p>
                 </div>
             </a>
-            <a class="launch-card" href="{{ get_url(path='@/architecture.md') }}">
-                <span class="launch-index">03</span>
+            <a class="launch-card" href="{{ get_url(path='@/linkme-registry.md') }}">
+                <span class="launch-index">04</span>
                 <div>
-                    <strong>Understand the runtime layout</strong>
-                    <p>See how parser, evaluator, values, dispatch, package loading, and graphics fit together.</p>
+                    <strong>Understand the builtin registry</strong>
+                    <p>Read how `linkme` and `minir-macros` auto-register hundreds of builtins without a giant central list.</p>
                 </div>
             </a>
             <a class="launch-card" href="{{ get_url(path='@/wasm-support.md') }}">
-                <span class="launch-index">04</span>
+                <span class="launch-index">05</span>
                 <div>
                     <strong>Check the WASM story</strong>
                     <p>Read what the minimal profile is for, what a browser-oriented target would exclude, and what still blocks `wasm32` today.</p>

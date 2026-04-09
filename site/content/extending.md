@@ -35,6 +35,8 @@ At interpreter startup, `Interpreter::new()` creates the base environment, regis
 
 That registration path is also why WASM support is not trivial today. The current builtin registry depends on `linkme` distributed slices, and that auto-registration approach does not yet work on `wasm32`.
 
+If you want the exact mechanism rather than the summary, read `Builtin Registry And linkme`.
+
 ## Pick The Right Builtin Macro
 
 | Macro | Use it when... | Signature shape |

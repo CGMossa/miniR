@@ -56,6 +56,8 @@ In practical terms, this means:
 
 See `plans/linkme-wasm.md` and the `WASM Target` section of `TODO.md` for the current implementation direction.
 
+The separate `Builtin Registry And linkme` page explains why builtin auto-registration is the sharp edge here instead of, for example, parsing or ordinary evaluation.
+
 ## What Would Still Be Out Of Scope
 
 Even after builtin registration is solved, a WASM target would still intentionally exclude some subsystems:

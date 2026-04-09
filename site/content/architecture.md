@@ -6,7 +6,7 @@ description = "How parser, evaluator, runtime values, dispatch, and package laye
 
 miniR is organized around one rule: interpreter state belongs to the `Interpreter` instance, not to process-global mutable statics. That rule is what makes the runtime reentrant and embeddable.
 
-If you want the focused explanation of that design rule, read the `Reentrant Runtime` page next. This page is the wider map of the codebase around it.
+If you want the focused explanation of that design rule, read the `Reentrant Runtime` page next. If you want the operational evaluation path, read `The Interpreter`. This page is the wider map of the codebase around both.
 
 ## Top-Level Layers
 
@@ -48,6 +48,8 @@ Environment hierarchy follows the usual miniR shape:
 
 This is the layer to change when package code fails because of call semantics, lazy evaluation, argument matching, or traceback behavior.
 
+The dedicated `The Interpreter` page follows that call path in more detail from `Session::eval_source()` through promise creation, builtin dispatch, and stack-trace capture.
+
 ## Semantic Subsystems
 
 - `src/interpreter/ops.rs` implements arithmetic, comparison, logical operators, `%in%`, ranges, and matrix operators.
@@ -66,6 +68,8 @@ These files matter more than builtin count when real packages fail. Many CRAN co
 - `src/interpreter/graphics/` and `src/interpreter/grid/` hold graphics and device state.
 
 Most of these layers are feature gated. The parser and evaluator core are always present; heavy subsystems such as native loading, GUI plotting, TLS, linalg, and parquet are optional.
+
+If you want the registration mechanics behind the builtin layer, the `Builtin Registry And linkme` page explains how `linkme` and `minir-macros` assemble the builtin registry.
 
 ## Where To Make Changes
 
