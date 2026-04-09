@@ -157,6 +157,44 @@ $ ./target/release/r
 <section class="docs-section">
     <div class="section-heading">
         <div>
+            <p class="eyebrow">Subsystem Guides</p>
+            <h2>Read the parser, embedding API, and help pipeline as first-class parts of the runtime.</h2>
+        </div>
+        <p class="section-summary">
+            miniR is not only an evaluator. The front end, host-facing session boundary, and documentation machinery are separate subsystems with their own design constraints.
+        </p>
+    </div>
+    <div class="docs-grid">
+        <a class="doc-card" href="{{ get_url(path='@/parser-and-diagnostics.md') }}">
+            <div class="doc-card-topline">
+                <span class="doc-kind">Guide</span>
+                <span class="doc-state">Parser</span>
+            </div>
+            <h2>Parser And Diagnostics</h2>
+            <p>Follow the path from `pest` grammar rules through AST construction to parse errors that carry spans, suggestions, and source context.</p>
+        </a>
+        <a class="doc-card" href="{{ get_url(path='@/session-api.md') }}">
+            <div class="doc-card-topline">
+                <span class="doc-kind">Guide</span>
+                <span class="doc-state">Embedding</span>
+            </div>
+            <h2>Session API And Embedding</h2>
+            <p>See why `Session` is the public boundary, how output capture works, and which helpers the CLI and host applications share.</p>
+        </a>
+        <a class="doc-card" href="{{ get_url(path='@/help-system.md') }}">
+            <div class="doc-card-topline">
+                <span class="doc-kind">Guide</span>
+                <span class="doc-state">Docs</span>
+            </div>
+            <h2>Help And Documentation</h2>
+            <p>Read how `?topic`, parsed `.Rd` files, builtin rustdoc, and generated manual files fit together in one help lookup path.</p>
+        </a>
+    </div>
+</section>
+
+<section class="docs-section">
+    <div class="section-heading">
+        <div>
             <p class="eyebrow">Documentation</p>
             <h2>Start with the guides, then drop into the reference manual when you need exact behavior.</h2>
         </div>

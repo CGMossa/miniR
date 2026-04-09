@@ -17,6 +17,8 @@ What matters in practice is how a piece of source text moves through the system:
 
 This page is the operational view of that path.
 
+For the boundaries around this page, read [Session API And Embedding](@/session-api.md) for the public host-facing API and [Parser And Diagnostics](@/parser-and-diagnostics.md) for the syntax front end.
+
 ## The Public Entry Point
 
 The public API lives in `src/session.rs`.
@@ -30,6 +32,8 @@ The public API lives in `src/session.rs`.
 - `format_last_traceback()`
 
 That means most embeddings do not talk to raw interpreter internals directly. They create a session and evaluate code through that boundary.
+
+The [Session API And Embedding](@/session-api.md) page covers that wrapper in more detail.
 
 ## The Basic Evaluation Path
 

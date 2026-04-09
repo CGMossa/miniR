@@ -63,6 +63,8 @@ The package runtime does real metadata work:
 
 If a package fails because a symbol is missing or a method is not visible, the problem is often in this metadata path rather than in the parser.
 
+The dedicated [Help And Documentation](@/help-system.md) page covers the `man/` and builtin-help side of that runtime path.
+
 ## R File Sourcing
 
 miniR sources package `R/` files in collate order when `DESCRIPTION` provides one. Files not listed in `Collate` are sourced afterwards in alphabetical order.

@@ -18,7 +18,11 @@ Start with the guide pages if you want the shape of the project:
 
 - `Getting Started` covers builds, feature profiles, and how to point miniR at installed R packages.
 - `Interpreter Architecture` explains where parser, evaluator, values, dispatch, package loading, and graphics live in the codebase.
+- `The Interpreter` follows evaluation from `Session::eval_source()` through promise forcing, builtin dispatch, and traceback capture.
+- `Parser And Diagnostics` explains how `pest`, AST building, and parse-error rendering fit together.
+- `Session API And Embedding` explains why `Session` is the public boundary instead of exposing raw interpreter internals directly.
 - `CRAN Corpus Compatibility` explains what the headline numbers mean and which missing subsystems still block more packages.
+- `Help And Documentation` explains how `?topic`, package `man/` pages, builtin rustdoc, and generated `.Rd` output share one help pipeline.
 
 Use the manual when you want the reference view:
 

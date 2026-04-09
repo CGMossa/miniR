@@ -6,7 +6,7 @@ description = "How parser, evaluator, runtime values, dispatch, and package laye
 
 miniR is organized around one rule: interpreter state belongs to the `Interpreter` instance, not to process-global mutable statics. That rule is what makes the runtime reentrant and embeddable.
 
-If you want the focused explanation of that design rule, read the `Reentrant Runtime` page next. If you want the operational evaluation path, read `The Interpreter`. This page is the wider map of the codebase around both.
+If you want the focused explanation of that design rule, read [Reentrant Runtime](@/reentrant-runtime.md). If you want the operational evaluation path, read [The Interpreter](@/interpreter.md). If you want the parser boundary, read [Parser And Diagnostics](@/parser-and-diagnostics.md). If you want the public embedding boundary, read [Session API And Embedding](@/session-api.md). This page is the wider map around all of them.
 
 ## Top-Level Layers
 
@@ -22,6 +22,8 @@ If you want the focused explanation of that design rule, read the `Reentrant Run
 - `src/parser/diagnostics.rs` formats parse failures and suggestions when the `diagnostics` feature is enabled.
 
 The parser layer should only answer syntax questions. If a bug is about lazy evaluation, environments, S3 dispatch, or replacement semantics, it almost never belongs here.
+
+The dedicated [Parser And Diagnostics](@/parser-and-diagnostics.md) page follows that front end in more detail.
 
 ## Runtime Core
 
@@ -69,7 +71,7 @@ These files matter more than builtin count when real packages fail. Many CRAN co
 
 Most of these layers are feature gated. The parser and evaluator core are always present; heavy subsystems such as native loading, GUI plotting, TLS, linalg, and parquet are optional.
 
-If you want the registration mechanics behind the builtin layer, the `Builtin Registry And linkme` page explains how `linkme` and `minir-macros` assemble the builtin registry.
+If you want the registration mechanics behind the builtin layer, [Builtin Registry And linkme](@/linkme-registry.md) explains how `linkme` and `minir-macros` assemble the builtin registry. If you want the doc lookup side of the package layer, [Help And Documentation](@/help-system.md) explains how package `man/` pages and builtin rustdoc are indexed together.
 
 ## Where To Make Changes
 
