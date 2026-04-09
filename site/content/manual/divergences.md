@@ -1,6 +1,7 @@
 +++
 title = "Divergences from GNU R"
-weight = 50
+weight = 1
+description = "miniR intentionally diverges from GNU R where R's behavior is confusing, inconsistent, or unnecessarily restrictive. This is not a drop-in replacement — it's a fresh implementation that respects R's useful semantics while fixing the bad ones."
 +++
 
 miniR intentionally diverges from GNU R where R's behavior is confusing,

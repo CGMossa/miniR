@@ -11,36 +11,61 @@
     {% else %}
     <meta name="description" content="{{ config.description }}">
     {% endif %}
+    <meta name="theme-color" content="#efe6d6">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ get_url(path='site.css') }}">
 </head>
-<body>
-    <nav>
-        <div class="nav-inner">
-            <a href="{{ config.base_url }}" class="logo">miniR</a>
-            <div class="nav-links">
-                <a href="{{ get_url(path='@/getting-started.md') }}">Get Started</a>
-                <a href="{{ get_url(path='@/architecture.md') }}">Architecture</a>
-                <a href="{{ get_url(path='@/native.md') }}">Native</a>
-                <a href="{{ get_url(path='@/cran.md') }}">CRAN</a>
-                <a href="{{ config.base_url }}/manual/">User Manual</a>
-                <a href="{{ config.base_url }}/rustdoc/r/">API Docs</a>
-                <a href="{{ config.extra.repo_url }}">GitHub</a>
-                <div class="search-container">
-                    <input id="search" type="search" placeholder="Search docs...">
-                    <div class="search-results">
-                        <div class="search-results__items"></div>
+<body class="{% block body_class %}site-shell{% endblock body_class %}">
+    <div class="site-chrome">
+        <div class="site-noise"></div>
+        <header class="site-header">
+            <nav class="nav-shell">
+                <div class="brand-lockup">
+                    <a href="{{ get_url(path='@/_index.md') }}" class="logo">miniR</a>
+                    <p class="brand-tag">Reentrant R interpreter in Rust, built to run real package code instead of toy examples.</p>
+                </div>
+                <div class="nav-cluster">
+                    <div class="nav-links">
+                        <a href="{{ get_url(path='@/getting-started.md') }}">Get Started</a>
+                        <a href="{{ get_url(path='@/architecture.md') }}">Architecture</a>
+                        <a href="{{ get_url(path='@/package-runtime.md') }}">Package Runtime</a>
+                        <a href="{{ get_url(path='@/cran.md') }}">CRAN</a>
+                        <a href="{{ get_url(path='@/manual/_index.md') }}">Manual</a>
+                        <a href="{{ config.base_url }}/rustdoc/r/">API Docs</a>
+                        <a href="{{ config.extra.repo_url }}" rel="noopener">GitHub</a>
+                    </div>
+                    <div class="search-container">
+                        <label class="sr-only" for="search">Search documentation</label>
+                        <input id="search" type="search" placeholder="Search docs">
+                        <div class="search-results" aria-live="polite">
+                            <div class="search-results__items"></div>
+                        </div>
                     </div>
                 </div>
+            </nav>
+        </header>
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+        <footer>
+            <div class="footer-inner">
+                <p class="footer-mark">miniR</p>
+                <div class="footer-links">
+                    <a href="{{ get_url(path='@/manual/_index.md') }}">Manual</a>
+                    <a href="{{ get_url(path='@/getting-started.md') }}">Get Started</a>
+                    <a href="{{ get_url(path='@/cran.md') }}">CRAN</a>
+                    <a href="{{ config.base_url }}/rustdoc/r/">API Docs</a>
+                    <a href="{{ config.extra.repo_url }}" rel="noopener">GitHub</a>
+                </div>
             </div>
-        </div>
-    </nav>
-    <main>
-        {% block content %}{% endblock %}
-    </main>
-    <footer>
-        <p>miniR v0.2.0 — An R interpreter written in Rust — <a href="{{ config.extra.repo_url }}">GitHub</a></p>
-    </footer>
-    <script type="text/javascript" src="{{ get_url(path='elasticlunr.min.js') }}"></script>
-    <script type="text/javascript" src="{{ get_url(path='search.js') }}"></script>
+        </footer>
+    </div>
+    <script>
+        window.MINIR_SEARCH_INDEX_URL = "{{ get_url(path='search_index.en.json') }}";
+    </script>
+    <script src="{{ get_url(path='elasticlunr.min.js') }}"></script>
+    <script src="{{ get_url(path='search.js') }}"></script>
 </body>
 </html>

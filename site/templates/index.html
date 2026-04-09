@@ -1,29 +1,163 @@
 {% extends "base.html" %}
 
-{% block title %}miniR &mdash; R interpreter in Rust{% endblock %}
+{% block title %}miniR | Reentrant R interpreter in Rust{% endblock %}
+{% block body_class %}site-shell home-page{% endblock body_class %}
 
 {% block content %}
-<div class="hero">
-    <h1>miniR</h1>
-    <p class="tagline">An R interpreter written in Rust</p>
-    <div class="stats">
-        <div class="stat"><span class="num">131 / 260</span><span class="label">checked-in CRAN corpus</span></div>
-        <div class="stat"><span class="num">800+</span><span class="label">builtin entry points</span></div>
-        <div class="stat"><span class="num">Reentrant</span><span class="label">per-interpreter state</span></div>
+{% set manual_section = get_section(path="manual/_index.md") %}
+<section class="hero-section">
+    <div class="hero-copy">
+        <p class="eyebrow">A new R implementation</p>
+        <h1 class="hero-title">Run real package code in a reentrant Rust interpreter.</h1>
+        <p class="hero-lead">
+            miniR is building an embeddable R runtime around real CRAN package behavior, per-interpreter state,
+            native extension loading, and a codebase that stays modular as the language surface grows.
+        </p>
+        <div class="hero-actions">
+            <a class="button button-primary" href="{{ get_url(path='@/getting-started.md') }}">Build miniR</a>
+            <a class="button button-secondary" href="{{ get_url(path='@/manual/_index.md') }}">Browse the manual</a>
+        </div>
+        <ul class="hero-points">
+            <li>The checked-in compatibility corpus is treated as a product requirement, not a vanity benchmark.</li>
+            <li>Interpreter state lives on `Interpreter`, so multiple sessions can coexist in one process.</li>
+            <li>Package runtime, native code, graphics, and diagnostics are first-class subsystems, not afterthoughts.</li>
+        </ul>
     </div>
-</div>
-<div class="content">
-    {{ section.content | safe }}
-</div>
+    <div class="hero-panel">
+        <div class="terminal-card">
+            <div class="terminal-bar">
+                <div class="terminal-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="terminal-label">first session</span>
+            </div>
+            <p class="terminal-kicker">A build, a REPL, and ordinary R code without depending on GNU R as the runtime.</p>
+            <pre class="terminal-body"><code>$ cargo build --release
+$ ./target/release/r
+&gt; x &lt;- data.frame(a = 1:3, b = a * 2)
+&gt; x
+  a b
+1 1 2
+2 2 4
+3 3 6</code></pre>
+            <div class="terminal-output">
+                <span>Parser, evaluator, package runtime, and help system in one binary</span>
+                <span>Feature gates keep parser work light without hiding larger subsystems</span>
+                <span>Native backtraces and package loading are part of the main design, not separate tooling</span>
+            </div>
+        </div>
+        <div class="hero-metrics">
+            <div class="metric-card">
+                <span class="metric-value">131 / 260</span>
+                <span class="metric-label">packages loading in the checked-in CRAN corpus</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-value">800+</span>
+                <span class="metric-label">builtin entry points across core and optional subsystems</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-value">Reentrant</span>
+                <span class="metric-label">per-interpreter state instead of process-global mutable runtime state</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="story-grid">
+    <article class="content-card">
+        <p class="section-kicker">Why miniR</p>
+        <div class="section-copy">
+            {{ section.content | safe }}
+        </div>
+    </article>
+    <aside class="content-card content-card-accent">
+        <p class="section-kicker">Launch paths</p>
+        <div class="launch-list">
+            <a class="launch-card" href="{{ get_url(path='@/getting-started.md') }}">
+                <span class="launch-index">01</span>
+                <div>
+                    <strong>Build and run the interpreter</strong>
+                    <p>Get from clone to REPL, understand feature sets, and point miniR at an R library tree.</p>
+                </div>
+            </a>
+            <a class="launch-card" href="{{ get_url(path='@/architecture.md') }}">
+                <span class="launch-index">02</span>
+                <div>
+                    <strong>Understand the runtime layout</strong>
+                    <p>See how parser, evaluator, values, dispatch, package loading, and graphics fit together.</p>
+                </div>
+            </a>
+            <a class="launch-card" href="{{ get_url(path='@/cran.md') }}">
+                <span class="launch-index">03</span>
+                <div>
+                    <strong>Read the compatibility story</strong>
+                    <p>Use the corpus page to understand what the headline numbers mean and what still blocks more packages.</p>
+                </div>
+            </a>
+        </div>
+    </aside>
+</section>
+
 <section class="docs-section">
-    <p class="eyebrow">Documentation</p>
-    <p class="docs-lead">
-        Start with architecture and package runtime if you want to understand the interpreter.
-        Use the later pages for object systems, graphics, native internals, and compatibility notes.
-    </p>
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">What The Site Covers</p>
+            <h2>Move from orientation pages into subsystem reference without losing the thread.</h2>
+        </div>
+        <p class="section-summary">
+            The guides on the homepage are for understanding the shape of the interpreter.
+            The manual is for longer-form runtime details, intentional divergences, and subsystem reference.
+        </p>
+    </div>
+    <div class="capability-grid">
+        <article class="capability-card">
+            <p class="section-kicker">Execution model</p>
+            <h3>Keep interpreter state explicit and local.</h3>
+            <p>miniR is built around per-interpreter state, layered evaluation, and clear ownership of runtime subsystems.</p>
+        </article>
+        <article class="capability-card">
+            <p class="section-kicker">Package runtime</p>
+            <h3>Treat packages as packages, not as loose script files.</h3>
+            <p>Namespace loading, metadata, native code, hooks, and help indexing are part of the runtime contract.</p>
+        </article>
+        <article class="capability-card">
+            <p class="section-kicker">Compatibility</p>
+            <h3>Measure against real package code.</h3>
+            <p>The checked-in CRAN corpus keeps the project focused on semantics that matter outside of toy examples.</p>
+        </article>
+        <article class="capability-card">
+            <p class="section-kicker">Diagnostics</p>
+            <h3>Make failure modes easier to debug than in GNU R.</h3>
+            <p>Tracebacks, native backtraces, and more specific error messages are part of the design philosophy.</p>
+        </article>
+    </div>
+</section>
+
+<section class="docs-section">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Documentation</p>
+            <h2>Start with the guides, then drop into the reference manual when you need exact behavior.</h2>
+        </div>
+        <a class="button button-ghost" href="{{ get_url(path='@/manual/_index.md') }}">Open the full manual</a>
+    </div>
     <div class="docs-grid">
+        <a class="doc-card" href="{{ get_url(path='@/manual/_index.md') }}">
+            <div class="doc-card-topline">
+                <span class="doc-kind">Reference</span>
+                <span class="doc-state">{{ manual_section.pages | length }} pages</span>
+            </div>
+            <h2>User Manual</h2>
+            <p>Generated from repo docs and ordered as a reference path through divergences, package runtime, graphics, native internals, and focused implementation notes.</p>
+        </a>
         {% for page in section.pages %}
         <a class="doc-card" href="{{ page.permalink }}">
+            <div class="doc-card-topline">
+                <span class="doc-kind">Guide</span>
+                <span class="doc-state">Top level</span>
+            </div>
             <h2>{{ page.title }}</h2>
             {% if page.description %}
             <p>{{ page.description }}</p>

@@ -1,6 +1,7 @@
 +++
 title = "HDF5 → dgCMatrix: Single-Copy Path"
-weight = 50
+weight = 20
+description = "Read CSC sparse matrices from HDF5 files into R's dgCMatrix (from the Matrix package) as fast as possible — single copy, no intermediate buffers."
 +++
 
 ## Goal

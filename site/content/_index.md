@@ -1,38 +1,27 @@
 +++
 title = "miniR"
 sort_by = "weight"
+description = "A reentrant R interpreter written in Rust and aimed at real package compatibility."
 +++
 
-miniR is an R interpreter written in Rust. It is tested against a checked-in `cran/` corpus of real packages, not against toy scripts and not against the full CRAN archive.
+## Why miniR exists
 
-## Goals
+miniR is a new R implementation written in Rust for people who care about runtime design, package behavior, and embeddability.
 
-1. **Run real package code** - 131/260 packages in the checked-in compatibility corpus currently load
-2. **Well-written code** - clean, idiomatic Rust with optional subsystems behind feature flags
-3. **Reentrant interpreter** - multiple R sessions in one process, with per-interpreter state
+- **Real package code is the target**: the project is measured against a checked-in `cran/` corpus, not only parser fixtures or hand-picked examples.
+- **The interpreter is explicitly reentrant**: mutable runtime state belongs on `Interpreter`, so multiple sessions can coexist in one process.
+- **Architecture matters**: parser, evaluator, package loading, native code, graphics, and help are kept as readable subsystems rather than collapsing into one giant runtime blob.
 
-## Quick Start
+## How to use this site
 
-```bash
-# Clone and build
-git clone https://github.com/CGMossa/miniR.git
-cd miniR
-cargo build --release
+Start with the guide pages if you want the shape of the project:
 
-# Run R code
-./target/release/r -e 'cat("hello from miniR\n")'
+- `Getting Started` covers builds, feature profiles, and how to point miniR at installed R packages.
+- `Interpreter Architecture` explains where parser, evaluator, values, dispatch, package loading, and graphics live in the codebase.
+- `CRAN Corpus Compatibility` explains what the headline numbers mean and which missing subsystems still block more packages.
 
-# Interactive REPL
-./target/release/r
-```
+Use the manual when you want the reference view:
 
-## Features
-
-- **800+ builtin entry points** - base R, stats, utils, and more
-- **Lazy evaluation** - R promise semantics for function arguments
-- **S3 dispatch** - method dispatch for operators and generics
-- **Native code** - `.Call`, `.External`, `.C`, `dyn.load`, and symbolized native backtraces
-- **Package loading** - `library()`, `require()`, namespace management, and method registration
-- **Grid and graphics devices** - viewports, grobs, SVG, raster, and PDF backends
-- **Feature-gated subsystems** - REPL, linalg, TLS, parquet, GUI, and native runtime support
-- **Per-interpreter state** - RNG, temp dirs, env vars, working directory, options, and tracebacks
+- reference pages are generated from the repo `docs/` directory
+- pages are ordered intentionally instead of dumped alphabetically
+- the focus is on runtime behavior, divergences, and implementation notes that are useful when working on the interpreter itself
