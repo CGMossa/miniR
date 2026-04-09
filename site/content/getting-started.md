@@ -68,3 +68,13 @@ brew install openssl libxml2 libuv libsass
 # libuv → fs → htmlwidgets, rmarkdown, bslib
 # libsass → sass → bslib, rmarkdown
 ```
+
+## WASM-Oriented Builds
+
+If you are experimenting with a smaller embedded target rather than the full host runtime, start with:
+
+```bash
+cargo build --target wasm32-unknown-unknown --no-default-features -F minimal
+```
+
+That is the intended profile shape for WASM work, but builtin auto-registration is still the main blocker to a fully working `wasm32` build today. The dedicated `WASM Support` page explains the gap.

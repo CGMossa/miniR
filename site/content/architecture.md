@@ -6,6 +6,8 @@ description = "How parser, evaluator, runtime values, dispatch, and package laye
 
 miniR is organized around one rule: interpreter state belongs to the `Interpreter` instance, not to process-global mutable statics. That rule is what makes the runtime reentrant and embeddable.
 
+If you want the focused explanation of that design rule, read the `Reentrant Runtime` page next. This page is the wider map of the codebase around it.
+
 ## Top-Level Layers
 
 - `src/session.rs` exposes `Session`, the public API used by tests, embeddings, and the CLI.
@@ -26,6 +28,8 @@ The parser layer should only answer syntax questions. If a bug is about lazy eva
 - `src/interpreter/value.rs` defines `RValue`, vectors, lists, functions, promises, language objects, and `RError`.
 - `src/interpreter/environment.rs` implements lexical scoping with `Rc<RefCell<_>>`.
 - `src/interpreter.rs` stores stdout/stderr, RNG state, temp dirs, env vars, working directory, options, condition handlers, help indexes, and traceback state on the interpreter itself.
+
+That last point is the architectural center of gravity. miniR is not trying to fake reentrancy with a mostly-global runtime plus a few isolated fields. The runtime state that matters is interpreter-owned.
 
 Environment hierarchy follows the usual miniR shape:
 

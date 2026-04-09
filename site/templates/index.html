@@ -20,7 +20,7 @@
         <ul class="hero-points">
             <li>The checked-in compatibility corpus is treated as a product requirement, not a vanity benchmark.</li>
             <li>Interpreter state lives on `Interpreter`, so multiple sessions can coexist in one process.</li>
-            <li>Package runtime, native code, graphics, and diagnostics are first-class subsystems, not afterthoughts.</li>
+            <li>Feature flags keep a path open for embedded and WASM-oriented builds without flattening the full runtime.</li>
         </ul>
     </div>
     <div class="hero-panel">
@@ -75,25 +75,32 @@ $ ./target/release/r
     <aside class="content-card content-card-accent">
         <p class="section-kicker">Launch paths</p>
         <div class="launch-list">
-            <a class="launch-card" href="{{ get_url(path='@/getting-started.md') }}">
+            <a class="launch-card" href="{{ get_url(path='@/reentrant-runtime.md') }}">
                 <span class="launch-index">01</span>
+                <div>
+                    <strong>Understand the reentrant runtime</strong>
+                    <p>See what state belongs on `Interpreter`, why that matters, and how miniR avoids process-global runtime design.</p>
+                </div>
+            </a>
+            <a class="launch-card" href="{{ get_url(path='@/getting-started.md') }}">
+                <span class="launch-index">02</span>
                 <div>
                     <strong>Build and run the interpreter</strong>
                     <p>Get from clone to REPL, understand feature sets, and point miniR at an R library tree.</p>
                 </div>
             </a>
             <a class="launch-card" href="{{ get_url(path='@/architecture.md') }}">
-                <span class="launch-index">02</span>
+                <span class="launch-index">03</span>
                 <div>
                     <strong>Understand the runtime layout</strong>
                     <p>See how parser, evaluator, values, dispatch, package loading, and graphics fit together.</p>
                 </div>
             </a>
-            <a class="launch-card" href="{{ get_url(path='@/cran.md') }}">
-                <span class="launch-index">03</span>
+            <a class="launch-card" href="{{ get_url(path='@/wasm-support.md') }}">
+                <span class="launch-index">04</span>
                 <div>
-                    <strong>Read the compatibility story</strong>
-                    <p>Use the corpus page to understand what the headline numbers mean and what still blocks more packages.</p>
+                    <strong>Check the WASM story</strong>
+                    <p>Read what the minimal profile is for, what a browser-oriented target would exclude, and what still blocks `wasm32` today.</p>
                 </div>
             </a>
         </div>
@@ -118,14 +125,19 @@ $ ./target/release/r
             <p>miniR is built around per-interpreter state, layered evaluation, and clear ownership of runtime subsystems.</p>
         </article>
         <article class="capability-card">
+            <p class="section-kicker">Profiles</p>
+            <h3>Scale the build from minimal to full.</h3>
+            <p>Feature flags keep parser work light while still allowing native loading, graphics, TLS, and heavier runtime pieces in larger builds.</p>
+        </article>
+        <article class="capability-card">
             <p class="section-kicker">Package runtime</p>
             <h3>Treat packages as packages, not as loose script files.</h3>
             <p>Namespace loading, metadata, native code, hooks, and help indexing are part of the runtime contract.</p>
         </article>
         <article class="capability-card">
-            <p class="section-kicker">Compatibility</p>
-            <h3>Measure against real package code.</h3>
-            <p>The checked-in CRAN corpus keeps the project focused on semantics that matter outside of toy examples.</p>
+            <p class="section-kicker">Builtins</p>
+            <h3>Expose a real language surface, not a tiny demo core.</h3>
+            <p>miniR already ships hundreds of builtins across math, strings, IO, graphics, packages, and diagnostics, all registered from Rust.</p>
         </article>
         <article class="capability-card">
             <p class="section-kicker">Diagnostics</p>

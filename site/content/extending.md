@@ -1,10 +1,28 @@
 +++
-title = "Adding Builtins"
-weight = 3
-description = "How builtin registration works, when to use each macro, and where builtin work stops"
+title = "Builtins"
+weight = 4
+description = "How miniR's 800+ builtins register, how the builtin macros differ, and when a missing behavior is not actually a builtin problem"
 +++
 
+miniR already exposes 800+ builtin entry points across math, strings, IO, conditions, graphics, packages, native helpers, and more. They are a large part of the public language surface, but they are not the whole interpreter.
+
 Builtins are one of the easiest ways to extend miniR, but they are not the only extension point. A lot of real package compatibility work lives in call semantics, indexing, assignment, package loading, and native support. Add a builtin when the missing behavior is truly a function, not when the real bug is deeper in the evaluator.
+
+## What The Builtin Layer Covers
+
+The builtin modules under `src/interpreter/builtins/` are grouped by runtime area, for example:
+
+| Area | Representative modules |
+|------|-------------------------|
+| Core language and metaprogramming | `builtins.rs`, `pre_eval.rs`, `interp.rs` |
+| Strings, coercion, and collections | `strings.rs`, `coercion.rs`, `collections.rs`, `types.rs` |
+| Math and stats | `math.rs`, `stats.rs`, `random.rs` |
+| IO and formats | `io.rs`, `json.rs`, `toml.rs`, `serialize.rs`, `parquet.rs` |
+| System/runtime integration | `system.rs`, `connections.rs`, `conditions.rs`, `datetime.rs` |
+| Graphics | `graphics.rs`, `grid.rs`, `graphics/color.rs` |
+| Package and native support | `native_code.rs`, `rlang_ffi.rs`, package-related pre-eval builtins |
+
+That breadth is why builtins matter for package compatibility. The project is not relying on a tiny core plus a giant standard library written in R.
 
 ## How Builtins Register
 
@@ -14,6 +32,8 @@ miniR uses two Rust-side pieces together:
 - `linkme` collects builtin descriptors into one distributed registry at link time.
 
 At interpreter startup, `Interpreter::new()` creates the base environment, registers every builtin from the registry into that environment, and synthesizes builtin help pages from Rust doc comments.
+
+That registration path is also why WASM support is not trivial today. The current builtin registry depends on `linkme` distributed slices, and that auto-registration approach does not yet work on `wasm32`.
 
 ## Pick The Right Builtin Macro
 

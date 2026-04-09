@@ -1,7 +1,7 @@
 +++
-title = "Tracebacks And Backtraces"
-weight = 8
-description = "R-level call stacks, file-and-line locations, and native `.Call` backtraces"
+title = "Stack Traces And Backtraces"
+weight = 10
+description = "How miniR captures R tracebacks, file-and-line locations, and native backtraces across `.Call` boundaries"
 +++
 
 miniR has two related debugging layers:
@@ -10,6 +10,8 @@ miniR has two related debugging layers:
 - **Backtrace** for native C frames reached through `.Call`, `.C`, or `.External`
 
 Both are stored per interpreter. There is no process-global traceback slot shared by unrelated sessions.
+
+When people say "stack trace" in the context of miniR, they usually mean one of these two layers, or both together in the same error report.
 
 ## Layer 1: R Tracebacks
 
