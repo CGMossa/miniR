@@ -316,13 +316,34 @@ impl Interpreter {
                     vec!["list".to_string()]
                 }
             }
-            RValue::Vector(rv) => rv.class().unwrap_or_else(|| match &rv.inner {
-                Vector::Raw(_) => vec!["raw".to_string()],
-                Vector::Logical(_) => vec!["logical".to_string()],
-                Vector::Integer(_) => vec!["integer".to_string()],
-                Vector::Double(_) => vec!["numeric".to_string()],
-                Vector::Complex(_) => vec!["complex".to_string()],
-                Vector::Character(_) => vec!["character".to_string()],
+            RValue::Vector(rv) => rv.class().unwrap_or_else(|| {
+                let type_class = match &rv.inner {
+                    Vector::Raw(_) => "raw",
+                    Vector::Logical(_) => "logical",
+                    Vector::Integer(_) => "integer",
+                    Vector::Double(_) => "numeric",
+                    Vector::Complex(_) => "complex",
+                    Vector::Character(_) => "character",
+                };
+                // Implicit class from dim attribute (R's rules):
+                // - 2D dim → c("matrix", "array", <type>)
+                // - nD dim → c("array", <type>)
+                if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
+                    let ndim = dim_rv.len();
+                    if ndim == 2 {
+                        vec![
+                            "matrix".to_string(),
+                            "array".to_string(),
+                            type_class.to_string(),
+                        ]
+                    } else if ndim > 0 {
+                        vec!["array".to_string(), type_class.to_string()]
+                    } else {
+                        vec![type_class.to_string()]
+                    }
+                } else {
+                    vec![type_class.to_string()]
+                }
             }),
             RValue::Function(_) => vec!["function".to_string()],
             RValue::Null => vec!["NULL".to_string()],
