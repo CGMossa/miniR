@@ -13,6 +13,11 @@ internal_level = "warn"
 
 [markdown]
 insert_anchor_links = "left"
+smart_punctuation = true
+lazy_async_image = true
+
+[markdown.highlighting]
+theme = "github-dark"
 
 [extra]
 repo_url = "https://github.com/CGMossa/miniR"
