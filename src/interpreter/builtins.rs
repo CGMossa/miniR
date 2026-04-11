@@ -1815,15 +1815,33 @@ fn builtin_class(args: &[RValue], _: &[(String, RValue)]) -> Result<RValue, RErr
             return Ok(cls.clone());
         }
     }
-    let c = match args.first() {
-        Some(RValue::Vector(rv)) => match &rv.inner {
+    // Implicit class from dim attribute for vectors (matrix/array)
+    if let Some(RValue::Vector(rv)) = args.first() {
+        let type_class = match &rv.inner {
             Vector::Raw(_) => "raw",
             Vector::Logical(_) => "logical",
             Vector::Integer(_) => "integer",
             Vector::Double(_) => "numeric",
             Vector::Complex(_) => "complex",
             Vector::Character(_) => "character",
-        },
+        };
+        if let Some(RValue::Vector(dim_rv)) = rv.get_attr("dim") {
+            let ndim = dim_rv.len();
+            if ndim == 2 {
+                return Ok(RValue::vec(Vector::Character(
+                    vec![Some("matrix".to_string()), Some("array".to_string())].into(),
+                )));
+            } else if ndim > 0 {
+                return Ok(RValue::vec(Vector::Character(
+                    vec![Some("array".to_string())].into(),
+                )));
+            }
+        }
+        return Ok(RValue::vec(Vector::Character(
+            vec![Some(type_class.to_string())].into(),
+        )));
+    }
+    let c = match args.first() {
         Some(RValue::List(_)) => "list",
         Some(RValue::Function(_)) => "function",
         Some(RValue::Language(lang)) => match &**lang {

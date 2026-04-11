@@ -80,27 +80,6 @@ fn language_or_null(expr: Option<crate::parser::ast::Expr>) -> RValue {
 
 // region: S3-dispatching generics (print, format)
 
-/// Get explicit class attributes from an RValue.
-/// Returns an empty vec for objects without a class attribute.
-fn explicit_classes(val: &RValue) -> Vec<String> {
-    match val {
-        RValue::Vector(rv) => rv.class().unwrap_or_default(),
-        RValue::List(list) => {
-            if let Some(RValue::Vector(rv)) = list.get_attr("class") {
-                if let Vector::Character(classes) = &rv.inner {
-                    classes.iter().filter_map(|c| c.clone()).collect()
-                } else {
-                    vec![]
-                }
-            } else {
-                vec![]
-            }
-        }
-        RValue::Language(lang) => lang.class().unwrap_or_default(),
-        _ => vec![],
-    }
-}
-
 /// Try S3 dispatch for a generic function. Returns `Ok(Some(result))` if a
 /// method was found and called, `Ok(None)` if no method exists (caller should
 /// fall through to default behavior).
@@ -113,7 +92,8 @@ fn try_s3_dispatch(
     let Some(val) = args.first() else {
         return Ok(None);
     };
-    let classes = explicit_classes(val);
+    let interp = context.interpreter();
+    let classes = interp.s3_classes_for(val);
     if classes.is_empty() {
         return Ok(None);
     }
