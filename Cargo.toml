@@ -118,7 +118,6 @@ zmij = { version = "1", optional = true }
 # termcolor removed — using crossterm for colored output (already a dep via repl)
 eframe = { version = "0.33", optional = true, default-features = false, features = ["glow", "default_fonts", "persistence"] }
 serde = { version = "1", features = ["derive"], optional = true }
-winit = { version = "0.30", optional = true, default-features = false }
 egui = { version = "0.33", optional = true }
 egui_plot = { version = "0.34", optional = true }
 egui_table = { version = "0.7", optional = true }
@@ -141,7 +140,7 @@ object = { version = "0.36", optional = true, default-features = false, features
 cc = { version = "1", features = ["parallel"] }
 
 [features]
-# Full build — everything enabled. This is what CI tests.
+# Full build — everything enabled. Use `-F full`, never `--all-features`.
 full = ["default", "tls", "linalg", "gui", "svg-device", "raster-device", "pdf-device", "parquet", "native"]
 
 # Default — a practical everyday build without the heaviest deps.
@@ -188,8 +187,12 @@ fast-format = ["dep:zmij"]
 svg-device = ["dep:svg"]
 raster-device = ["dep:resvg", "dep:tiny-skia", "dep:usvg", "dep:image", "svg-device"]
 pdf-device = ["dep:krilla", "dep:krilla-svg", "dep:usvg", "svg-device"]
-plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:winit", "dep:serde", "dep:rfd", "dep:image", "dep:resvg", "dep:tiny-skia"]
+plot = ["dep:eframe", "dep:egui", "dep:egui_plot", "dep:serde", "dep:rfd", "dep:image", "dep:resvg", "dep:tiny-skia"]
 view = ["plot", "dep:egui_table"]
 gui = ["plot", "view"]
 parquet = ["dep:parquet", "dep:arrow"]
 native = ["dep:libloading", "dep:cc", "dep:pkg-config", "dep:addr2line", "dep:gimli", "dep:object"]
+
+# Linux needs explicit X11/Wayland backends for winit (macOS/Windows have built-in backends)
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.33", optional = true, features = ["x11", "wayland"] }

@@ -13,6 +13,13 @@ jobs:
     name: Check, lint, test
     runs-on: ubuntu-latest
     steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev \
+            libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libatk1.0-dev
+
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
@@ -30,8 +37,8 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --check
 
-      - name: cargo clippy --all-targets --all-features -- -D warnings
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo clippy --all-targets -F full -- -D warnings
+        run: cargo clippy --all-targets -F full -- -D warnings
 
-      - name: cargo test
-        run: cargo test
+      - name: cargo test -F full
+        run: cargo test -F full
